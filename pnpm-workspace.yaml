@@ -37,6 +37,9 @@ onlyBuiltDependencies:
   - msw
   - unrs-resolver
 
+neverBuiltDependencies:
+  - '@hello-pangea/dnd'
+  
 overrides:
   '@esbuild-kit/esm-loader': npm:tsx@^4.21.0
   '@expo/ngrok-bin>@expo/ngrok-bin-darwin-arm64': '-'
