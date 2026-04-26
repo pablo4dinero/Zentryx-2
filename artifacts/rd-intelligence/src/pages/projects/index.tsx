@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useListProjects, useCreateProject, useDeleteProject, useListUsers, useUpdateProject } from "@workspace/api-client-react";
+import { useListProjects, useCreateProject, useDeleteProject, useListUsers, useUpdateProject } from "@/api-client";
 import { PageLoader } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

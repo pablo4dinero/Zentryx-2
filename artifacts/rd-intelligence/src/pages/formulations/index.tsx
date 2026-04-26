@@ -1,4 +1,4 @@
-import { useListFormulations } from "@workspace/api-client-react";
+import { useListFormulations } from "@/api-client";
 import { PageLoader } from "@/components/ui/spinner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

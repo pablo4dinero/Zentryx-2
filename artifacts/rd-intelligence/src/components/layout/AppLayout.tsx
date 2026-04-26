@@ -10,7 +10,7 @@ import {
 import { useAuthStore } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
-import { useGetCurrentUser, useListNotifications, useMarkNotificationRead } from "@workspace/api-client-react";
+import { useGetCurrentUser, useListNotifications, useMarkNotificationRead } from "@/api-client";
 import { motion, AnimatePresence } from "framer-motion";
 
 const BASE = import.meta.env.BASE_URL;

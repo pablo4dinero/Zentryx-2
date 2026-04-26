@@ -7,7 +7,7 @@ interface AuthState {
 }
 
 // Minimal state management for the token, since customFetch might not be easily configurable here,
-// we ensure we store it. In a real app, customFetch in @workspace/api-client-react should read this.
+// we ensure we store it. In a real app, customFetch in @/api-client should read this.
 export const useAuthStore = create<AuthState>((set) => ({
   token: localStorage.getItem("rd_token"),
   setToken: (token) => {

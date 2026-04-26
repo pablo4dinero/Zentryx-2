@@ -7,7 +7,7 @@ import {
   ChevronDown, X, Users, Package, Target, AlertCircle, CheckCircle2, Clock,
   BarChart3, PieChart, Building2, Eye, Star, AlertTriangle, Trash2
 } from "lucide-react";
-import { useListUsers } from "@workspace/api-client-react";
+import { useListUsers } from "@/api-client";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
