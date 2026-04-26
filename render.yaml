@@ -15,11 +15,12 @@ services:
       - key: JWT_SECRET
         sync: false
 
-  - type: static
-    name: zentryx-app
-    rootDir: artifacts/rd-intelligence
-    buildCommand: npm install -g pnpm && pnpm install && pnpm run build
-    staticPublishPath: dist
-    envVars:
+type: static
+name: zentryx-app
+rootDir: artifacts/rd-intelligence
+buildCommand: npm install -g pnpm && pnpm install && pnpm run build
+staticPublishPath: dist
+envVars:
       - key: VITE_API_URL
+        value: https://zentryx-2-api.onrender.com  # Add your actual API URL
         sync: false
