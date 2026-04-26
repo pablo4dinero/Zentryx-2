@@ -26,15 +26,24 @@ export async function sendOtp(
 ): Promise<{ code: string; devMode: boolean }> {
   gc();
   const code = genOtp();
-  store.set(`${email}:${purpose}`, { code, expiresAt: Date.now() + 10 * 60 * 1000, data });
+  store.set(`${email}:${purpose}`, {
+    code,
+    expiresAt: Date.now() + 10 * 60 * 1000,
+    data,
+  });
 
-  const devMode = !process.env.SMTP_HOST;
+  const resendApiKey = process.env.RESEND_API_KEY;
+  const devMode = !resendApiKey;
+
   if (!devMode) {
     const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: parseInt(process.env.SMTP_PORT || "587"),
-      secure: process.env.SMTP_SECURE === "true",
-      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+      host: "smtp.resend.com",
+      port: 465,
+      secure: true,
+      auth: {
+        user: "resend",
+        pass: resendApiKey,
+      },
     });
 
     const subjects: Record<OtpPurpose, string> = {
@@ -43,18 +52,33 @@ export async function sendOtp(
       "phone-change": "Confirm your phone number — Zentryx",
     };
 
+    const fromEmail = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
+
     await transporter.sendMail({
-      from: `Zentryx <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
+      from: `Zentryx <${fromEmail}>`,
       to: email,
       subject: subjects[purpose],
-      html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;background:#0f1117;color:#fff;border-radius:16px">
-        <h2 style="color:#7c3aed">Zentryx R&amp;D Intelligence</h2>
-        <p style="color:#94a3b8">Your one-time verification code:</p>
-        <div style="font-size:40px;font-weight:700;letter-spacing:10px;background:#1e1e2e;padding:24px;border-radius:12px;text-align:center;margin:20px 0">${code}</div>
-        <p style="color:#94a3b8;font-size:13px">Expires in 10 minutes. Never share this code.</p>
-      </div>`,
+      html: `
+        <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;background:#0f1117;color:#fff;border-radius:16px">
+          <h2 style="color:#7c3aed;margin-bottom:8px">Zentryx R&D Intelligence</h2>
+          <p style="color:#94a3b8;margin-bottom:24px">
+            ${purpose === "signup" ? "Welcome! Please verify your email address to complete your registration." : ""}
+            ${purpose === "forgot-password" ? "You requested a password reset. Use the code below." : ""}
+            ${purpose === "phone-change" ? "Please confirm your new phone number." : ""}
+          </p>
+          <p style="color:#94a3b8">Your one-time verification code:</p>
+          <div style="font-size:40px;font-weight:700;letter-spacing:10px;background:#1e1e2e;padding:24px;border-radius:12px;text-align:center;margin:20px 0;color:#7c3aed">
+            ${code}
+          </div>
+          <p style="color:#94a3b8;font-size:13px">This code expires in <strong style="color:#fff">10 minutes</strong>.</p>
+          <p style="color:#94a3b8;font-size:13px">Never share this code with anyone.</p>
+          <hr style="border:none;border-top:1px solid #1e1e2e;margin:24px 0"/>
+          <p style="color:#4b5563;font-size:12px">Zentryx R&D Intelligence Suite</p>
+        </div>
+      `,
     });
   }
+
   return { code, devMode };
 }
 
@@ -64,7 +88,10 @@ export function verifyOtp(
   code: string
 ): { valid: boolean; data?: Record<string, any> } {
   const entry = store.get(`${email}:${purpose}`);
-  if (!entry || entry.expiresAt < Date.now()) { store.delete(`${email}:${purpose}`); return { valid: false }; }
+  if (!entry || entry.expiresAt < Date.now()) {
+    store.delete(`${email}:${purpose}`);
+    return { valid: false };
+  }
   if (entry.code !== code) return { valid: false };
   const data = entry.data;
   store.delete(`${email}:${purpose}`);
