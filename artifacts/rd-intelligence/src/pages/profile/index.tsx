@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useGetCurrentUser } from "@workspace/api-client-react";
+import { useGetCurrentUser } from "@/api-client";
 import { PageLoader } from "@/components/ui/spinner";
 import { useToast } from "@/hooks/use-toast";
 import { Camera, User, Mail, Phone, Globe, Building2, Briefcase, Lock, Save, X, Eye, EyeOff, Shield, KeyRound, CheckCircle } from "lucide-react";

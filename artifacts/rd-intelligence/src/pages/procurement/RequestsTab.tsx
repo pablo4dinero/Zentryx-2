@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
-import { useGetCurrentUser } from "@workspace/api-client-react";
+import { useGetCurrentUser } from "@/api-client";
 import { format } from "date-fns";
 
 const BASE = import.meta.env.BASE_URL;

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useListUsers } from "@workspace/api-client-react";
+import { useListUsers } from "@/api-client";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { PageLoader } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";

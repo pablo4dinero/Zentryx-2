@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useListProjects } from "@workspace/api-client-react";
+import { useListProjects } from "@/api-client";
 import { PageLoader } from "@/components/ui/spinner";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
