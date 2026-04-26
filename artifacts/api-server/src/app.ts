@@ -35,7 +35,7 @@ app.use(express.urlencoded({ extended: true, limit: "15mb" }));
 app.use("/api", router);
 
 // Serve frontend static files
-const frontendPath = path.resolve(process.cwd(), "artifacts/rd-intelligence/dist");
+const frontendPath = path.resolve(process.cwd(), "../../artifacts/rd-intelligence/dist");
 app.use(express.static(frontendPath));
 
 // All non-API routes serve the React app
