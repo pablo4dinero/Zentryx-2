@@ -2,18 +2,8 @@ import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import path from "path";
-import { fileURLToPath } from "url";
 import router from "./routes";
 import { logger } from "./lib/logger";
-
-// Serve frontend static files
-const frontendPath = path.resolve(process.cwd(), "../../rd-intelligence/dist");
-app.use(express.static(frontendPath));
-
-// All non-API routes serve the React app
-app.get("*", (_req, res) => {
-  res.sendFile(path.resolve(frontendPath, "index.html"));
-});
 
 const app: Express = express();
 
@@ -45,11 +35,11 @@ app.use(express.urlencoded({ extended: true, limit: "15mb" }));
 app.use("/api", router);
 
 // Serve frontend static files
-const frontendPath = path.resolve(__dirname, "../../rd-intelligence/dist");
+const frontendPath = path.resolve(process.cwd(), "artifacts/rd-intelligence/dist");
 app.use(express.static(frontendPath));
 
 // All non-API routes serve the React app
-app.get("*", (req, res) => {
+app.get("*", (_req, res) => {
   res.sendFile(path.resolve(frontendPath, "index.html"));
 });
 
