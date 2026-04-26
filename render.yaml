@@ -1,9 +1,9 @@
 services:
   - type: web
-    name: zentryx-app
+    name: zentryx-api
     runtime: node
     rootDir: artifacts/api-server
-    buildCommand: npm install -g pnpm && pnpm install && pnpm run build && pnpm --filter @workspace/rd-intelligence run build
+    buildCommand: npm install -g pnpm && pnpm install && pnpm run build
     startCommand: pnpm run start
     envVars:
       - key: NODE_ENV
@@ -13,4 +13,13 @@ services:
       - key: OPENAI_API_KEY
         sync: false
       - key: JWT_SECRET
+        sync: false
+
+  - type: static
+    name: zentryx-app
+    rootDir: artifacts/rd-intelligence
+    buildCommand: npm install -g pnpm && pnpm install && pnpm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
         sync: false
