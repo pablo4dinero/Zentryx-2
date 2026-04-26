@@ -303,9 +303,7 @@ export async function customFetch<T = unknown>(
 
  const requestInfo = { method, url: resolveUrl(input) };
 
-  const apiBase = typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL
-    ? import.meta.env.VITE_API_URL
-    : '';
+  const apiBase = (import.meta.env.VITE_API_URL as string) || '';
   const resolvedInput = typeof input === 'string' && input.startsWith('/api')
     ? `${apiBase}${input}`
     : input;
