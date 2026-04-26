@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
-import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
-import { motion } from "framer-motion";
+import { DragDropContext, Droppable, Draggable } from "@/components/dnd-stub";
+import type { DropResult } from "@/components/dnd-stub";import { motion } from "framer-motion";
 import { format } from "date-fns";
 import { Calendar, GripVertical } from "lucide-react";
 
