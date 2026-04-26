@@ -39,7 +39,7 @@ const frontendPath = path.resolve(process.cwd(), "artifacts/rd-intelligence/dist
 app.use(express.static(frontendPath));
 
 // All non-API routes serve the React app
-app.get("*", (_req, res) => {
+app.get("/{*splat}", (_req, res) => {
   res.sendFile(path.resolve(frontendPath, "index.html"));
 });
 
