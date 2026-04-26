@@ -1,0 +1,1431 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: R&D Intelligence Suite API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: auth
+    description: Authentication operations
+  - name: users
+    description: User management
+  - name: projects
+    description: Project management
+  - name: tasks
+    description: Task management
+  - name: formulations
+    description: Formulation data
+  - name: analytics
+    description: Analytics and reporting
+  - name: notifications
+    description: Notifications
+  - name: activity
+    description: Activity logs
+
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/me:
+    get:
+      operationId: getCurrentUser
+      tags: [auth]
+      summary: Get current user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List all users
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+    post:
+      operationId: createUser
+      tags: [users]
+      summary: Create a new user
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /users/{id}:
+    get:
+      operationId: getUser
+      tags: [users]
+      summary: Get user by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: User
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+    put:
+      operationId: updateUser
+      tags: [users]
+      summary: Update user
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRequest"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+    delete:
+      operationId: deleteUser
+      tags: [users]
+      summary: Delete user
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: User deleted
+
+  /projects:
+    get:
+      operationId: listProjects
+      tags: [projects]
+      summary: List all projects
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: stage
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+    post:
+      operationId: createProject
+      tags: [projects]
+      summary: Create a new project
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectRequest"
+      responses:
+        "201":
+          description: Project created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+
+  /projects/{id}:
+    get:
+      operationId: getProject
+      tags: [projects]
+      summary: Get project by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+    put:
+      operationId: updateProject
+      tags: [projects]
+      summary: Update project
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectRequest"
+      responses:
+        "200":
+          description: Updated project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+    delete:
+      operationId: deleteProject
+      tags: [projects]
+      summary: Delete project
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Project deleted
+
+  /tasks:
+    get:
+      operationId: listTasks
+      tags: [tasks]
+      summary: List tasks
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: query
+          schema:
+            type: integer
+        - name: assigneeId
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Task"
+    post:
+      operationId: createTask
+      tags: [tasks]
+      summary: Create a task
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskRequest"
+      responses:
+        "201":
+          description: Task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+
+  /tasks/{id}:
+    put:
+      operationId: updateTask
+      tags: [tasks]
+      summary: Update task
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTaskRequest"
+      responses:
+        "200":
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+    delete:
+      operationId: deleteTask
+      tags: [tasks]
+      summary: Delete task
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Task deleted
+
+  /formulations:
+    get:
+      operationId: listFormulations
+      tags: [formulations]
+      summary: List formulations
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: projectId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of formulations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Formulation"
+    post:
+      operationId: createFormulation
+      tags: [formulations]
+      summary: Create a formulation record
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFormulationRequest"
+      responses:
+        "201":
+          description: Formulation created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Formulation"
+
+  /formulations/{id}:
+    get:
+      operationId: getFormulation
+      tags: [formulations]
+      summary: Get formulation by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Formulation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Formulation"
+    put:
+      operationId: updateFormulation
+      tags: [formulations]
+      summary: Update formulation
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateFormulationRequest"
+      responses:
+        "200":
+          description: Updated formulation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Formulation"
+
+  /analytics/dashboard:
+    get:
+      operationId: getDashboardStats
+      tags: [analytics]
+      summary: Get dashboard KPI stats
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Dashboard statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+
+  /analytics/trends:
+    get:
+      operationId: getTrends
+      tags: [analytics]
+      summary: Get project and formulation trends
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Trends data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrendsData"
+
+  /analytics/cost-simulation:
+    post:
+      operationId: runCostSimulation
+      tags: [analytics]
+      summary: Simulate cost impact
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CostSimulationRequest"
+      responses:
+        "200":
+          description: Simulation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CostSimulationResult"
+
+  /analytics/ai-suggestions:
+    post:
+      operationId: getAiSuggestions
+      tags: [analytics]
+      summary: Get AI formulation suggestions
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiSuggestionsRequest"
+      responses:
+        "200":
+          description: AI suggestions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiSuggestionsResponse"
+
+  /notifications:
+    get:
+      operationId: listNotifications
+      tags: [notifications]
+      summary: List user notifications
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Notification"
+
+  /notifications/{id}/read:
+    post:
+      operationId: markNotificationRead
+      tags: [notifications]
+      summary: Mark notification as read
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Notification marked as read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notification"
+
+  /activity:
+    get:
+      operationId: listActivity
+      tags: [activity]
+      summary: List activity logs
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: query
+          schema:
+            type: integer
+        - name: projectId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Activity logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityLog"
+
+  /search:
+    get:
+      operationId: globalSearch
+      tags: [activity]
+      summary: Global search across projects, formulations
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResults"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+      required:
+        - error
+
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+      required:
+        - email
+        - password
+
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          $ref: "#/components/schemas/User"
+      required:
+        - token
+        - user
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+          enum: [admin, manager, scientist, analyst, viewer]
+        department:
+          type: string
+          nullable: true
+        avatar:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - email
+        - name
+        - role
+        - isActive
+        - createdAt
+
+    CreateUserRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        role:
+          type: string
+          enum: [admin, manager, scientist, analyst, viewer]
+        department:
+          type: string
+        password:
+          type: string
+      required:
+        - email
+        - name
+        - role
+        - password
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        role:
+          type: string
+          enum: [admin, manager, scientist, analyst, viewer]
+        department:
+          type: string
+        isActive:
+          type: boolean
+
+    Project:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        stage:
+          type: string
+          enum: [ideation, research, formulation, testing, validation, scale_up, commercialization]
+        status:
+          type: string
+          enum: [active, on_hold, completed, cancelled]
+        priority:
+          type: string
+          enum: [low, medium, high, critical]
+        leadId:
+          type: integer
+          nullable: true
+        startDate:
+          type: string
+          format: date-time
+          nullable: true
+        targetDate:
+          type: string
+          format: date-time
+          nullable: true
+        successRate:
+          type: number
+          nullable: true
+        revenueImpact:
+          type: number
+          nullable: true
+        productCategory:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+        lead:
+          $ref: "#/components/schemas/User"
+          nullable: true
+        taskCount:
+          type: integer
+        completedTaskCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - stage
+        - status
+        - priority
+        - tags
+        - taskCount
+        - completedTaskCount
+        - createdAt
+
+    CreateProjectRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        stage:
+          type: string
+          enum: [ideation, research, formulation, testing, validation, scale_up, commercialization]
+        status:
+          type: string
+          enum: [active, on_hold, completed, cancelled]
+        priority:
+          type: string
+          enum: [low, medium, high, critical]
+        leadId:
+          type: integer
+        startDate:
+          type: string
+          format: date-time
+        targetDate:
+          type: string
+          format: date-time
+        revenueImpact:
+          type: number
+        productCategory:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+      required:
+        - name
+        - stage
+        - status
+        - priority
+
+    UpdateProjectRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        stage:
+          type: string
+          enum: [ideation, research, formulation, testing, validation, scale_up, commercialization]
+        status:
+          type: string
+          enum: [active, on_hold, completed, cancelled]
+        priority:
+          type: string
+          enum: [low, medium, high, critical]
+        leadId:
+          type: integer
+        startDate:
+          type: string
+          format: date-time
+        targetDate:
+          type: string
+          format: date-time
+        successRate:
+          type: number
+        revenueImpact:
+          type: number
+        productCategory:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+
+    Task:
+      type: object
+      properties:
+        id:
+          type: integer
+        projectId:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [todo, in_progress, review, done, blocked]
+        priority:
+          type: string
+          enum: [low, medium, high, critical]
+        assigneeId:
+          type: integer
+          nullable: true
+        dueDate:
+          type: string
+          format: date-time
+          nullable: true
+        assignee:
+          $ref: "#/components/schemas/User"
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - projectId
+        - title
+        - status
+        - priority
+        - createdAt
+
+    CreateTaskRequest:
+      type: object
+      properties:
+        projectId:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [todo, in_progress, review, done, blocked]
+        priority:
+          type: string
+          enum: [low, medium, high, critical]
+        assigneeId:
+          type: integer
+        dueDate:
+          type: string
+          format: date-time
+      required:
+        - projectId
+        - title
+        - status
+        - priority
+
+    UpdateTaskRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [todo, in_progress, review, done, blocked]
+        priority:
+          type: string
+          enum: [low, medium, high, critical]
+        assigneeId:
+          type: integer
+        dueDate:
+          type: string
+          format: date-time
+
+    Formulation:
+      type: object
+      properties:
+        id:
+          type: integer
+        projectId:
+          type: integer
+        name:
+          type: string
+        version:
+          type: string
+        ingredients:
+          type: array
+          items:
+            $ref: "#/components/schemas/Ingredient"
+        sensoryScores:
+          $ref: "#/components/schemas/SensoryScores"
+          nullable: true
+        shelfLifeDays:
+          type: integer
+          nullable: true
+        costPerUnit:
+          type: number
+          nullable: true
+        targetMargin:
+          type: number
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [draft, active, approved, rejected]
+        createdById:
+          type: integer
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - projectId
+        - name
+        - version
+        - ingredients
+        - status
+        - createdAt
+
+    Ingredient:
+      type: object
+      properties:
+        name:
+          type: string
+        percentage:
+          type: number
+        costPerKg:
+          type: number
+          nullable: true
+        supplier:
+          type: string
+          nullable: true
+      required:
+        - name
+        - percentage
+
+    SensoryScores:
+      type: object
+      properties:
+        taste:
+          type: number
+        texture:
+          type: number
+        appearance:
+          type: number
+        aroma:
+          type: number
+        overall:
+          type: number
+      required:
+        - taste
+        - texture
+        - appearance
+        - aroma
+        - overall
+
+    CreateFormulationRequest:
+      type: object
+      properties:
+        projectId:
+          type: integer
+        name:
+          type: string
+        version:
+          type: string
+        ingredients:
+          type: array
+          items:
+            $ref: "#/components/schemas/Ingredient"
+        sensoryScores:
+          $ref: "#/components/schemas/SensoryScores"
+        shelfLifeDays:
+          type: integer
+        costPerUnit:
+          type: number
+        targetMargin:
+          type: number
+        notes:
+          type: string
+        status:
+          type: string
+          enum: [draft, active, approved, rejected]
+      required:
+        - projectId
+        - name
+        - version
+        - ingredients
+        - status
+
+    UpdateFormulationRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        ingredients:
+          type: array
+          items:
+            $ref: "#/components/schemas/Ingredient"
+        sensoryScores:
+          $ref: "#/components/schemas/SensoryScores"
+        shelfLifeDays:
+          type: integer
+        costPerUnit:
+          type: number
+        targetMargin:
+          type: number
+        notes:
+          type: string
+        status:
+          type: string
+          enum: [draft, active, approved, rejected]
+
+    DashboardStats:
+      type: object
+      properties:
+        totalProjects:
+          type: integer
+        activeProjects:
+          type: integer
+        completedProjects:
+          type: integer
+        successRate:
+          type: number
+        avgTimeToMarket:
+          type: number
+        totalRevenueImpact:
+          type: number
+        totalFormulations:
+          type: integer
+        approvedFormulations:
+          type: integer
+        teamSize:
+          type: integer
+        projectsByStage:
+          type: array
+          items:
+            $ref: "#/components/schemas/StageCount"
+        projectsByStatus:
+          type: array
+          items:
+            $ref: "#/components/schemas/StatusCount"
+        monthlyProjects:
+          type: array
+          items:
+            $ref: "#/components/schemas/MonthlyData"
+        recentProjects:
+          type: array
+          items:
+            $ref: "#/components/schemas/Project"
+      required:
+        - totalProjects
+        - activeProjects
+        - completedProjects
+        - successRate
+        - avgTimeToMarket
+        - totalRevenueImpact
+        - totalFormulations
+        - approvedFormulations
+        - teamSize
+        - projectsByStage
+        - projectsByStatus
+        - monthlyProjects
+        - recentProjects
+
+    StageCount:
+      type: object
+      properties:
+        stage:
+          type: string
+        count:
+          type: integer
+      required:
+        - stage
+        - count
+
+    StatusCount:
+      type: object
+      properties:
+        status:
+          type: string
+        count:
+          type: integer
+      required:
+        - status
+        - count
+
+    MonthlyData:
+      type: object
+      properties:
+        month:
+          type: string
+        projects:
+          type: integer
+        formulations:
+          type: integer
+      required:
+        - month
+        - projects
+        - formulations
+
+    TrendsData:
+      type: object
+      properties:
+        successByCategory:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategorySuccess"
+        sensoryCorrelation:
+          type: array
+          items:
+            $ref: "#/components/schemas/SensoryCorrelation"
+        costTrends:
+          type: array
+          items:
+            $ref: "#/components/schemas/CostTrend"
+        formulationSuccessRate:
+          type: number
+      required:
+        - successByCategory
+        - sensoryCorrelation
+        - costTrends
+        - formulationSuccessRate
+
+    CategorySuccess:
+      type: object
+      properties:
+        category:
+          type: string
+        successRate:
+          type: number
+        count:
+          type: integer
+      required:
+        - category
+        - successRate
+        - count
+
+    SensoryCorrelation:
+      type: object
+      properties:
+        formulationId:
+          type: integer
+        name:
+          type: string
+        overallScore:
+          type: number
+        successRate:
+          type: number
+      required:
+        - formulationId
+        - name
+        - overallScore
+        - successRate
+
+    CostTrend:
+      type: object
+      properties:
+        month:
+          type: string
+        avgCost:
+          type: number
+        avgMargin:
+          type: number
+      required:
+        - month
+        - avgCost
+        - avgMargin
+
+    CostSimulationRequest:
+      type: object
+      properties:
+        formulationId:
+          type: integer
+        ingredientChanges:
+          type: array
+          items:
+            $ref: "#/components/schemas/IngredientChange"
+      required:
+        - formulationId
+        - ingredientChanges
+
+    IngredientChange:
+      type: object
+      properties:
+        ingredientName:
+          type: string
+        costChangePercent:
+          type: number
+      required:
+        - ingredientName
+        - costChangePercent
+
+    CostSimulationResult:
+      type: object
+      properties:
+        originalCost:
+          type: number
+        newCost:
+          type: number
+        costChange:
+          type: number
+        costChangePercent:
+          type: number
+        originalMargin:
+          type: number
+        newMargin:
+          type: number
+        marginChange:
+          type: number
+        recommendations:
+          type: array
+          items:
+            type: string
+      required:
+        - originalCost
+        - newCost
+        - costChange
+        - costChangePercent
+        - originalMargin
+        - newMargin
+        - marginChange
+        - recommendations
+
+    AiSuggestionsRequest:
+      type: object
+      properties:
+        projectId:
+          type: integer
+        targetProfile:
+          type: string
+        constraints:
+          type: string
+      required:
+        - projectId
+
+    AiSuggestionsResponse:
+      type: object
+      properties:
+        suggestions:
+          type: array
+          items:
+            $ref: "#/components/schemas/FormulationSuggestion"
+        predictedSuccessRate:
+          type: number
+        reasoning:
+          type: string
+      required:
+        - suggestions
+        - predictedSuccessRate
+        - reasoning
+
+    FormulationSuggestion:
+      type: object
+      properties:
+        ingredientName:
+          type: string
+        suggestedPercentage:
+          type: number
+        rationale:
+          type: string
+      required:
+        - ingredientName
+        - suggestedPercentage
+        - rationale
+
+    Notification:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        type:
+          type: string
+          enum: [deadline, update, reminder, mention, system]
+        title:
+          type: string
+        message:
+          type: string
+        isRead:
+          type: boolean
+        projectId:
+          type: integer
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - userId
+        - type
+        - title
+        - message
+        - isRead
+        - createdAt
+
+    ActivityLog:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        action:
+          type: string
+        entityType:
+          type: string
+        entityId:
+          type: integer
+          nullable: true
+        details:
+          type: string
+          nullable: true
+        user:
+          $ref: "#/components/schemas/User"
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - userId
+        - action
+        - entityType
+        - createdAt
+
+    SearchResults:
+      type: object
+      properties:
+        projects:
+          type: array
+          items:
+            $ref: "#/components/schemas/Project"
+        formulations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Formulation"
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/Task"
+      required:
+        - projects
+        - formulations
+        - tasks

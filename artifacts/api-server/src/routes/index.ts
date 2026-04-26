@@ -1,0 +1,46 @@
+import { Router, type IRouter } from "express";
+import healthRouter from "./health";
+import authRouter from "./auth";
+import usersRouter from "./users";
+import projectsRouter from "./projects";
+import tasksRouter from "./tasks";
+import formulationsRouter from "./formulations";
+import analyticsRouter from "./analytics";
+import notificationsRouter from "./notifications";
+import activityRouter from "./activity";
+import searchRouter from "./search";
+import departmentsRouter from "./departments";
+import businessDevRouter from "./business_dev";
+import projectCommentsRouter from "./project_comments";
+import chatRouter from "./chat";
+import aiChatRouter from "./ai_chat";
+import eventsRouter from "./events";
+import accountsRouter from "./accounts";
+import forecastsRouter from "./forecasts";
+import weeklyActivitiesRouter from "./weekly_activities";
+import procurementRouter from "./procurement";
+
+const router: IRouter = Router();
+
+router.use(healthRouter);
+router.use("/auth", authRouter);
+router.use("/users", usersRouter);
+router.use("/projects", projectsRouter);
+router.use("/projects/:projectId/comments", projectCommentsRouter);
+router.use("/tasks", tasksRouter);
+router.use("/formulations", formulationsRouter);
+router.use("/analytics", analyticsRouter);
+router.use("/notifications", notificationsRouter);
+router.use("/activity", activityRouter);
+router.use("/search", searchRouter);
+router.use("/departments", departmentsRouter);
+router.use("/business-dev", businessDevRouter);
+router.use("/chat", chatRouter);
+router.use("/ai-chat", aiChatRouter);
+router.use("/events", eventsRouter);
+router.use("/accounts", accountsRouter);
+router.use("/forecasts", forecastsRouter);
+router.use("/weekly-activities", weeklyActivitiesRouter);
+router.use("/procurement", procurementRouter);
+
+export default router;

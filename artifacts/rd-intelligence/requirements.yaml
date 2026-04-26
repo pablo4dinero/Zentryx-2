@@ -1,0 +1,20 @@
+packages:
+  "recharts": "For rendering complex analytical charts (trends, dashboard KPIs)"
+  "framer-motion": "For premium page transitions and interactive micro-animations"
+  "date-fns": "For formatting timestamps across projects, activity, and notifications"
+  "clsx": "Utility for constructing className strings conditionally"
+  "tailwind-merge": "Utility for merging tailwind classes without conflicts"
+  "lucide-react": "Icons for the interface"
+
+images:
+  - path: "artifacts/rd-intelligence/public/images/auth-bg.png"
+    description: "Abstract dark futuristic 3D glassmorphism background with deep indigo and cyan glowing nodes, representing advanced science and technology, subtle particle effects, premium sleek enterprise aesthetic."
+    aspect_ratio: "16:9"
+  - path: "artifacts/rd-intelligence/public/images/ai-glow.png"
+    description: "Subtle glowing abstract neural network mesh in dark mode, deep purple and blue hues, suitable for a side panel background."
+    aspect_ratio: "1:1"
+
+notes:
+  - Assuming standard JWT Bearer token authentication where token is stored in localStorage as 'rd_token'
+  - Assuming @workspace/api-client-react uses standard fetch and can be intercepted or relies on standard cookie/header setup. We will manually append the Authorization header if needed, but we will assume the generated client handles it or we set it globally if possible. Since we can't edit the generated client here, we will ensure our login sets the token in localStorage.
+  - Generating all requested routes and features based on the provided OpenAPI schemas.
