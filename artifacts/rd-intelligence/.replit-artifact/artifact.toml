@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "R&D Intelligence Suite"
+version = "1.0.0"
+id = "artifacts/rd-intelligence"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22552
+
+[services.development]
+run = "pnpm --filter @workspace/rd-intelligence run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/rd-intelligence", "run", "build" ]
+publicDir = "artifacts/rd-intelligence/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22552"
+BASE_PATH = "/"
