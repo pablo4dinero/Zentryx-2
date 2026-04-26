@@ -7,10 +7,12 @@ import { Zap, Lock, Mail, User, AlertCircle, Phone, Eye, EyeOff, ArrowLeft, KeyR
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 
+const BASE = import.meta.env.BASE_URL;
+
 type Mode = "login" | "signup" | "signup-otp" | "forgot" | "forgot-otp" | "reset";
 
 async function apiFetch(path: string, body: object) {
-  const r = await fetch(path, {
+  const r = await fetch(`${BASE}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
