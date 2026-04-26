@@ -39,6 +39,7 @@ onlyBuiltDependencies:
 
 neverBuiltDependencies:
   - '@hello-pangea/dnd'
+  - 'husky'
   
 overrides:
   '@esbuild-kit/esm-loader': npm:tsx@^4.21.0
@@ -122,3 +123,4 @@ overrides:
   rollup>@rollup/rollup-win32-ia32-msvc: '-'
   rollup>@rollup/rollup-win32-x64-gnu: '-'
   rollup>@rollup/rollup-win32-x64-msvc: '-'
+
