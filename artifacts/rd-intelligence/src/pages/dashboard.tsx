@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { useGetDashboardStats, useListProjects, useListUsers } from "@workspace/api-client-react";
+import { useGetDashboardStats, useListProjects, useListUsers } from "@/api-client";
 import { PageLoader } from "@/components/ui/spinner";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,

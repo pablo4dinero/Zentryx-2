@@ -1,4 +1,4 @@
-import { useListNotifications, useMarkNotificationRead } from "@workspace/api-client-react";
+import { useListNotifications, useMarkNotificationRead } from "@/api-client";
 import { PageLoader } from "@/components/ui/spinner";
 import { Bell, Check, Clock, Info, AlertCircle } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";

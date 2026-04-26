@@ -11,7 +11,7 @@ import {
   DollarSign, Package, Maximize2, Minimize2, Download, CheckCircle2,
   Clock, AlertCircle, RotateCcw, GripVertical, MessageSquare, User
 } from "lucide-react";
-import { useListUsers, useGetCurrentUser } from "@workspace/api-client-react";
+import { useListUsers, useGetCurrentUser } from "@/api-client";
 import { useToast } from "@/hooks/use-toast";
 import { useExchangeRate } from "@/hooks/useExchangeRate";
 import { cn } from "@/lib/utils";

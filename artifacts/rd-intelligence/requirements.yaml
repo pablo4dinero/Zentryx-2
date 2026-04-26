@@ -16,5 +16,5 @@ images:
 
 notes:
   - Assuming standard JWT Bearer token authentication where token is stored in localStorage as 'rd_token'
-  - Assuming @workspace/api-client-react uses standard fetch and can be intercepted or relies on standard cookie/header setup. We will manually append the Authorization header if needed, but we will assume the generated client handles it or we set it globally if possible. Since we can't edit the generated client here, we will ensure our login sets the token in localStorage.
+  - Assuming @/api-client uses standard fetch and can be intercepted or relies on standard cookie/header setup. We will manually append the Authorization header if needed, but we will assume the generated client handles it or we set it globally if possible. Since we can't edit the generated client here, we will ensure our login sets the token in localStorage.
   - Generating all requested routes and features based on the provided OpenAPI schemas.
