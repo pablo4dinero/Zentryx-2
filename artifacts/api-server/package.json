@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
- "scripts": {
+  "scripts": {
     "dev": "NODE_ENV=development tsx ./src/index.ts",
     "build": "tsx ./build.ts",
     "start": "node dist/index.cjs",
@@ -32,7 +32,7 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
-    "@types/node": "^25.3.3:",
+    "@types/node": "^25.3.3",
     "esbuild": "^0.27.3",
     "pino-pretty": "^13",
     "tsx": "^4.21.0"
