@@ -7,6 +7,9 @@
     "node": ">=20",
     "pnpm": ">=8"
   },
+  "pnpm": {
+    "neverBuiltDependencies": ["@hello-pangea/dnd", "husky"]
+  },
   "scripts": {
     "prepare": "echo 'skipping prepare'",
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
