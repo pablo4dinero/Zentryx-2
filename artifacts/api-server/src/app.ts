@@ -6,8 +6,14 @@ import { fileURLToPath } from "url";
 import router from "./routes";
 import { logger } from "./lib/logger";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Serve frontend static files
+const frontendPath = path.resolve(process.cwd(), "../../rd-intelligence/dist");
+app.use(express.static(frontendPath));
+
+// All non-API routes serve the React app
+app.get("*", (_req, res) => {
+  res.sendFile(path.resolve(frontendPath, "index.html"));
+});
 
 const app: Express = express();
 
