@@ -103,23 +103,25 @@ function TaskCard({ task, onUpdate, onDelete, users }: { task: any; onUpdate: (i
   const [form, setForm] = useState({ title: task.title, description: task.description || "", assigneeId: task.assigneeId || "", startDate: task.startDate || "", dueDate: task.dueDate || "" });
   const save = () => onUpdate(task.id, form);
   const assignee = users.find((u: any) => u.id === task.assigneeId);
+  const { theme } = useTheme();
+  const isLight = theme === "light";
 
   return (
-    <div className="bg-black/30 border border-white/10 rounded-xl p-3 group">
+    <div className={cn("rounded-xl p-3 group border", isLight ? "bg-white border-gray-200 shadow-sm" : "bg-black/30 border-white/10")}>
       <div className="flex items-start gap-2">
-        <GripVertical className="w-4 h-4 text-muted-foreground/40 mt-0.5 shrink-0 cursor-grab" />
+        <GripVertical className={cn("w-4 h-4 mt-0.5 shrink-0 cursor-grab", isLight ? "text-gray-400" : "text-muted-foreground/40")} />
         <div className="flex-1 min-w-0">
           <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} onBlur={save}
-            className="w-full bg-transparent text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1" />
-          {assignee && <p className="text-[10px] text-muted-foreground mt-0.5">{assignee.name}</p>}
+            className={cn("w-full bg-transparent text-sm focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1", isLight ? "text-gray-900" : "text-foreground")} />
+          {assignee && <p className={cn("text-[10px] mt-0.5", isLight ? "text-gray-500" : "text-muted-foreground")}>{assignee.name}</p>}
           {(form.startDate || form.dueDate) && (
-            <p className="text-[10px] text-muted-foreground mt-0.5">
+            <p className={cn("text-[10px] mt-0.5", isLight ? "text-gray-500" : "text-muted-foreground")}>
               {form.startDate && `From ${form.startDate}`}{form.startDate && form.dueDate && " · "}{form.dueDate && `Due ${form.dueDate}`}
             </p>
           )}
         </div>
         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={() => setExpanded(e => !e)} className="p-1 hover:bg-white/10 rounded text-muted-foreground hover:text-foreground">
+          <button onClick={() => setExpanded(e => !e)} className={cn("p-1 rounded", isLight ? "hover:bg-gray-100 text-gray-500 hover:text-gray-900" : "hover:bg-white/10 text-muted-foreground hover:text-foreground")}>
             <ChevronDown className={cn("w-3.5 h-3.5 transition-transform", expanded && "rotate-180")} />
           </button>
           <button onClick={() => onDelete(task.id)} className="p-1 hover:bg-red-500/10 rounded text-muted-foreground hover:text-red-400">
@@ -132,29 +134,29 @@ function TaskCard({ task, onUpdate, onDelete, users }: { task: any; onUpdate: (i
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
             className="overflow-hidden mt-3 space-y-2">
             <div>
-              <label className="text-[10px] text-muted-foreground uppercase">Description</label>
+              <label className={cn("text-[10px] uppercase", isLight ? "text-gray-500" : "text-muted-foreground")}>Description</label>
               <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} onBlur={save}
-                rows={2} className="w-full text-xs bg-black/20 border border-white/10 rounded-lg p-2 text-foreground focus:outline-none resize-none mt-1 placeholder:text-muted-foreground" placeholder="Add description…" />
+                rows={2} className={cn("w-full text-xs rounded-lg p-2 focus:outline-none resize-none mt-1 placeholder:text-muted-foreground border", isLight ? "bg-gray-50 border-gray-200 text-gray-900" : "bg-black/20 border-white/10 text-foreground")} placeholder="Add description…" />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-[10px] text-muted-foreground uppercase">Assignee</label>
+                <label className={cn("text-[10px] uppercase", isLight ? "text-gray-500" : "text-muted-foreground")}>Assignee</label>
                 <select value={form.assigneeId} onChange={e => { setForm(f => ({ ...f, assigneeId: e.target.value })); setTimeout(save, 0); }}
-                  className="w-full mt-1 h-7 text-xs bg-black/20 border border-white/10 rounded-lg px-2 text-foreground focus:outline-none">
+                  className={cn("w-full mt-1 h-7 text-xs rounded-lg px-2 focus:outline-none border", isLight ? "bg-gray-50 border-gray-200 text-gray-900" : "bg-black/20 border-white/10 text-foreground")}>
                   <option value="">None</option>
-                  {users.map((u: any) => <option key={u.id} value={u.id} className="bg-card">{u.name}</option>)}
+                  {users.map((u: any) => <option key={u.id} value={u.id} className={isLight ? "bg-white text-black" : "bg-card"}>{u.name}</option>)}
                 </select>
               </div>
               <div />
               <div>
-                <label className="text-[10px] text-muted-foreground uppercase">Start Date</label>
+                <label className={cn("text-[10px] uppercase", isLight ? "text-gray-500" : "text-muted-foreground")}>Start Date</label>
                 <input type="date" value={form.startDate} onChange={e => { setForm(f => ({ ...f, startDate: e.target.value })); setTimeout(save, 0); }}
-                  className="w-full mt-1 h-7 text-xs bg-black/20 border border-white/10 rounded-lg px-2 text-foreground focus:outline-none" />
+                  className={cn("w-full mt-1 h-7 text-xs rounded-lg px-2 focus:outline-none border", isLight ? "bg-gray-50 border-gray-200 text-gray-900" : "bg-black/20 border-white/10 text-foreground")} />
               </div>
               <div>
-                <label className="text-[10px] text-muted-foreground uppercase">Due Date</label>
+                <label className={cn("text-[10px] uppercase", isLight ? "text-gray-500" : "text-muted-foreground")}>Due Date</label>
                 <input type="date" value={form.dueDate} onChange={e => { setForm(f => ({ ...f, dueDate: e.target.value })); setTimeout(save, 0); }}
-                  className="w-full mt-1 h-7 text-xs bg-black/20 border border-white/10 rounded-lg px-2 text-foreground focus:outline-none" />
+                  className={cn("w-full mt-1 h-7 text-xs rounded-lg px-2 focus:outline-none border", isLight ? "bg-gray-50 border-gray-200 text-gray-900" : "bg-black/20 border-white/10 text-foreground")} />
               </div>
             </div>
           </motion.div>
