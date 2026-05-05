@@ -1,28 +1,25 @@
+import React, { createContext, useContext, useState } from "react";
+import {
+  DndContext,
+  DragEndEvent,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  useDroppable,
+  useDraggable,
+} from "@dnd-kit/core";
+
 export type DropResult = {
   draggableId: string;
   destination?: { droppableId: string; index: number } | null;
   source: { droppableId: string; index: number };
 };
 
-import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-} from "@dnd-kit/core";
-import {
-  SortableContext,
-  verticalListSortingStrategy,
-  useSortable,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import React, { createContext, useContext } from "react";
-
-// Context to pass onDragEnd up
 const DragDropCtx = createContext<((result: DropResult) => void) | null>(null);
-const DroppableCtx = createContext<string>("");
+
+// Track which droppable each draggable belongs to
+const itemContainerMap = new Map<string, { droppableId: string; index: number }>();
 
 export function DragDropContext({
   children,
@@ -31,32 +28,38 @@ export function DragDropContext({
   children: React.ReactNode;
   onDragEnd: (result: DropResult) => void;
 }) {
-  const sensors = useSensors(useSensor(PointerSensor));
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },
+    })
+  );
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over) return;
 
     const draggableId = String(active.id);
-    const destination = over.data.current as {
-      droppableId: string;
-      index: number;
-    };
-    const source = active.data.current as {
-      droppableId: string;
-      index: number;
+    const source = itemContainerMap.get(draggableId) || {
+      droppableId: "",
+      index: 0,
     };
 
-    onDragEnd({ draggableId, source, destination });
+    // over.id could be a droppable container or another draggable
+    const destinationDroppableId = String(over.id);
+
+    onDragEnd({
+      draggableId,
+      source,
+      destination: {
+        droppableId: destinationDroppableId,
+        index: 0,
+      },
+    });
   }
 
   return (
     <DragDropCtx.Provider value={onDragEnd}>
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
+      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
         {children}
       </DndContext>
     </DragDropCtx.Provider>
@@ -69,27 +72,23 @@ export function Droppable({
 }: {
   droppableId: string;
   children: (
-    provided: {
-      innerRef: any;
-      droppableProps: any;
-      placeholder: null;
-    },
+    provided: { innerRef: any; droppableProps: any; placeholder: null },
     snapshot: { isDraggingOver: boolean }
   ) => React.ReactNode;
 }) {
+  const { setNodeRef, isOver } = useDroppable({ id: droppableId });
+
   return (
-    <DroppableCtx.Provider value={droppableId}>
-      <SortableContext
-        id={droppableId}
-        items={[]}
-        strategy={verticalListSortingStrategy}
-      >
-        {children(
-          { innerRef: null, droppableProps: {}, placeholder: null },
-          { isDraggingOver: false }
-        )}
-      </SortableContext>
-    </DroppableCtx.Provider>
+    <>
+      {children(
+        {
+          innerRef: setNodeRef,
+          droppableProps: {},
+          placeholder: null,
+        },
+        { isDraggingOver: isOver }
+      )}
+    </>
   );
 }
 
@@ -106,24 +105,24 @@ export function Draggable({
     dragHandleProps: any;
   }) => React.ReactNode;
 }) {
-  const droppableId = useContext(DroppableCtx);
-  const { attributes, listeners, setNodeRef, transform, transition } =
-    useSortable({
-      id: draggableId,
-      data: { droppableId, index },
-    });
+  const { attributes, listeners, setNodeRef, transform, isDragging } =
+    useDraggable({ id: draggableId });
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
+  const style = transform
+    ? {
+        transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+        opacity: isDragging ? 0.5 : 1,
+        zIndex: isDragging ? 999 : "auto",
+        cursor: "grabbing",
+      }
+    : { cursor: "grab" };
 
   return (
     <>
       {children({
         innerRef: setNodeRef,
-        draggableProps: { style, ...attributes },
-        dragHandleProps: listeners,
+        draggableProps: { style },
+        dragHandleProps: { ...listeners, ...attributes },
       })}
     </>
   );
