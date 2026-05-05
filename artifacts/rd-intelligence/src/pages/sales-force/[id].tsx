@@ -210,9 +210,8 @@ function KanbanBoard({ accountId, account }: { accountId: number; account: any }
   };
 
   const updateTask = async (taskId: number, data: any) => {
-    await api(`api/accounts/${accountId}/tasks/${taskId}`, { method: "PUT", body: JSON.stringify(data) });
-    queryClient.invalidateQueries({ queryKey: [`/api/accounts/${accountId}/tasks`] });
-  };
+  api(`api/accounts/${accountId}/tasks/${taskId}`, { method: "PUT", body: JSON.stringify(data) });
+};
 
   const deleteTask = async (taskId: number) => {
     await api(`api/accounts/${accountId}/tasks/${taskId}`, { method: "DELETE" });
@@ -239,18 +238,30 @@ function KanbanBoard({ accountId, account }: { accountId: number; account: any }
     }
   };
 
-  const onDragEnd = async (result: DropResult) => {
-    if (!result.destination) return;
-    const { draggableId, source, destination } = result;
-    const taskId = parseInt(draggableId);
-    const task = taskArr.find(t => t.id === taskId);
-    if (!task) return;
-    const newStatus = destination.droppableId;
-    const sameCols = taskArr.filter(t => t.status === newStatus && t.id !== taskId);
-    sameCols.splice(destination.index, 0, task);
-    await updateTask(taskId, { ...task, status: newStatus, sortOrder: destination.index });
-    sameCols.forEach((t, i) => { if (t.id !== taskId) updateTask(t.id, { ...t, sortOrder: i >= destination.index ? i + 1 : i }); });
-  };
+ const onDragEnd = (result: DropResult) => {
+  if (!result.destination) return;
+  const { draggableId, source, destination } = result;
+  const taskId = parseInt(draggableId);
+  const task = taskArr.find(t => t.id === taskId);
+  if (!task) return;
+  const newStatus = destination.droppableId;
+
+  // Optimistic update — update UI instantly
+  queryClient.setQueryData(
+    [`/api/accounts/${accountId}/tasks`],
+    (old: any[]) => {
+      if (!old) return old;
+      return old.map(t =>
+        t.id === taskId
+          ? { ...t, status: newStatus, sortOrder: destination.index }
+          : t
+      );
+    }
+  );
+
+  // Sync with server in background
+  updateTask(taskId, { ...task, status: newStatus, sortOrder: destination.index });
+};
 
   const approvalInfo = APPROVAL_OPTIONS.find(a => a.value === approval) || APPROVAL_OPTIONS[1];
   const { score, breakdown } = calcPriority(account);
