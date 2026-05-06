@@ -60,7 +60,7 @@ function InlineEdit({ value, onSave, type = "text", options, placeholder, icon, 
           {options ? (
             <select value={val} onChange={e => setVal(e.target.value)} className={cls} autoFocus>
               <option value="" className="bg-card">— not set —</option>
-              {options.map(o => <option key={o} value={o} className="bg-card capitalize">{o.replace(/_/g,' ')}</option>)}
+              {options.map(o => <option key={o} value={o} className={isLight ? "bg-white text-black capitalize" : "bg-card capitalize"}>{o.replace(/_/g,' ')}</option>)}
             </select>
           ) : (
             <input type={type} value={val} onChange={e => setVal(e.target.value)}
@@ -447,7 +447,11 @@ export default function ProjectDetail() {
     }
   };
 
-  const selectCls = "h-8 rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50 text-foreground";
+  const { theme } = useTheme();
+   const isLight = theme === "light";
+   const selectCls = isLight
+  ? "h-8 rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50 text-gray-900"
+  : "h-8 rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50 text-foreground";
 
   return (
     <div className="space-y-6">
@@ -475,13 +479,13 @@ export default function ProjectDetail() {
             )}
             <div className="flex items-center gap-3 mt-2 flex-wrap">
               <select value={project.stage} onChange={e => saveField("stage", e.target.value)} className={selectCls}>
-                {STAGES.map(s => <option key={s} value={s} className="bg-card capitalize">{s.replace(/_/g, ' ')}</option>)}
+                {STAGES.map(s => <option key={s} value={s} className={isLight ? "bg-white text-black capitalize" : "bg-card capitalize"}>{s.replace(/_/g, ' ')}</option>)}
               </select>
               <select value={project.status} onChange={e => saveField("status", e.target.value)} className={selectCls}>
-                {STATUSES.map(s => <option key={s} value={s} className="bg-card capitalize">{s.replace(/_/g, ' ')}</option>)}
+                {STATUSES.map(s => <option key={s} value={s} className={isLight ? "bg-white text-black capitalize" : "bg-card capitalize"}>{s.replace(/_/g, ' ')}</option>)}
               </select>
               <select value={project.priority || "medium"} onChange={e => saveField("priority", e.target.value)} className={selectCls}>
-                {PRIORITIES.map(p => <option key={p} value={p} className="bg-card capitalize">{p} Priority</option>)}
+                {PRIORITIES.map(p => <option key={p} value={p} className={isLight ? "bg-white text-black capitalize" : "bg-card capitalize"}>{p} Priority</option>)}
               </select>
             </div>
             <div className="mt-3 max-w-2xl">
@@ -784,12 +788,12 @@ function EditTaskModal({ task, onClose, onSave }: { task: any; onClose: () => vo
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5"><label className="text-sm font-medium">Priority</label>
               <select value={form.priority} onChange={e => setF("priority", e.target.value)} className={cls}>
-                {["low", "medium", "high", "critical"].map(p => <option key={p} value={p} className="bg-card capitalize">{p}</option>)}
+                {["low", "medium", "high", "critical"].map(p => <option key={p} value={p} className={isLight ? "bg-white text-black capitalize" : "bg-card capitalize"}>{p}</option>)}
               </select>
             </div>
             <div className="space-y-1.5"><label className="text-sm font-medium">Status</label>
               <select value={form.status} onChange={e => setF("status", e.target.value)} className={cls}>
-                {TASK_STATUSES.map(s => <option key={s} value={s} className="bg-card capitalize">{s.replace(/_/g,' ')}</option>)}
+                {TASK_STATUSES.map(s => <option key={s} value={s} className={isLight ? "bg-white text-black capitalize" : "bg-card capitalize"}>{s.replace(/_/g,' ')}</option>)}
               </select>
             </div>
             <div className="space-y-1.5 col-span-2"><label className="text-sm font-medium">Due Date</label>
@@ -1043,7 +1047,7 @@ function CreateTaskModal({ projectId }: { projectId: number }) {
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5"><label className="text-sm font-medium">Priority</label>
               <select value={priority} onChange={e => setPriority(e.target.value)} className={cls}>
-                {["low", "medium", "high", "critical"].map(p => <option key={p} value={p} className="bg-card capitalize">{p}</option>)}
+                {["low", "medium", "high", "critical"].map(p => <option key={p} value={p} className={isLight ? "bg-white text-black capitalize" : "bg-card capitalize"}>{p}</option>)}
               </select>
             </div>
             <div className="space-y-1.5"><label className="text-sm font-medium">Due Date</label>
