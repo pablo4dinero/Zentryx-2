@@ -12,6 +12,8 @@ import { Input } from "@/components/ui/input";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useExchangeRate, fmtNGN } from "@/hooks/useExchangeRate";
+import { useTheme } from "@/lib/theme";
+import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL;
 const TASK_STATUSES = ['todo', 'in_progress', 'review', 'done', 'blocked'] as const;
@@ -687,11 +689,13 @@ function RevenueScreen({ sellingPrice, volume, projectName, onGoToInfo }: {
 }) {
   const revenue = sellingPrice && volume ? sellingPrice * volume : null;
   const hasData = sellingPrice !== null && volume !== null;
+  const { theme } = useTheme();
+  const isLight = theme === "light";
 
   return (
     <div className="space-y-6">
-      <div className="relative rounded-2xl overflow-hidden border border-emerald-500/20 bg-gradient-to-br from-black via-emerald-950/20 to-black p-8">
-        <div className="absolute inset-0 opacity-10" style={{ backgroundImage: "repeating-linear-gradient(0deg, rgba(16,185,129,0.3) 0px, transparent 1px, transparent 20px), repeating-linear-gradient(90deg, rgba(16,185,129,0.3) 0px, transparent 1px, transparent 20px)" }} />
+    <div className={cn("relative rounded-2xl overflow-hidden border p-8", isLight ? "border-emerald-200 bg-white" : "border-emerald-500/20 bg-gradient-to-br from-black via-emerald-950/20 to-black")}>
+     <div className="absolute inset-0 opacity-10" style={{ backgroundImage: isLight ? "none" : "repeating-linear-gradient(0deg, rgba(16,185,129,0.3) 0px, transparent 1px, transparent 20px), repeating-linear-gradient(90deg, rgba(16,185,129,0.3) 0px, transparent 1px, transparent 20px)" }} />
         <div className="relative">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -714,19 +718,19 @@ function RevenueScreen({ sellingPrice, volume, projectName, onGoToInfo }: {
           ) : (
             <div className="space-y-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-                <div className="rounded-xl bg-black/40 border border-white/10 p-4">
+                <div className={cn("rounded-xl border p-4", isLight ? "bg-gray-50 border-gray-200" : "bg-black/40 border-white/10")}>
                   <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-2 font-mono">Selling Price</p>
                   <p className="font-mono text-2xl font-bold text-violet-400">${sellingPrice!.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
                   <p className="text-[10px] text-muted-foreground mt-1 font-mono">USD per kg</p>
                 </div>
-                <div className="rounded-xl bg-black/40 border border-white/10 p-4">
+                <div className={cn("rounded-xl border p-4", isLight ? "bg-gray-50 border-gray-200" : "bg-black/40 border-white/10")}>
                   <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-2 font-mono">Volume</p>
                   <p className="font-mono text-2xl font-bold text-blue-400">{volume!.toLocaleString()}</p>
                   <p className="text-[10px] text-muted-foreground mt-1 font-mono">kg / month</p>
                 </div>
               </div>
 
-              <div className="rounded-2xl bg-black/60 border border-emerald-500/30 p-6 text-center">
+              <div className={cn("rounded-2xl border p-6 text-center", isLight ? "bg-emerald-50 border-emerald-200" : "bg-black/60 border-emerald-500/30")}>
                 <p className="text-[10px] text-emerald-400/60 uppercase tracking-[0.4em] font-mono mb-3">Monthly Revenue</p>
                 <div className="text-5xl font-mono font-black text-emerald-400 mb-2 tabular-nums" style={{ textShadow: "0 0 30px rgba(16,185,129,0.5), 0 0 60px rgba(16,185,129,0.2)" }}>
                   ${revenue!.toLocaleString(undefined, { minimumFractionDigits: 2 })}
