@@ -282,14 +282,14 @@ function AddAccountModal({ onSuccess }: { onSuccess: () => void }) {
                     <div>
                       <label className={lCls}>Product Type *</label>
                       <select value={form.productType} onChange={e => setF("productType", e.target.value)} className={iCls + " cursor-pointer"}>
-                        {PRODUCT_TYPES.map(p => <option key={p.value} value={p.value} className="bg-card">{p.label}</option>)}
+                        {PRODUCT_TYPES.map(p => <option key={p.value} value={p.value} className="bg-white text-black">{p.label}</option>)}
                       </select>
                     </div>
                     <div>
                       <label className={lCls}>Customer Type</label>
                       <select value={form.customerType} onChange={e => setF("customerType", e.target.value)} className={iCls + " cursor-pointer"}>
-                        <option value="new" className="bg-card">New Customer</option>
-                        <option value="existing" className="bg-card">Existing Customer</option>
+                        <option value="new" className="bg-white text-black">New Customer</option>
+                        <option value="existing" className="bg-white text-black">Existing Customer</option>
                       </select>
                     </div>
                     <div>
@@ -618,21 +618,21 @@ function AccountsPage() {
               isLight ? "bg-white border-slate-200 text-slate-700" : "bg-black/20 border-white/10 text-foreground"
             )}>
             <option value="all">All Products</option>
-            {PRODUCT_TYPES.map(p => <option key={p.value} value={p.value} className="bg-card">{p.label}</option>)}
+            {PRODUCT_TYPES.map(p => <option key={p.value} value={p.value} className="bg-white text-black">{p.label}</option>)}
           </select>
 
           <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
             className={cn("h-9 px-3 rounded-xl border text-sm focus:outline-none cursor-pointer",
               isLight ? "bg-white border-slate-200 text-slate-700" : "bg-black/20 border-white/10 text-foreground"
             )}>
-            {STATUS_OPTS.map(o => <option key={o.value} value={o.value} className="bg-card">{o.label}</option>)}
+            {STATUS_OPTS.map(o => <option key={o.value} value={o.value} className="bg-white text-black">{o.label}</option>)}
           </select>
 
           <select value={sort} onChange={e => setSort(e.target.value)}
             className={cn("h-9 px-3 rounded-xl border text-sm focus:outline-none cursor-pointer",
               isLight ? "bg-white border-slate-200 text-slate-700" : "bg-black/20 border-white/10 text-foreground"
             )}>
-            {SORT_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-card">{o.label}</option>)}
+            {SORT_OPTIONS.map(o => <option key={o.value} value={o.value} className="bg-white text-black">{o.label}</option>)}
           </select>
         </div>
 
