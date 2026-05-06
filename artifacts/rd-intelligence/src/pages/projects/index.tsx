@@ -198,7 +198,7 @@ export default function ProjectsList() {
               )}
             >
               <option value="all">All Types</option>
-              {PRODUCT_TYPES.map(t => <option key={t} value={t} className="bg-card">{t}</option>)}
+              {PRODUCT_TYPES.map(t => <option key={t} value={t} className="bg-white text-black">{t}</option>)}
             </select>
             {view === "portfolio" && (
               <button
