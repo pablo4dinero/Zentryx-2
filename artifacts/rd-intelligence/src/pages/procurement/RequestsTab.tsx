@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus, Search, Loader2, X, Check, Clock, AlertCircle, CheckCircle2,
   XCircle, ChevronRight, Filter, FileText, TrendingUp, Users, ArrowRight,
-  Trash2, AlertTriangle, RotateCcw
+  Trash2, AlertTriangle, RotateCcw, Edit2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
@@ -245,14 +245,51 @@ export function NewRequestModal({ onClose, isLight, extraDefaults }: { onClose: 
   const { data: currentUser } = useGetCurrentUser();
   const [form, setForm] = useState({
     title: "", description: "", category: "ingredients", priority: "medium",
-    estimatedAmount: "", currency: "ngn", requiredByDate: "", justification: "",
+    estimatedAmount: "", currency: "usd", requiredByDate: "", justification: "",
     requiredQuantityKg: "", vendorDetailsName: "", vendorDetailsAddress: "",
     ...extraDefaults,
   });
   const [saving, setSaving] = useState(false);
+  const [exchangeRate, setExchangeRate] = useState<number | null>(null);
+  const [manualRate, setManualRate] = useState("");
+  const [rateLoading, setRateLoading] = useState(false);
+  const [vendorSearch, setVendorSearch] = useState("");
+  const [showVendorDropdown, setShowVendorDropdown] = useState(false);
+
   const f = (k: string, v: any) => setForm(p => ({ ...p, [k]: v }));
+
   const inputCls = cn("w-full px-3 py-2 rounded-xl text-sm border focus:outline-none focus:ring-2 focus:ring-primary/40",
     isLight ? "bg-slate-50 border-slate-200 text-foreground" : "bg-black/20 border-white/10 text-foreground");
+
+  // Fetch vendors
+  const { data: vendorsRaw = [] } = useQuery<any[]>({
+    queryKey: ["/api/procurement/vendors"],
+    queryFn: async () => {
+      const r = await fetch(`${BASE}api/procurement/vendors`, { headers: authH() });
+      return r.json();
+    },
+  });
+  const vendors = Array.isArray(vendorsRaw) ? vendorsRaw : [];
+  const filteredVendors = vendors.filter((v: any) =>
+    v.name?.toLowerCase().includes(vendorSearch.toLowerCase())
+  );
+
+  // Fetch live USD to NGN exchange rate
+  useEffect(() => {
+    setRateLoading(true);
+    fetch("https://api.exchangerate-api.com/v4/latest/USD")
+      .then(r => r.json())
+      .then(data => {
+        if (data?.rates?.NGN) setExchangeRate(data.rates.NGN);
+      })
+      .catch(() => setExchangeRate(null))
+      .finally(() => setRateLoading(false));
+  }, []);
+
+  const effectiveRate = manualRate ? parseFloat(manualRate) : exchangeRate;
+  const ngnEquivalent = form.estimatedAmount && effectiveRate
+    ? (parseFloat(form.estimatedAmount) * effectiveRate).toLocaleString("en-NG", { maximumFractionDigits: 2 })
+    : null;
 
   async function save() {
     setSaving(true);
@@ -261,6 +298,7 @@ export function NewRequestModal({ onClose, isLight, extraDefaults }: { onClose: 
         method: "POST", headers: authH(),
         body: JSON.stringify({
           ...form,
+          currency: "usd",
           requestedById: (currentUser as any)?.id,
           departmentId: (currentUser as any)?.departmentId ?? null,
         }),
@@ -299,18 +337,39 @@ export function NewRequestModal({ onClose, isLight, extraDefaults }: { onClose: 
               </select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Est. Amount</label>
-              <input className={inputCls} type="number" value={form.estimatedAmount} onChange={e => f("estimatedAmount", e.target.value)} placeholder="0.00" />
+
+          {/* Est Amount with NGN conversion */}
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Est. Amount (USD $)</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">$</span>
+              <input className={cn(inputCls, "pl-7")} type="number" value={form.estimatedAmount}
+                onChange={e => f("estimatedAmount", e.target.value)} placeholder="0.00" />
             </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Currency</label>
-              <select className={cn(inputCls, "appearance-none")} value={form.currency} onChange={e => f("currency", e.target.value)}>
-                {CURRENCIES.map(c => <option key={c} value={c}>{c.toUpperCase()}</option>)}
-              </select>
-            </div>
+            {form.estimatedAmount && (
+              <div className={cn("mt-2 p-2.5 rounded-xl border text-xs space-y-1.5", isLight ? "bg-amber-50 border-amber-200" : "bg-amber-500/10 border-amber-500/20")}>
+                {rateLoading ? (
+                  <p className="text-amber-500 flex items-center gap-1.5"><Loader2 className="w-3 h-3 animate-spin" /> Fetching exchange rate...</p>
+                ) : ngnEquivalent ? (
+                  <p className="text-amber-500 font-medium">≈ ₦{ngnEquivalent} NGN
+                    {exchangeRate && !manualRate && <span className="text-muted-foreground ml-1">(Rate: ₦{exchangeRate.toLocaleString()}/USD)</span>}
+                    {manualRate && <span className="text-muted-foreground ml-1">(Manual rate: ₦{manualRate}/USD)</span>}
+                  </p>
+                ) : (
+                  <p className="text-muted-foreground">Exchange rate unavailable</p>
+                )}
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">Set manual rate: $1 =</span>
+                  <input type="number" value={manualRate} onChange={e => setManualRate(e.target.value)}
+                    placeholder="e.g. 1650" className={cn("flex-1 h-6 rounded-lg border px-2 text-xs focus:outline-none",
+                      isLight ? "bg-white border-gray-200" : "bg-black/20 border-white/10")} />
+                  <span className="text-muted-foreground">NGN</span>
+                  {manualRate && <button onClick={() => setManualRate("")} className="text-red-400 text-xs hover:underline">Clear</button>}
+                </div>
+              </div>
+            )}
           </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Required By Date</label>
@@ -321,12 +380,34 @@ export function NewRequestModal({ onClose, isLight, extraDefaults }: { onClose: 
               <input className={inputCls} type="number" value={form.requiredQuantityKg} onChange={e => f("requiredQuantityKg", e.target.value)} placeholder="0.00" />
             </div>
           </div>
+
+          {/* Vendor Search */}
           <div>
             <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">Vendor Details</p>
             <div className="space-y-3">
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Vendor Name</label>
-                <input className={inputCls} value={form.vendorDetailsName} onChange={e => f("vendorDetailsName", e.target.value)} placeholder="Vendor company name…" />
+              <div className="relative">
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Search Vendor</label>
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <input className={cn(inputCls, "pl-8")} value={vendorSearch}
+                    onChange={e => { setVendorSearch(e.target.value); setShowVendorDropdown(true); f("vendorDetailsName", e.target.value); }}
+                    onFocus={() => setShowVendorDropdown(true)}
+                    placeholder="Search from vendor list..." />
+                </div>
+                {showVendorDropdown && filteredVendors.length > 0 && (
+                  <div className={cn("absolute z-10 w-full mt-1 rounded-xl border shadow-xl max-h-40 overflow-y-auto",
+                    isLight ? "bg-white border-gray-200" : "bg-[#1a1a2e] border-white/10")}>
+                    {filteredVendors.map((v: any) => (
+                      <button key={v.id} type="button"
+                        onClick={() => { f("vendorDetailsName", v.name); f("vendorDetailsAddress", v.address ?? ""); setVendorSearch(v.name); setShowVendorDropdown(false); }}
+                        className={cn("w-full text-left px-3 py-2 text-sm transition-colors",
+                          isLight ? "hover:bg-gray-50 text-gray-900" : "hover:bg-white/5 text-foreground")}>
+                        <p className="font-medium">{v.name}</p>
+                        {v.address && <p className="text-xs text-muted-foreground">{v.address}</p>}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Vendor Address</label>
@@ -334,6 +415,7 @@ export function NewRequestModal({ onClose, isLight, extraDefaults }: { onClose: 
               </div>
             </div>
           </div>
+
           <div>
             <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Description</label>
             <textarea rows={2} className={cn(inputCls, "resize-none")} value={form.description} onChange={e => f("description", e.target.value)} placeholder="Details about what's needed…" />
@@ -356,6 +438,108 @@ export function NewRequestModal({ onClose, isLight, extraDefaults }: { onClose: 
   );
 }
 
+function EditRequestModal({ pr, onClose, isLight }: { pr: any; onClose: () => void; isLight: boolean }) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState({
+    title: pr.title ?? "",
+    description: pr.description ?? "",
+    category: pr.category ?? "ingredients",
+    priority: pr.priority ?? "medium",
+    estimatedAmount: pr.estimatedAmount ?? "",
+    requiredByDate: pr.requiredByDate ?? "",
+    justification: pr.justification ?? "",
+    requiredQuantityKg: pr.requiredQuantityKg ?? "",
+    vendorDetailsName: pr.vendorDetailsName ?? "",
+    vendorDetailsAddress: pr.vendorDetailsAddress ?? "",
+  });
+  const [saving, setSaving] = useState(false);
+  const f = (k: string, v: any) => setForm(p => ({ ...p, [k]: v }));
+  const inputCls = cn("w-full px-3 py-2 rounded-xl text-sm border focus:outline-none focus:ring-2 focus:ring-primary/40",
+    isLight ? "bg-slate-50 border-slate-200 text-foreground" : "bg-black/20 border-white/10 text-foreground");
+
+  async function save() {
+    setSaving(true);
+    try {
+      await fetch(`${BASE}api/procurement/requests/${pr.id}`, {
+        method: "PUT", headers: authH(), body: JSON.stringify(form),
+      });
+      qc.invalidateQueries({ queryKey: ["/api/procurement/requests"] });
+      onClose();
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className={cn("relative w-full max-w-lg rounded-2xl border shadow-2xl z-10 max-h-[90vh] overflow-y-auto",
+        isLight ? "bg-white border-slate-200" : "glass-panel border-white/10")}>
+        <div className={cn("sticky top-0 px-6 py-4 border-b flex items-center justify-between",
+          isLight ? "bg-white border-slate-100" : "bg-[#0f0f1a] border-white/10")}>
+          <h3 className="text-base font-semibold">Edit Purchase Request</h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-muted-foreground hover:bg-white/5"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Title *</label>
+            <input className={inputCls} value={form.title} onChange={e => f("title", e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Category</label>
+              <select className={cn(inputCls, "appearance-none")} value={form.category} onChange={e => f("category", e.target.value)}>
+                {CATEGORIES.map(c => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Priority</label>
+              <select className={cn(inputCls, "appearance-none")} value={form.priority} onChange={e => f("priority", e.target.value)}>
+                {PRIORITIES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Est. Amount ($)</label>
+              <input className={inputCls} type="number" value={form.estimatedAmount} onChange={e => f("estimatedAmount", e.target.value)} placeholder="0.00" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Required By Date</label>
+              <input className={inputCls} type="date" value={form.requiredByDate} onChange={e => f("requiredByDate", e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Required Quantity (KG)</label>
+            <input className={inputCls} type="number" value={form.requiredQuantityKg} onChange={e => f("requiredQuantityKg", e.target.value)} placeholder="0.00" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Vendor Name</label>
+            <input className={inputCls} value={form.vendorDetailsName} onChange={e => f("vendorDetailsName", e.target.value)} placeholder="Vendor name…" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Vendor Address</label>
+            <input className={inputCls} value={form.vendorDetailsAddress} onChange={e => f("vendorDetailsAddress", e.target.value)} placeholder="Vendor address…" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Description</label>
+            <textarea rows={2} className={cn(inputCls, "resize-none")} value={form.description} onChange={e => f("description", e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Justification</label>
+            <textarea rows={2} className={cn(inputCls, "resize-none")} value={form.justification} onChange={e => f("justification", e.target.value)} />
+          </div>
+        </div>
+        <div className={cn("sticky bottom-0 px-6 py-4 border-t flex justify-end gap-3",
+          isLight ? "bg-white border-slate-100" : "bg-[#0f0f1a] border-white/10")}>
+          <button onClick={onClose} className="px-5 py-2 rounded-xl text-sm text-muted-foreground hover:bg-white/5">Cancel</button>
+          <button onClick={save} disabled={saving || !form.title}
+            className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-medium bg-primary text-white hover:bg-primary/90 disabled:opacity-50">
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Save Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 export default function RequestsTab() {
   const { theme } = useTheme();
   const isLight = theme === "light";
@@ -366,6 +550,7 @@ export default function RequestsTab() {
   const [showModal, setShowModal] = useState(false);
   const [selectedPR, setSelectedPR] = useState<any>(null);
   const [showRejectedDrawer, setShowRejectedDrawer] = useState(false);
+  const [editPR, setEditPR] = useState<any>(null);
 
   const currentUserDept = (currentUser as any)?.department ?? "";
   const isProcurementDept = currentUserDept.toLowerCase().includes("procurement");
@@ -464,7 +649,7 @@ export default function RequestsTab() {
             <table className="w-full text-sm">
               <thead>
                 <tr className={cn("text-left border-b", isLight ? "border-slate-100 bg-slate-50" : "border-white/8 bg-white/2")}>
-                  {["Title","Requester","Category","Priority","Est. Amount","Required By","Status",""].map(h => (
+                  {["Title","Requester","Category","Priority","Est. Amount ($)","Required By","Status",""].map(h => (
                     <th key={h} className="px-4 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -479,7 +664,7 @@ export default function RequestsTab() {
                   const pm = priorityMeta(r.priority);
                   return (
                     <tr key={r.id} onClick={() => setSelectedPR(r)}
-                      className={cn("border-b last:border-0 transition-colors cursor-pointer", isLight ? "border-slate-100 hover:bg-slate-50" : "border-white/5 hover:bg-white/3")}>
+                      className={cn("border-b last:border-0 transition-colors cursor-pointer group", isLight ? "border-slate-100 hover:bg-slate-50" : "border-white/5 hover:bg-white/3")}>
                       <td className="px-4 py-3 font-medium text-foreground max-w-[200px]">
                         <div className="truncate">{r.title}</div>
                       </td>
@@ -489,7 +674,16 @@ export default function RequestsTab() {
                       <td className="px-4 py-3 text-sm font-mono">{r.estimatedAmount ? Number(r.estimatedAmount).toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}</td>
                       <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{r.requiredByDate || "—"}</td>
                       <td className="px-4 py-3"><span className={cn("text-xs px-2 py-0.5 rounded-full", sm.cls)}>{sm.label}</span></td>
-                      <td className="px-4 py-3"><ChevronRight className="w-4 h-4 text-muted-foreground" /></td>
+                      <td className="px-4 py-3">
+  <div className="flex items-center gap-2">
+    <button onClick={e => { e.stopPropagation(); setEditPR(r); }}
+      className="p-1.5 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
+      title="Edit">
+      <Edit2 className="w-3.5 h-3.5" />
+    </button>
+    <ChevronRight className="w-4 h-4 text-muted-foreground" />
+  </div>
+</td>
                     </tr>
                   );
                 })}
@@ -500,6 +694,13 @@ export default function RequestsTab() {
       </div>
 
       {showModal && <NewRequestModal onClose={() => setShowModal(false)} isLight={isLight} />}
+      {editPR && (
+        <EditRequestModal
+          pr={editPR}
+          onClose={() => setEditPR(null)}
+          isLight={isLight}
+       />
+      )}
       {selectedPR && (
         <RequestDetailPanel
           pr={selectedPR}
