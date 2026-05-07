@@ -93,9 +93,9 @@ function RequestDetailPanel({ pr, onClose, isLight, currentUserId, userRole, cur
   const [acting, setActing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  const canApprove = ["admin","manager","ceo"].includes(userRole) &&
-    pr.status === "pending_approval" &&
-    pr.approvals?.some((a: any) => a.approverId === currentUserId && a.status === "pending");
+const isAdmin = userRole === "admin";
+const hasPendingSlot = pr.approvals?.some((a: any) => a.approverId === currentUserId && a.status === "pending");
+const canApprove = pr.status === "pending_approval" && (isAdmin || (["manager","ceo"].includes(userRole) && hasPendingSlot));
 
   const isProcurementDept = (currentUserDept ?? "").toLowerCase().includes("procurement");
   const canDelete = isProcurementDept && !["converted_to_po"].includes(pr.status);

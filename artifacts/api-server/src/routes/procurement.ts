@@ -362,7 +362,28 @@ router.post("/requests/:id/approve", requireAuth, async (req: AuthRequest, res) 
   try {
     const id = parseInt(req.params.id);
     const userId = (req as any).user?.id;
+    const userRole = (req as any).user?.role;
     const { comment } = req.body;
+
+    const isAdmin = userRole === "admin";
+
+    // If admin, mark ALL pending approvals as approved
+    if (isAdmin) {
+      await db.update(purchaseRequestApprovalsTable).set({
+        status: "approved", comment: comment ?? "Approved by Admin", decidedAt: new Date(),
+      }).where(and(
+        eq(purchaseRequestApprovalsTable.purchaseRequestId, id),
+        eq(purchaseRequestApprovalsTable.status, "pending"),
+      ));
+      const [pr] = await db.update(purchaseRequestsTable)
+        .set({ status: "approved", updatedAt: new Date() })
+        .where(eq(purchaseRequestsTable.id, id)).returning();
+      await notifyUsers([pr.requestedById], "Purchase Request Approved",
+        `Your purchase request "${pr.title}" has been approved by Admin.`);
+      const userMap = await getUserMap();
+      res.json(await enrichPR(pr, userMap));
+      return;
+    }
 
     // Mark the current approver's slot as approved
     await db.update(purchaseRequestApprovalsTable).set({
