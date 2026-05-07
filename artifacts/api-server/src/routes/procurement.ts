@@ -466,11 +466,23 @@ router.post("/requests/:id/convert-to-po", requireAuth, async (req: AuthRequest,
     if (!pr || pr.status !== "approved") { res.status(400).json({ error: "Request must be Approved" }); return; }
 
     const poNumber = generatePoNumber();
-    const [po] = await db.insert(purchaseOrdersTable).values({
-      poNumber, purchaseRequestId: id, vendorId: pr.vendorId ?? 1,
-      raisedById: userId, status: "draft", totalAmount: pr.estimatedAmount, currency: pr.currency,
-      paymentStatus: "unpaid", notes: pr.justification ?? "",
-    }).returning();
+    // Get first available vendor if none assigned
+let vendorId = pr.vendorId;
+if (!vendorId) {
+  const [firstVendor] = await db.select({ id: vendorsTable.id }).from(vendorsTable).limit(1);
+  vendorId = firstVendor?.id ?? null;
+}
+
+if (!vendorId) {
+  res.status(400).json({ error: "No vendor available. Please add a vendor first." });
+  return;
+}
+
+const [po] = await db.insert(purchaseOrdersTable).values({
+  poNumber, purchaseRequestId: id, vendorId,
+  raisedById: userId, status: "draft", totalAmount: pr.estimatedAmount, currency: pr.currency,
+  paymentStatus: "unpaid", notes: pr.justification ?? "",
+}).returning();
 
     await db.update(purchaseRequestsTable)
       .set({ status: "converted_to_po", updatedAt: new Date() })
@@ -509,7 +521,7 @@ router.post("/orders", requireAuth, async (req: AuthRequest, res) => {
     const poNumber = b.poNumber?.trim() || generatePoNumber();
     const [po] = await db.insert(purchaseOrdersTable).values({
       poNumber, purchaseRequestId: b.purchaseRequestId ?? null,
-      vendorId: parseInt(b.vendorId), raisedById: userId, status: "draft",
+      vendorId: b.vendorId ? parseInt(b.vendorId) : null, raisedById: userId, status: "draft",
       totalAmount: b.totalAmount ? String(b.totalAmount) : null, currency: b.currency ?? "ngn",
       paymentStatus: "unpaid", paymentDue: b.paymentDue ?? null,
       deliveryAddress: b.deliveryAddress ?? "", deliveryDue: b.deliveryDue ?? null, notes: b.notes ?? "",
