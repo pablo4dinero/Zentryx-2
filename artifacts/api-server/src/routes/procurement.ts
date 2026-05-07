@@ -482,7 +482,7 @@ router.delete("/requests/:id", requireAuth, async (req: AuthRequest, res) => {
 router.post("/requests/:id/convert-to-po", requireAuth, async (req: AuthRequest, res) => {
   try {
     const id = parseInt(req.params.id);
-    const userId = (req as any).user?.id;
+    const userId = req.user?.userId ?? (req as any).user?.id ?? (req as any).user?.userId;
     const [pr] = await db.select().from(purchaseRequestsTable).where(eq(purchaseRequestsTable.id, id));
     if (!pr || pr.status !== "approved") { res.status(400).json({ error: "Request must be Approved" }); return; }
 
