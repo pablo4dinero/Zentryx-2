@@ -600,6 +600,14 @@ router.put("/orders/:id", requireAuth, async (req: AuthRequest, res) => {
   } catch (e) { console.error(e); res.status(500).json({ error: "InternalServerError" }); }
 });
 
+router.delete("/orders/:id", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    await db.delete(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, id));
+    res.json({ success: true });
+  } catch (e) { console.error(e); res.status(500).json({ error: "InternalServerError" }); }
+});
+
 router.post("/orders/:id/send", requireAuth, async (req: AuthRequest, res) => {
   try {
     const id = parseInt(req.params.id);
