@@ -502,7 +502,9 @@ if (!vendorId) {
 const [po] = await db.insert(purchaseOrdersTable).values({
   poNumber, purchaseRequestId: id, vendorId,
   raisedById: userId, status: "draft", totalAmount: pr.estimatedAmount, currency: pr.currency,
-  paymentStatus: "unpaid", notes: pr.justification ?? "",
+  paymentStatus: "unpaid", notes: pr.title ?? pr.justification ?? "",
+  deliveryDue: pr.requiredByDate ?? null,
+  deliveryAddress: pr.vendorDetailsAddress ?? "",
 }).returning();
 
     await db.update(purchaseRequestsTable)
