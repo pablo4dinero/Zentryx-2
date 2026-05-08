@@ -34,6 +34,7 @@ function priorityMeta(p: string) { return PRIORITIES.find(x => x.value === p) ??
 function statusMeta(s: string) { return STATUSES.find(x => x.value === s) ?? STATUSES[0]; }
 
 function ApprovalChain({ approvals }: { approvals: any[] }) {
+  const queryClient = useQueryClient();
   const { theme } = useTheme();
   const isLight = theme === "light";
   const existingLevels = [...new Set(approvals.map((a: any) => a.level))].sort();
@@ -675,14 +676,25 @@ export default function RequestsTab() {
                       <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{r.requiredByDate || "—"}</td>
                       <td className="px-4 py-3"><span className={cn("text-xs px-2 py-0.5 rounded-full", sm.cls)}>{sm.label}</span></td>
                       <td className="px-4 py-3">
-  <div className="flex items-center gap-2">
-    <button onClick={e => { e.stopPropagation(); setEditPR(r); }}
-      className="p-1.5 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
-      title="Edit">
-      <Edit2 className="w-3.5 h-3.5" />
-    </button>
-    <ChevronRight className="w-4 h-4 text-muted-foreground" />
-  </div>
+          <div className="flex items-center gap-2">
+          <button onClick={e => { e.stopPropagation(); setEditPR(r); }}
+            className="p-1.5 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
+            title="Edit">
+            <Edit2 className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={async e => {
+              e.stopPropagation();
+              if (!confirm(`Delete "${r.title}"? This cannot be undone.`)) return;
+              await fetch(`${BASE}api/procurement/requests/${r.id}`, { method: "DELETE", headers: authH() });
+              queryClient.invalidateQueries({ queryKey: ["/api/procurement/requests"] });
+            }}
+            className="p-1.5 rounded-lg text-muted-foreground hover:bg-red-500/10 hover:text-red-400 transition-colors"
+            title="Delete">
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+          <ChevronRight className="w-4 h-4 text-muted-foreground" />
+         </div>
 </td>
                     </tr>
                   );

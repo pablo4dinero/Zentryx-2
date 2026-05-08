@@ -419,18 +419,22 @@ function NewPOModal({ onClose, isLight, vendors }: { onClose: () => void; isLigh
   const totalAmount = items.reduce((s, it) => s + (parseFloat(it.quantity) * parseFloat(it.unitPrice) || 0), 0);
 
   async function save() {
+    if (!form.vendorId || !form.poNumber) return;
     setSaving(true);
     try {
       const payload = {
         ...form,
+        vendorId: parseInt(form.vendorId),
         totalAmount,
         items: items.filter(it => it.description && it.quantity && it.unitPrice).map(it => ({
           ...it, totalPrice: (parseFloat(it.quantity) * parseFloat(it.unitPrice)).toFixed(2),
         })),
       };
-      await fetch(`${BASE}api/procurement/orders`, { method: "POST", headers: authH(), body: JSON.stringify(payload) });
-      qc.invalidateQueries({ queryKey: ["/api/procurement/orders"] });
-      onClose();
+      const res = await fetch(`${BASE}api/procurement/orders`, { method: "POST", headers: authH(), body: JSON.stringify(payload) });
+      if (res.ok) {
+        qc.invalidateQueries({ queryKey: ["/api/procurement/orders"] });
+        onClose();
+      }
     } finally { setSaving(false); }
   }
 
