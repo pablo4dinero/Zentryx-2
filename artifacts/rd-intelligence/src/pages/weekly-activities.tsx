@@ -1280,11 +1280,11 @@ function PurchaseRequestsSection({ isLight, onOpenModal }: { isLight: boolean; o
       const r = await fetch(`${BASE}api/procurement/requests`, { headers: authHeaders(), cache: "no-store" });
       if (!r.ok) throw new Error("Failed to fetch purchase requests");
       const data = await r.json();
-      return (data || []).filter((pr: any) =>
-        (pr.department?.name ?? "").toLowerCase().includes("npd") ||
-        (pr.requester?.department ?? "").toLowerCase().includes("npd") ||
-        (pr.department ?? "").toLowerCase().includes("npd")
-      );
+      return (data || []).filter((pr: any) => {
+       const deptName = (pr.department?.name ?? pr.department ?? "").toLowerCase();
+       const requesterDept = (pr.requestedBy?.department ?? "").toLowerCase();
+      return deptName.includes("npd") || requesterDept.includes("npd") || !pr.departmentId;
+     });
     },
   });
 
