@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronLeft, ChevronRight, Plus, Trash2, Bell, Check,
   Loader2, ChevronDown, Users, X, Send, FileSpreadsheet,
-  FileText, Search, ArrowUpDown, ArrowUp, ArrowDown, Package, ShoppingBag
+  FileText, Search, ArrowUpDown, ArrowUp, ArrowDown, Package, ShoppingBag, Download
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
@@ -1281,8 +1281,9 @@ function PurchaseRequestsSection({ isLight, onOpenModal }: { isLight: boolean; o
       if (!r.ok) throw new Error("Failed to fetch purchase requests");
       const data = await r.json();
       return (data || []).filter((pr: any) =>
-        (pr.department ?? "").toLowerCase().includes("npd") ||
-        (pr.requester?.department ?? "").toLowerCase().includes("npd")
+        (pr.department?.name ?? "").toLowerCase().includes("npd") ||
+        (pr.requester?.department ?? "").toLowerCase().includes("npd") ||
+        (pr.department ?? "").toLowerCase().includes("npd")
       );
     },
   });
@@ -1292,19 +1293,43 @@ function PurchaseRequestsSection({ isLight, onOpenModal }: { isLight: boolean; o
     const s = search.toLowerCase();
     return prs.filter((pr: any) =>
       (pr.title ?? "").toLowerCase().includes(s) ||
-      (pr.vendorName ?? "").toLowerCase().includes(s) ||
-      (pr.requester?.name ?? "").toLowerCase().includes(s)
+      (pr.vendorDetailsName ?? pr.vendorName ?? "").toLowerCase().includes(s) ||
+      (pr.requestedBy?.name ?? pr.requester?.name ?? "").toLowerCase().includes(s)
     );
   }, [prs, search]);
 
-  const STATUS_META: Record<string, { label: string; cls: string }> = {
-    pending:      { label: "Pending",       cls: "bg-amber-500/10 text-amber-400" },
-    approved:     { label: "Approved",      cls: "bg-emerald-500/10 text-emerald-400" },
-    rejected:     { label: "Rejected",      cls: "bg-red-500/10 text-red-400" },
-    in_progress:  { label: "In Progress",   cls: "bg-blue-500/10 text-blue-400" },
-    completed:    { label: "Completed",     cls: "bg-teal-500/10 text-teal-400" },
-    cancelled:    { label: "Cancelled",     cls: "bg-slate-500/10 text-slate-400" },
-  };
+  function exportCSV() {
+    const headers = ["Vendor", "Title", "User Requesting", "Est. Amount ($)", "Required Qty (KG)"];
+    const rows = filtered.map((pr: any) => [
+      pr.vendorDetailsName || pr.vendorName || "—",
+      pr.title || "—",
+      pr.requestedBy?.name || pr.requester?.name || "—",
+      pr.estimatedAmount ? Number(pr.estimatedAmount).toLocaleString() : "—",
+      pr.requiredQuantityKg || "—",
+    ]);
+    const csv = [headers, ...rows].map(r => r.map((c: any) => `"${c}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `npd-purchase-requests-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportXLSX() {
+    const rows = filtered.map((pr: any) => ({
+      "Vendor": pr.vendorDetailsName || pr.vendorName || "—",
+      "Title": pr.title || "—",
+      "User Requesting": pr.requestedBy?.name || pr.requester?.name || "—",
+      "Est. Amount ($)": pr.estimatedAmount ? Number(pr.estimatedAmount) : 0,
+      "Required Qty (KG)": pr.requiredQuantityKg ? Number(pr.requiredQuantityKg) : 0,
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "NPD Purchase Requests");
+    XLSX.writeFile(wb, `npd-purchase-requests-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  }
 
   return (
     <div className="space-y-4">
@@ -1320,10 +1345,19 @@ function PurchaseRequestsSection({ isLight, onOpenModal }: { isLight: boolean; o
             onChange={e => setSearch(e.target.value)}
           />
         </div>
-        <button
-          onClick={onOpenModal}
+        <button onClick={onOpenModal}
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium bg-primary text-white hover:bg-primary/90">
           <Plus className="w-3.5 h-3.5" /> New Request
+        </button>
+        <button onClick={exportCSV}
+          className={cn("flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border transition-colors",
+            isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}>
+          <Download className="w-3.5 h-3.5" /> CSV
+        </button>
+        <button onClick={exportXLSX}
+          className={cn("flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border transition-colors",
+            isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}>
+          <Download className="w-3.5 h-3.5" /> XLSX
         </button>
       </div>
 
@@ -1341,41 +1375,43 @@ function PurchaseRequestsSection({ isLight, onOpenModal }: { isLight: boolean; o
             <table className="w-full text-sm min-w-[600px]">
               <thead>
                 <tr className={cn("border-b text-xs", isLight ? "bg-slate-50 border-slate-100 text-slate-500" : "bg-white/3 border-white/5 text-muted-foreground")}>
-                  <th className="px-4 py-3 text-left font-medium">Title</th>
                   <th className="px-4 py-3 text-left font-medium">Vendor</th>
-                  <th className="px-4 py-3 text-left font-medium">Priority</th>
-                  <th className="px-4 py-3 text-left font-medium">Status</th>
-                  <th className="px-4 py-3 text-left font-medium">Requester</th>
-                  <th className="px-4 py-3 text-left font-medium">Date</th>
+                  <th className="px-4 py-3 text-left font-medium">Title</th>
+                  <th className="px-4 py-3 text-left font-medium">User Requesting</th>
+                  <th className="px-4 py-3 text-left font-medium">Est. Amount ($)</th>
+                  <th className="px-4 py-3 text-left font-medium">Required Qty (KG)</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((pr: any) => {
-                  const sm = STATUS_META[pr.status] || { label: pr.status, cls: "bg-slate-500/10 text-slate-400" };
-                  return (
-                    <tr key={pr.id} className={cn("border-b last:border-0 transition-colors",
-                      isLight ? "border-slate-50 hover:bg-slate-50" : "border-white/5 hover:bg-white/3")}>
-                      <td className="px-4 py-3 font-medium text-foreground max-w-[200px] truncate">{pr.title}</td>
-                      <td className="px-4 py-3 text-muted-foreground text-xs">{pr.vendorName || "—"}</td>
-                      <td className="px-4 py-3">
-                        <span className={cn("text-xs px-2 py-0.5 rounded-full capitalize font-medium",
-                          pr.priority === "high" ? "bg-red-500/10 text-red-400" :
-                          pr.priority === "medium" ? "bg-amber-500/10 text-amber-400" : "bg-slate-500/10 text-slate-400")}>
-                          {pr.priority || "—"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", sm.cls)}>{sm.label}</span>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground">{pr.requester?.name || "—"}</td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground">
-                        {pr.createdAt ? new Date(pr.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—"}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {filtered.map((pr: any) => (
+                  <tr key={pr.id} className={cn("border-b last:border-0 transition-colors",
+                    isLight ? "border-slate-50 hover:bg-slate-50" : "border-white/5 hover:bg-white/3")}>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      {pr.vendorDetailsName || pr.vendorName || "—"}
+                    </td>
+                    <td className="px-4 py-3 font-medium text-foreground max-w-[200px] truncate">
+                      {pr.title}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      {pr.requestedBy?.name || pr.requester?.name || "—"}
+                    </td>
+                    <td className="px-4 py-3 text-sm font-mono">
+                      {pr.estimatedAmount ? `$${Number(pr.estimatedAmount).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      {pr.requiredQuantityKg ? `${Number(pr.requiredQuantityKg).toLocaleString()} kg` : "—"}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
+          </div>
+        )}
+        {filtered.length > 0 && (
+          <div className={cn("px-4 py-2.5 border-t text-xs text-muted-foreground flex items-center justify-between",
+            isLight ? "border-slate-100 bg-slate-50" : "border-white/5")}>
+            <span>{filtered.length} request{filtered.length !== 1 ? "s" : ""}</span>
+            <span>NPD Department Purchase Requests</span>
           </div>
         )}
       </div>
