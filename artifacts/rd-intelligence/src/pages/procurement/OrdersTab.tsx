@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus, Search, Loader2, X, Check, Download, Package, AlertTriangle,
-  DollarSign, ChevronRight, Edit2, Send, Truck, FileText, Star, Minus
+  DollarSign, ChevronRight, Edit2, Send, Truck, FileText, Star, Minus, Trash2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
@@ -196,11 +196,43 @@ function PODetailPanel({ po, onClose, isLight }: { po: any; onClose: () => void;
   const pm = payMeta(po.paymentStatus);
   const total = po.items?.reduce((s: number, i: any) => s + (parseFloat(i.totalPrice) || 0), 0) ?? parseFloat(po.totalAmount ?? "0");
 
-  async function sendPO() {
-    await fetch(`${BASE}api/procurement/orders/${po.id}/send`, { method: "POST", headers: authH() });
-    qc.invalidateQueries({ queryKey: ["/api/procurement/orders"] });
-    onClose();
-  }
+async function sendPO() {
+  // Open Microsoft Outlook with pre-filled email
+  const vendorEmail = po.vendor?.email || "";
+  const subject = encodeURIComponent(`Purchase Order ${po.poNumber}`);
+  const body = encodeURIComponent(
+    `Dear ${po.vendor?.name || "Vendor"},\n\nPlease find attached Purchase Order ${po.poNumber}.\n\nTotal Amount: ${po.totalAmount} ${po.currency?.toUpperCase()}\nDelivery Due: ${po.deliveryDue || "TBD"}\nDelivery Address: ${po.deliveryAddress || "TBD"}\n\nKind regards,\n${po.raisedBy?.name || "Procurement Team"}`
+  );
+  window.location.href = `mailto:${vendorEmail}?subject=${subject}&body=${body}`;
+
+  // Also update status to sent_to_vendor
+  await fetch(`${BASE}api/procurement/orders/${po.id}/send`, { method: "POST", headers: authH() });
+  qc.invalidateQueries({ queryKey: ["/api/procurement/orders"] });
+}
+
+async function updateStatus(newStatus: string) {
+  await fetch(`${BASE}api/procurement/orders/${po.id}`, {
+    method: "PUT", headers: authH(),
+    body: JSON.stringify({ ...po, status: newStatus, vendorId: po.vendorId }),
+  });
+  qc.invalidateQueries({ queryKey: ["/api/procurement/orders"] });
+}
+
+async function updatePayment(newPayment: string) {
+  await fetch(`${BASE}api/procurement/orders/${po.id}`, {
+    method: "PUT", headers: authH(),
+    body: JSON.stringify({ ...po, paymentStatus: newPayment, vendorId: po.vendorId }),
+  });
+  qc.invalidateQueries({ queryKey: ["/api/procurement/orders"] });
+}
+
+async function updateDeliveryDue(date: string) {
+  await fetch(`${BASE}api/procurement/orders/${po.id}`, {
+    method: "PUT", headers: authH(),
+    body: JSON.stringify({ ...po, deliveryDue: date, vendorId: po.vendorId }),
+  });
+  qc.invalidateQueries({ queryKey: ["/api/procurement/orders"] });
+}
 
   return (
     <div className="fixed inset-0 z-[9998] flex items-end sm:items-center justify-end sm:justify-center p-0 sm:p-4">
@@ -238,17 +270,52 @@ function PODetailPanel({ po, onClose, isLight }: { po: any; onClose: () => void;
 
           {/* Delivery Stepper */}
           <div>
-            <p className="text-xs text-muted-foreground mb-2 font-medium uppercase tracking-wide">Delivery Progress</p>
-            <ProgressStepper status={po.status} />
+  <p className="text-xs text-muted-foreground mb-2 font-medium uppercase tracking-wide">Delivery Progress — Click to update</p>
+      <div className="flex items-center gap-1 overflow-x-auto py-2">
+        {STAGE_STEPS.map((s, i) => {
+          const idx = STAGE_STEPS.indexOf(po.status);
+          const labels = ["Draft","Sent","Acknowledged","In Transit","Received"];
+          const isActive = i <= idx;
+          return (
+            <div key={s} className="flex items-center gap-1 flex-shrink-0">
+              <button
+                onClick={() => updateStatus(s)}
+                className={cn("flex flex-col items-center gap-1 group")}
+              >
+                <div className={cn("w-8 h-8 rounded-full text-xs font-bold flex items-center justify-center border-2 transition-all hover:scale-110",
+                  isActive ? "border-primary bg-primary text-white" : isLight ? "border-slate-200 bg-white text-slate-400 hover:border-primary/50" : "border-white/10 bg-white/5 text-muted-foreground hover:border-primary/50")}>
+                  {i + 1}
+                </div>
+                <span className={cn("text-[10px] font-medium", isActive ? "text-primary" : "text-muted-foreground")}>{labels[i]}</span>
+              </button>
+              {i < STAGE_STEPS.length - 1 && (
+                <div className={cn("w-6 h-0.5 mb-4 rounded-full", i < idx ? "bg-primary" : isLight ? "bg-slate-200" : "bg-white/10")} />
+              )}
+            </div>
+      );
+    })}
+  </div>
           </div>
 
           {/* Info Grid */}
           <div className="grid grid-cols-2 gap-3 text-sm">
-            <div><p className="text-xs text-muted-foreground mb-0.5">Raised By</p><p className="font-medium">{po.raisedBy?.name || "—"}</p></div>
-            <div><p className="text-xs text-muted-foreground mb-0.5">Delivery Due</p><p className="font-medium">{po.deliveryDue || "—"}</p></div>
-            <div><p className="text-xs text-muted-foreground mb-0.5">Payment Due</p><p className="font-medium">{po.paymentDue || "—"}</p></div>
-            <div><p className="text-xs text-muted-foreground mb-0.5">Delivery Address</p><p className="font-medium truncate">{po.deliveryAddress || "—"}</p></div>
-          </div>
+              <div><p className="text-xs text-muted-foreground mb-0.5">Raised By</p><p className="font-medium">{po.raisedBy?.name || "—"}</p></div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-0.5">Delivery Due</p>
+                <input type="date" defaultValue={po.deliveryDue || ""} onChange={e => updateDeliveryDue(e.target.value)}
+                  className={cn("w-full px-2 py-1 rounded-lg border text-sm focus:outline-none focus:ring-1 focus:ring-primary/40",
+                    isLight ? "bg-slate-50 border-slate-200" : "bg-black/20 border-white/10 text-foreground")} />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-0.5">Payment Status</p>
+                <select defaultValue={po.paymentStatus} onChange={e => updatePayment(e.target.value)}
+                  className={cn("w-full px-2 py-1 rounded-lg border text-sm focus:outline-none",
+                    isLight ? "bg-slate-50 border-slate-200" : "bg-black/20 border-white/10 text-foreground")}>
+                  {PAYMENT_STATUSES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                </select>
+              </div>
+              <div><p className="text-xs text-muted-foreground mb-0.5">Delivery Address</p><p className="font-medium truncate">{po.deliveryAddress || "—"}</p></div>
+            </div>
 
           {/* Line Items */}
           {po.items?.length > 0 && (
@@ -461,6 +528,102 @@ function NewPOModal({ onClose, isLight, vendors }: { onClose: () => void; isLigh
   );
 }
 
+function EditPOModal({ po, onClose, isLight, vendors }: { po: any; onClose: () => void; isLight: boolean; vendors: any[] }) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState({
+    poNumber: po.poNumber || "",
+    vendorId: po.vendorId || "",
+    currency: po.currency || "ngn",
+    deliveryAddress: po.deliveryAddress || "",
+    deliveryDue: po.deliveryDue || "",
+    paymentDue: po.paymentDue || "",
+    paymentStatus: po.paymentStatus || "unpaid",
+    notes: po.notes || "",
+    totalAmount: po.totalAmount || "",
+  });
+  const [saving, setSaving] = useState(false);
+  const f = (k: string, v: any) => setForm(p => ({ ...p, [k]: v }));
+  const inputCls = cn("w-full px-3 py-2 rounded-xl text-sm border focus:outline-none focus:ring-2 focus:ring-primary/40",
+    isLight ? "bg-slate-50 border-slate-200 text-foreground" : "bg-black/20 border-white/10 text-foreground");
+
+  async function save() {
+    setSaving(true);
+    try {
+      await fetch(`${BASE}api/procurement/orders/${po.id}`, {
+        method: "PUT", headers: authH(), body: JSON.stringify(form),
+      });
+      qc.invalidateQueries({ queryKey: ["/api/procurement/orders"] });
+      onClose();
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className={cn("relative w-full max-w-lg rounded-2xl border shadow-2xl z-10 max-h-[90vh] overflow-y-auto",
+        isLight ? "bg-white border-slate-200" : "glass-panel border-white/10")}>
+        <div className={cn("sticky top-0 px-6 py-4 border-b flex items-center justify-between",
+          isLight ? "bg-white border-slate-100" : "bg-[#0f0f1a] border-white/10")}>
+          <h3 className="text-base font-semibold">Edit Purchase Order — {po.poNumber}</h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-muted-foreground hover:bg-white/5"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Vendor</label>
+            <select className={cn(inputCls, "appearance-none")} value={form.vendorId} onChange={e => f("vendorId", e.target.value)}>
+              <option value="">Select vendor…</option>
+              {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Currency</label>
+              <select className={cn(inputCls, "appearance-none")} value={form.currency} onChange={e => f("currency", e.target.value)}>
+                {CURRENCIES.map(c => <option key={c} value={c}>{c.toUpperCase()}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Total Amount</label>
+              <input className={inputCls} type="number" value={form.totalAmount} onChange={e => f("totalAmount", e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Payment Status</label>
+              <select className={cn(inputCls, "appearance-none")} value={form.paymentStatus} onChange={e => f("paymentStatus", e.target.value)}>
+                {PAYMENT_STATUSES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Delivery Due</label>
+              <input className={inputCls} type="date" value={form.deliveryDue} onChange={e => f("deliveryDue", e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Payment Due</label>
+              <input className={inputCls} type="date" value={form.paymentDue} onChange={e => f("paymentDue", e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Delivery Address</label>
+              <input className={inputCls} value={form.deliveryAddress} onChange={e => f("deliveryAddress", e.target.value)} placeholder="Delivery address…" />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Notes</label>
+            <textarea rows={2} className={cn(inputCls, "resize-none")} value={form.notes} onChange={e => f("notes", e.target.value)} />
+          </div>
+        </div>
+        <div className={cn("sticky bottom-0 px-6 py-4 border-t flex justify-end gap-3",
+          isLight ? "bg-white border-slate-100" : "bg-[#0f0f1a] border-white/10")}>
+          <button onClick={onClose} className="px-5 py-2 rounded-xl text-sm text-muted-foreground hover:bg-white/5">Cancel</button>
+          <button onClick={save} disabled={saving}
+            className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-medium bg-primary text-white hover:bg-primary/90 disabled:opacity-50">
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Save Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 export default function OrdersTab() {
   const { theme } = useTheme();
   const isLight = theme === "light";
@@ -470,6 +633,8 @@ export default function OrdersTab() {
   const [filterPayment, setFilterPayment] = useState("all");
   const [showNew, setShowNew] = useState(false);
   const [selectedPO, setSelectedPO] = useState<any>(null);
+  const [editPO, setEditPO] = useState<any>(null);
+  const qc = useQueryClient();
 
   const isProcurementDept = ((currentUser as any)?.department ?? "").toLowerCase().includes("procurement") ||
     ["admin","manager","ceo"].includes((currentUser as any)?.role ?? "");
@@ -499,6 +664,11 @@ export default function OrdersTab() {
   const overdue = orders.filter(po => po.deliveryDue && po.deliveryDue < todayStr && !["received","closed","cancelled"].includes(po.status)).length;
   const monthSpend = orders.filter(po => new Date(po.createdAt) >= startOfMonth).reduce((s, po) => s + (parseFloat(po.totalAmount ?? "0") || 0), 0);
 
+  async function handleDeletePO(id: number, poNumber: string) {
+  if (!confirm(`Delete ${poNumber}? This cannot be undone.`)) return;
+  await fetch(`${BASE}api/procurement/orders/${id}`, { method: "DELETE", headers: authH() });
+  qc.invalidateQueries({ queryKey: ["/api/procurement/orders"] });
+}
   const filtered = orders.filter(po => {
     const matchSearch = !search || po.poNumber?.includes(search) || po.vendor?.name?.toLowerCase().includes(search.toLowerCase());
     const matchStatus = filterStatus === "all" || po.status === filterStatus;
@@ -582,7 +752,7 @@ export default function OrdersTab() {
             <table className="w-full text-sm">
               <thead>
                 <tr className={cn("text-left border-b", isLight ? "border-slate-100 bg-slate-50" : "border-white/8 bg-white/2")}>
-                  {["PO Number","Vendor","Raised By","Items","Total Amount","Payment","Delivery Due","Status",""].map(h => (
+                  {["PO Number","Title","Vendor","Raised By","Items","Total Amount","Payment","Delivery Due","Status",""].map(h => (
                     <th key={h} className="px-4 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -597,17 +767,30 @@ export default function OrdersTab() {
                   const pm = payMeta(po.paymentStatus);
                   const isOverdue = po.deliveryDue && po.deliveryDue < todayStr && !["received","closed","cancelled"].includes(po.status);
                   return (
-                    <tr key={po.id} onClick={() => setSelectedPO(po)}
-                      className={cn("border-b last:border-0 transition-colors cursor-pointer", isLight ? "border-slate-100 hover:bg-slate-50" : "border-white/5 hover:bg-white/3")}>
-                      <td className="px-4 py-3 font-mono text-xs font-semibold text-primary">{po.poNumber}</td>
-                      <td className="px-4 py-3 font-medium text-foreground">{po.vendor?.name || "—"}</td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground">{po.raisedBy?.name || "—"}</td>
-                      <td className="px-4 py-3 text-center">{po.items?.length ?? 0}</td>
-                      <td className="px-4 py-3 font-mono text-sm">{po.totalAmount ? Number(po.totalAmount).toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}</td>
-                      <td className="px-4 py-3"><span className={cn("text-xs px-2 py-0.5 rounded-full", pm.cls)}>{pm.label}</span></td>
-                      <td className={cn("px-4 py-3 text-xs", isOverdue ? "text-red-400 font-medium" : "text-muted-foreground")}>{po.deliveryDue || "—"}{isOverdue && " ⚠"}</td>
-                      <td className="px-4 py-3"><span className={cn("text-xs px-2 py-0.5 rounded-full", sm.cls)}>{sm.label}</span></td>
-                      <td className="px-4 py-3"><ChevronRight className="w-4 h-4 text-muted-foreground" /></td>
+                    <tr key={po.id}
+                      className={cn("border-b last:border-0 transition-colors cursor-pointer group", isLight ? "border-slate-100 hover:bg-slate-50" : "border-white/5 hover:bg-white/3")}>
+                      <td className="px-4 py-3 font-mono text-xs font-semibold text-primary" onClick={() => setSelectedPO(po)}>{po.poNumber}</td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground max-w-[150px] truncate" onClick={() => setSelectedPO(po)}>{po.purchaseRequest?.title || po.notes || "—"}</td>
+                      <td className="px-4 py-3 font-medium text-foreground" onClick={() => setSelectedPO(po)}>{po.vendor?.name || "—"}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground" onClick={() => setSelectedPO(po)}>{po.raisedBy?.name || "—"}</td>
+                      <td className="px-4 py-3 text-center" onClick={() => setSelectedPO(po)}>{po.items?.length ?? 0}</td>
+                      <td className="px-4 py-3 font-mono text-sm" onClick={() => setSelectedPO(po)}>{po.totalAmount ? Number(po.totalAmount).toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}</td>
+                      <td className="px-4 py-3" onClick={() => setSelectedPO(po)}><span className={cn("text-xs px-2 py-0.5 rounded-full", pm.cls)}>{pm.label}</span></td>
+                      <td className={cn("px-4 py-3 text-xs", isOverdue ? "text-red-400 font-medium" : "text-muted-foreground")} onClick={() => setSelectedPO(po)}>{po.deliveryDue || "—"}{isOverdue && " ⚠"}</td>
+                      <td className="px-4 py-3" onClick={() => setSelectedPO(po)}><span className={cn("text-xs px-2 py-0.5 rounded-full", sm.cls)}>{sm.label}</span></td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={e => { e.stopPropagation(); setEditPO(po); }}
+                            className="p-1.5 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors" title="Edit">
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={e => { e.stopPropagation(); handleDeletePO(po.id, po.poNumber); }}
+                            className="p-1.5 rounded-lg text-muted-foreground hover:bg-red-500/10 hover:text-red-400 transition-colors" title="Delete">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                          <ChevronRight className="w-4 h-4 text-muted-foreground" onClick={() => setSelectedPO(po)} />
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
@@ -617,8 +800,9 @@ export default function OrdersTab() {
         )}
       </div>
 
-      {showNew && <NewPOModal onClose={() => setShowNew(false)} isLight={isLight} vendors={vendors} />}
-      {selectedPO && <PODetailPanel po={selectedPO} onClose={() => setSelectedPO(null)} isLight={isLight} />}
+{showNew && <NewPOModal onClose={() => setShowNew(false)} isLight={isLight} vendors={vendors} />}
+{editPO && <EditPOModal po={editPO} onClose={() => setEditPO(null)} isLight={isLight} vendors={vendors} />}
+{selectedPO && <PODetailPanel po={selectedPO} onClose={() => { setSelectedPO(null); qc.invalidateQueries({ queryKey: ["/api/procurement/orders"] }); }} isLight={isLight} />}
     </div>
   );
 }
