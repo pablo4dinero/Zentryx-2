@@ -258,15 +258,18 @@ router.post("/requests", requireAuth, async (req: AuthRequest, res) => {
   try {
     const b = req.body;
     const requestedById = b.requestedById ?? (req as any).user?.id;
+   const lineItemsJson = b.lineItems?.length ? JSON.stringify(b.lineItems) : null;
     const [pr] = await db.insert(purchaseRequestsTable).values({
-      title: b.title, description: b.description ?? "",
-      requestedById, departmentId: b.departmentId ?? null, vendorId: b.vendorId ?? null,
-      category: b.category ?? "other", priority: b.priority ?? "medium", status: "draft",
-      estimatedAmount: b.estimatedAmount ? String(b.estimatedAmount) : null, currency: b.currency ?? "ngn",
-      requiredByDate: b.requiredByDate ?? null, justification: b.justification ?? "", attachmentUrl: b.attachmentUrl ?? null,
-      requiredQuantityKg: b.requiredQuantityKg ?? null,
-      vendorDetailsName: b.vendorDetailsName ?? null,
-      vendorDetailsAddress: b.vendorDetailsAddress ?? null,
+  title: b.title, description: b.description ?? "",
+  requestedById, departmentId: b.departmentId ?? null, vendorId: b.vendorId ?? null,
+  category: b.category ?? "other", priority: b.priority ?? "medium", status: "draft",
+  estimatedAmount: b.estimatedAmount ? String(b.estimatedAmount) : null, currency: b.currency ?? "ngn",
+  requiredByDate: b.requiredByDate ?? null, 
+  justification: lineItemsJson ?? b.justification ?? "", 
+  attachmentUrl: b.attachmentUrl ?? null,
+  requiredQuantityKg: b.requiredQuantityKg ?? null,
+  vendorDetailsName: b.vendorDetailsName ?? null,
+  vendorDetailsAddress: b.vendorDetailsAddress ?? null,
     }).returning();
     res.status(201).json(pr);
   } catch (e) { console.error(e); res.status(500).json({ error: "InternalServerError" }); }
@@ -499,19 +502,50 @@ if (!vendorId) {
   return;
 }
 
+// Parse line items from PR justification if stored as JSON
+let prLineItems: any[] = [];
+try {
+  if (pr.justification?.startsWith("[")) {
+    prLineItems = JSON.parse(pr.justification);
+  }
+} catch {}
+
 const [po] = await db.insert(purchaseOrdersTable).values({
   poNumber, purchaseRequestId: id, vendorId,
-  raisedById: userId, status: "draft", totalAmount: pr.estimatedAmount, currency: pr.currency,
-  paymentStatus: "unpaid", notes: pr.title ?? pr.justification ?? "",
+  raisedById: userId, status: "draft", totalAmount: pr.estimatedAmount, currency: pr.currency ?? "usd",
+  paymentStatus: "unpaid", 
+  notes: pr.title ?? "",
   deliveryDue: pr.requiredByDate ?? null,
   deliveryAddress: pr.vendorDetailsAddress ?? "",
 }).returning();
+
+// Insert line items from PR if available
+if (prLineItems.length > 0) {
+  await db.insert(purchaseOrderItemsTable).values(prLineItems.map((item: any) => ({
+    purchaseOrderId: po.id,
+    description: item.description || "",
+    quantity: String(item.quantity || 1),
+    unit: item.unit || "units",
+    unitPrice: String(item.unitPrice || 0),
+    totalPrice: String((parseFloat(item.quantity || 1) * parseFloat(item.unitPrice || 0)).toFixed(2)),
+    productType: null,
+    notes: "",
+  })));
+}
 
     await db.update(purchaseRequestsTable)
       .set({ status: "converted_to_po", updatedAt: new Date() })
       .where(eq(purchaseRequestsTable.id, id));
 
-    res.status(201).json(po);
+    // Update notes with item descriptions as title
+if (b.items?.length) {
+  const title = b.items.filter((it: any) => it.description).map((it: any) => it.description).join(", ");
+  if (title) {
+    await db.update(purchaseOrdersTable).set({ notes: title }).where(eq(purchaseOrdersTable.id, po.id));
+    po.notes = title;
+  }
+}
+res.status(201).json(po);
   } catch (e) { console.error(e); res.status(500).json({ error: "InternalServerError" }); }
 });
 
