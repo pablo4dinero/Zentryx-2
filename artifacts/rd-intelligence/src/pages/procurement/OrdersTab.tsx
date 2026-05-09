@@ -2,11 +2,12 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus, Search, Loader2, X, Check, Download, Package, AlertTriangle,
-  DollarSign, ChevronRight, Edit2, Send, Truck, FileText, Star, Minus, Trash2
+  DollarSign, ChevronRight, Edit2, MessageSquare, Send, Truck, FileText, Star, Minus, Trash2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
-import { useGetCurrentUser } from "@/api-client";
+import { useGetCurrentUser, useListUsers } from "@/api-client";
+import { useToast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
 
 const BASE = import.meta.env.BASE_URL;
@@ -187,6 +188,103 @@ function RateVendorModal({ po, onClose, isLight }: { po: any; onClose: () => voi
   );
 }
 
+function NotifyMessageModal({ po, onClose, isLight }: { po: any; onClose: () => void; isLight: boolean }) {
+  const [search, setSearch] = useState("");
+  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [message, setMessage] = useState(`Update on PO ${po.poNumber}: Status is now "${po.status}". Vendor: ${po.vendor?.name}.`);
+  const [sending, setSending] = useState(false);
+  const { data: currentUser } = useGetCurrentUser();
+  const { data: users = [] } = useListUsers();
+  const { toast } = useToast();
+
+  const filteredUsers = (users as any[]).filter((u: any) =>
+    u.name?.toLowerCase().includes(search.toLowerCase()) && u.id !== (currentUser as any)?.id
+  );
+
+  async function sendMessage() {
+    if (!selectedUser || !message.trim()) return;
+    setSending(true);
+    try {
+      const token = localStorage.getItem("rd_token");
+      // Find or create DM room
+      const roomRes = await fetch(`${BASE}api/chat/rooms/direct/${selectedUser.id}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      });
+      if (roomRes.ok) {
+        const room = await roomRes.json();
+        await fetch(`${BASE}api/chat/rooms/${room.id}/messages`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ content: message, messageType: "text" }),
+        });
+        toast({ title: `Message sent to ${selectedUser.name}` });
+        onClose();
+      } else {
+        toast({ title: "Failed to send message", variant: "destructive" });
+      }
+    } finally { setSending(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className={cn("relative w-full max-w-md rounded-2xl border shadow-2xl z-10",
+        isLight ? "bg-white border-slate-200" : "glass-panel border-white/10")}>
+        <div className={cn("px-6 py-4 border-b flex items-center justify-between",
+          isLight ? "border-slate-100" : "border-white/10")}>
+          <h3 className="font-semibold text-sm">Notify via Message</h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-muted-foreground hover:bg-white/5"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Search User</label>
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input className={cn("w-full pl-8 pr-3 py-2 rounded-xl text-sm border focus:outline-none",
+                isLight ? "bg-slate-50 border-slate-200" : "bg-black/20 border-white/10 text-foreground")}
+                value={search} onChange={e => setSearch(e.target.value)} placeholder="Search team members..." />
+            </div>
+            <div className={cn("mt-2 rounded-xl border max-h-36 overflow-y-auto",
+              isLight ? "border-slate-200" : "border-white/10")}>
+              {filteredUsers.map((u: any) => (
+                <button key={u.id} onClick={() => setSelectedUser(u)}
+                  className={cn("w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition-colors",
+                    selectedUser?.id === u.id
+                      ? isLight ? "bg-primary/10 text-primary" : "bg-primary/20 text-primary"
+                      : isLight ? "hover:bg-slate-50 text-gray-900" : "hover:bg-white/5 text-foreground")}>
+                  <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary shrink-0">
+                    {u.name?.[0]}
+                  </div>
+                  <div>
+                    <p className="font-medium text-xs">{u.name}</p>
+                    <p className="text-[10px] text-muted-foreground capitalize">{u.role}</p>
+                  </div>
+                  {selectedUser?.id === u.id && <Check className="w-3.5 h-3.5 ml-auto text-primary" />}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Message</label>
+            <textarea rows={3} value={message} onChange={e => setMessage(e.target.value)}
+              className={cn("w-full px-3 py-2 rounded-xl text-sm border focus:outline-none resize-none",
+                isLight ? "bg-slate-50 border-slate-200 text-foreground" : "bg-black/20 border-white/10 text-foreground")} />
+          </div>
+        </div>
+        <div className={cn("px-5 py-4 border-t flex justify-end gap-3",
+          isLight ? "border-slate-100" : "border-white/10")}>
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm text-muted-foreground hover:bg-white/5">Cancel</button>
+          <button onClick={sendMessage} disabled={sending || !selectedUser || !message.trim()}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-primary text-white hover:bg-primary/90 disabled:opacity-50">
+            {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />} Send
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PODetailPanel({ po, onClose, isLight }: { po: any; onClose: () => void; isLight: boolean }) {
   const [showReceive, setShowReceive] = useState(false);
   const [showRate, setShowRate] = useState(false);
@@ -195,6 +293,7 @@ function PODetailPanel({ po, onClose, isLight }: { po: any; onClose: () => void;
   const sm = statusMeta(po.status);
   const pm = payMeta(po.paymentStatus);
   const total = po.items?.reduce((s: number, i: any) => s + (parseFloat(i.totalPrice) || 0), 0) ?? parseFloat(po.totalAmount ?? "0");
+  const [showNotifyMsg, setShowNotifyMsg] = useState(false);
 
 async function sendPO() {
   // Open Microsoft Outlook with pre-filled email
@@ -234,6 +333,11 @@ async function updateDeliveryDue(date: string) {
   qc.invalidateQueries({ queryKey: ["/api/procurement/orders"] });
 }
 
+function openEmailNotify() {
+  const subject = encodeURIComponent(`Update on Purchase Order ${po.poNumber}`);
+  const body = encodeURIComponent(`Dear Team,\n\nThis is an update on Purchase Order ${po.poNumber}.\n\nVendor: ${po.vendor?.name}\nStatus: ${po.status}\nDelivery Due: ${po.deliveryDue || "TBD"}\n\nBest regards`);
+  window.open(`mailto:?subject=${subject}&body=${body}`);
+}
   return (
     <div className="fixed inset-0 z-[9998] flex items-end sm:items-center justify-end sm:justify-center p-0 sm:p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
@@ -376,12 +480,37 @@ async function updateDeliveryDue(date: string) {
         </div>
         <div className={cn("sticky bottom-0 px-6 py-4 border-t flex flex-wrap gap-2",
           isLight ? "bg-white border-slate-100" : "bg-[#0f0f1a] border-white/10")}>
-          {po.status === "draft" && (
-            <button onClick={sendPO}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium bg-blue-600 text-white hover:bg-blue-700">
-              <Send className="w-3.5 h-3.5" /> Send to Vendor
-            </button>
-          )}
+          <div className={cn("sticky bottom-0 px-6 py-4 border-t flex flex-wrap gap-2",
+  isLight ? "bg-white border-slate-100" : "bg-[#0f0f1a] border-white/10")}>
+  {po.status === "draft" && (
+    <button onClick={sendPO}
+      className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium bg-blue-600 text-white hover:bg-blue-700">
+      <Send className="w-3.5 h-3.5" /> Send to Vendor
+    </button>
+  )}
+  {["sent_to_vendor","in_transit","acknowledged","partially_received"].includes(po.status) && (
+    <button onClick={() => setShowReceive(true)}
+      className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700">
+      <Truck className="w-3.5 h-3.5" /> Receive Goods
+    </button>
+  )}
+  {po.status === "received" && !po.performance && (
+    <button onClick={() => setShowRate(true)}
+      className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium bg-amber-500 text-white hover:bg-amber-600">
+      <Star className="w-3.5 h-3.5" /> Rate Vendor
+    </button>
+  )}
+  <button onClick={openEmailNotify}
+    className={cn("flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border transition-colors ml-auto",
+      isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}>
+    <Send className="w-3.5 h-3.5" /> Notify via Email
+  </button>
+  <button onClick={() => setShowNotifyMsg(true)}
+    className={cn("flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border transition-colors",
+      isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}>
+    <MessageSquare className="w-3.5 h-3.5" /> Notify via Message
+  </button>
+</div>
           {["sent_to_vendor","in_transit","acknowledged","partially_received"].includes(po.status) && (
             <button onClick={() => setShowReceive(true)}
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700">
@@ -398,13 +527,37 @@ async function updateDeliveryDue(date: string) {
       </div>
       {showReceive && <ReceiveModal po={po} onClose={() => setShowReceive(false)} isLight={isLight} />}
       {showRate && <RateVendorModal po={po} onClose={() => setShowRate(false)} isLight={isLight} />}
+      {showNotifyMsg && <NotifyMessageModal po={po} onClose={() => setShowNotifyMsg(false)} isLight={isLight} />}
     </div>
   );
 }
 
 function NewPOModal({ onClose, isLight, vendors }: { onClose: () => void; isLight: boolean; vendors: any[] }) {
   const qc = useQueryClient();
-  const [form, setForm] = useState({ poNumber: "", vendorId: "", currency: "ngn", deliveryAddress: "", deliveryDue: "", paymentDue: "", notes: "" });
+  const [form, setForm] = useState({ poNumber: "", vendorId: "", vendorName: "", currency: "ngn", deliveryAddress: "", deliveryDue: "", paymentDue: "", notes: "", category: "ingredients" });
+const [vendorSearch, setVendorSearch] = useState("");
+const [showVendorDrop, setShowVendorDrop] = useState(false);
+const [addingVendor, setAddingVendor] = useState(false);
+
+const filteredVendors = vendors.filter((v: any) =>
+  v.name?.toLowerCase().includes(vendorSearch.toLowerCase())
+);
+
+async function addVendorToList() {
+  if (!vendorSearch.trim()) return;
+  setAddingVendor(true);
+  try {
+    const res = await fetch(`${BASE}api/procurement/vendors`, {
+      method: "POST", headers: authH(),
+      body: JSON.stringify({ name: vendorSearch.trim(), currency: "usd" }),
+    });
+    const newVendor = await res.json();
+    qc.invalidateQueries({ queryKey: ["/api/procurement/vendors"] });
+    f("vendorId", String(newVendor.id));
+    f("vendorName", vendorSearch.trim());
+    setShowVendorDrop(false);
+  } finally { setAddingVendor(false); }
+}
   const [items, setItems] = useState<any[]>([{ description: "", quantity: "", unit: "units", unitPrice: "" }]);
   const [saving, setSaving] = useState(false);
   const f = (k: string, v: any) => setForm(p => ({ ...p, [k]: v }));
@@ -455,12 +608,43 @@ function NewPOModal({ onClose, isLight, vendors }: { onClose: () => void; isLigh
               <input className={inputCls} value={form.poNumber} onChange={e => f("poNumber", e.target.value)} placeholder="Enter PO number manually (e.g. PO-2024-001)…" />
             </div>
             <div className="col-span-2">
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Vendor *</label>
-              <select className={cn(inputCls, "appearance-none")} value={form.vendorId} onChange={e => f("vendorId", e.target.value)}>
-                <option value="">Select vendor…</option>
-                {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-              </select>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Vendor *</label>
+            <div className="relative">
+    <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+    <input className={cn(inputCls, "pl-8")} value={vendorSearch || form.vendorName}
+      onChange={e => { setVendorSearch(e.target.value); f("vendorName", e.target.value); setShowVendorDrop(true); }}
+      onFocus={() => setShowVendorDrop(true)}
+      placeholder="Search or type vendor name..." />
+    {showVendorDrop && (
+      <div className={cn("absolute z-10 w-full mt-1 rounded-xl border shadow-xl max-h-48 overflow-y-auto",
+        isLight ? "bg-white border-gray-200" : "bg-[#1a1a2e] border-white/10")}>
+        {filteredVendors.map((v: any) => (
+          <button key={v.id} type="button"
+            onClick={() => { f("vendorId", String(v.id)); f("vendorName", v.name); setVendorSearch(v.name); setShowVendorDrop(false); }}
+            className={cn("w-full text-left px-3 py-2 text-sm", isLight ? "hover:bg-gray-50 text-gray-900" : "hover:bg-white/5 text-foreground")}>
+            {v.name}
+          </button>
+        ))}
+        {vendorSearch && !filteredVendors.find((v: any) => v.name.toLowerCase() === vendorSearch.toLowerCase()) && (
+          <button type="button" onClick={addVendorToList} disabled={addingVendor}
+            className={cn("w-full text-left px-3 py-2 text-sm border-t flex items-center gap-2",
+              isLight ? "hover:bg-blue-50 text-blue-600 border-gray-100" : "hover:bg-primary/10 text-primary border-white/10")}>
+            <Plus className="w-3.5 h-3.5" />
+            {addingVendor ? "Adding..." : `Add "${vendorSearch}" to vendors`}
+          </button>
+        )}
+      </div>
+    )}
             </div>
+            </div>
+<div className="col-span-2">
+  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Category</label>
+  <select className={cn(inputCls, "appearance-none")} value={form.category} onChange={e => f("category", e.target.value)}>
+    {["ingredients","packaging","equipment","services","logistics","other"].map(c => (
+      <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
+    ))}
+  </select>
+</div>
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Currency</label>
               <select className={cn(inputCls, "appearance-none")} value={form.currency} onChange={e => f("currency", e.target.value)}>
