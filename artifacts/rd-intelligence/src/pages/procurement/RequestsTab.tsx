@@ -250,19 +250,20 @@ export function NewRequestModal({ onClose, isLight, extraDefaults }: { onClose: 
     requiredQuantityKg: "", vendorDetailsName: "", vendorDetailsAddress: "",
     ...extraDefaults,
   });
+  const [items, setItems] = useState<any[]>([{ description: "", quantity: "", unit: "units", unitPrice: "" }]);
   const [saving, setSaving] = useState(false);
   const [exchangeRate, setExchangeRate] = useState<number | null>(null);
   const [manualRate, setManualRate] = useState("");
   const [rateLoading, setRateLoading] = useState(false);
   const [vendorSearch, setVendorSearch] = useState("");
   const [showVendorDropdown, setShowVendorDropdown] = useState(false);
+  const [addingVendor, setAddingVendor] = useState(false);
 
   const f = (k: string, v: any) => setForm(p => ({ ...p, [k]: v }));
 
   const inputCls = cn("w-full px-3 py-2 rounded-xl text-sm border focus:outline-none focus:ring-2 focus:ring-primary/40",
     isLight ? "bg-slate-50 border-slate-200 text-foreground" : "bg-black/20 border-white/10 text-foreground");
 
-  // Fetch vendors
   const { data: vendorsRaw = [] } = useQuery<any[]>({
     queryKey: ["/api/procurement/vendors"],
     queryFn: async () => {
@@ -275,14 +276,11 @@ export function NewRequestModal({ onClose, isLight, extraDefaults }: { onClose: 
     v.name?.toLowerCase().includes(vendorSearch.toLowerCase())
   );
 
-  // Fetch live USD to NGN exchange rate
   useEffect(() => {
     setRateLoading(true);
     fetch("https://api.exchangerate-api.com/v4/latest/USD")
       .then(r => r.json())
-      .then(data => {
-        if (data?.rates?.NGN) setExchangeRate(data.rates.NGN);
-      })
+      .then(data => { if (data?.rates?.NGN) setExchangeRate(data.rates.NGN); })
       .catch(() => setExchangeRate(null))
       .finally(() => setRateLoading(false));
   }, []);
@@ -292,14 +290,35 @@ export function NewRequestModal({ onClose, isLight, extraDefaults }: { onClose: 
     ? (parseFloat(form.estimatedAmount) * effectiveRate).toLocaleString("en-NG", { maximumFractionDigits: 2 })
     : null;
 
+  function addItem() { setItems(p => [...p, { description: "", quantity: "", unit: "units", unitPrice: "" }]); }
+  function removeItem(i: number) { setItems(p => p.filter((_, idx) => idx !== i)); }
+  function setItem(i: number, k: string, v: any) { setItems(p => p.map((it, idx) => idx === i ? { ...it, [k]: v } : it)); }
+  const totalAmount = items.reduce((s, it) => s + (parseFloat(it.quantity) * parseFloat(it.unitPrice) || 0), 0);
+
+  async function addVendorToList() {
+    if (!vendorSearch.trim()) return;
+    setAddingVendor(true);
+    try {
+      await fetch(`${BASE}api/procurement/vendors`, {
+        method: "POST", headers: authH(),
+        body: JSON.stringify({ name: vendorSearch.trim(), currency: "usd" }),
+      });
+      qc.invalidateQueries({ queryKey: ["/api/procurement/vendors"] });
+      f("vendorDetailsName", vendorSearch.trim());
+      setShowVendorDropdown(false);
+    } finally { setAddingVendor(false); }
+  }
+
   async function save() {
     setSaving(true);
     try {
+      const lineItems = items.filter(it => it.description);
       await fetch(`${BASE}api/procurement/requests`, {
         method: "POST", headers: authH(),
         body: JSON.stringify({
           ...form,
           currency: "usd",
+          lineItems: lineItems.length > 0 ? lineItems : undefined,
           requestedById: (currentUser as any)?.id,
           departmentId: (currentUser as any)?.departmentId ?? null,
         }),
@@ -350,22 +369,20 @@ export function NewRequestModal({ onClose, isLight, extraDefaults }: { onClose: 
             {form.estimatedAmount && (
               <div className={cn("mt-2 p-2.5 rounded-xl border text-xs space-y-1.5", isLight ? "bg-amber-50 border-amber-200" : "bg-amber-500/10 border-amber-500/20")}>
                 {rateLoading ? (
-                  <p className="text-amber-500 flex items-center gap-1.5"><Loader2 className="w-3 h-3 animate-spin" /> Fetching exchange rate...</p>
+                  <p className="text-amber-500 flex items-center gap-1.5"><Loader2 className="w-3 h-3 animate-spin" /> Fetching rate...</p>
                 ) : ngnEquivalent ? (
                   <p className="text-amber-500 font-medium">≈ ₦{ngnEquivalent} NGN
-                    {exchangeRate && !manualRate && <span className="text-muted-foreground ml-1">(Rate: ₦{exchangeRate.toLocaleString()}/USD)</span>}
-                    {manualRate && <span className="text-muted-foreground ml-1">(Manual rate: ₦{manualRate}/USD)</span>}
+                    {!manualRate && exchangeRate && <span className="text-muted-foreground ml-1">(₦{exchangeRate.toLocaleString()}/USD)</span>}
+                    {manualRate && <span className="text-muted-foreground ml-1">(Manual: ₦{manualRate}/USD)</span>}
                   </p>
-                ) : (
-                  <p className="text-muted-foreground">Exchange rate unavailable</p>
-                )}
+                ) : <p className="text-muted-foreground">Rate unavailable — set manually below</p>}
                 <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground">Set manual rate: $1 =</span>
+                  <span className="text-muted-foreground">$1 =</span>
                   <input type="number" value={manualRate} onChange={e => setManualRate(e.target.value)}
                     placeholder="e.g. 1650" className={cn("flex-1 h-6 rounded-lg border px-2 text-xs focus:outline-none",
                       isLight ? "bg-white border-gray-200" : "bg-black/20 border-white/10")} />
                   <span className="text-muted-foreground">NGN</span>
-                  {manualRate && <button onClick={() => setManualRate("")} className="text-red-400 text-xs hover:underline">Clear</button>}
+                  {manualRate && <button onClick={() => setManualRate("")} className="text-red-400 text-xs">Clear</button>}
                 </div>
               </div>
             )}
@@ -382,21 +399,53 @@ export function NewRequestModal({ onClose, isLight, extraDefaults }: { onClose: 
             </div>
           </div>
 
-          {/* Vendor Search */}
+          {/* Line Items */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Line Items</p>
+              <button onClick={addItem} className="flex items-center gap-1 text-xs text-primary hover:underline"><Plus className="w-3 h-3" /> Add Item</button>
+            </div>
+            <div className="space-y-2">
+              {items.map((item, i) => (
+                <div key={i} className={cn("grid grid-cols-12 gap-2 p-3 rounded-xl border", isLight ? "border-slate-100 bg-slate-50" : "border-white/5 bg-white/3")}>
+                  <div className="col-span-4">
+                    <input placeholder="Description" className={cn("w-full px-2 py-1.5 text-xs rounded-lg border focus:outline-none", isLight ? "bg-white border-slate-200" : "bg-black/20 border-white/10 text-foreground")} value={item.description} onChange={e => setItem(i, "description", e.target.value)} />
+                  </div>
+                  <div className="col-span-2">
+                    <input placeholder="Qty" type="number" className={cn("w-full px-2 py-1.5 text-xs rounded-lg border focus:outline-none", isLight ? "bg-white border-slate-200" : "bg-black/20 border-white/10 text-foreground")} value={item.quantity} onChange={e => setItem(i, "quantity", e.target.value)} />
+                  </div>
+                  <div className="col-span-2">
+                    <select className={cn("w-full px-2 py-1.5 text-xs rounded-lg border focus:outline-none appearance-none", isLight ? "bg-white border-slate-200" : "bg-black/20 border-white/10 text-foreground")} value={item.unit} onChange={e => setItem(i, "unit", e.target.value)}>
+                      {["kg","litres","units","cartons","bags","packs"].map(u => <option key={u} value={u}>{u}</option>)}
+                    </select>
+                  </div>
+                  <div className="col-span-3">
+                    <input placeholder="Unit Price" type="number" className={cn("w-full px-2 py-1.5 text-xs rounded-lg border focus:outline-none", isLight ? "bg-white border-slate-200" : "bg-black/20 border-white/10 text-foreground")} value={item.unitPrice} onChange={e => setItem(i, "unitPrice", e.target.value)} />
+                  </div>
+                  <div className="col-span-1 flex items-center justify-center">
+                    <button onClick={() => removeItem(i)} className="p-1 text-muted-foreground hover:text-destructive"><X className="w-3 h-3" /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {totalAmount > 0 && <p className="text-right text-xs font-semibold text-primary mt-1">Total: ${totalAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>}
+          </div>
+
+          {/* Vendor Search with manual entry */}
           <div>
             <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">Vendor Details</p>
             <div className="space-y-3">
               <div className="relative">
-                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Search Vendor</label>
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Search or Type Vendor</label>
                 <div className="relative">
                   <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                   <input className={cn(inputCls, "pl-8")} value={vendorSearch}
                     onChange={e => { setVendorSearch(e.target.value); setShowVendorDropdown(true); f("vendorDetailsName", e.target.value); }}
                     onFocus={() => setShowVendorDropdown(true)}
-                    placeholder="Search from vendor list..." />
+                    placeholder="Search from vendor list or type new..." />
                 </div>
-                {showVendorDropdown && filteredVendors.length > 0 && (
-                  <div className={cn("absolute z-10 w-full mt-1 rounded-xl border shadow-xl max-h-40 overflow-y-auto",
+                {showVendorDropdown && (
+                  <div className={cn("absolute z-10 w-full mt-1 rounded-xl border shadow-xl max-h-48 overflow-y-auto",
                     isLight ? "bg-white border-gray-200" : "bg-[#1a1a2e] border-white/10")}>
                     {filteredVendors.map((v: any) => (
                       <button key={v.id} type="button"
@@ -407,6 +456,14 @@ export function NewRequestModal({ onClose, isLight, extraDefaults }: { onClose: 
                         {v.address && <p className="text-xs text-muted-foreground">{v.address}</p>}
                       </button>
                     ))}
+                    {vendorSearch && !filteredVendors.find((v: any) => v.name.toLowerCase() === vendorSearch.toLowerCase()) && (
+                      <button type="button" onClick={addVendorToList} disabled={addingVendor}
+                        className={cn("w-full text-left px-3 py-2 text-sm transition-colors border-t flex items-center gap-2",
+                          isLight ? "hover:bg-blue-50 text-blue-600 border-gray-100" : "hover:bg-primary/10 text-primary border-white/10")}>
+                        <Plus className="w-3.5 h-3.5" />
+                        {addingVendor ? "Adding..." : `Add "${vendorSearch}" to vendor list`}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
