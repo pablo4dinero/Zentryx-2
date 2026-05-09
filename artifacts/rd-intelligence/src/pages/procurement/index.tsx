@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ShoppingCart, Building2, FileText, Package, BarChart3 } from "lucide-react";
+import { ShoppingCart, Building2, FileText, Package, BarChart3, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
 import { motion, AnimatePresence } from "framer-motion";
@@ -7,14 +7,15 @@ import VendorsTab from "./VendorsTab";
 import RequestsTab from "./RequestsTab";
 import OrdersTab from "./OrdersTab";
 import AnalyticsTab from "./AnalyticsTab";
+import SalesForecastPage from "@/pages/sales-force/Forecast";
 
 const TABS = [
   { id: "vendors", label: "Vendors", icon: Building2 },
   { id: "requests", label: "Purchase Requests", icon: FileText },
   { id: "orders", label: "Purchase Orders", icon: Package },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
+  { id: "forecast", label: "Sales Forecast", icon: TrendingUp },
 ] as const;
-
 type TabId = typeof TABS[number]["id"];
 
 export default function ProcurementPage() {
@@ -24,7 +25,6 @@ export default function ProcurementPage() {
 
   return (
     <div className="space-y-5">
-      {/* Page Header */}
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-3 mb-1">
@@ -39,7 +39,6 @@ export default function ProcurementPage() {
         </div>
       </div>
 
-      {/* Tab Navigation */}
       <div className={cn("rounded-2xl border p-1 flex overflow-x-auto gap-1 w-full",
         isLight ? "bg-slate-100/60 border-slate-200" : "glass-card border-white/10 bg-white/[0.03]")}>
         {TABS.map(tab => {
@@ -61,7 +60,6 @@ export default function ProcurementPage() {
         })}
       </div>
 
-      {/* Tab Content */}
       <AnimatePresence mode="wait">
         <motion.div key={activeTab}
           initial={{ opacity: 0, y: 8 }}
@@ -72,6 +70,7 @@ export default function ProcurementPage() {
           {activeTab === "requests" && <RequestsTab />}
           {activeTab === "orders" && <OrdersTab />}
           {activeTab === "analytics" && <AnalyticsTab />}
+          {activeTab === "forecast" && <SalesForecastPage />}
         </motion.div>
       </AnimatePresence>
     </div>

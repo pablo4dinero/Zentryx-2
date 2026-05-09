@@ -310,9 +310,14 @@ async function sendPO() {
 }
 
 async function updateStatus(newStatus: string) {
+  // Optimistic update
+  qc.setQueryData(["/api/procurement/orders"], (old: any[]) => {
+    if (!old) return old;
+    return old.map((o: any) => o.id === po.id ? { ...o, status: newStatus } : o);
+  });
   await fetch(`${BASE}api/procurement/orders/${po.id}`, {
     method: "PUT", headers: authH(),
-    body: JSON.stringify({ ...po, status: newStatus, vendorId: po.vendorId }),
+    body: JSON.stringify({ ...po, status: newStatus, vendorId: po.vendorId ?? po.vendor?.id }),
   });
   qc.invalidateQueries({ queryKey: ["/api/procurement/orders"] });
 }
@@ -479,50 +484,38 @@ function openEmailNotify() {
           )}
         </div>
         <div className={cn("sticky bottom-0 px-6 py-4 border-t flex flex-wrap gap-2",
-          isLight ? "bg-white border-slate-100" : "bg-[#0f0f1a] border-white/10")}>
-          <div className={cn("sticky bottom-0 px-6 py-4 border-t flex flex-wrap gap-2",
-  isLight ? "bg-white border-slate-100" : "bg-[#0f0f1a] border-white/10")}>
-  {po.status === "draft" && (
-    <button onClick={sendPO}
-      className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium bg-blue-600 text-white hover:bg-blue-700">
-      <Send className="w-3.5 h-3.5" /> Send to Vendor
-    </button>
-  )}
-  {["sent_to_vendor","in_transit","acknowledged","partially_received"].includes(po.status) && (
-    <button onClick={() => setShowReceive(true)}
-      className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700">
-      <Truck className="w-3.5 h-3.5" /> Receive Goods
-    </button>
-  )}
-  {po.status === "received" && !po.performance && (
-    <button onClick={() => setShowRate(true)}
-      className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium bg-amber-500 text-white hover:bg-amber-600">
-      <Star className="w-3.5 h-3.5" /> Rate Vendor
-    </button>
-  )}
-  <button onClick={openEmailNotify}
-    className={cn("flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border transition-colors ml-auto",
-      isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}>
-    <Send className="w-3.5 h-3.5" /> Notify via Email
-  </button>
-  <button onClick={() => setShowNotifyMsg(true)}
-    className={cn("flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border transition-colors",
-      isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}>
-    <MessageSquare className="w-3.5 h-3.5" /> Notify via Message
-  </button>
-</div>
-          {["sent_to_vendor","in_transit","acknowledged","partially_received"].includes(po.status) && (
-            <button onClick={() => setShowReceive(true)}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700">
-              <Truck className="w-3.5 h-3.5" /> Receive Goods
+            isLight ? "bg-white border-slate-100" : "bg-[#0f0f1a] border-white/10")}>
+            {po.status === "draft" && (
+              <button onClick={sendPO}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium bg-blue-600 text-white hover:bg-blue-700">
+                <Send className="w-3.5 h-3.5" /> Send to Vendor
+              </button>
+            )}
+            {["sent_to_vendor","in_transit","acknowledged","partially_received"].includes(po.status) && (
+              <button onClick={async () => {
+                await updateStatus("received");
+                setShowReceive(true);
+              }}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700">
+                <Truck className="w-3.5 h-3.5" /> Receive Goods
+              </button>
+            )}
+            {po.status === "received" && !po.performance && (
+              <button onClick={() => setShowRate(true)}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium bg-amber-500 text-white hover:bg-amber-600">
+                <Star className="w-3.5 h-3.5" /> Rate Vendor
+              </button>
+            )}
+            <button onClick={openEmailNotify}
+              className={cn("flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border transition-colors ml-auto",
+                isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}>
+              <Send className="w-3.5 h-3.5" /> Notify via Email
             </button>
-          )}
-          {po.status === "received" && !po.performance && (
-            <button onClick={() => setShowRate(true)}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium bg-amber-500 text-white hover:bg-amber-600">
-              <Star className="w-3.5 h-3.5" /> Rate Vendor
+            <button onClick={() => setShowNotifyMsg(true)}
+              className={cn("flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border transition-colors",
+                isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}>
+              <MessageSquare className="w-3.5 h-3.5" /> Notify via Message
             </button>
-          )}
         </div>
       </div>
       {showReceive && <ReceiveModal po={po} onClose={() => setShowReceive(false)} isLight={isLight} />}
