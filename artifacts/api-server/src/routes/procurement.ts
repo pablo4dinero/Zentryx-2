@@ -540,7 +540,9 @@ router.get("/orders", requireAuth, async (req: AuthRequest, res) => {
 router.post("/orders", requireAuth, async (req: AuthRequest, res) => {
   try {
     const b = req.body;
-    const userId = (req as any).user?.id;
+    const userId = req.user?.userId ?? (req as any).user?.id ?? (req as any).user?.userId;
+    console.log("Creating PO with body:", JSON.stringify(b));
+    console.log("userId:", userId);
     const poNumber = b.poNumber?.trim() || generatePoNumber();
     const [po] = await db.insert(purchaseOrdersTable).values({
       poNumber, purchaseRequestId: b.purchaseRequestId ?? null,
