@@ -535,6 +535,18 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
   const [chartType, setChartType] = useState<Record<string, string>>({});
   const leftRef = useRef<HTMLDivElement>(null);
   const [leftW, setLeftW] = useState(50);
+  const [sortCol, setSortCol] = useState<string>("id");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [ngnRate, setNgnRate] = useState<number | null>(null);
+  const [manualNgnRate, setManualNgnRate] = useState("");
+  const [showRateInput, setShowRateInput] = useState(false);
+
+  useEffect(() => {
+  fetch("https://api.exchangerate-api.com/v4/latest/USD")
+    .then(r => r.json())
+    .then(d => { if (d?.rates?.NGN) setNgnRate(d.rates.NGN); })
+    .catch(() => {});
+}, []);
 
   const { data: orders = [] } = useQuery({
     queryKey: [`/api/accounts/${accountId}/production-orders`],
@@ -550,7 +562,7 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
   };
 
   const addRow = async () => {
-    await api(`api/accounts/${accountId}/production-orders`, { method: "POST", body: JSON.stringify({ price: "", volume: "", dateOrdered: "", dateDelivered: "" }) });
+    await api(`api/accounts/${accountId}/production-orders`, { method: "POST", body: JSON.stringify({ price: "", volume: "", dateOrdered: "", expectedDeliveryDate: "", dateDelivered: "" }) });
     queryClient.invalidateQueries({ queryKey: [`/api/accounts/${accountId}/production-orders`] });
     reseedForecasts();
   };
@@ -568,8 +580,9 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
   };
 
   const exportTable = () => {
-    const data = ords.map(o => ({
+    const data = sortedOrds.map(o => ({
       "Price ($/kg)": o.price, "Volume (kg)": o.volume, "Date Ordered": o.dateOrdered,
+      "Expected Delivery": o.expectedDeliveryDate || "",
       "Date Delivered": o.dateDelivered, "Income ($)": (parseFloat(o.price || 0) * parseFloat(o.volume || 0)).toFixed(2),
     }));
     const ws = XLSX.utils.json_to_sheet(data);
@@ -593,10 +606,46 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
     price: parseFloat(o.price || 0),
   }));
   const totalIncome = ords.reduce((sum, o) => sum + parseFloat(o.price || 0) * parseFloat(o.volume || 0), 0);
+      const effectiveRate = manualNgnRate ? parseFloat(manualNgnRate) : ngnRate;
+    const totalNgn = effectiveRate ? totalIncome * effectiveRate : null;
+
+    const sortedOrds = [...ords].sort((a, b) => {
+      let av: any, bv: any;
+      if (sortCol === "income") {
+        av = parseFloat(a.price || 0) * parseFloat(a.volume || 0);
+        bv = parseFloat(b.price || 0) * parseFloat(b.volume || 0);
+      } else if (sortCol === "id") {
+        av = a.id; bv = b.id;
+      } else {
+        av = a[sortCol] || ""; bv = b[sortCol] || "";
+      }
+      if (av < bv) return sortDir === "asc" ? -1 : 1;
+      if (av > bv) return sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    function toggleSort(col: string) {
+      if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc");
+      else { setSortCol(col); setSortDir("desc"); }
+    }
+
+    const SortIcon = ({ col }: { col: string }) => {
+      if (sortCol !== col) return <span className="opacity-30 ml-1">↕</span>;
+      return <span className="ml-1 text-primary">{sortDir === "asc" ? "↑" : "↓"}</span>;
+    };
   const leadTimes = ords.filter(o => o.dateOrdered && o.dateDelivered).map(o => {
     const days = Math.round((new Date(o.dateDelivered.split("/").reverse().join("-")).getTime() - new Date(o.dateOrdered.split("/").reverse().join("-")).getTime()) / 86400000);
     return { label: `${o.dateOrdered}`, days };
   });
+
+  const deliveryCompareData = ords
+  .filter(o => o.dateOrdered && (o.expectedDeliveryDate || o.dateDelivered))
+  .map(o => ({
+    date: o.dateOrdered,
+    expected: o.expectedDeliveryDate ? Math.round((new Date(parseDMY(o.expectedDeliveryDate)).getTime() - new Date(parseDMY(o.dateOrdered)).getTime()) / 86400000) : null,
+    actual: o.dateDelivered ? Math.round((new Date(parseDMY(o.dateDelivered)).getTime() - new Date(parseDMY(o.dateOrdered)).getTime()) / 86400000) : null,
+  }));
+
   const incomeByMonth = ords.reduce((acc: any[], o) => {
     const month = o.dateOrdered ? o.dateOrdered.slice(3, 10) : "Unknown";
     const existing = acc.find(x => x.month === month);
@@ -617,6 +666,7 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
     { id: "lead_time", title: "Average Delivery Lead Time" },
     { id: "price_volume", title: "Price vs Volume" },
     { id: "order_frequency", title: "Order Frequency" },
+    { id: "delivery_compare", title: "Delivery Comparison" },
   ];
 
   const PriceVolumeTooltip = ({ active, payload }: any) => {
@@ -683,33 +733,79 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
         </LineChart>
       </ResponsiveContainer>
     );
+        if (id === "delivery_compare") return (
+      <ResponsiveContainer width="100%" height={height}>
+        <BarChart data={deliveryCompareData}>
+          <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
+          <XAxis dataKey="date" tick={{ fill: axisColor, fontSize: 10 }} />
+          <YAxis tick={{ fill: axisColor, fontSize: 11 }} unit=" d" />
+          <Tooltip contentStyle={tooltipCfg} formatter={(v: any, name: string) => [`${v} days`, name === "expected" ? "Expected" : "Actual"]} />
+          <Legend />
+          <Bar dataKey="expected" name="Expected" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="actual" name="Actual" fill="#10b981" radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    );
     return null;
   };
 
   return (
-    <div className="flex gap-4 h-full" style={{ minHeight: 600 }}>
-      <div style={{ width: `${leftW}%` }} className="flex flex-col gap-3 min-w-0">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold text-foreground">Production Orders</p>
-          <button onClick={exportTable} className="flex items-center gap-1.5 px-3 py-1.5 border border-white/10 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:border-white/20 transition-all">
-            <Download className="w-3.5 h-3.5" /> Export
-          </button>
+  <div className="flex gap-4 h-full" style={{ minHeight: 600 }}>
+    <div style={{ width: `${leftW}%` }} className="flex flex-col gap-3 min-w-0">
+      {/* Total Income — moved to top */}
+      <div className="glass-card rounded-2xl p-4 border border-emerald-500/20 bg-emerald-500/5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Total Income</p>
+            <p className="text-2xl font-bold text-emerald-400">
+              ${totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+            {totalNgn && <p className="text-sm text-amber-400 mt-0.5">≈ ₦{totalNgn.toLocaleString(undefined, { maximumFractionDigits: 0 })} NGN</p>}
+            {ords.length > 0 && <p className="text-xs text-muted-foreground mt-1">Across {ords.length} order{ords.length !== 1 ? "s" : ""}</p>}
+          </div>
+          <button onClick={() => setShowRateInput(r => !r)} className="text-xs text-primary hover:underline shrink-0">Set Rate</button>
         </div>
-        <div className="glass-card rounded-2xl overflow-hidden border border-white/5">
+        {showRateInput && (
+          <div className="flex items-center gap-2 mt-3 pt-3 border-t border-white/10">
+            <span className="text-xs text-muted-foreground">$1 =</span>
+            <input type="number" value={manualNgnRate} onChange={e => setManualNgnRate(e.target.value)}
+              placeholder={ngnRate ? `Live: ${ngnRate.toLocaleString()}` : "e.g. 1650"}
+              className="flex-1 h-7 rounded-lg border border-white/10 bg-black/20 px-2 text-xs focus:outline-none text-foreground" />
+            <span className="text-xs text-muted-foreground">NGN</span>
+            {manualNgnRate && <button onClick={() => setManualNgnRate("")} className="text-xs text-red-400">Clear</button>}
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-semibold text-foreground">Production Orders</p>
+        <button onClick={exportTable} className="flex items-center gap-1.5 px-3 py-1.5 border border-white/10 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:border-white/20 transition-all">
+          <Download className="w-3.5 h-3.5" /> Export
+        </button>
+      </div>
+      <div className="glass-card rounded-2xl overflow-hidden border border-white/5">
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead className="bg-white/5 border-b border-white/5">
-                <tr>
-                  <th className="px-3 py-2.5 text-left text-muted-foreground font-medium">Price ($/kg)</th>
-                  <th className="px-3 py-2.5 text-left text-muted-foreground font-medium">Volume (kg)</th>
-                  <th className="px-3 py-2.5 text-left text-muted-foreground font-medium">Date Ordered</th>
-                  <th className="px-3 py-2.5 text-left text-muted-foreground font-medium">Date Delivered</th>
-                  <th className="px-3 py-2.5 text-left text-muted-foreground font-medium">Income</th>
-                  <th className="px-3 py-2.5" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {ords.map((o: any) => (
+                  <tr>
+                    {[
+                      { col: "price", label: "Price ($/kg)" },
+                      { col: "volume", label: "Volume (kg)" },
+                      { col: "dateOrdered", label: "Date Ordered" },
+                      { col: "expectedDeliveryDate", label: "Expected Delivery" },
+                      { col: "dateDelivered", label: "Date Delivered" },
+                      { col: "income", label: "Income" },
+                    ].map(({ col, label }) => (
+                      <th key={col} onClick={() => toggleSort(col)}
+                        className="px-3 py-2.5 text-left text-muted-foreground font-medium cursor-pointer hover:text-foreground transition-colors select-none">
+                        {label}<SortIcon col={col} />
+                      </th>
+                    ))}
+                    <th className="px-3 py-2.5" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {sortedOrds.map((o: any) => (
                   <tr key={o.id} className="hover:bg-white/[0.02]">
                     <td className="px-3 py-2">
                       <input type="number" defaultValue={parseFloat(o.price || 0).toFixed(2)} onBlur={e => updateRow(o.id, { ...o, price: e.target.value })}
@@ -722,6 +818,10 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
                     <td className="px-3 py-2">
                       <input type="text" placeholder="dd/mm/yyyy" defaultValue={o.dateOrdered} onBlur={e => updateRow(o.id, { ...o, dateOrdered: e.target.value })}
                         className="w-28 bg-transparent text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1 h-7 placeholder:text-muted-foreground/40" />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input type="text" placeholder="dd/mm/yyyy" defaultValue={o.expectedDeliveryDate} onBlur={e => updateRow(o.id, { ...o, expectedDeliveryDate: e.target.value })}
+                        className="w-28 bg-transparent text-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-400/30 rounded px-1 h-7 placeholder:text-muted-foreground/40" />
                     </td>
                     <td className="px-3 py-2">
                       <input type="text" placeholder="dd/mm/yyyy" defaultValue={o.dateDelivered} onBlur={e => updateRow(o.id, { ...o, dateDelivered: e.target.value })}
@@ -743,16 +843,6 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
           </div>
         </div>
 
-        {/* Total Income */}
-        <div className="glass-card rounded-2xl p-4 border border-emerald-500/20 bg-emerald-500/5">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Total Income</p>
-          <p className="text-2xl font-bold text-emerald-400">
-            ${totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </p>
-          {ords.length > 0 && (
-            <p className="text-xs text-muted-foreground mt-1">Across {ords.length} order{ords.length !== 1 ? "s" : ""}</p>
-          )}
-        </div>
       </div>
 
       <div className="w-1 bg-white/10 hover:bg-primary/40 cursor-col-resize rounded-full transition-colors" onMouseDown={e => {
