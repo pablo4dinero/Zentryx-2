@@ -541,6 +541,7 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
   const [ngnRate, setNgnRate] = useState<number | null>(null);
   const [manualNgnRate, setManualNgnRate] = useState<string>("");
   const [showRateInput, setShowRateInput] = useState(false);
+  const { theme: _idTheme } = useTheme();
 
   const updateLocalOrder = (id: number, updates: any) => {
     setLocalOrders(prev => prev.map(order =>
@@ -550,12 +551,7 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
 
   useEffect(() => {
     // Fetch exchange rate with proper error handling
-    fetch("https://api.exchangerate-api.com/v4/latest/USD", {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-      },
-    })
+    fetch("https://api.exchangerate-api.com/v4/latest/USD")
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -577,15 +573,15 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
     queryFn: async () => { const res = await api(`api/accounts/${accountId}/production-orders`); return res.json(); },
   });
 
-  if (isLoading) return <div className="flex items-center justify-center h-40 text-muted-foreground">Loading production orders…</div>;
-  if (error) return <div className="flex items-center justify-center h-40 text-red-400">Error loading production orders: {error.message}</div>;
-
   const ords = orders as any[];
 
   // Sync local state with server data
   useEffect(() => {
     setLocalOrders(ords);
   }, [ords]);
+
+  if (isLoading) return <div className="flex items-center justify-center h-40 text-muted-foreground">Loading production orders…</div>;
+  if (error) return <div className="flex items-center justify-center h-40 text-red-400">Error loading production orders: {error.message}</div>;
 
   const reseedForecasts = () => {
     api("api/forecasts/seed", { method: "POST" })
@@ -686,7 +682,6 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
     return acc;
   }, []);
 
-  const { theme: _idTheme } = useTheme();
   const isLightTab = _idTheme === "light";
   const axisColor = isLightTab ? "#374151" : "#64748b";
   const gridStroke = isLightTab ? "#E5E7EB" : "rgba(255,255,255,0.05)";
