@@ -540,7 +540,7 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
   const [ngnRate, setNgnRate] = useState<number | null>(null);
   const [manualNgnRate, setManualNgnRate] = useState("");
   const [showRateInput, setShowRateInput] = useState(false);
-
+  
   useEffect(() => {
   fetch("https://api.exchangerate-api.com/v4/latest/USD")
     .then(r => r.json())
