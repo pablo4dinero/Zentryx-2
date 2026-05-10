@@ -528,6 +528,8 @@ function StatusReportTab({ accountId }: { accountId: number }) {
 }
 
 function ProductionOrdersTab({ accountId }: { accountId: number }) {
+  console.log('ProductionOrdersTab component mounted with accountId:', accountId);
+
   const queryClient = useQueryClient();
   const api = useApiCall();
   const { toast } = useToast();
@@ -542,11 +544,29 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
   const [showRateInput, setShowRateInput] = useState(false);
 
   useEffect(() => {
-  fetch("https://api.exchangerate-api.com/v4/latest/USD")
-    .then(r => r.json())
-    .then(d => { if (d?.rates?.NGN) setNgnRate(d.rates.NGN); })
-    .catch(() => {});
-}, []);
+    // Fetch exchange rate with proper error handling
+    fetch("https://api.exchangerate-api.com/v4/latest/USD", {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+      },
+    })
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then(d => {
+        if (d?.rates?.NGN) {
+          console.log('Exchange rate loaded:', d.rates.NGN);
+          setNgnRate(d.rates.NGN);
+        }
+      })
+      .catch(err => {
+        console.warn('Failed to load exchange rate:', err);
+        // Set a fallback rate
+        setNgnRate(1650); // Common USD to NGN rate
+      });
+  }, []);
 
   const { data: orders = [], isLoading, error } = useQuery({
     queryKey: [`/api/accounts/${accountId}/production-orders`],
@@ -766,7 +786,11 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
   };
 
   return (
-  <div className="flex gap-4 h-full" style={{ minHeight: 600 }}>
+    <>
+      <div style={{ padding: '10px', background: 'red', color: 'white', fontSize: '12px' }}>
+        DEBUG: ProductionOrdersTab is rendering! Account ID: {accountId}, Orders: {ords.length}, Loading: {isLoading ? 'true' : 'false'}, Error: {error ? error.message : 'none'}
+      </div>
+      <div className="flex gap-4 h-full" style={{ minHeight: 600 }}>
     <div style={{ width: `${leftW}%` }} className="flex flex-col gap-3 min-w-0">
       {/* Total Income — moved to top */}
       <div className="glass-card rounded-2xl p-4 border border-emerald-500/20 bg-emerald-500/5">
