@@ -537,9 +537,18 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
   const [leftW, setLeftW] = useState(50);
   const [sortCol, setSortCol] = useState<string>("id");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-  const [ngnRate, setNgnRate] = useState<number | null>(null);
-  const [manualNgnRate, setManualNgnRate] = useState("");
-  const [showRateInput, setShowRateInput] = useState(false);
+  const [localOrders, setLocalOrders] = useState<any[]>([]);
+
+  // Sync local state with server data
+  useEffect(() => {
+    setLocalOrders(ords);
+  }, [ords]);
+
+  const updateLocalOrder = (id: number, updates: any) => {
+    setLocalOrders(prev => prev.map(order =>
+      order.id === id ? { ...order, ...updates } : order
+    ));
+  };
 
   useEffect(() => {
     // Fetch exchange rate with proper error handling
@@ -618,18 +627,18 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
     const [d, m, y] = parts;
     return `${y || "0000"}-${(m || "00").padStart(2, "0")}-${(d || "00").padStart(2, "0")}`;
   };
-  const ordersByDate = [...ords].sort((a, b) => parseDMY(a.dateOrdered || "").localeCompare(parseDMY(b.dateOrdered || "")));
+  const ordersByDate = [...localOrders].sort((a, b) => parseDMY(a.dateOrdered || "").localeCompare(parseDMY(b.dateOrdered || "")));
   const revenueByDate = ordersByDate.map(o => ({ date: o.dateOrdered || "—", income: parseFloat(o.price || 0) * parseFloat(o.volume || 0) }));
   const orderFreqData = ordersByDate.map(o => ({
     date: o.dateOrdered || "—",
     volume: parseFloat(o.volume || 0),
     price: parseFloat(o.price || 0),
   }));
-  const totalIncome = ords.reduce((sum, o) => sum + parseFloat(o.price || 0) * parseFloat(o.volume || 0), 0);
+  const totalIncome = localOrders.reduce((sum, o) => sum + parseFloat(o.price || 0) * parseFloat(o.volume || 0), 0);
   const effectiveRate = manualNgnRate ? parseFloat(manualNgnRate) : ngnRate;
   const totalNgn = effectiveRate ? totalIncome * effectiveRate : null;
 
-  const sortedOrds = [...ords].sort((a, b) => {
+  const sortedOrds = [...localOrders].sort((a, b) => {
       let av: any, bv: any;
       if (sortCol === "income") {
         av = parseFloat(a.price || 0) * parseFloat(a.volume || 0);
@@ -652,12 +661,12 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
     if (sortCol !== col) return <span className="opacity-30 ml-1">↕</span>;
     return <span className="ml-1 text-primary">{sortDir === "asc" ? "↑" : "↓"}</span>;
   };
-  const leadTimes = ords.filter(o => o.dateOrdered && o.dateDelivered).map(o => {
+  const leadTimes = localOrders.filter(o => o.dateOrdered && o.dateDelivered).map(o => {
     const days = Math.round((new Date(o.dateDelivered.split("/").reverse().join("-")).getTime() - new Date(o.dateOrdered.split("/").reverse().join("-")).getTime()) / 86400000);
     return { label: `${o.dateOrdered}`, days };
   });
 
-  const deliveryCompareData = ords
+  const deliveryCompareData = localOrders
   .filter(o => o.dateOrdered && (o.expectedDeliveryDate || o.dateDelivered))
   .map(o => ({
     date: o.dateOrdered,
@@ -665,7 +674,7 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
     actual: o.dateDelivered ? Math.round((new Date(parseDMY(o.dateDelivered)).getTime() - new Date(parseDMY(o.dateOrdered)).getTime()) / 86400000) : null,
   }));
 
-  const incomeByMonth = ords.reduce((acc: any[], o) => {
+  const incomeByMonth = localOrders.reduce((acc: any[], o) => {
     const month = o.dateOrdered ? o.dateOrdered.slice(3, 10) : "Unknown";
     const existing = acc.find(x => x.month === month);
     const inc = parseFloat(o.price || 0) * parseFloat(o.volume || 0);
@@ -732,7 +741,7 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
           <YAxis dataKey="y" name="Volume" tick={{ fill: axisColor, fontSize: 11 }} />
           <ZAxis dataKey="z" range={[40, 400]} />
           <Tooltip content={<PriceVolumeTooltip />} cursor={{ strokeDasharray: "3 3" }} />
-          <Scatter data={ords.map(o => ({ x: parseFloat(o.price || 0), y: parseFloat(o.volume || 0), z: parseFloat(o.price || 0) * parseFloat(o.volume || 0) }))} fill="#8b5cf6" fillOpacity={0.7} />
+          <Scatter data={localOrders.map(o => ({ x: parseFloat(o.price || 0), y: parseFloat(o.volume || 0), z: parseFloat(o.price || 0) * parseFloat(o.volume || 0) }))} fill="#8b5cf6" fillOpacity={0.7} />
         </ScatterChart>
       </ResponsiveContainer>
     );
@@ -780,7 +789,7 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
               ${totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
             {totalNgn && <p className="text-sm text-amber-400 mt-0.5">≈ ₦{totalNgn.toLocaleString(undefined, { maximumFractionDigits: 0 })} NGN</p>}
-            {ords.length > 0 && <p className="text-xs text-muted-foreground mt-1">Across {ords.length} order{ords.length !== 1 ? "s" : ""}</p>}
+            {localOrders.length > 0 && <p className="text-xs text-muted-foreground mt-1">Across {localOrders.length} order{localOrders.length !== 1 ? "s" : ""}</p>}
           </div>
           <button onClick={() => setShowRateInput(r => !r)} className="text-xs text-primary hover:underline shrink-0">Set Rate</button>
         </div>
@@ -827,23 +836,28 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
                   {sortedOrds.map((o: any) => (
                   <tr key={o.id} className="hover:bg-white/[0.02]">
                     <td className="px-3 py-2">
-                      <input type="number" defaultValue={parseFloat(o.price || 0).toFixed(2)} onBlur={e => updateRow(o.id, { ...o, price: e.target.value })}
+                      <input type="number" value={o.price || ""} onChange={e => updateLocalOrder(o.id, { price: e.target.value })}
+                        onBlur={e => updateRow(o.id, { ...o, price: e.target.value })}
                         className="w-20 bg-transparent text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1 h-7" step="0.01" min="0" />
                     </td>
                     <td className="px-3 py-2">
-                      <input type="number" defaultValue={o.volume} onBlur={e => updateRow(o.id, { ...o, volume: e.target.value })}
+                      <input type="number" value={o.volume || ""} onChange={e => updateLocalOrder(o.id, { volume: e.target.value })}
+                        onBlur={e => updateRow(o.id, { ...o, volume: e.target.value })}
                         className="w-20 bg-transparent text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1 h-7" step="0.01" />
                     </td>
                     <td className="px-3 py-2">
-                      <input type="text" placeholder="dd/mm/yyyy" defaultValue={o.dateOrdered} onBlur={e => updateRow(o.id, { ...o, dateOrdered: e.target.value })}
+                      <input type="text" placeholder="dd/mm/yyyy" value={o.dateOrdered || ""} onChange={e => updateLocalOrder(o.id, { dateOrdered: e.target.value })}
+                        onBlur={e => updateRow(o.id, { ...o, dateOrdered: e.target.value })}
                         className="w-28 bg-transparent text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1 h-7 placeholder:text-muted-foreground/40" />
                     </td>
                     <td className="px-3 py-2">
-                      <input type="text" placeholder="dd/mm/yyyy" defaultValue={o.expectedDeliveryDate} onBlur={e => updateRow(o.id, { ...o, expectedDeliveryDate: e.target.value })}
+                      <input type="text" placeholder="dd/mm/yyyy" value={o.expectedDeliveryDate || ""} onChange={e => updateLocalOrder(o.id, { expectedDeliveryDate: e.target.value })}
+                        onBlur={e => updateRow(o.id, { ...o, expectedDeliveryDate: e.target.value })}
                         className="w-28 bg-transparent text-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-400/30 rounded px-1 h-7 placeholder:text-muted-foreground/40" />
                     </td>
                     <td className="px-3 py-2">
-                      <input type="text" placeholder="dd/mm/yyyy" defaultValue={o.dateDelivered} onBlur={e => updateRow(o.id, { ...o, dateDelivered: e.target.value })}
+                      <input type="text" placeholder="dd/mm/yyyy" value={o.dateDelivered || ""} onChange={e => updateLocalOrder(o.id, { dateDelivered: e.target.value })}
+                        onBlur={e => updateRow(o.id, { ...o, dateDelivered: e.target.value })}
                         className="w-28 bg-transparent text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1 h-7 placeholder:text-muted-foreground/40" />
                     </td>
                     <td className="px-3 py-2 text-emerald-400 font-medium">
