@@ -224,12 +224,13 @@ router.get("/:id/production-orders", requireAuth, async (req, res) => {
 router.post("/:id/production-orders", requireAuth, async (req, res) => {
   try {
     const accountId = parseInt(req.params.id);
-    const { price, volume, dateOrdered, dateDelivered } = req.body;
+    const { price, volume, dateOrdered, expectedDeliveryDate, dateDelivered } = req.body;
     const [order] = await db.insert(accountProductionOrdersTable).values({
       accountId,
       price: price !== undefined && price !== "" ? String(price) : null,
       volume: volume !== undefined && volume !== "" ? String(volume) : null,
       dateOrdered: dateOrdered || null,
+      expectedDeliveryDate: expectedDeliveryDate || null,
       dateDelivered: dateDelivered || null,
     }).returning();
     res.status(201).json(order);
