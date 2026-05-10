@@ -72,6 +72,7 @@ async function createTablesIfNotExist() {
         price NUMERIC(10,4),
         volume NUMERIC(10,2),
         date_ordered TEXT,
+        expected_delivery_date TEXT,
         date_delivered TEXT,
         created_at TIMESTAMP NOT NULL DEFAULT NOW()
       )`,
@@ -81,6 +82,9 @@ async function createTablesIfNotExist() {
       logger.info("Creating table with SQL:", tableSql.split('\n')[0]);
       await db.execute(sql.raw(tableSql));
     }
+
+    // Ensure the expected delivery date column exists on existing production order tables
+    await db.execute(sql.raw(`ALTER TABLE account_production_orders ADD COLUMN IF NOT EXISTS expected_delivery_date TEXT;`));
 
     logger.info("Database tables created or verified successfully");
   } catch (err) {
