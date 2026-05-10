@@ -55,6 +55,7 @@ export const accountProductionOrdersTable = pgTable("account_production_orders",
   price: numeric("price", { precision: 10, scale: 4 }),
   volume: numeric("volume", { precision: 10, scale: 2 }),
   dateOrdered: text("date_ordered"),
+  expectedDeliveryDate: text("expected_delivery_date"),
   dateDelivered: text("date_delivered"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
