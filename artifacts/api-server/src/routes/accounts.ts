@@ -211,11 +211,9 @@ router.delete("/:id/tasks/:taskId", requireAuth, async (req, res) => {
 router.get("/:id/production-orders", requireAuth, async (req, res) => {
   try {
     const accountId = parseInt(req.params.id);
-    console.log('Fetching production orders for account:', accountId);
     const orders = await db.select().from(accountProductionOrdersTable)
       .where(eq(accountProductionOrdersTable.accountId, accountId))
       .orderBy(asc(accountProductionOrdersTable.createdAt));
-    console.log('Found orders:', orders.length);
     res.json(orders);
   } catch (err) {
     console.error('Error fetching production orders:', err);
