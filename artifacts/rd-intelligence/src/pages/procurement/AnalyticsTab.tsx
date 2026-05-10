@@ -621,11 +621,7 @@ export default function AnalyticsTab() {
       {/* 4. Top Vendors (full width) */}
       <TopVendorsChart data={data.topVendors ?? []} />
 
-      {/* 5 & 6. Approval Cycle + Delivery Performance side by side */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <ApprovalCycleChart data={data.approvalCycleTime ?? []} />
-        <DeliveryPerformanceChart data={data.deliveryPerformance ?? []} />
-      </div>
+  
     </div>
   );
 }
