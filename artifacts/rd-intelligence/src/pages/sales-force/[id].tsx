@@ -548,10 +548,13 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
     .catch(() => {});
 }, []);
 
-  const { data: orders = [] } = useQuery({
+  const { data: orders = [], isLoading, error } = useQuery({
     queryKey: [`/api/accounts/${accountId}/production-orders`],
     queryFn: async () => { const res = await api(`api/accounts/${accountId}/production-orders`); return res.json(); },
   });
+
+  if (isLoading) return <div className="flex items-center justify-center h-40 text-muted-foreground">Loading production orders…</div>;
+  if (error) return <div className="flex items-center justify-center h-40 text-red-400">Error loading production orders: {error.message}</div>;
 
   const ords = orders as any[];
 
