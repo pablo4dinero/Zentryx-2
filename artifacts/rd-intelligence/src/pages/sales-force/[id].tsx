@@ -538,11 +538,9 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
   const [sortCol, setSortCol] = useState<string>("id");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [localOrders, setLocalOrders] = useState<any[]>([]);
-
-  // Sync local state with server data
-  useEffect(() => {
-    setLocalOrders(ords);
-  }, [ords]);
+  const [ngnRate, setNgnRate] = useState<number | null>(null);
+  const [manualNgnRate, setManualNgnRate] = useState<string>("");
+  const [showRateInput, setShowRateInput] = useState(false);
 
   const updateLocalOrder = (id: number, updates: any) => {
     setLocalOrders(prev => prev.map(order =>
@@ -583,6 +581,11 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
   if (error) return <div className="flex items-center justify-center h-40 text-red-400">Error loading production orders: {error.message}</div>;
 
   const ords = orders as any[];
+
+  // Sync local state with server data
+  useEffect(() => {
+    setLocalOrders(ords);
+  }, [ords]);
 
   const reseedForecasts = () => {
     api("api/forecasts/seed", { method: "POST" })
