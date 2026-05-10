@@ -5,7 +5,7 @@ import { DragDropContext, Droppable, Draggable } from "@/components/dnd-stub";
 import type { DropResult } from "@/components/dnd-stub";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  LineChart, Line, ScatterChart, Scatter, ZAxis, Cell
+  LineChart, Line, ScatterChart, Scatter, ZAxis, Cell, Legend
 } from "recharts";
 import {
   ArrowLeft, Star, Edit3, Save, X, Plus, Trash2, ChevronDown, Calendar,
@@ -786,11 +786,7 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
   };
 
   return (
-    <>
-      <div style={{ padding: '10px', background: 'red', color: 'white', fontSize: '12px' }}>
-        DEBUG: ProductionOrdersTab is rendering! Account ID: {accountId}, Orders: {ords.length}, Loading: {isLoading ? 'true' : 'false'}, Error: {error ? error.message : 'none'}
-      </div>
-      <div className="flex gap-4 h-full" style={{ minHeight: 600 }}>
+  <div className="flex gap-4 h-full" style={{ minHeight: 600 }}>
     <div style={{ width: `${leftW}%` }} className="flex flex-col gap-3 min-w-0">
       {/* Total Income — moved to top */}
       <div className="glass-card rounded-2xl p-4 border border-emerald-500/20 bg-emerald-500/5">
