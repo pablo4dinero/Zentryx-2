@@ -242,9 +242,9 @@ router.post("/:id/production-orders", requireAuth, async (req, res) => {
 router.put("/:id/production-orders/:orderId", requireAuth, async (req, res) => {
   try {
     const orderId = parseInt(req.params.orderId);
-    const { price, volume, dateOrdered, dateDelivered } = req.body;
+    const { price, volume, dateOrdered, expectedDeliveryDate, dateDelivered } = req.body;
     const [order] = await db.update(accountProductionOrdersTable).set({
-      price, volume, dateOrdered, dateDelivered,
+      price, volume, dateOrdered, expectedDeliveryDate, dateDelivered,
     }).where(eq(accountProductionOrdersTable.id, orderId)).returning();
     if (!order) { res.status(404).json({ error: "NotFound" }); return; }
     res.json(order);
