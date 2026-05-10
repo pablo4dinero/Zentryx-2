@@ -5,7 +5,7 @@ import { DragDropContext, Droppable, Draggable } from "@/components/dnd-stub";
 import type { DropResult } from "@/components/dnd-stub";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  LineChart, Line, ScatterChart, Scatter, ZAxis, Cell
+  LineChart, Line, ScatterChart, Scatter, ZAxis, Cell, Legend
 } from "recharts";
 import {
   ArrowLeft, Star, Edit3, Save, X, Plus, Trash2, ChevronDown, Calendar,
@@ -528,8 +528,6 @@ function StatusReportTab({ accountId }: { accountId: number }) {
 }
 
 function ProductionOrdersTab({ accountId }: { accountId: number }) {
-  console.log('ProductionOrdersTab component mounted with accountId:', accountId);
-
   const queryClient = useQueryClient();
   const api = useApiCall();
   const { toast } = useToast();
@@ -557,7 +555,6 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
       })
       .then(d => {
         if (d?.rates?.NGN) {
-          console.log('Exchange rate loaded:', d.rates.NGN);
           setNgnRate(d.rates.NGN);
         }
       })
@@ -570,22 +567,8 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
 
   const { data: orders = [], isLoading, error } = useQuery({
     queryKey: [`/api/accounts/${accountId}/production-orders`],
-    queryFn: async () => {
-      console.log('Fetching production orders for account:', accountId);
-      const res = await api(`api/accounts/${accountId}/production-orders`);
-      console.log('API response status:', res.status);
-      if (!res.ok) {
-        const errorText = await res.text();
-        console.error('API error:', errorText);
-        throw new Error(`API error: ${res.status} ${errorText}`);
-      }
-      const data = await res.json();
-      console.log('Production orders data:', data);
-      return data;
-    },
+    queryFn: async () => { const res = await api(`api/accounts/${accountId}/production-orders`); return res.json(); },
   });
-
-  console.log('ProductionOrdersTab render:', { orders, isLoading, error, accountId });
 
   if (isLoading) return <div className="flex items-center justify-center h-40 text-muted-foreground">Loading production orders…</div>;
   if (error) return <div className="flex items-center justify-center h-40 text-red-400">Error loading production orders: {error.message}</div>;
@@ -786,11 +769,7 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
   };
 
   return (
-    <>
-      <div style={{ padding: '10px', background: 'red', color: 'white', fontSize: '12px' }}>
-        DEBUG: ProductionOrdersTab is rendering! Account ID: {accountId}, Orders: {ords.length}, Loading: {isLoading ? 'true' : 'false'}, Error: {error ? error.message : 'none'}
-      </div>
-      <div className="flex gap-4 h-full" style={{ minHeight: 600 }}>
+  <div className="flex gap-4 h-full" style={{ minHeight: 600 }}>
     <div style={{ width: `${leftW}%` }} className="flex flex-col gap-3 min-w-0">
       {/* Total Income — moved to top */}
       <div className="glass-card rounded-2xl p-4 border border-emerald-500/20 bg-emerald-500/5">
