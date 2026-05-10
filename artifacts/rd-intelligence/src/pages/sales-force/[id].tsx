@@ -540,7 +540,7 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
   const [ngnRate, setNgnRate] = useState<number | null>(null);
   const [manualNgnRate, setManualNgnRate] = useState("");
   const [showRateInput, setShowRateInput] = useState(false);
-  
+
   useEffect(() => {
   fetch("https://api.exchangerate-api.com/v4/latest/USD")
     .then(r => r.json())
@@ -606,10 +606,10 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
     price: parseFloat(o.price || 0),
   }));
   const totalIncome = ords.reduce((sum, o) => sum + parseFloat(o.price || 0) * parseFloat(o.volume || 0), 0);
-      const effectiveRate = manualNgnRate ? parseFloat(manualNgnRate) : ngnRate;
-    const totalNgn = effectiveRate ? totalIncome * effectiveRate : null;
+  const effectiveRate = manualNgnRate ? parseFloat(manualNgnRate) : ngnRate;
+  const totalNgn = effectiveRate ? totalIncome * effectiveRate : null;
 
-    const sortedOrds = [...ords].sort((a, b) => {
+  const sortedOrds = [...ords].sort((a, b) => {
       let av: any, bv: any;
       if (sortCol === "income") {
         av = parseFloat(a.price || 0) * parseFloat(a.volume || 0);
@@ -625,14 +625,13 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
     });
 
     function toggleSort(col: string) {
-      if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc");
-      else { setSortCol(col); setSortDir("desc"); }
-    }
-
-    const SortIcon = ({ col }: { col: string }) => {
-      if (sortCol !== col) return <span className="opacity-30 ml-1">↕</span>;
-      return <span className="ml-1 text-primary">{sortDir === "asc" ? "↑" : "↓"}</span>;
-    };
+    if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortCol(col); setSortDir("desc"); }
+  }
+  const SortIcon = ({ col }: { col: string }) => {
+    if (sortCol !== col) return <span className="opacity-30 ml-1">↕</span>;
+    return <span className="ml-1 text-primary">{sortDir === "asc" ? "↑" : "↓"}</span>;
+  };
   const leadTimes = ords.filter(o => o.dateOrdered && o.dateDelivered).map(o => {
     const days = Math.round((new Date(o.dateDelivered.split("/").reverse().join("-")).getTime() - new Date(o.dateOrdered.split("/").reverse().join("-")).getTime()) / 86400000);
     return { label: `${o.dateOrdered}`, days };
