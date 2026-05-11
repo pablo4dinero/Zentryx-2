@@ -76,6 +76,19 @@ async function createTablesIfNotExist() {
         date_delivered TEXT,
         created_at TIMESTAMP NOT NULL DEFAULT NOW()
       )`,
+      `CREATE TABLE IF NOT EXISTS today_production_orders (
+        id SERIAL PRIMARY KEY,
+        production_order_id INTEGER NOT NULL,
+        account_id INTEGER NOT NULL,
+        account_company TEXT,
+        product_name TEXT,
+        price NUMERIC(10,4),
+        volume NUMERIC(10,2),
+        date_ordered TEXT,
+        expected_delivery_date TEXT,
+        date_delivered TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )`,
     ];
 
     for (const tableSql of tables) {
@@ -85,6 +98,11 @@ async function createTablesIfNotExist() {
 
     // Ensure the expected delivery date column exists on existing production order tables
     await db.execute(sql.raw(`ALTER TABLE account_production_orders ADD COLUMN IF NOT EXISTS expected_delivery_date TEXT;`));
+    await db.execute(sql.raw(`ALTER TABLE today_production_orders ADD COLUMN IF NOT EXISTS production_order_id INTEGER NOT NULL;`));
+    await db.execute(sql.raw(`ALTER TABLE today_production_orders ADD COLUMN IF NOT EXISTS account_company TEXT;`));
+    await db.execute(sql.raw(`ALTER TABLE today_production_orders ADD COLUMN IF NOT EXISTS product_name TEXT;`));
+    await db.execute(sql.raw(`ALTER TABLE today_production_orders ADD COLUMN IF NOT EXISTS expected_delivery_date TEXT;`));
+    await db.execute(sql.raw(`ALTER TABLE today_production_orders ADD COLUMN IF NOT EXISTS date_delivered TEXT;`));
 
     logger.info("Database tables created or verified successfully");
   } catch (err) {
