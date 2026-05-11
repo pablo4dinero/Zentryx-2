@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { accountsTable, accountTasksTable, accountProductionOrdersTable, accountStatusReportsTable, usersTable } from "@workspace/db";
+import { accountsTable, accountTasksTable, accountProductionOrdersTable, accountStatusReportsTable, todayProductionOrdersTable, usersTable } from "@workspace/db";
 import { eq, asc, desc } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../lib/auth";
 import { logActivity } from "../lib/activity";
@@ -38,6 +38,54 @@ const formatAccount = (a: typeof accountsTable.$inferSelect) => ({
   updatedAt: a.updatedAt,
 });
 
+function parseDMY(date: string | null | undefined): Date | null {
+  if (!date || typeof date !== "string") return null;
+  const parts = date.split("/");
+  if (parts.length !== 3) return null;
+  const [d, m, y] = parts;
+  const day = parseInt(d, 10);
+  const month = parseInt(m, 10) - 1;
+  const year = parseInt(y, 10);
+  if (Number.isNaN(day) || Number.isNaN(month) || Number.isNaN(year)) return null;
+  const parsed = new Date(year, month, day);
+  return isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function isTodayDate(date: string | null | undefined): boolean {
+  const parsed = parseDMY(date);
+  if (!parsed) return false;
+  const now = new Date();
+  return parsed.getFullYear() === now.getFullYear()
+    && parsed.getMonth() === now.getMonth()
+    && parsed.getDate() === now.getDate();
+}
+
+async function upsertTodayOrderEntry(order: any, account: typeof accountsTable.$inferSelect) {
+  await db.delete(todayProductionOrdersTable)
+    .where(eq(todayProductionOrdersTable.productionOrderId, order.id));
+
+  if (!isTodayDate(order.dateOrdered)) {
+    return;
+  }
+
+  await db.insert(todayProductionOrdersTable).values({
+    productionOrderId: order.id,
+    accountId: account.id,
+    accountCompany: account.company,
+    productName: account.productName,
+    price: order.price,
+    volume: order.volume,
+    dateOrdered: order.dateOrdered,
+    expectedDeliveryDate: order.expectedDeliveryDate || null,
+    dateDelivered: order.dateDelivered || null,
+  });
+}
+
+async function deleteTodayOrderEntry(productionOrderId: number) {
+  await db.delete(todayProductionOrdersTable)
+    .where(eq(todayProductionOrdersTable.productionOrderId, productionOrderId));
+}
+
 router.get("/", requireAuth, async (req: AuthRequest, res) => {
   try {
     const allAccounts = await db.select().from(accountsTable).orderBy(desc(accountsTable.createdAt));
@@ -69,7 +117,7 @@ router.get("/", requireAuth, async (req: AuthRequest, res) => {
 
 router.get("/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
     const [account] = await db.select().from(accountsTable).where(eq(accountsTable.id, id)).limit(1);
     if (!account) { res.status(404).json({ error: "NotFound" }); return; }
 
@@ -125,7 +173,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res) => {
 
 router.put("/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
     const { company, productName, accountManagers, contactPerson, cpPhone, cpEmail,
       customerType, productType, application, targetPrice, volume, urgencyLevel,
       competitorReference, sellingPrice, margin, approvalStatus, isActive, status } = req.body;
@@ -151,7 +199,9 @@ router.put("/:id", requireAuth, async (req: AuthRequest, res) => {
 
 router.delete("/:id", requireAuth, async (req, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
+    await db.delete(todayProductionOrdersTable).where(eq(todayProductionOrdersTable.accountId, id));
+    await db.delete(accountProductionOrdersTable).where(eq(accountProductionOrdersTable.accountId, id));
     await db.delete(accountsTable).where(eq(accountsTable.id, id));
     res.status(204).send();
   } catch {
@@ -161,7 +211,7 @@ router.delete("/:id", requireAuth, async (req, res) => {
 
 router.get("/:id/tasks", requireAuth, async (req, res) => {
   try {
-    const accountId = parseInt(req.params.id);
+    const accountId = parseInt(String(req.params.id));
     const tasks = await db.select().from(accountTasksTable)
       .where(eq(accountTasksTable.accountId, accountId))
       .orderBy(asc(accountTasksTable.sortOrder), asc(accountTasksTable.createdAt));
@@ -173,7 +223,7 @@ router.get("/:id/tasks", requireAuth, async (req, res) => {
 
 router.post("/:id/tasks", requireAuth, async (req, res) => {
   try {
-    const accountId = parseInt(req.params.id);
+    const accountId = parseInt(String(req.params.id));
     const { title, status, description, assigneeId, startDate, dueDate, sortOrder } = req.body;
     const [task] = await db.insert(accountTasksTable).values({
       accountId, title, status: status || "todo", description, assigneeId, startDate, dueDate, sortOrder: sortOrder || 0,
@@ -186,7 +236,7 @@ router.post("/:id/tasks", requireAuth, async (req, res) => {
 
 router.put("/:id/tasks/:taskId", requireAuth, async (req, res) => {
   try {
-    const taskId = parseInt(req.params.taskId);
+    const taskId = parseInt(String(req.params.taskId));
     const { title, status, description, assigneeId, startDate, dueDate, sortOrder } = req.body;
     const [task] = await db.update(accountTasksTable).set({
       title, status, description, assigneeId, startDate, dueDate, sortOrder, updatedAt: new Date(),
@@ -200,7 +250,7 @@ router.put("/:id/tasks/:taskId", requireAuth, async (req, res) => {
 
 router.delete("/:id/tasks/:taskId", requireAuth, async (req, res) => {
   try {
-    const taskId = parseInt(req.params.taskId);
+    const taskId = parseInt(String(req.params.taskId));
     await db.delete(accountTasksTable).where(eq(accountTasksTable.id, taskId));
     res.status(204).send();
   } catch {
@@ -210,7 +260,7 @@ router.delete("/:id/tasks/:taskId", requireAuth, async (req, res) => {
 
 router.get("/:id/production-orders", requireAuth, async (req, res) => {
   try {
-    const accountId = parseInt(req.params.id);
+    const accountId = parseInt(String(req.params.id));
     const orders = await db.select().from(accountProductionOrdersTable)
       .where(eq(accountProductionOrdersTable.accountId, accountId))
       .orderBy(asc(accountProductionOrdersTable.createdAt));
@@ -223,8 +273,13 @@ router.get("/:id/production-orders", requireAuth, async (req, res) => {
 
 router.post("/:id/production-orders", requireAuth, async (req, res) => {
   try {
-    const accountId = parseInt(req.params.id);
+    const accountId = parseInt(String(req.params.id));
     const { price, volume, dateOrdered, expectedDeliveryDate, dateDelivered } = req.body;
+    const [account] = await db.select().from(accountsTable).where(eq(accountsTable.id, accountId)).limit(1);
+    if (!account) {
+      res.status(404).json({ error: "AccountNotFound" });
+      return;
+    }
     const [order] = await db.insert(accountProductionOrdersTable).values({
       accountId,
       price: price !== undefined && price !== "" ? String(price) : null,
@@ -233,6 +288,9 @@ router.post("/:id/production-orders", requireAuth, async (req, res) => {
       expectedDeliveryDate: expectedDeliveryDate || null,
       dateDelivered: dateDelivered || null,
     }).returning();
+
+    await upsertTodayOrderEntry(order, account);
+
     res.status(201).json(order);
   } catch (err) {
     console.error(err);
@@ -242,12 +300,20 @@ router.post("/:id/production-orders", requireAuth, async (req, res) => {
 
 router.put("/:id/production-orders/:orderId", requireAuth, async (req, res) => {
   try {
-    const orderId = parseInt(req.params.orderId);
+    const accountId = parseInt(String(req.params.id));
+    const orderId = parseInt(String(req.params.orderId));
     const { price, volume, dateOrdered, expectedDeliveryDate, dateDelivered } = req.body;
+    const [account] = await db.select().from(accountsTable).where(eq(accountsTable.id, accountId)).limit(1);
+    if (!account) {
+      res.status(404).json({ error: "AccountNotFound" });
+      return;
+    }
     const [order] = await db.update(accountProductionOrdersTable).set({
       price, volume, dateOrdered, expectedDeliveryDate, dateDelivered,
     }).where(eq(accountProductionOrdersTable.id, orderId)).returning();
     if (!order) { res.status(404).json({ error: "NotFound" }); return; }
+
+    await upsertTodayOrderEntry(order, account);
     res.json(order);
   } catch {
     res.status(500).json({ error: "InternalServerError" });
@@ -256,7 +322,8 @@ router.put("/:id/production-orders/:orderId", requireAuth, async (req, res) => {
 
 router.delete("/:id/production-orders/:orderId", requireAuth, async (req, res) => {
   try {
-    const orderId = parseInt(req.params.orderId);
+    const orderId = parseInt(String(req.params.orderId));
+    await deleteTodayOrderEntry(orderId);
     await db.delete(accountProductionOrdersTable).where(eq(accountProductionOrdersTable.id, orderId));
     res.status(204).send();
   } catch {
@@ -266,7 +333,7 @@ router.delete("/:id/production-orders/:orderId", requireAuth, async (req, res) =
 
 router.get("/:id/status-reports", requireAuth, async (req, res) => {
   try {
-    const accountId = parseInt(req.params.id);
+    const accountId = parseInt(String(req.params.id));
     const reports = await db.select().from(accountStatusReportsTable)
       .where(eq(accountStatusReportsTable.accountId, accountId))
       .orderBy(desc(accountStatusReportsTable.createdAt));
@@ -278,7 +345,7 @@ router.get("/:id/status-reports", requireAuth, async (req, res) => {
 
 router.post("/:id/status-reports", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const accountId = parseInt(req.params.id);
+    const accountId = parseInt(String(req.params.id));
     const { content, authorName } = req.body;
     const [report] = await db.insert(accountStatusReportsTable).values({
       accountId, content, authorId: req.user?.userId, authorName,
@@ -291,7 +358,7 @@ router.post("/:id/status-reports", requireAuth, async (req: AuthRequest, res) =>
 
 router.delete("/:id/status-reports/:reportId", requireAuth, async (req, res) => {
   try {
-    const reportId = parseInt(req.params.reportId);
+    const reportId = parseInt(String(req.params.reportId));
     await db.delete(accountStatusReportsTable).where(eq(accountStatusReportsTable.id, reportId));
     res.status(204).send();
   } catch {
