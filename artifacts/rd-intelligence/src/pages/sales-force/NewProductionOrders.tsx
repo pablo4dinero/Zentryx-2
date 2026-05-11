@@ -27,6 +27,8 @@ type Account = {
   productName: string;
 };
 
+type ViewMode = "daily" | "weekly" | "monthly";
+
 function authHeaders() {
   return {
     Authorization: `Bearer ${localStorage.getItem("rd_token")}`,
@@ -48,6 +50,7 @@ export default function NewProductionOrdersPage() {
   const { theme } = useTheme();
   const isLight = theme === "light";
   const queryClient = useQueryClient();
+  const [viewMode, setViewMode] = useState<ViewMode>("daily");
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(true);
   const [form, setForm] = useState({
@@ -66,10 +69,10 @@ export default function NewProductionOrdersPage() {
     },
   });
 
-  const { data: todayOrders = [], isLoading, error } = useQuery<TodayOrder[]>({
-    queryKey: ["/api/production-orders/today"],
+  const { data: orders = [], isLoading, error } = useQuery<TodayOrder[]>({
+    queryKey: ["/api/production-orders", viewMode],
     queryFn: async () => {
-      const res = await fetch(`${BASE}api/production-orders/today`, { headers: authHeaders() });
+      const res = await fetch(`${BASE}api/production-orders?period=${viewMode}`, { headers: authHeaders() });
       return res.json();
     },
   });
@@ -88,12 +91,19 @@ export default function NewProductionOrdersPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/production-orders/today"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/production-orders"] });
       setForm({ accountId: "", price: "", volume: "", expectedDeliveryDate: "", dateDelivered: "" });
     },
   });
 
   const creating = createMutation.status === "pending";
+  const viewModeLabel = viewMode === "daily" ? "Daily" : viewMode === "weekly" ? "Weekly" : "Monthly";
+  const periodDescription = viewMode === "daily"
+    ? "Track new production orders placed today across accounts."
+    : viewMode === "weekly"
+      ? "Track new production orders placed during the last 7 days across accounts."
+      : "Track new production orders placed during the last 30 days across accounts.";
+  const exportFileName = `production_orders_${viewMode}_${new Date().toISOString().slice(0,10)}.xlsx`;
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -108,20 +118,20 @@ export default function NewProductionOrdersPage() {
       return res;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/production-orders/today"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/production-orders"] });
     },
   });
 
   const filteredOrders = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return todayOrders;
-    return todayOrders.filter(order =>
+    if (!term) return orders;
+    return orders.filter(order =>
       order.accountCompany?.toLowerCase().includes(term) ||
       order.productName?.toLowerCase().includes(term) ||
       order.dateOrdered?.toLowerCase().includes(term) ||
       order.expectedDeliveryDate?.toLowerCase().includes(term),
     );
-  }, [todayOrders, search]);
+  }, [orders, search]);
 
   const totalIncome = useMemo(() => {
     return filteredOrders.reduce((sum, order) => {
@@ -156,8 +166,8 @@ export default function NewProductionOrdersPage() {
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Today Production Orders");
-    XLSX.writeFile(wb, `today_production_orders_${new Date().toISOString().slice(0,10)}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, `${viewModeLabel} Production Orders`);
+    XLSX.writeFile(wb, exportFileName);
   };
 
   const accountOptions = accounts.map(account => (
@@ -172,12 +182,23 @@ export default function NewProductionOrdersPage() {
             <div>
               <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Sales Force</p>
               <h1 className="text-2xl font-display font-bold text-foreground mt-2">New Production Orders</h1>
-              <p className="mt-2 text-sm text-muted-foreground">Track new production orders created today across accounts.</p>
+              <p className="mt-2 text-sm text-muted-foreground">{periodDescription}</p>
             </div>
             <button onClick={() => setShowForm(!showForm)}
               className={cn("px-4 py-2 rounded-xl text-sm font-semibold transition-all", showForm ? "bg-white/10 text-foreground border border-white/10" : "bg-primary text-white")}> 
               {showForm ? "Hide new order" : "Add new order"}
             </button>
+          </div>
+
+          <div className="flex flex-wrap gap-2 mb-4">
+            {(["daily", "weekly", "monthly"] as ViewMode[]).map(mode => (
+              <button key={mode} onClick={() => setViewMode(mode)}
+                className={cn("rounded-full px-4 py-2 text-sm font-semibold transition duration-150",
+                  viewMode === mode ? "bg-primary text-white" : "bg-white/5 text-muted-foreground hover:bg-white/10")}
+              >
+                {mode === "daily" ? "Daily" : mode === "weekly" ? "Weekly" : "Monthly"}
+              </button>
+            ))}
           </div>
 
           {showForm && (
@@ -256,11 +277,12 @@ export default function NewProductionOrdersPage() {
               placeholder="Search by account, product, or date" className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
           </div>
           <button onClick={exportTable} className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-white/10 text-sm text-muted-foreground hover:text-foreground hover:border-white/20 transition-colors">
-            <Download className="w-4 h-4" /> Export Today Orders
+            <Download className="w-4 h-4" /> Export {viewModeLabel} Orders
           </button>
           <div className="mt-6 space-y-3 text-sm text-muted-foreground">
             <p className="font-semibold text-foreground">Tips</p>
             <p>Use this page to capture orders that were placed today and keep the team on track.</p>
+            <p className={isLight ? "text-slate-500" : "text-slate-400"}>Switch between daily and weekly views to understand order momentum over time.</p>
             <p className={isLight ? "text-slate-500" : "text-slate-400"}>If the order is removed, it also clears the account-level production order.</p>
           </div>
         </div>
@@ -269,18 +291,18 @@ export default function NewProductionOrdersPage() {
       <div className="glass-card rounded-2xl overflow-hidden border border-white/5">
         <div className="flex items-center justify-between px-5 py-4 bg-white/5 border-b border-white/5">
           <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Today’s Production Orders</p>
-            <p className="text-sm text-muted-foreground mt-1">Showing orders created today across accounts.</p>
+            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{viewModeLabel} Production Orders</p>
+            <p className="text-sm text-muted-foreground mt-1">Showing orders from the {viewMode === "daily" ? "current day" : "last 7 days"} across accounts.</p>
           </div>
-          <p className="text-xs text-muted-foreground">Updated {todayOrders ? todayOrders.length : 0} orders</p>
+          <p className="text-xs text-muted-foreground">Updated {orders.length} orders</p>
         </div>
         {isLoading ? (
-          <div className="flex items-center justify-center h-40 text-muted-foreground">Loading today’s orders…</div>
+          <div className="flex items-center justify-center h-40 text-muted-foreground">Loading {viewModeLabel.toLowerCase()} orders…</div>
         ) : error ? (
           <div className="flex items-center justify-center h-40 text-red-400">Unable to load orders.</div>
         ) : filteredOrders.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-52 text-muted-foreground gap-3">
-            <p className="text-sm">No production orders were placed today.</p>
+            <p className="text-sm">No production orders were found for this period.</p>
             <button onClick={() => setShowForm(true)} className="px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold">Add order for today</button>
           </div>
         ) : (
