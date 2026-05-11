@@ -17,6 +17,7 @@ import aiChatRouter from "./ai_chat";
 import eventsRouter from "./events";
 import accountsRouter from "./accounts";
 import forecastsRouter from "./forecasts";
+import productionOrdersRouter from "./production_orders";
 import weeklyActivitiesRouter from "./weekly_activities";
 import procurementRouter from "./procurement";
 
@@ -39,6 +40,7 @@ router.use("/chat", chatRouter);
 router.use("/ai-chat", aiChatRouter);
 router.use("/events", eventsRouter);
 router.use("/accounts", accountsRouter);
+router.use("/production-orders", productionOrdersRouter);
 router.use("/forecasts", forecastsRouter);
 router.use("/weekly-activities", weeklyActivitiesRouter);
 router.use("/procurement", procurementRouter);

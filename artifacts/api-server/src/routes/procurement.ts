@@ -11,7 +11,7 @@ import { requireAuth, AuthRequest } from "../lib/auth";
 const router = Router();
 
 // ── helpers ──────────────────────────────────────────────────────────────────
-async function getUserMap() {
+async function getUserMap(): Promise<Map<number, any>> {
   const users = await db.select({ id: usersTable.id, name: usersTable.name, role: usersTable.role, department: usersTable.department }).from(usersTable);
   return new Map(users.map(u => [u.id, u]));
 }
@@ -194,11 +194,11 @@ router.get("/requests/rejected-deleted", requireAuth, async (req: AuthRequest, r
     const rejectedOrDeleted = allPrs.filter(pr => pr.status === "rejected" || pr.deletedAt !== null);
     const userMap = await getUserMap();
     const departments = await db.select().from(departmentsTable);
-    const deptMap = new Map(departments.map(d => [d.id, d]));
+    const deptMap = new Map(departments.map((d: any) => [d.id, d]));
     const vendors = await db.select({ id: vendorsTable.id, name: vendorsTable.name }).from(vendorsTable);
-    const vendorNameMap = new Map(vendors.map(v => [v.id, v.name]));
+    const vendorNameMap = new Map(vendors.map((v: any) => [v.id, v.name]));
 
-    const sorted = rejectedOrDeleted.sort((a, b) => {
+    const sorted = rejectedOrDeleted.sort((a: any, b: any) => {
       const aTime = (a.deletedAt ?? a.updatedAt)?.getTime() ?? 0;
       const bTime = (b.deletedAt ?? b.updatedAt)?.getTime() ?? 0;
       if (bTime !== aTime) return bTime - aTime;
@@ -207,7 +207,7 @@ router.get("/requests/rejected-deleted", requireAuth, async (req: AuthRequest, r
       return aVendor.localeCompare(bVendor);
     });
 
-    const enriched = await Promise.all(sorted.map(async pr => {
+    const enriched = await Promise.all(sorted.map(async (pr: any) => {
       const approvals = await db.select().from(purchaseRequestApprovalsTable)
         .where(eq(purchaseRequestApprovalsTable.purchaseRequestId, pr.id));
       const requester = userMap.get(pr.requestedById);
@@ -217,7 +217,7 @@ router.get("/requests/rejected-deleted", requireAuth, async (req: AuthRequest, r
         requester: requester ? { id: requester.id, name: requester.name } : null,
         department: dept ?? null,
         vendorName: vendorNameMap.get(pr.vendorId ?? 0) ?? null,
-        approvals: approvals.map(a => ({ ...a, approver: userMap.get(a.approverId) ?? null })),
+        approvals: approvals.map((a: any) => ({ ...a, approver: userMap.get(a.approverId) ?? null })),
       };
     }));
     res.json(enriched);
@@ -237,9 +237,9 @@ router.get("/requests", requireAuth, async (req: AuthRequest, res) => {
 
     const userMap = await getUserMap();
     const departments = await db.select().from(departmentsTable);
-    const deptMap = new Map(departments.map(d => [d.id, d]));
+    const deptMap = new Map(departments.map((d: any) => [d.id, d]));
 
-    const enriched = await Promise.all(prs.map(async pr => {
+    const enriched = await Promise.all(prs.map(async (pr: any) => {
       const approvals = await db.select().from(purchaseRequestApprovalsTable)
         .where(eq(purchaseRequestApprovalsTable.purchaseRequestId, pr.id))
         .orderBy(asc(purchaseRequestApprovalsTable.level));
@@ -247,7 +247,7 @@ router.get("/requests", requireAuth, async (req: AuthRequest, res) => {
         ...pr,
         requestedBy: userMap.get(pr.requestedById) ?? null,
         department: pr.departmentId ? (deptMap.get(pr.departmentId) ?? null) : null,
-        approvals: approvals.map(a => ({ ...a, approver: userMap.get(a.approverId) ?? null })),
+        approvals: approvals.map((a: any) => ({ ...a, approver: userMap.get(a.approverId) ?? null })),
       };
     }));
     res.json(enriched);
@@ -277,7 +277,7 @@ router.post("/requests", requireAuth, async (req: AuthRequest, res) => {
 
 router.get("/requests/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
     const [pr] = await db.select().from(purchaseRequestsTable).where(eq(purchaseRequestsTable.id, id));
     if (!pr) { res.status(404).json({ error: "NotFound" }); return; }
     const userMap = await getUserMap();
@@ -287,7 +287,7 @@ router.get("/requests/:id", requireAuth, async (req: AuthRequest, res) => {
 
 router.put("/requests/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
     const [existing] = await db.select().from(purchaseRequestsTable).where(eq(purchaseRequestsTable.id, id));
     if (!existing || !["draft", "rejected"].includes(existing.status)) {
       res.status(400).json({ error: "Cannot edit this request" }); return;
@@ -309,7 +309,7 @@ router.put("/requests/:id", requireAuth, async (req: AuthRequest, res) => {
 
 router.post("/requests/:id/submit", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
     const [pr] = await db.update(purchaseRequestsTable)
       .set({ status: "pending_approval", updatedAt: new Date() })
       .where(and(eq(purchaseRequestsTable.id, id), eq(purchaseRequestsTable.status, "draft")))
@@ -318,7 +318,7 @@ router.post("/requests/:id/submit", requireAuth, async (req: AuthRequest, res) =
 
     // Determine requester's department
     const departments = await db.select().from(departmentsTable);
-    const requesterDeptRecord = pr.departmentId ? departments.find(d => d.id === pr.departmentId) : null;
+    const requesterDeptRecord = pr.departmentId ? departments.find((d: any) => d.id === pr.departmentId) : null;
     const requesterDeptName = (requesterDeptRecord?.name ?? "").toLowerCase();
 
     const isNpdDept = requesterDeptName.includes("npd") || requesterDeptName.includes("new product");

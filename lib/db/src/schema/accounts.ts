@@ -60,6 +60,20 @@ export const accountProductionOrdersTable = pgTable("account_production_orders",
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const todayProductionOrdersTable = pgTable("today_production_orders", {
+  id: serial("id").primaryKey(),
+  productionOrderId: integer("production_order_id").notNull(),
+  accountId: integer("account_id").notNull(),
+  accountCompany: text("account_company"),
+  productName: text("product_name"),
+  price: numeric("price", { precision: 10, scale: 4 }),
+  volume: numeric("volume", { precision: 10, scale: 2 }),
+  dateOrdered: text("date_ordered"),
+  expectedDeliveryDate: text("expected_delivery_date"),
+  dateDelivered: text("date_delivered"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export const accountStatusReportsTable = pgTable("account_status_reports", {
   id: serial("id").primaryKey(),
   accountId: integer("account_id").notNull(),

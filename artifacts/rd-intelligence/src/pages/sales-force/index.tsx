@@ -16,6 +16,7 @@ import * as XLSX from "xlsx";
 
 import SalesChartsPage from "./Charts";
 import SalesForecastPage from "./Forecast";
+import NewProductionOrdersPage from "./NewProductionOrders";
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -704,7 +705,7 @@ function AccountsPage() {
   );
 }
 
-const SF_TABS = ["Accounts", "Charts", "Forecast"] as const;
+const SF_TABS = ["Accounts", "New Production Orders", "Charts", "Forecast"] as const;
 type SfTab = typeof SF_TABS[number];
 
 export default function SalesForce() {
@@ -739,6 +740,7 @@ export default function SalesForce() {
       <AnimatePresence mode="wait">
         <motion.div key={activeTab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
           {activeTab === "Accounts" && <AccountsPage />}
+          {activeTab === "New Production Orders" && <NewProductionOrdersPage />}
           {activeTab === "Charts" && <SalesChartsPage />}
           {activeTab === "Forecast" && <SalesForecastPage />}
         </motion.div>
