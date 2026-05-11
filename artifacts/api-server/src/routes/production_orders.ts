@@ -28,6 +28,51 @@ function isTodayDate(date: string | null | undefined): boolean {
     && parsed.getDate() === now.getDate();
 }
 
+function isWithinLastDays(date: string | null | undefined, days: number): boolean {
+  const parsed = parseDMY(date);
+  if (!parsed) return false;
+  const now = new Date();
+  const dayDiff = Math.floor((now.getTime() - parsed.getTime()) / (1000 * 60 * 60 * 24));
+  return dayDiff >= 0 && dayDiff < days;
+}
+
+router.get("/", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const period = String(req.query.period || "daily");
+    const orders = await db.select({
+      id: accountProductionOrdersTable.id,
+      productionOrderId: accountProductionOrdersTable.id,
+      accountId: accountProductionOrdersTable.accountId,
+      accountCompany: accountsTable.company,
+      productName: accountsTable.productName,
+      price: accountProductionOrdersTable.price,
+      volume: accountProductionOrdersTable.volume,
+      dateOrdered: accountProductionOrdersTable.dateOrdered,
+      expectedDeliveryDate: accountProductionOrdersTable.expectedDeliveryDate,
+      dateDelivered: accountProductionOrdersTable.dateDelivered,
+      createdAt: accountProductionOrdersTable.createdAt,
+    })
+      .from(accountProductionOrdersTable)
+      .leftJoin(accountsTable, eq(accountProductionOrdersTable.accountId, accountsTable.id))
+      .orderBy(desc(accountProductionOrdersTable.createdAt));
+
+    const filtered = orders.filter(order => {
+      if (period === "weekly") {
+        return isWithinLastDays(order.dateOrdered, 7);
+      }
+      if (period === "monthly") {
+        return isWithinLastDays(order.dateOrdered, 30);
+      }
+      return isTodayDate(order.dateOrdered);
+    });
+
+    res.json(filtered);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
 router.get("/today", requireAuth, async (_req: AuthRequest, res) => {
   try {
     const orders = await db.select().from(todayProductionOrdersTable)
