@@ -25,34 +25,28 @@ import { PageLoader } from "@/components/ui/spinner";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
+import { useListUsers } from "@/api-client";
 import { PlannedOrdersProvider, usePlannedOrders } from "./planned-orders-context";
 
 const BASE = import.meta.env.BASE_URL;
 
-function selectCls(isLight: boolean) {
-  return cn(
-    "h-10 w-full rounded-xl border px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 cursor-pointer",
-    isLight
-      ? "border-slate-200 bg-white text-slate-700"
-      : "border-white/10 bg-black/20 text-foreground"
-  );
-}
-
-const MDP_URGENCY = [
-  { value: "critical", label: "Critical", color: "text-red-400",    bg: "bg-red-500/10 border-red-500/20",       dot: "bg-red-500" },
-  { value: "high",     label: "High",     color: "text-orange-400", bg: "bg-orange-500/10 border-orange-500/20", dot: "bg-orange-500" },
-  { value: "normal",   label: "Normal",   color: "text-green-400",  bg: "bg-green-500/10 border-green-500/20",   dot: "bg-green-500" },
-  { value: "low",      label: "Low",      color: "text-slate-400",  bg: "bg-slate-500/10 border-slate-500/20",   dot: "bg-slate-400" },
+const PRODUCT_TYPES = [
+  { value: "seasoning", label: "Seasoning" },
+  { value: "snacks_dusting", label: "Snacks Dusting" },
+  { value: "dairy_premix", label: "Dairy Premix" },
+  { value: "bakery_dough_premix", label: "Bakery & Dough Premix" },
+  { value: "sweet_flavours", label: "Sweet Flavours" },
+  { value: "savoury_flavour", label: "Savoury Flavour" },
 ];
 
-const MDP_PRIORITY = [
-  { value: "high",   label: "High",   color: "text-red-400",    bg: "bg-red-500/10 border-red-500/20",     dot: "bg-red-500" },
+const SF_URGENCY = [
+  { value: "urgent", label: "Urgent", color: "text-red-400",    bg: "bg-red-500/10 border-red-500/20",       dot: "bg-red-500" },
   { value: "medium", label: "Medium", color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/20", dot: "bg-yellow-500" },
-  { value: "low",    label: "Low",    color: "text-green-400",  bg: "bg-green-500/10 border-green-500/20",  dot: "bg-green-500" },
+  { value: "normal", label: "Normal", color: "text-green-400",  bg: "bg-green-500/10 border-green-500/20",   dot: "bg-green-500" },
 ];
 
 function UrgencyBadge({ level }: { level: string }) {
-  const u = MDP_URGENCY.find(x => x.value === level) || MDP_URGENCY[2];
+  const u = SF_URGENCY.find(x => x.value === level) || SF_URGENCY[2];
   return (
     <span className={cn("inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full border", u.bg, u.color)}>
       <span className={cn("w-1.5 h-1.5 rounded-full", u.dot)} />{u.label}
@@ -60,26 +54,32 @@ function UrgencyBadge({ level }: { level: string }) {
   );
 }
 
-function PriorityChip({ priority }: { priority: string }) {
-  const p = MDP_PRIORITY.find(x => x.value === priority) || MDP_PRIORITY[1];
-  return (
-    <span className={cn("inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full border", p.bg, p.color)}>
-      <span className={cn("w-1.5 h-1.5 rounded-full", p.dot)} />{p.label}
-    </span>
-  );
+function VolumeTag({ volume }: { volume: string | null }) {
+  const v = parseFloat(volume || "0");
+  if (v >= 10000) return <span className="text-[10px] font-bold text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded">Very High</span>;
+  if (v >= 1000)  return <span className="text-[10px] font-bold text-orange-400 bg-orange-500/10 px-1.5 py-0.5 rounded">High</span>;
+  if (v >= 500)   return <span className="text-[10px] font-bold text-yellow-400 bg-yellow-500/10 px-1.5 py-0.5 rounded">Medium</span>;
+  return <span className="text-[10px] font-bold text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded">Low</span>;
 }
 
-type CustomerProduct = {
+type Account = {
   id: number;
-  accountName: string;
   company: string;
-  productType: string;
-  urgency: string;
-  priority: string;
-  volume: number;
-  accountManager: string | null;
-  dateAdded: string;
-  lastUpdated: string;
+  productName: string | null;
+  productType: string | null;
+  urgencyLevel: string;
+  volume: string | null;
+  accountManagerNames: string[];
+  contactPerson: string | null;
+  cpPhone: string | null;
+  cpEmail: string | null;
+  customerType: string | null;
+  application: string | null;
+  targetPrice: string | null;
+  competitorReference: string | null;
+  accountManagers: number[];
+  createdAt: string;
+  updatedAt: string;
 };
 
 type ProductionOrder = {
@@ -98,13 +98,19 @@ type ProductionOrder = {
 };
 
 const DEFAULT_FORM = {
-  accountName: "",
   company: "",
-  productType: "",
-  urgency: "normal",
-  priority: "medium",
-  volume: "0",
-  accountManager: "",
+  productName: "",
+  productType: "seasoning",
+  customerType: "new",
+  contactPerson: "",
+  cpPhone: "",
+  cpEmail: "",
+  application: "",
+  targetPrice: "",
+  volume: "",
+  urgencyLevel: "normal",
+  competitorReference: "",
+  accountManagers: [] as number[],
 };
 
 const STATUS_OPTIONS = ["Ordered", "Planned", "Produced", "Dispatched", "Delivered"] as const;
@@ -141,18 +147,16 @@ function getCurrentWeekLabel() {
   return `${year}-W${String(week).padStart(2, "0")}`;
 }
 
-function downloadCsv(products: CustomerProduct[]) {
-  const headers = ["Account Name", "Company", "Product Type", "Urgency", "Priority", "Volume", "Account Manager", "Date Added", "Last Updated"];
-  const rows = products.map((product) => [
-    product.accountName,
-    product.company,
-    product.productType,
-    product.urgency,
-    product.priority,
-    String(product.volume),
-    product.accountManager ?? "-",
-    formatDate(product.dateAdded),
-    formatDate(product.lastUpdated),
+function downloadCsv(accounts: Account[]) {
+  const headers = ["Company", "Product Name", "Product Type", "Urgency", "Volume", "Account Manager(s)", "Date Added"];
+  const rows = accounts.map((a) => [
+    a.company,
+    a.productName ?? "-",
+    PRODUCT_TYPES.find(p => p.value === a.productType)?.label ?? a.productType ?? "-",
+    a.urgencyLevel,
+    a.volume ?? "0",
+    (a.accountManagerNames || []).join(", ") || "-",
+    formatDate(a.createdAt),
   ]);
 
   const csv = [headers, ...rows]
@@ -1872,95 +1876,98 @@ function MaterialsDemandPlanningPage() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = React.useState("customer-products");
   const [search, setSearch] = React.useState("");
-  const [priorityFilter, setPriorityFilter] = React.useState("all");
   const [urgencyFilter, setUrgencyFilter] = React.useState("all");
   const [isAddOpen, setIsAddOpen] = React.useState(false);
   const [isEditOpen, setIsEditOpen] = React.useState(false);
-  const [editingProduct, setEditingProduct] = React.useState<CustomerProduct | null>(null);
+  const [editingProduct, setEditingProduct] = React.useState<Account | null>(null);
   const [formValues, setFormValues] = React.useState({ ...DEFAULT_FORM });
+  const [manSearch, setManSearch] = React.useState("");
+
+  const { data: users } = useListUsers();
 
   const productsQuery = useQuery({
-    queryKey: ["/api/mdp/customer-products"],
+    queryKey: ["/api/accounts"],
     queryFn: async () => {
-      const res = await fetch(`${BASE}api/mdp/customer-products`, { headers: authHeaders() });
+      const res = await fetch(`${BASE}api/accounts`, { headers: authHeaders() });
       if (!res.ok) {
         const error = await res.json().catch(() => ({}));
-        throw new Error(error.error || "Failed to load customer products");
+        throw new Error(error.error || "Failed to load accounts");
       }
-      return res.json() as Promise<CustomerProduct[]>;
+      return res.json() as Promise<Account[]>;
     },
     staleTime: 1000 * 60 * 2,
-  }) as UseQueryResult<CustomerProduct[], Error>;
+  }) as UseQueryResult<Account[], Error>;
   const products = productsQuery.data ?? [];
   const isLoading = productsQuery.isLoading;
 
   const createMutation = useMutation({
     mutationFn: async (payload: Record<string, unknown>) => {
-      const res = await fetch(`${BASE}api/mdp/customer-products`, {
+      const res = await fetch(`${BASE}api/accounts`, {
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const error = await res.json().catch(() => ({}));
-        throw new Error(error.error || "Failed to create product request");
+        throw new Error(error.error || "Failed to create account");
       }
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/mdp/customer-products"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/accounts"] });
       setIsAddOpen(false);
       setFormValues({ ...DEFAULT_FORM });
-      toast({ title: "Request added", description: "New customer product request was saved." });
+      setManSearch("");
+      toast({ title: "Product added", description: "New account record was saved." });
     },
     onError: (error: any) => {
-      toast({ title: "Could not save request", description: error?.message || "Try again.", variant: "destructive" });
+      toast({ title: "Could not save", description: error?.message || "Try again.", variant: "destructive" });
     },
   });
 
   const updateMutation = useMutation({
     mutationFn: async (payload: Record<string, unknown>) => {
-      if (!editingProduct) throw new Error("No product selected");
-      const res = await fetch(`${BASE}api/mdp/customer-products/${editingProduct.id}`, {
+      if (!editingProduct) throw new Error("No account selected");
+      const res = await fetch(`${BASE}api/accounts/${editingProduct.id}`, {
         method: "PUT",
         headers: authHeaders(),
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const error = await res.json().catch(() => ({}));
-        throw new Error(error.error || "Failed to update customer product");
+        throw new Error(error.error || "Failed to update account");
       }
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/mdp/customer-products"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/accounts"] });
       setIsEditOpen(false);
       setEditingProduct(null);
-      toast({ title: "Request updated", description: "Customer product information was updated." });
+      toast({ title: "Product updated", description: "Account information was updated." });
     },
     onError: (error: any) => {
-      toast({ title: "Could not update request", description: error?.message || "Try again.", variant: "destructive" });
+      toast({ title: "Could not update", description: error?.message || "Try again.", variant: "destructive" });
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`${BASE}api/mdp/customer-products/${id}`, {
+      const res = await fetch(`${BASE}api/accounts/${id}`, {
         method: "DELETE",
         headers: authHeaders(),
       });
       if (!res.ok) {
         const error = await res.json().catch(() => ({}));
-        throw new Error(error.error || "Failed to delete customer product");
+        throw new Error(error.error || "Failed to delete account");
       }
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/mdp/customer-products"] });
-      toast({ title: "Request removed", description: "The customer product request was deleted." });
+      queryClient.invalidateQueries({ queryKey: ["/api/accounts"] });
+      toast({ title: "Product removed", description: "The account record was deleted." });
     },
     onError: (error: any) => {
-      toast({ title: "Could not delete request", description: error?.message || "Try again.", variant: "destructive" });
+      toast({ title: "Could not delete", description: error?.message || "Try again.", variant: "destructive" });
     },
   });
 
@@ -1969,58 +1976,75 @@ function MaterialsDemandPlanningPage() {
   const creating = createMutation.status === "pending";
   const updating = updateMutation.status === "pending";
 
+  const filteredUsers = React.useMemo(
+    () => (users || []).filter((u: any) => u.name.toLowerCase().includes(manSearch.toLowerCase())),
+    [users, manSearch]
+  );
+
+  const toggleManager = (id: number) => {
+    setFormValues(f => ({
+      ...f,
+      accountManagers: f.accountManagers.includes(id)
+        ? f.accountManagers.filter(x => x !== id)
+        : [...f.accountManagers, id],
+    }));
+  };
+
   const filteredProducts = React.useMemo(() => {
     const term = search.trim().toLowerCase();
-    return products.filter((product) => {
+    return products.filter((a) => {
       const matchesSearch =
         !term ||
-        [product.accountName, product.company, product.productType, product.accountManager ?? ""].some((value) =>
-          value.toLowerCase().includes(term)
+        [a.company, a.productName ?? "", a.productType ?? "", (a.accountManagerNames || []).join(" ")].some((v) =>
+          v.toLowerCase().includes(term)
         );
-      const matchesPriority = priorityFilter === "all" || product.priority === priorityFilter;
-      const matchesUrgency = urgencyFilter === "all" || product.urgency === urgencyFilter;
-      return matchesSearch && matchesPriority && matchesUrgency;
+      const matchesUrgency = urgencyFilter === "all" || a.urgencyLevel === urgencyFilter;
+      return matchesSearch && matchesUrgency;
     });
-  }, [products, search, priorityFilter, urgencyFilter]);
+  }, [products, search, urgencyFilter]);
 
   const summary = React.useMemo(() => {
     const total = products.length;
-    const highPriorityCount = products.filter((product) => product.priority === "high").length;
-    const averageVolume = total ? Math.round(products.reduce((sum, product) => sum + (product.volume || 0), 0) / total) : 0;
-    const recentCount = products.filter((product) => {
-      const date = new Date(product.dateAdded);
+    const urgentCount = products.filter((a) => a.urgencyLevel === "urgent").length;
+    const averageVolume = total
+      ? Math.round(products.reduce((sum, a) => sum + parseFloat(a.volume || "0"), 0) / total)
+      : 0;
+    const recentCount = products.filter((a) => {
+      const date = new Date(a.createdAt);
       const threshold = new Date();
       threshold.setDate(threshold.getDate() - 30);
       return date >= threshold;
     }).length;
-    return { total, averageVolume, highPriorityCount, recentCount };
+    return { total, averageVolume, urgentCount, recentCount };
   }, [products]);
 
-  const openEditForm = (product: CustomerProduct) => {
-    setEditingProduct(product);
+  const openEditForm = (account: Account) => {
+    setEditingProduct(account);
     setFormValues({
-      accountName: product.accountName,
-      company: product.company,
-      productType: product.productType,
-      urgency: product.urgency,
-      priority: product.priority,
-      volume: String(product.volume),
-      accountManager: product.accountManager ?? "",
+      company: account.company,
+      productName: account.productName ?? "",
+      productType: account.productType ?? "seasoning",
+      customerType: account.customerType ?? "new",
+      contactPerson: account.contactPerson ?? "",
+      cpPhone: account.cpPhone ?? "",
+      cpEmail: account.cpEmail ?? "",
+      application: account.application ?? "",
+      targetPrice: account.targetPrice ?? "",
+      volume: account.volume ?? "",
+      urgencyLevel: account.urgencyLevel ?? "normal",
+      competitorReference: account.competitorReference ?? "",
+      accountManagers: account.accountManagers ?? [],
     });
+    setManSearch("");
     setIsEditOpen(true);
   };
 
   const submitForm = async () => {
-    const payload = {
-      accountName: formValues.accountName,
-      company: formValues.company,
-      productType: formValues.productType,
-      urgency: formValues.urgency,
-      priority: formValues.priority,
-      volume: Number(formValues.volume),
-      accountManager: formValues.accountManager || null,
-    };
-
+    if (!formValues.company || !formValues.productName || !formValues.productType) {
+      toast({ title: "Company, Product Name and Product Type are required", variant: "destructive" });
+      return;
+    }
+    const payload = { ...formValues };
     if (editingProduct && isEditOpen) {
       updateMutation.mutate(payload);
     } else {
@@ -2031,11 +2055,12 @@ function MaterialsDemandPlanningPage() {
   const openAddForm = () => {
     setEditingProduct(null);
     setFormValues({ ...DEFAULT_FORM });
+    setManSearch("");
     setIsAddOpen(true);
   };
 
-  const openEditDialog = (product: CustomerProduct) => {
-    openEditForm(product);
+  const openEditDialog = (account: Account) => {
+    openEditForm(account);
   };
 
   const MDP_TABS = [
@@ -2081,9 +2106,9 @@ function MaterialsDemandPlanningPage() {
             <div className="space-y-5">
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 {[
-                  { label: "Total requests", value: summary.total },
-                  { label: "High priority", value: summary.highPriorityCount },
-                  { label: "Avg. volume", value: `${summary.averageVolume} kg` },
+                  { label: "Total accounts", value: summary.total },
+                  { label: "Urgent", value: summary.urgentCount },
+                  { label: "Avg. volume", value: `${summary.averageVolume.toLocaleString()} kg` },
                   { label: "Recent (30d)", value: summary.recentCount },
                 ].map(stat => (
                   <div key={stat.label} className={cn("rounded-2xl border p-5",
@@ -2102,24 +2127,12 @@ function MaterialsDemandPlanningPage() {
                     <input
                       value={search}
                       onChange={(event) => setSearch(event.target.value)}
-                      placeholder="Search account, company or product"
+                      placeholder="Search company or product"
                       className={cn("h-9 pl-9 pr-4 rounded-xl border text-sm w-60 focus:outline-none focus:ring-2 focus:ring-primary/50",
                         isLight ? "bg-white border-slate-200 text-slate-800 placeholder:text-slate-400" : "bg-black/20 border-white/10 text-foreground placeholder:text-muted-foreground"
                       )}
                     />
                   </div>
-                  <select
-                    value={priorityFilter}
-                    onChange={(event) => setPriorityFilter(event.target.value)}
-                    className={cn("h-9 px-3 rounded-xl border text-sm focus:outline-none cursor-pointer",
-                      isLight ? "bg-white border-slate-200 text-slate-700" : "bg-black/20 border-white/10 text-foreground"
-                    )}
-                  >
-                    <option value="all">All priorities</option>
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                  </select>
                   <select
                     value={urgencyFilter}
                     onChange={(event) => setUrgencyFilter(event.target.value)}
@@ -2128,15 +2141,14 @@ function MaterialsDemandPlanningPage() {
                     )}
                   >
                     <option value="all">All urgencies</option>
-                    <option value="low">Low</option>
                     <option value="normal">Normal</option>
-                    <option value="high">High</option>
-                    <option value="critical">Critical</option>
+                    <option value="medium">Medium</option>
+                    <option value="urgent">Urgent</option>
                   </select>
                 </div>
 
                 <div className="flex gap-2 shrink-0">
-                  <button onClick={() => downloadCsv(filteredProducts)}
+                  <button onClick={() => downloadCsv(filteredProducts as Account[])}
                     className={cn("flex items-center gap-1.5 h-9 px-3 rounded-xl border text-xs font-medium transition-all",
                       isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:border-white/20"
                     )}>
@@ -2157,9 +2169,8 @@ function MaterialsDemandPlanningPage() {
                     <th className="px-5 py-3 text-left font-medium">Account</th>
                     <th className="px-5 py-3 text-left font-medium">Product Type</th>
                     <th className="px-5 py-3 text-left font-medium">Volume (kg)</th>
-                    <th className="px-5 py-3 text-left font-medium">Manager</th>
+                    <th className="px-5 py-3 text-left font-medium">Manager(s)</th>
                     <th className="px-5 py-3 text-left font-medium">Urgency</th>
-                    <th className="px-5 py-3 text-left font-medium">Priority</th>
                     <th className="px-5 py-3 text-left font-medium">Added</th>
                     <th className="px-5 py-3 text-left font-medium" />
                   </tr>
@@ -2167,33 +2178,41 @@ function MaterialsDemandPlanningPage() {
                 <tbody>
                   {filteredProducts.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-12 text-center text-muted-foreground text-sm">
-                        No customer products match the current filters.
+                      <td colSpan={7} className="py-12 text-center text-muted-foreground text-sm">
+                        No accounts match the current filters.
                       </td>
                     </tr>
                   ) : (
-                    filteredProducts.map((product) => (
-                      <tr key={product.id}
+                    filteredProducts.map((account) => (
+                      <tr key={account.id}
                         className={cn("border-b last:border-0 transition-colors group",
                           isLight ? "border-slate-100 hover:bg-slate-50/70" : "border-white/5 hover:bg-white/[0.03]"
                         )}>
                         <td className="px-5 py-3">
-                          <p className="font-medium text-foreground text-sm">{product.company}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">{product.accountName}</p>
+                          <p className="font-medium text-foreground text-sm">{account.company}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">{account.productName ?? "—"}</p>
                         </td>
-                        <td className="px-5 py-3 text-xs text-muted-foreground">{product.productType}</td>
-                        <td className="px-5 py-3 text-xs text-foreground font-medium">{Number(product.volume).toLocaleString()}</td>
-                        <td className="px-5 py-3 text-xs text-muted-foreground">{product.accountManager ?? "—"}</td>
-                        <td className="px-5 py-3"><UrgencyBadge level={product.urgency} /></td>
-                        <td className="px-5 py-3"><PriorityChip priority={product.priority} /></td>
-                        <td className="px-5 py-3 text-xs text-muted-foreground">{formatDate(product.dateAdded)}</td>
+                        <td className="px-5 py-3 text-xs text-muted-foreground">
+                          {PRODUCT_TYPES.find(p => p.value === account.productType)?.label ?? account.productType ?? "—"}
+                        </td>
+                        <td className="px-5 py-3 text-xs">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-foreground font-medium">{parseFloat(account.volume || "0").toLocaleString()}</span>
+                            <VolumeTag volume={account.volume} />
+                          </div>
+                        </td>
+                        <td className="px-5 py-3 text-xs text-muted-foreground">
+                          {(account.accountManagerNames || []).join(", ") || "—"}
+                        </td>
+                        <td className="px-5 py-3"><UrgencyBadge level={account.urgencyLevel} /></td>
+                        <td className="px-5 py-3 text-xs text-muted-foreground">{formatDate(account.createdAt)}</td>
                         <td className="px-5 py-3">
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => openEditDialog(product)}
+                            <button onClick={() => openEditDialog(account)}
                               className="p-1.5 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors" title="Edit">
                               <Edit3 className="w-3.5 h-3.5" />
                             </button>
-                            <button onClick={() => deleteMutation.mutate(product.id)}
+                            <button onClick={() => deleteMutation.mutate(account.id)}
                               className="p-1.5 rounded-lg text-muted-foreground hover:bg-red-500/10 hover:text-red-400 transition-colors" title="Delete">
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -2205,7 +2224,7 @@ function MaterialsDemandPlanningPage() {
                 </tbody>
               </table>
               <div className={cn("px-5 py-2.5 text-xs text-muted-foreground border-t", isLight ? "border-slate-100" : "border-white/5")}>
-                Showing {filteredProducts.length} of {products.length} requests
+                Showing {filteredProducts.length} of {products.length} accounts
               </div>
             </div>
 
@@ -2218,46 +2237,72 @@ function MaterialsDemandPlanningPage() {
                     <div className={cn("flex items-center justify-between px-6 py-4 border-b", isLight ? "border-gray-100" : "border-white/5")}>
                       <div>
                         <h2 className="text-lg font-bold text-foreground">Add Product</h2>
-                        <p className="text-xs text-muted-foreground mt-0.5">Add a new customer product to the demand planning queue</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">Create a new account record</p>
                       </div>
                       <button onClick={() => setIsAddOpen(false)} className={cn("p-1.5 rounded-lg transition-colors", isLight ? "hover:bg-gray-100 text-gray-500" : "hover:bg-white/10 text-muted-foreground")}>
                         <X className="w-5 h-5" />
                       </button>
                     </div>
                     <div className="flex-1 overflow-y-auto custom-scrollbar">
-                      <div className="p-6 space-y-5">
-                        {(() => {
-                          const iCls = cn("w-full h-10 rounded-xl border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground", isLight ? "border-gray-200 bg-white" : "border-white/10 bg-black/30");
-                          const lCls = "text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block";
-                          return (
+                      {(() => {
+                        const iCls = cn("w-full h-10 rounded-xl border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground", isLight ? "border-gray-200 bg-white" : "border-white/10 bg-black/30");
+                        const lCls = "text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block";
+                        return (
+                          <div className="p-6 space-y-5">
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                               <div>
-                                <label className={lCls}>Account Name *</label>
-                                <input value={formValues.accountName} onChange={e => setFormValues(p => ({ ...p, accountName: e.target.value }))} placeholder="e.g. Green Peak Labs" className={iCls} />
+                                <label className={lCls}>Company *</label>
+                                <input value={formValues.company} onChange={e => setFormValues(p => ({ ...p, company: e.target.value }))} placeholder="Company name" className={iCls} />
                               </div>
                               <div>
-                                <label className={lCls}>Company *</label>
-                                <input value={formValues.company} onChange={e => setFormValues(p => ({ ...p, company: e.target.value }))} placeholder="e.g. Zentryx Retail" className={iCls} />
+                                <label className={lCls}>Product Name *</label>
+                                <input value={formValues.productName} onChange={e => setFormValues(p => ({ ...p, productName: e.target.value }))} placeholder="Product name" className={iCls} />
                               </div>
-                              <div className="sm:col-span-2">
+                              <div>
                                 <label className={lCls}>Product Type *</label>
-                                <input value={formValues.productType} onChange={e => setFormValues(p => ({ ...p, productType: e.target.value }))} placeholder="e.g. Seasoning, Dairy Premix" className={iCls} />
+                                <select value={formValues.productType} onChange={e => setFormValues(p => ({ ...p, productType: e.target.value }))} className={iCls + " cursor-pointer"}>
+                                  {PRODUCT_TYPES.map(pt => <option key={pt.value} value={pt.value} className="bg-white text-black">{pt.label}</option>)}
+                                </select>
+                              </div>
+                              <div>
+                                <label className={lCls}>Customer Type</label>
+                                <select value={formValues.customerType} onChange={e => setFormValues(p => ({ ...p, customerType: e.target.value }))} className={iCls + " cursor-pointer"}>
+                                  <option value="new" className="bg-white text-black">New Customer</option>
+                                  <option value="existing" className="bg-white text-black">Existing Customer</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className={lCls}>Contact Person (CP)</label>
+                                <input value={formValues.contactPerson} onChange={e => setFormValues(p => ({ ...p, contactPerson: e.target.value }))} placeholder="Full name" className={iCls} />
+                              </div>
+                              <div>
+                                <label className={lCls}>CP's Phone Number</label>
+                                <input value={formValues.cpPhone} onChange={e => setFormValues(p => ({ ...p, cpPhone: e.target.value }))} placeholder="+234 xxx xxxx xxxx" className={iCls} />
+                              </div>
+                              <div>
+                                <label className={lCls}>CP's Email</label>
+                                <input value={formValues.cpEmail} onChange={e => setFormValues(p => ({ ...p, cpEmail: e.target.value }))} placeholder="email@company.com" type="email" className={iCls} />
+                              </div>
+                              <div>
+                                <label className={lCls}>Application</label>
+                                <input value={formValues.application} onChange={e => setFormValues(p => ({ ...p, application: e.target.value }))} placeholder="e.g. Noodles, Chips" className={iCls} />
+                              </div>
+                              <div>
+                                <label className={lCls}>Target Price ($/kg)</label>
+                                <input value={formValues.targetPrice} onChange={e => setFormValues(p => ({ ...p, targetPrice: e.target.value }))} placeholder="0.00" type="number" step="0.01" min="0" className={iCls} />
                               </div>
                               <div>
                                 <label className={lCls}>Volume (kg/month)</label>
                                 <input value={formValues.volume} onChange={e => setFormValues(p => ({ ...p, volume: e.target.value }))} placeholder="0" type="number" min="0" className={iCls} />
-                              </div>
-                              <div>
-                                <label className={lCls}>Account Manager</label>
-                                <input value={formValues.accountManager} onChange={e => setFormValues(p => ({ ...p, accountManager: e.target.value }))} placeholder="e.g. Olivia" className={iCls} />
+                                {formValues.volume && <div className="mt-1"><VolumeTag volume={formValues.volume} /></div>}
                               </div>
                               <div>
                                 <label className={lCls}>Urgency Level</label>
                                 <div className="flex gap-2 flex-wrap mt-1">
-                                  {MDP_URGENCY.map(u => (
-                                    <button key={u.value} type="button" onClick={() => setFormValues(p => ({ ...p, urgency: u.value }))}
+                                  {SF_URGENCY.map(u => (
+                                    <button key={u.value} type="button" onClick={() => setFormValues(p => ({ ...p, urgencyLevel: u.value }))}
                                       className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all",
-                                        formValues.urgency === u.value ? cn(u.bg, u.color) : isLight ? "border-gray-200 text-gray-500 hover:border-gray-300" : "border-white/10 text-muted-foreground hover:border-white/20"
+                                        formValues.urgencyLevel === u.value ? cn(u.bg, u.color) : isLight ? "border-gray-200 text-gray-500 hover:border-gray-300" : "border-white/10 text-muted-foreground hover:border-white/20"
                                       )}>
                                       <span className={cn("w-2 h-2 rounded-full", u.dot)} />{u.label}
                                     </button>
@@ -2265,22 +2310,31 @@ function MaterialsDemandPlanningPage() {
                                 </div>
                               </div>
                               <div>
-                                <label className={lCls}>Priority</label>
-                                <div className="flex gap-2 flex-wrap mt-1">
-                                  {MDP_PRIORITY.map(p => (
-                                    <button key={p.value} type="button" onClick={() => setFormValues(prev => ({ ...prev, priority: p.value }))}
-                                      className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all",
-                                        formValues.priority === p.value ? cn(p.bg, p.color) : isLight ? "border-gray-200 text-gray-500 hover:border-gray-300" : "border-white/10 text-muted-foreground hover:border-white/20"
-                                      )}>
-                                      <span className={cn("w-2 h-2 rounded-full", p.dot)} />{p.label}
-                                    </button>
-                                  ))}
-                                </div>
+                                <label className={lCls}>Competitor Reference</label>
+                                <input value={formValues.competitorReference} onChange={e => setFormValues(p => ({ ...p, competitorReference: e.target.value }))} placeholder="Competitor names" className={iCls} />
                               </div>
                             </div>
-                          );
-                        })()}
-                      </div>
+                            <div>
+                              <label className={lCls}>Account Manager(s)</label>
+                              <input value={manSearch} onChange={e => setManSearch(e.target.value)} placeholder="Search staff…" className={iCls + " mb-2"} />
+                              <div className="max-h-36 overflow-y-auto space-y-1 custom-scrollbar pr-1">
+                                {filteredUsers.map((u: any) => (
+                                  <label key={u.id} className={cn("flex items-center gap-2.5 px-3 py-2 rounded-xl border cursor-pointer text-sm transition-all",
+                                    formValues.accountManagers.includes(u.id) ? "border-primary/30 bg-primary/10 text-foreground" : isLight ? "border-gray-100 text-gray-600 hover:bg-gray-50" : "border-white/5 text-muted-foreground hover:border-white/10"
+                                  )}>
+                                    <input type="checkbox" checked={formValues.accountManagers.includes(u.id)} onChange={() => toggleManager(u.id)} className="accent-primary" />
+                                    <span className="flex-1">{u.name}</span>
+                                    <span className="text-[10px] text-muted-foreground/60">{u.department || u.role?.replace(/_/g, " ")}</span>
+                                  </label>
+                                ))}
+                              </div>
+                              {formValues.accountManagers.length > 0 && (
+                                <p className="text-xs text-primary mt-1">{formValues.accountManagers.length} manager{formValues.accountManagers.length > 1 ? "s" : ""} selected</p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                     <div className={cn("px-6 py-4 border-t flex gap-3", isLight ? "border-gray-100" : "border-white/5")}>
                       <button onClick={submitForm} disabled={creating}
@@ -2307,46 +2361,72 @@ function MaterialsDemandPlanningPage() {
                     <div className={cn("flex items-center justify-between px-6 py-4 border-b", isLight ? "border-gray-100" : "border-white/5")}>
                       <div>
                         <h2 className="text-lg font-bold text-foreground">Edit Product</h2>
-                        <p className="text-xs text-muted-foreground mt-0.5">Update urgency, priority, volume or manager details</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">Update account record details</p>
                       </div>
                       <button onClick={() => setIsEditOpen(false)} className={cn("p-1.5 rounded-lg transition-colors", isLight ? "hover:bg-gray-100 text-gray-500" : "hover:bg-white/10 text-muted-foreground")}>
                         <X className="w-5 h-5" />
                       </button>
                     </div>
                     <div className="flex-1 overflow-y-auto custom-scrollbar">
-                      <div className="p-6 space-y-5">
-                        {(() => {
-                          const iCls = cn("w-full h-10 rounded-xl border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground", isLight ? "border-gray-200 bg-white" : "border-white/10 bg-black/30");
-                          const lCls = "text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block";
-                          return (
+                      {(() => {
+                        const iCls = cn("w-full h-10 rounded-xl border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground", isLight ? "border-gray-200 bg-white" : "border-white/10 bg-black/30");
+                        const lCls = "text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block";
+                        return (
+                          <div className="p-6 space-y-5">
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                               <div>
-                                <label className={lCls}>Account Name</label>
-                                <input value={formValues.accountName} onChange={e => setFormValues(p => ({ ...p, accountName: e.target.value }))} className={iCls} />
+                                <label className={lCls}>Company *</label>
+                                <input value={formValues.company} onChange={e => setFormValues(p => ({ ...p, company: e.target.value }))} placeholder="Company name" className={iCls} />
                               </div>
                               <div>
-                                <label className={lCls}>Company</label>
-                                <input value={formValues.company} onChange={e => setFormValues(p => ({ ...p, company: e.target.value }))} className={iCls} />
+                                <label className={lCls}>Product Name *</label>
+                                <input value={formValues.productName} onChange={e => setFormValues(p => ({ ...p, productName: e.target.value }))} placeholder="Product name" className={iCls} />
                               </div>
-                              <div className="sm:col-span-2">
-                                <label className={lCls}>Product Type</label>
-                                <input value={formValues.productType} onChange={e => setFormValues(p => ({ ...p, productType: e.target.value }))} className={iCls} />
+                              <div>
+                                <label className={lCls}>Product Type *</label>
+                                <select value={formValues.productType} onChange={e => setFormValues(p => ({ ...p, productType: e.target.value }))} className={iCls + " cursor-pointer"}>
+                                  {PRODUCT_TYPES.map(pt => <option key={pt.value} value={pt.value} className="bg-white text-black">{pt.label}</option>)}
+                                </select>
+                              </div>
+                              <div>
+                                <label className={lCls}>Customer Type</label>
+                                <select value={formValues.customerType} onChange={e => setFormValues(p => ({ ...p, customerType: e.target.value }))} className={iCls + " cursor-pointer"}>
+                                  <option value="new" className="bg-white text-black">New Customer</option>
+                                  <option value="existing" className="bg-white text-black">Existing Customer</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className={lCls}>Contact Person (CP)</label>
+                                <input value={formValues.contactPerson} onChange={e => setFormValues(p => ({ ...p, contactPerson: e.target.value }))} placeholder="Full name" className={iCls} />
+                              </div>
+                              <div>
+                                <label className={lCls}>CP's Phone Number</label>
+                                <input value={formValues.cpPhone} onChange={e => setFormValues(p => ({ ...p, cpPhone: e.target.value }))} placeholder="+234 xxx xxxx xxxx" className={iCls} />
+                              </div>
+                              <div>
+                                <label className={lCls}>CP's Email</label>
+                                <input value={formValues.cpEmail} onChange={e => setFormValues(p => ({ ...p, cpEmail: e.target.value }))} placeholder="email@company.com" type="email" className={iCls} />
+                              </div>
+                              <div>
+                                <label className={lCls}>Application</label>
+                                <input value={formValues.application} onChange={e => setFormValues(p => ({ ...p, application: e.target.value }))} placeholder="e.g. Noodles, Chips" className={iCls} />
+                              </div>
+                              <div>
+                                <label className={lCls}>Target Price ($/kg)</label>
+                                <input value={formValues.targetPrice} onChange={e => setFormValues(p => ({ ...p, targetPrice: e.target.value }))} placeholder="0.00" type="number" step="0.01" min="0" className={iCls} />
                               </div>
                               <div>
                                 <label className={lCls}>Volume (kg/month)</label>
-                                <input value={formValues.volume} onChange={e => setFormValues(p => ({ ...p, volume: e.target.value }))} type="number" min="0" className={iCls} />
-                              </div>
-                              <div>
-                                <label className={lCls}>Account Manager</label>
-                                <input value={formValues.accountManager} onChange={e => setFormValues(p => ({ ...p, accountManager: e.target.value }))} className={iCls} />
+                                <input value={formValues.volume} onChange={e => setFormValues(p => ({ ...p, volume: e.target.value }))} placeholder="0" type="number" min="0" className={iCls} />
+                                {formValues.volume && <div className="mt-1"><VolumeTag volume={formValues.volume} /></div>}
                               </div>
                               <div>
                                 <label className={lCls}>Urgency Level</label>
                                 <div className="flex gap-2 flex-wrap mt-1">
-                                  {MDP_URGENCY.map(u => (
-                                    <button key={u.value} type="button" onClick={() => setFormValues(p => ({ ...p, urgency: u.value }))}
+                                  {SF_URGENCY.map(u => (
+                                    <button key={u.value} type="button" onClick={() => setFormValues(p => ({ ...p, urgencyLevel: u.value }))}
                                       className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all",
-                                        formValues.urgency === u.value ? cn(u.bg, u.color) : isLight ? "border-gray-200 text-gray-500 hover:border-gray-300" : "border-white/10 text-muted-foreground hover:border-white/20"
+                                        formValues.urgencyLevel === u.value ? cn(u.bg, u.color) : isLight ? "border-gray-200 text-gray-500 hover:border-gray-300" : "border-white/10 text-muted-foreground hover:border-white/20"
                                       )}>
                                       <span className={cn("w-2 h-2 rounded-full", u.dot)} />{u.label}
                                     </button>
@@ -2354,22 +2434,31 @@ function MaterialsDemandPlanningPage() {
                                 </div>
                               </div>
                               <div>
-                                <label className={lCls}>Priority</label>
-                                <div className="flex gap-2 flex-wrap mt-1">
-                                  {MDP_PRIORITY.map(p => (
-                                    <button key={p.value} type="button" onClick={() => setFormValues(prev => ({ ...prev, priority: p.value }))}
-                                      className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all",
-                                        formValues.priority === p.value ? cn(p.bg, p.color) : isLight ? "border-gray-200 text-gray-500 hover:border-gray-300" : "border-white/10 text-muted-foreground hover:border-white/20"
-                                      )}>
-                                      <span className={cn("w-2 h-2 rounded-full", p.dot)} />{p.label}
-                                    </button>
-                                  ))}
-                                </div>
+                                <label className={lCls}>Competitor Reference</label>
+                                <input value={formValues.competitorReference} onChange={e => setFormValues(p => ({ ...p, competitorReference: e.target.value }))} placeholder="Competitor names" className={iCls} />
                               </div>
                             </div>
-                          );
-                        })()}
-                      </div>
+                            <div>
+                              <label className={lCls}>Account Manager(s)</label>
+                              <input value={manSearch} onChange={e => setManSearch(e.target.value)} placeholder="Search staff…" className={iCls + " mb-2"} />
+                              <div className="max-h-36 overflow-y-auto space-y-1 custom-scrollbar pr-1">
+                                {filteredUsers.map((u: any) => (
+                                  <label key={u.id} className={cn("flex items-center gap-2.5 px-3 py-2 rounded-xl border cursor-pointer text-sm transition-all",
+                                    formValues.accountManagers.includes(u.id) ? "border-primary/30 bg-primary/10 text-foreground" : isLight ? "border-gray-100 text-gray-600 hover:bg-gray-50" : "border-white/5 text-muted-foreground hover:border-white/10"
+                                  )}>
+                                    <input type="checkbox" checked={formValues.accountManagers.includes(u.id)} onChange={() => toggleManager(u.id)} className="accent-primary" />
+                                    <span className="flex-1">{u.name}</span>
+                                    <span className="text-[10px] text-muted-foreground/60">{u.department || u.role?.replace(/_/g, " ")}</span>
+                                  </label>
+                                ))}
+                              </div>
+                              {formValues.accountManagers.length > 0 && (
+                                <p className="text-xs text-primary mt-1">{formValues.accountManagers.length} manager{formValues.accountManagers.length > 1 ? "s" : ""} selected</p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                     <div className={cn("px-6 py-4 border-t flex gap-3", isLight ? "border-gray-100" : "border-white/5")}>
                       <button onClick={submitForm} disabled={updating}
