@@ -2155,7 +2155,6 @@ function MaterialsDemandPlanningPage() {
                 <thead className={cn("text-xs text-muted-foreground border-b", isLight ? "bg-slate-50 border-slate-200" : "bg-white/5 border-white/5")}>
                   <tr>
                     <th className="px-5 py-3 text-left font-medium">Account</th>
-                    <th className="px-5 py-3 text-left font-medium">Company</th>
                     <th className="px-5 py-3 text-left font-medium">Product Type</th>
                     <th className="px-5 py-3 text-left font-medium">Volume (kg)</th>
                     <th className="px-5 py-3 text-left font-medium">Manager</th>
@@ -2168,7 +2167,7 @@ function MaterialsDemandPlanningPage() {
                 <tbody>
                   {filteredProducts.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="py-12 text-center text-muted-foreground text-sm">
+                      <td colSpan={8} className="py-12 text-center text-muted-foreground text-sm">
                         No customer products match the current filters.
                       </td>
                     </tr>
@@ -2179,9 +2178,9 @@ function MaterialsDemandPlanningPage() {
                           isLight ? "border-slate-100 hover:bg-slate-50/70" : "border-white/5 hover:bg-white/[0.03]"
                         )}>
                         <td className="px-5 py-3">
-                          <p className="font-medium text-foreground text-sm">{product.accountName}</p>
+                          <p className="font-medium text-foreground text-sm">{product.company}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">{product.accountName}</p>
                         </td>
-                        <td className="px-5 py-3 text-xs text-muted-foreground">{product.company}</td>
                         <td className="px-5 py-3 text-xs text-muted-foreground">{product.productType}</td>
                         <td className="px-5 py-3 text-xs text-foreground font-medium">{Number(product.volume).toLocaleString()}</td>
                         <td className="px-5 py-3 text-xs text-muted-foreground">{product.accountManager ?? "—"}</td>
