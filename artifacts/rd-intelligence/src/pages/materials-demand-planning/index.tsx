@@ -1,5 +1,6 @@
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Package,
   Plus,
@@ -16,15 +17,25 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { PageLoader } from "@/components/ui/spinner";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
+import { useTheme } from "@/lib/theme";
 import { PlannedOrdersProvider, usePlannedOrders } from "./planned-orders-context";
 
 const BASE = import.meta.env.BASE_URL;
+
+function selectCls(isLight: boolean) {
+  return cn(
+    "h-10 w-full rounded-xl border px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 cursor-pointer",
+    isLight
+      ? "border-slate-200 bg-white text-slate-700"
+      : "border-white/10 bg-black/20 text-foreground"
+  );
+}
 
 type CustomerProduct = {
   id: number;
@@ -570,6 +581,8 @@ function buildOptimizedAssignments(
 function ProductionOrdersTab() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { theme } = useTheme();
+  const isLight = theme === "light";
   const { addPlannedOrder, removePlannedOrder, isPlanningOrder } = usePlannedOrders();
   const [searchOrders, setSearchOrders] = React.useState("");
   const [remarksById, setRemarksById] = React.useState<Record<number, string>>({});
@@ -745,35 +758,41 @@ function ProductionOrdersTab() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div className="grid gap-2">
+        <div className="grid gap-1">
           <h2 className="text-lg font-semibold text-foreground">New Production Orders</h2>
           <p className="text-sm text-muted-foreground">Manage demand plan updates, auto-save microbial analysis, remarks, and order status inline.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" onClick={() => downloadProductionOrdersCsv(tableOrders)}>
-            <Download className="mr-2 h-4 w-4" /> Export CSV
-          </Button>
-          <Button variant="secondary" onClick={() => downloadProductionOrdersXlsx(tableOrders)}>
-            <Download className="mr-2 h-4 w-4" /> Export XLSX
-          </Button>
+          <button onClick={() => downloadProductionOrdersCsv(tableOrders)}
+            className={cn("flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-medium border transition-all",
+              isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:border-white/20"
+            )}>
+            <Download className="w-4 h-4" /> Export CSV
+          </button>
+          <button onClick={() => downloadProductionOrdersXlsx(tableOrders)}
+            className={cn("flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-medium border transition-all",
+              isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:border-white/20"
+            )}>
+            <Download className="w-4 h-4" /> Export XLSX
+          </button>
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={searchOrders}
-            onChange={(event) => setSearchOrders(event.target.value)}
-            placeholder="Search orders..."
-            className="pl-10"
-          />
-        </div>
+      <div className="relative w-64">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <input
+          value={searchOrders}
+          onChange={(event) => setSearchOrders(event.target.value)}
+          placeholder="Search orders..."
+          className={cn("h-9 pl-9 pr-4 rounded-xl border text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/50",
+            isLight ? "bg-white border-slate-200 text-slate-800 placeholder:text-slate-400" : "bg-black/20 border-white/10 text-foreground placeholder:text-muted-foreground"
+          )}
+        />
       </div>
 
-      <div className="glass-card rounded-3xl border border-white/10 bg-white/5 p-4 overflow-x-auto">
+      <div className={cn("glass-card rounded-2xl overflow-x-auto border", isLight ? "border-slate-200 bg-white" : "border-white/5 bg-white/5")}>
         <Table>
           <TableHeader>
             <TableRow>
@@ -825,7 +844,9 @@ function ProductionOrdersTab() {
                         <select
                           value={microbial}
                           onChange={(event) => handleChangeMicrobial(order.id, event.target.value)}
-                          className="rounded-xl border border-white/10 bg-black/10 px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                          className={cn("rounded-xl border px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50",
+                            isLight ? "border-slate-200 bg-white text-slate-700" : "border-white/10 bg-black/10 text-foreground"
+                          )}
                         >
                           {MICROBIAL_OPTIONS.map((option) => (
                             <option key={option.value} value={option.value}>
@@ -848,7 +869,7 @@ function ProductionOrdersTab() {
                       <select
                         value={status}
                         onChange={(event) => handleChangeStatus(order.id, event.target.value)}
-                        className={`rounded-full border px-3 py-1 text-sm font-semibold ${getStatusClasses(status)}`}
+                        className={cn("rounded-full border px-3 py-1 text-sm font-semibold cursor-pointer focus:outline-none", getStatusClasses(status))}
                       >
                         {STATUS_OPTIONS.map((option) => (
                           <option key={option} value={option}>
@@ -885,7 +906,7 @@ function ProductionOrdersTab() {
               })
             )}
           </TableBody>
-          <TableCaption className="text-muted-foreground">
+          <TableCaption className="text-muted-foreground pb-3">
             Showing {tableOrders.length} of {productionOrders.length} production orders.
           </TableCaption>
         </Table>
@@ -899,6 +920,8 @@ type PlanningViewMode = "weekly" | "daily";
 function ProductionPlanningTab() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { theme } = useTheme();
+  const isLight = theme === "light";
   const [selectedWeekLabel, setSelectedWeekLabel] = React.useState("");
   const [splitPercent, setSplitPercent] = React.useState(55);
   const [isDividerDragging, setIsDividerDragging] = React.useState(false);
@@ -1270,16 +1293,18 @@ function ProductionPlanningTab() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <style>{printStyles}</style>
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div className="space-y-2">
-          <Label htmlFor="week-selector">Choose a week</Label>
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide" htmlFor="week-selector">Choose a week</label>
           <select
             id="week-selector"
             value={selectedWeekLabel}
             onChange={(event) => setSelectedWeekLabel(event.target.value)}
-            className="h-11 rounded-2xl border border-white/10 bg-black/10 px-4 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+            className={cn("h-10 rounded-xl border px-4 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 cursor-pointer",
+              isLight ? "border-slate-200 bg-white text-slate-700" : "border-white/10 bg-black/20 text-foreground"
+            )}
           >
             {weeks.map((week) => (
               <option key={week.weekLabel} value={week.weekLabel}>
@@ -1288,26 +1313,35 @@ function ProductionPlanningTab() {
             ))}
           </select>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            variant="secondary"
+        <div className="flex flex-wrap items-center gap-2">
+          <button
             onClick={handleAssistedPlanning}
             disabled={assistedState === "optimizing" || !!assignedMap.size === false}
+            className={cn("flex items-center gap-1.5 h-9 px-4 rounded-xl text-xs font-semibold border transition-all disabled:opacity-50",
+              isLight ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50" : "border-white/10 bg-white/5 text-foreground hover:bg-white/10"
+            )}
           >
             {assistedState === "optimizing" ? "Optimizing…" : assistedState === "done" ? "✓ Plan Optimized" : "Assisted Planning"}
-          </Button>
-          <Button variant="secondary" onClick={() => setPrintOpen(true)}>
+          </button>
+          <button
+            onClick={() => setPrintOpen(true)}
+            className={cn("flex items-center gap-1.5 h-9 px-4 rounded-xl text-xs font-semibold border transition-all",
+              isLight ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50" : "border-white/10 bg-white/5 text-foreground hover:bg-white/10"
+            )}
+          >
             Print Week Schedule
-          </Button>
+          </button>
         </div>
       </div>
 
-      <div id="planning-split-container" className="relative flex min-h-[720px] rounded-3xl border border-white/10 bg-white/5 overflow-hidden">
-        <div style={{ width: `${splitPercent}%` }} className="overflow-y-auto border-r border-white/10 p-5">
+      <div id="planning-split-container" className={cn("relative flex min-h-[720px] rounded-2xl border overflow-hidden",
+        isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5"
+      )}>
+        <div style={{ width: `${splitPercent}%` }} className={cn("overflow-y-auto border-r p-5", isLight ? "border-slate-200" : "border-white/10")}>
           <div className="flex items-center justify-between gap-3 mb-5">
             <div>
-              <h2 className="text-lg font-semibold text-foreground">Production Floors</h2>
-              <p className="text-sm text-muted-foreground">Drag planned orders into floor boxes to schedule production.</p>
+              <h2 className="text-base font-semibold text-foreground">Production Floors</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">Drag planned orders into floor boxes to schedule production.</p>
             </div>
             <Dialog open={floorModalOpen} onOpenChange={setFloorModalOpen}>
               <DialogTrigger asChild>
@@ -1334,7 +1368,9 @@ function ProductionPlanningTab() {
                       id="blendCategory"
                       value={floorForm.blendCategory}
                       onChange={(event) => setFloorForm((prev) => ({ ...prev, blendCategory: event.target.value as ProductionFloor["blendCategory"] }))}
-                      className="h-11 w-full rounded-2xl border border-white/10 bg-black/10 px-4 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                      className={cn("h-10 w-full rounded-xl border px-4 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 cursor-pointer",
+                        isLight ? "border-slate-200 bg-white text-slate-700" : "border-white/10 bg-black/20 text-foreground"
+                      )}
                     >
                       <option value="Sweet">Sweet</option>
                       <option value="Savory">Savory</option>
@@ -1365,7 +1401,9 @@ function ProductionPlanningTab() {
 
           <div className="space-y-4">
             {floors.length === 0 ? (
-              <div className="rounded-3xl border border-dashed border-white/10 bg-black/5 p-8 text-center text-sm text-muted-foreground">
+              <div className={cn("rounded-2xl border border-dashed p-8 text-center text-sm text-muted-foreground",
+                isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5"
+              )}>
                 No floors defined yet. Add a production floor to begin scheduling.
               </div>
             ) : (
@@ -1379,7 +1417,11 @@ function ProductionPlanningTab() {
                 return (
                   <div
                     key={floor.id}
-                    className={`rounded-3xl border ${dragOverFloorId === floor.id ? "border-primary/70 bg-primary/5" : "border-white/10 bg-black/5"} p-4`}
+                    className={cn("rounded-2xl border p-4 transition-colors",
+                      dragOverFloorId === floor.id
+                        ? "border-primary/50 bg-primary/5"
+                        : isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5"
+                    )}
                     onDragOver={(event) => {
                       event.preventDefault();
                       setDragOverFloorId(floor.id);
@@ -1390,22 +1432,24 @@ function ProductionPlanningTab() {
                     <div className="flex flex-col gap-3">
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
-                          <h3 className="text-base font-semibold text-foreground">{floor.floorName}</h3>
-                          <Badge variant="secondary" className="mt-2">
+                          <h3 className="text-sm font-semibold text-foreground">{floor.floorName}</h3>
+                          <Badge variant="secondary" className="mt-1.5">
                             {floor.blendCategory}
                           </Badge>
                         </div>
-                        <div className="text-right text-sm text-muted-foreground">
+                        <div className="text-right text-xs text-muted-foreground">
                           <div>{totalKg} / {floor.maxCapacityKg} KG</div>
-                          <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
-                            <div className={`${barClass} h-full`} style={{ width: `${progress}%` }} />
+                          <div className={cn("mt-2 h-1.5 overflow-hidden rounded-full", isLight ? "bg-slate-200" : "bg-white/10")}>
+                            <div className={`${barClass} h-full transition-all`} style={{ width: `${progress}%` }} />
                           </div>
                         </div>
                       </div>
 
-                      <div className="min-h-[180px] rounded-3xl border border-dashed border-white/10 bg-black/5 p-3">
+                      <div className={cn("min-h-[160px] rounded-xl border border-dashed p-3",
+                        isLight ? "border-slate-200 bg-white/60" : "border-white/10 bg-black/5"
+                      )}>
                         {assignedRows.length === 0 ? (
-                          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                          <div className="flex h-full min-h-[120px] items-center justify-center text-sm text-muted-foreground/60">
                             Drop orders here
                           </div>
                         ) : (
@@ -1432,7 +1476,9 @@ function ProductionPlanningTab() {
                                     handleReorder(floor.id, dragged.assignmentId, row.assignment.id);
                                   }
                                 }}
-                                className="rounded-3xl border border-white/10 bg-white/5 p-3"
+                                className={cn("rounded-xl border p-3 cursor-grab active:cursor-grabbing",
+                                  isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5"
+                                )}
                               >
                                 <div className="flex flex-col gap-2">
                                   <div className="flex items-center justify-between gap-3">
@@ -1473,8 +1519,8 @@ function ProductionPlanningTab() {
         </div>
 
         <div
-          className="cursor-col-resize bg-white/10"
-          style={{ width: 12, minWidth: 12, maxWidth: 12 }}
+          className={cn("cursor-col-resize", isLight ? "bg-slate-200" : "bg-white/10")}
+          style={{ width: 10, minWidth: 10, maxWidth: 10 }}
           onMouseDown={() => setIsDividerDragging(true)}
         />
 
@@ -1482,16 +1528,20 @@ function ProductionPlanningTab() {
           <div className="flex flex-col gap-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="text-lg font-semibold text-foreground">Planned Orders</h2>
-                <p className="text-sm text-muted-foreground">Drag unassigned orders into floors or unassign existing items.</p>
+                <h2 className="text-base font-semibold text-foreground">Planned Orders</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">Drag unassigned orders into floors or unassign existing items.</p>
               </div>
-              <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-black/5 p-1">
+              <div className={cn("flex gap-1 p-1 rounded-xl border", isLight ? "bg-slate-100 border-slate-200" : "bg-white/5 border-white/10")}>
                 {(["weekly", "daily"] as PlanningViewMode[]).map((mode) => (
                   <button
                     key={mode}
                     type="button"
                     onClick={() => setPlanningView(mode)}
-                    className={`rounded-2xl px-4 py-2 text-sm ${planningView === mode ? "bg-white text-foreground" : "text-muted-foreground"}`}
+                    className={cn("rounded-lg px-3 py-1.5 text-xs font-semibold transition-all",
+                      planningView === mode
+                        ? "bg-primary text-white shadow-sm shadow-primary/20"
+                        : isLight ? "text-slate-600 hover:text-slate-900" : "text-muted-foreground hover:text-foreground"
+                    )}
                   >
                     {mode.charAt(0).toUpperCase() + mode.slice(1)}
                   </button>
@@ -1499,9 +1549,11 @@ function ProductionPlanningTab() {
               </div>
             </div>
 
-            <div className="rounded-3xl border border-white/10 bg-black/5 p-4">
+            <div className={cn("rounded-2xl border p-4", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5")}>
               <div
-                className="min-h-[260px] rounded-3xl border border-dashed border-white/10 bg-transparent p-3"
+                className={cn("min-h-[260px] rounded-xl border border-dashed p-3",
+                  isLight ? "border-slate-200" : "border-white/10"
+                )}
                 onDragOver={(event) => event.preventDefault()}
                 onDrop={async (event) => {
                   event.preventDefault();
@@ -1513,11 +1565,11 @@ function ProductionPlanningTab() {
                 }}
               >
                 {assignedRightOrders.length === 0 ? (
-                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                  <div className="flex h-full min-h-[220px] items-center justify-center text-sm text-muted-foreground/60">
                     No planned orders available.
                   </div>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     {assignedRightOrders.map(({ order, assigned }) => (
                       <div
                         key={order.id}
@@ -1528,7 +1580,11 @@ function ProductionPlanningTab() {
                             setDragged({ type: "planned", productionOrderId: order.id });
                           }
                         }}
-                        className={`rounded-3xl border p-4 ${assigned ? "border-white/10 bg-white/5 text-muted-foreground opacity-60" : "border-white/10 bg-black/10 hover:border-white/20"}`}
+                        className={cn("rounded-xl border p-3 transition-colors",
+                          assigned
+                            ? isLight ? "border-slate-200 bg-slate-100/60 opacity-60" : "border-white/10 bg-white/5 opacity-60"
+                            : isLight ? "border-slate-200 bg-white hover:border-primary/30 cursor-grab" : "border-white/10 bg-black/10 hover:border-white/20 cursor-grab"
+                        )}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div>
@@ -1552,16 +1608,16 @@ function ProductionPlanningTab() {
               </div>
             </div>
 
-            <div className="rounded-3xl border border-white/10 bg-black/5 p-4">
-              <h3 className="text-sm font-semibold text-foreground">Planning summary</h3>
+            <div className={cn("rounded-2xl border p-4", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5")}>
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Planning summary</h3>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Planned orders</p>
-                  <p className="mt-2 text-2xl font-semibold text-foreground">{plannedOrders.length}</p>
+                <div className={cn("rounded-xl border p-4", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5")}>
+                  <p className="text-xs uppercase tracking-[0.15em] text-muted-foreground">Planned orders</p>
+                  <p className="mt-2 text-2xl font-bold text-foreground">{plannedOrders.length}</p>
                 </div>
-                <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Assigned</p>
-                  <p className="mt-2 text-2xl font-semibold text-foreground">{Array.from(assignedMap.keys()).length}</p>
+                <div className={cn("rounded-xl border p-4", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5")}>
+                  <p className="text-xs uppercase tracking-[0.15em] text-muted-foreground">Assigned</p>
+                  <p className="mt-2 text-2xl font-bold text-foreground">{Array.from(assignedMap.keys()).length}</p>
                 </div>
               </div>
             </div>
@@ -1579,20 +1635,20 @@ function ProductionPlanningTab() {
             {floors.map((floor) => {
               const assignedRows = floorOrder(floor.id);
               return (
-                <div key={floor.id} className="rounded-3xl border border-white/10 bg-black/5 p-4">
+                <div key={floor.id} className={cn("rounded-2xl border p-4", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5")}>
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <p className="text-base font-semibold text-foreground">{floor.floorName}</p>
-                      <p className="text-sm text-muted-foreground">{floor.blendCategory}</p>
+                      <p className="text-sm font-semibold text-foreground">{floor.floorName}</p>
+                      <p className="text-xs text-muted-foreground">{floor.blendCategory}</p>
                     </div>
-                    <p className="text-sm text-muted-foreground">Max {floor.maxCapacityKg} KG / day</p>
+                    <p className="text-xs text-muted-foreground">Max {floor.maxCapacityKg} KG / day</p>
                   </div>
                   <div className="mt-4 space-y-3">
                     {assignedRows.length === 0 ? (
                       <p className="text-sm text-muted-foreground">No orders assigned.</p>
                     ) : (
                       assignedRows.map((row) => (
-                        <div key={row.assignment.id} className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                        <div key={row.assignment.id} className={cn("rounded-xl border p-3", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5")}>
                           <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
                             <div>
                               <p className="font-medium text-foreground">{row.order.accountName}</p>
@@ -1620,6 +1676,8 @@ function ProductionPlanningTab() {
 function ProductionHistoryTab() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { theme } = useTheme();
+  const isLight = theme === "light";
   const [view, setView] = React.useState<ProductionHistoryView>("weekly");
 
   const producedHistoryQuery = useQuery({
@@ -1671,29 +1729,35 @@ function ProductionHistoryTab() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div className="space-y-2">
-          <div className="flex flex-wrap gap-2">
+          <div className={cn("flex gap-1 p-1 rounded-xl border w-fit", isLight ? "bg-slate-100 border-slate-200" : "bg-white/5 border-white/10")}>
             {(["daily", "weekly", "monthly", "yearly"] as ProductionHistoryView[]).map((option) => (
               <button
                 key={option}
                 type="button"
                 onClick={() => setView(option)}
-                className={`rounded-2xl px-4 py-2 text-sm font-semibold ${view === option ? "bg-white text-foreground" : "bg-black/10 text-muted-foreground"}`}
+                className={cn("rounded-lg px-3 py-1.5 text-xs font-semibold transition-all",
+                  view === option
+                    ? "bg-primary text-white shadow-sm shadow-primary/20"
+                    : isLight ? "text-slate-600 hover:text-slate-900" : "text-muted-foreground hover:text-foreground"
+                )}
               >
                 {option.charAt(0).toUpperCase() + option.slice(1)}
               </button>
             ))}
           </div>
-          <p className="text-sm text-muted-foreground">Viewing: {rangeLabel}</p>
+          <p className="text-xs text-muted-foreground">Viewing: {rangeLabel}</p>
         </div>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="secondary">
-              <Download className="mr-2 h-4 w-4" /> Export
-            </Button>
+            <button className={cn("flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-medium border transition-all",
+              isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:border-white/20"
+            )}>
+              <Download className="w-4 h-4" /> Export
+            </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-[180px]">
             <DropdownMenuItem onClick={() => downloadProductionHistoryCsv(producedOrders, view)}>
@@ -1708,14 +1772,14 @@ function ProductionHistoryTab() {
       </div>
 
       {producedOrders.length === 0 ? (
-        <div className="rounded-3xl border border-dashed border-white/10 bg-black/5 p-10 text-center">
-          <p className="text-xl font-semibold text-foreground">No production history yet.</p>
+        <div className={cn("rounded-2xl border border-dashed p-10 text-center", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5")}>
+          <p className="text-lg font-semibold text-foreground">No production history yet.</p>
           <p className="mt-2 text-sm text-muted-foreground">
             Click "Produced" on any floor assignment in Production Planning to log output.
           </p>
         </div>
       ) : (
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-4 overflow-x-auto">
+        <div className={cn("glass-card rounded-2xl border overflow-x-auto", isLight ? "border-slate-200 bg-white" : "border-white/5 bg-white/5")}>
           <Table>
             <TableHeader>
               <TableRow>
@@ -1868,6 +1932,8 @@ function MaterialsDemandPlanningPage() {
     },
   });
 
+  const { theme } = useTheme();
+  const isLight = theme === "light";
   const creating = createMutation.status === "pending";
   const updating = updateMutation.status === "pending";
 
@@ -1940,92 +2006,94 @@ function MaterialsDemandPlanningPage() {
     openEditForm(product);
   };
 
+  const MDP_TABS = [
+    { value: "customer-products", label: "Customer Products" },
+    { value: "production-orders", label: "Production Orders" },
+    { value: "production-planning", label: "Production Planning" },
+    { value: "production-history", label: "Production History" },
+  ] as const;
+  type MdpTab = typeof MDP_TABS[number]["value"];
+
   if (isLoading) {
     return <PageLoader />;
   }
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      <div className="flex items-center gap-3 border-b border-white/10 pb-4">
-        <div className="p-3 bg-primary/10 rounded-xl text-primary">
-          <Package className="w-6 h-6" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-display font-bold text-foreground">
-            Materials & Demand Planning
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Manage raw materials, demand forecasting, and procurement planning.
-          </p>
-        </div>
+    <div className="space-y-0">
+      <div className="mb-5">
+        <h1 className="text-3xl font-display font-bold text-foreground flex items-center gap-3">
+          <Package className="w-8 h-8 text-primary" /> Materials & Demand Planning
+        </h1>
+        <p className="text-muted-foreground mt-1">Manage raw materials, demand forecasting, and procurement planning.</p>
       </div>
 
-      <div className="space-y-6">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="customer-products">Customer Products</TabsTrigger>
-            <TabsTrigger value="production-orders">Production Orders</TabsTrigger>
-            <TabsTrigger value="production-planning">Production Planning</TabsTrigger>
-            <TabsTrigger value="production-floors">Production Floors</TabsTrigger>
-            <TabsTrigger value="floor-assignments">Floor Assignments</TabsTrigger>
-            <TabsTrigger value="production-history">Production History</TabsTrigger>
-          </TabsList>
+      <div className={cn("flex gap-1 p-1 rounded-2xl border mb-6 w-fit overflow-x-auto",
+        isLight ? "bg-slate-100 border-slate-200" : "bg-white/5 border-white/10"
+      )}>
+        {MDP_TABS.map(tab => (
+          <button key={tab.value} onClick={() => setActiveTab(tab.value as MdpTab)}
+            className={cn("px-4 py-2 rounded-xl text-sm font-semibold transition-all whitespace-nowrap",
+              activeTab === tab.value
+                ? "bg-primary text-white shadow-lg shadow-primary/20"
+                : isLight ? "text-slate-600 hover:text-slate-900" : "text-muted-foreground hover:text-foreground"
+            )}>
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-          <TabsContent value="customer-products">
-            <div className="grid gap-4 md:grid-cols-4">
-              <div className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-sm">
-                <p className="text-sm uppercase tracking-[0.18em] text-muted-foreground">Total requests</p>
-                <p className="mt-3 text-3xl font-semibold text-foreground">{summary.total}</p>
-              </div>
-              <div className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-sm">
-                <p className="text-sm uppercase tracking-[0.18em] text-muted-foreground">High priority</p>
-                <p className="mt-3 text-3xl font-semibold text-foreground">{summary.highPriorityCount}</p>
-              </div>
-              <div className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-sm">
-                <p className="text-sm uppercase tracking-[0.18em] text-muted-foreground">Average volume</p>
-                <p className="mt-3 text-3xl font-semibold text-foreground">{summary.averageVolume} kg</p>
-              </div>
-              <div className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-sm">
-                <p className="text-sm uppercase tracking-[0.18em] text-muted-foreground">Recent (30d)</p>
-                <p className="mt-3 text-3xl font-semibold text-foreground">{summary.recentCount}</p>
-              </div>
-            </div>
+      <AnimatePresence mode="wait">
+        <motion.div key={activeTab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
 
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-              <div className="flex-1 grid gap-3 sm:grid-cols-3">
-                <div className="col-span-3 sm:col-span-1">
-                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-[0.2em]">Search</label>
-                  <div className="relative mt-2">
+          {activeTab === "customer-products" && (
+            <div className="space-y-5">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {[
+                  { label: "Total requests", value: summary.total },
+                  { label: "High priority", value: summary.highPriorityCount },
+                  { label: "Avg. volume", value: `${summary.averageVolume} kg` },
+                  { label: "Recent (30d)", value: summary.recentCount },
+                ].map(stat => (
+                  <div key={stat.label} className={cn("rounded-2xl border p-5",
+                    isLight ? "border-slate-200 bg-white shadow-sm" : "border-white/5 bg-white/5"
+                  )}>
+                    <p className="text-xs uppercase tracking-[0.15em] text-muted-foreground">{stat.label}</p>
+                    <p className="mt-2 text-3xl font-bold text-foreground">{stat.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex gap-2 flex-wrap">
+                  <div className="relative">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
+                    <input
                       value={search}
                       onChange={(event) => setSearch(event.target.value)}
                       placeholder="Search account, company or product"
-                      className="pl-10"
+                      className={cn("h-9 pl-9 pr-4 rounded-xl border text-sm w-60 focus:outline-none focus:ring-2 focus:ring-primary/50",
+                        isLight ? "bg-white border-slate-200 text-slate-800 placeholder:text-slate-400" : "bg-black/20 border-white/10 text-foreground placeholder:text-muted-foreground"
+                      )}
                     />
                   </div>
-                </div>
-                <div>
-                  <Label htmlFor="priority-filter">Priority</Label>
                   <select
-                    id="priority-filter"
                     value={priorityFilter}
                     onChange={(event) => setPriorityFilter(event.target.value)}
-                    className="mt-2 h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                    className={cn("h-9 px-3 rounded-xl border text-sm focus:outline-none cursor-pointer",
+                      isLight ? "bg-white border-slate-200 text-slate-700" : "bg-black/20 border-white/10 text-foreground"
+                    )}
                   >
                     <option value="all">All priorities</option>
                     <option value="low">Low</option>
                     <option value="medium">Medium</option>
                     <option value="high">High</option>
                   </select>
-                </div>
-                <div>
-                  <Label htmlFor="urgency-filter">Urgency</Label>
                   <select
-                    id="urgency-filter"
                     value={urgencyFilter}
                     onChange={(event) => setUrgencyFilter(event.target.value)}
-                    className="mt-2 h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                    className={cn("h-9 px-3 rounded-xl border text-sm focus:outline-none cursor-pointer",
+                      isLight ? "bg-white border-slate-200 text-slate-700" : "bg-black/20 border-white/10 text-foreground"
+                    )}
                   >
                     <option value="all">All urgencies</option>
                     <option value="low">Low</option>
@@ -2034,17 +2102,20 @@ function MaterialsDemandPlanningPage() {
                     <option value="critical">Critical</option>
                   </select>
                 </div>
-              </div>
 
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <Button variant="secondary" onClick={() => downloadCsv(filteredProducts)}>
-                  <Download className="mr-2 h-4 w-4" /> Export CSV
-                </Button>
-                <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+                <div className="flex gap-2 shrink-0">
+                  <button onClick={() => downloadCsv(filteredProducts)}
+                    className={cn("flex items-center gap-1.5 h-9 px-3 rounded-xl border text-xs font-medium transition-all",
+                      isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:border-white/20"
+                    )}>
+                    <Download className="w-4 h-4" /> Export CSV
+                  </button>
+                  <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
                   <DialogTrigger asChild>
-                    <Button onClick={openAddForm}>
-                      <Plus className="mr-2 h-4 w-4" /> New request
-                    </Button>
+                    <button onClick={openAddForm}
+                      className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20">
+                      <Plus className="w-4 h-4" /> New request
+                    </button>
                   </DialogTrigger>
                   <DialogContent className="sm:max-w-xl">
                     <DialogHeader>
@@ -2088,7 +2159,7 @@ function MaterialsDemandPlanningPage() {
                             id="urgency"
                             value={formValues.urgency}
                             onChange={(event) => setFormValues((prev) => ({ ...prev, urgency: event.target.value }))}
-                            className="h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                            className={selectCls(isLight)}
                           >
                             <option value="low">Low</option>
                             <option value="normal">Normal</option>
@@ -2102,7 +2173,7 @@ function MaterialsDemandPlanningPage() {
                             id="priority"
                             value={formValues.priority}
                             onChange={(event) => setFormValues((prev) => ({ ...prev, priority: event.target.value }))}
-                            className="h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                            className={selectCls(isLight)}
                           >
                             <option value="low">Low</option>
                             <option value="medium">Medium</option>
@@ -2148,7 +2219,7 @@ function MaterialsDemandPlanningPage() {
               </div>
             </div>
 
-            <div className="glass-card rounded-3xl border border-white/10 bg-white/5 p-5">
+            <div className={cn("glass-card rounded-2xl border overflow-hidden", isLight ? "border-slate-200 bg-white" : "border-white/5 bg-white/5")}>
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
@@ -2243,7 +2314,7 @@ function MaterialsDemandPlanningPage() {
                         id="editUrgency"
                         value={formValues.urgency}
                         onChange={(event) => setFormValues((prev) => ({ ...prev, urgency: event.target.value }))}
-                        className="h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                        className={selectCls(isLight)}
                       >
                         <option value="low">Low</option>
                         <option value="normal">Normal</option>
@@ -2257,7 +2328,7 @@ function MaterialsDemandPlanningPage() {
                         id="editPriority"
                         value={formValues.priority}
                         onChange={(event) => setFormValues((prev) => ({ ...prev, priority: event.target.value }))}
-                        className="h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                        className={selectCls(isLight)}
                       >
                         <option value="low">Low</option>
                         <option value="medium">Medium</option>
@@ -2298,39 +2369,17 @@ function MaterialsDemandPlanningPage() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
-          </TabsContent>
+          </div>
+          )}
 
-          <TabsContent value="production-orders">
-            <ProductionOrdersTab />
-          </TabsContent>
+          {activeTab === "production-orders" && <ProductionOrdersTab />}
 
-          <TabsContent value="production-planning">
-            <ProductionPlanningTab />
-          </TabsContent>
+          {activeTab === "production-planning" && <ProductionPlanningTab />}
 
-          <TabsContent value="production-floors">
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-10 text-center">
-              <p className="text-xl font-semibold text-foreground">Production Floors</p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                This section will provide floor capacity, blend assignments, and shop floor utilization planning.
-              </p>
-            </div>
-          </TabsContent>
+          {activeTab === "production-history" && <ProductionHistoryTab />}
 
-          <TabsContent value="floor-assignments">
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-10 text-center">
-              <p className="text-xl font-semibold text-foreground">Floor Assignments</p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Floor assignment planning and schedule views will be available here soon.
-              </p>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="production-history">
-            <ProductionHistoryTab />
-          </TabsContent>
-        </Tabs>
-      </div>
+        </motion.div>
+      </AnimatePresence>
     </div>
   );
 }
