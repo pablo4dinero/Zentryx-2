@@ -609,6 +609,7 @@ export default function RequestsTab() {
   const [selectedPR, setSelectedPR] = useState<any>(null);
   const [showRejectedDrawer, setShowRejectedDrawer] = useState(false);
   const [editPR, setEditPR] = useState<any>(null);
+  const queryClient = useQueryClient();
 
   const currentUserDept = (currentUser as any)?.department ?? "";
   const isProcurementDept = currentUserDept.toLowerCase().includes("procurement");

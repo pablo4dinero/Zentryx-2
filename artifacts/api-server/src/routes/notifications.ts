@@ -19,7 +19,7 @@ router.get("/", requireAuth, async (req: AuthRequest, res) => {
 
 router.post("/:id/read", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const [notification] = await db.update(notificationsTable)
       .set({ isRead: true })
       .where(and(eq(notificationsTable.id, id), eq(notificationsTable.userId, req.user!.userId)))

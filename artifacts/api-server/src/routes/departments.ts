@@ -26,7 +26,7 @@ router.post("/", requireAuth, async (req, res) => {
 
 router.delete("/:id", requireAuth, async (req, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     await db.delete(departmentsTable).where(require("drizzle-orm").eq(departmentsTable.id, id));
     res.status(204).send();
   } catch { res.status(500).json({ error: "InternalServerError" }); }

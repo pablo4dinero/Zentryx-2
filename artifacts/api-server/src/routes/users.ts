@@ -114,7 +114,7 @@ router.post("/me/confirm-phone", requireAuth, async (req: AuthRequest, res) => {
 // ─── Get single user ──────────────────────────────────────────────────────────
 router.get("/:id", requireAuth, async (req, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const [user] = await db.select().from(usersTable).where(eq(usersTable.id, id)).limit(1);
     if (!user || user.email === SUPERADMIN_EMAIL) { res.status(404).json({ error: "NotFound" }); return; }
     res.json(formatUser(user));
@@ -146,7 +146,7 @@ router.put("/:id", requireAuth, async (req: AuthRequest, res) => {
       res.status(403).json({ error: "Forbidden", message: "Insufficient permissions" });
       return;
     }
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const { name, role, department, jobPosition, phone, country, avatar, isActive } = req.body;
     const [user] = await db.update(usersTable)
       .set({ name, role, department, jobPosition, phone, country, avatar, isActive, updatedAt: new Date() })
@@ -165,7 +165,7 @@ router.post("/:id/reset-password", requireAuth, async (req: AuthRequest, res) =>
       res.status(403).json({ error: "Forbidden", message: "Insufficient permissions" });
       return;
     }
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const { newPassword } = req.body;
     if (!newPassword || newPassword.length < 6) {
       res.status(400).json({ error: "BadRequest", message: "New password must be at least 6 characters" });
@@ -189,7 +189,7 @@ router.post("/:id/make-admin", requireAuth, async (req: AuthRequest, res) => {
       res.status(403).json({ error: "Forbidden", message: "Insufficient permissions" });
       return;
     }
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const [user] = await db.update(usersTable)
       .set({ role: "admin", updatedAt: new Date() })
       .where(eq(usersTable.id, id)).returning();
@@ -203,7 +203,7 @@ router.post("/:id/make-admin", requireAuth, async (req: AuthRequest, res) => {
 // ─── Delete user (admin only) ─────────────────────────────────────────────────
 router.delete("/:id", requireAuth, requireRole("admin"), async (req, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     await db.delete(usersTable).where(eq(usersTable.id, id));
     res.status(204).send();
   } catch {

@@ -27,7 +27,7 @@ router.get("/", requireAuth, async (req, res) => {
 
 router.get("/:id", requireAuth, async (req, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const [f] = await db.select().from(formulationsTable).where(eq(formulationsTable.id, id)).limit(1);
     if (!f) { res.status(404).json({ error: "NotFound" }); return; }
     res.json({
@@ -68,7 +68,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res) => {
 
 router.put("/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const { name, version, ingredients, sensoryScores, shelfLifeDays, costPerUnit, targetMargin, notes, status } = req.body;
     const [f] = await db.update(formulationsTable).set({
       ...(name !== undefined && { name }),

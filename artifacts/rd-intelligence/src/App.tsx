@@ -20,6 +20,7 @@ import ProfilePage from "@/pages/profile";
 import WeeklyActivities from "@/pages/weekly-activities";
 import SalesForce from "@/pages/sales-force";
 import AccountDetail from "@/pages/sales-force/[id]";
+import MaterialsDemandPlanning from "@/pages/materials-demand-planning";
 import Procurement from "@/pages/procurement";
 import NotFound from "@/pages/not-found";
 
@@ -54,6 +55,7 @@ function Router() {
       <Route path="/weekly-activities" component={() => <ProtectedRoute component={WeeklyActivities} />} />
       <Route path="/sales-force" component={() => <ProtectedRoute component={SalesForce} />} />
       <Route path="/sales-force/:id" component={() => <ProtectedRoute component={AccountDetail} />} />
+      <Route path="/materials-demand-planning" component={() => <ProtectedRoute component={MaterialsDemandPlanning} />} />
       <Route path="/procurement" component={() => <ProtectedRoute component={Procurement} />} />
       <Route component={NotFound} />
     </Switch>

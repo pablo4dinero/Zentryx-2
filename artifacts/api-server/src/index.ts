@@ -92,7 +92,7 @@ async function createTablesIfNotExist() {
     ];
 
     for (const tableSql of tables) {
-      logger.info("Creating table with SQL:", tableSql.split('\n')[0]);
+      logger.info(`Creating table with SQL: ${tableSql.split('\n')[0]}`);
       await db.execute(sql.raw(tableSql));
     }
 

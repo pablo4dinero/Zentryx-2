@@ -143,6 +143,7 @@ export default function Dashboard() {
   const { data: stats, isLoading, error } = useGetDashboardStats();
   const { data: projects } = useListProjects({});
   const { data: users } = useListUsers();
+  const projectList = (projects || []) as any[];
 
   const [pipelineChartType, setPipelineChartType] = useState<PipelineChartType>("donut");
   const [teamView, setTeamView] = useState<TeamView>("list");
@@ -176,14 +177,14 @@ export default function Dashboard() {
   const filteredUsers = deptFilter === "all" ? (users || []) : (users || []).filter((u: any) => u.department === deptFilter);
 
   const memberProjects = selectedMember
-    ? (projects || []).filter(p => Array.isArray(p.assignees) && p.assignees.some((a: any) => a.id === selectedMember))
+    ? projectList.filter(p => Array.isArray(p.assignees) && p.assignees.some((a: any) => a.id === selectedMember))
     : [];
 
   const teamChartData = filteredUsers.map((u: any) => ({
     name: u.name.split(' ')[0],
     fullName: u.name,
     id: u.id,
-    projects: (projects || []).filter(p => Array.isArray(p.assignees) && p.assignees.some((a: any) => a.id === u.id)).length,
+    projects: projectList.filter(p => Array.isArray(p.assignees) && p.assignees.some((a: any) => a.id === u.id)).length,
   })).filter((u: any) => u.projects > 0);
 
   const pipelineData = stats.projectsByStage || [];
@@ -363,7 +364,7 @@ export default function Dashboard() {
           {teamView === "list" ? (
             <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar pr-1">
               {filteredUsers.map((u: any) => {
-                const projectCount = (projects || []).filter(p => Array.isArray(p.assignees) && p.assignees.some((a: any) => a.id === u.id)).length;
+                const projectCount = projectList.filter(p => Array.isArray(p.assignees) && p.assignees.some((a: any) => a.id === u.id)).length;
                 return (
                   <button key={u.id} onClick={() => setSelectedMember(selectedMember === u.id ? null : u.id)}
                     className={cn("w-full flex items-center gap-3 p-3 rounded-xl transition-all text-left",
