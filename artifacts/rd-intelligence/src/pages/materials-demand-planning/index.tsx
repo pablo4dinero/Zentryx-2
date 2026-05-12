@@ -9,6 +9,7 @@ import {
   Download,
   Search,
   Loader2,
+  X,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 
@@ -34,6 +35,37 @@ function selectCls(isLight: boolean) {
     isLight
       ? "border-slate-200 bg-white text-slate-700"
       : "border-white/10 bg-black/20 text-foreground"
+  );
+}
+
+const MDP_URGENCY = [
+  { value: "critical", label: "Critical", color: "text-red-400",    bg: "bg-red-500/10 border-red-500/20",       dot: "bg-red-500" },
+  { value: "high",     label: "High",     color: "text-orange-400", bg: "bg-orange-500/10 border-orange-500/20", dot: "bg-orange-500" },
+  { value: "normal",   label: "Normal",   color: "text-green-400",  bg: "bg-green-500/10 border-green-500/20",   dot: "bg-green-500" },
+  { value: "low",      label: "Low",      color: "text-slate-400",  bg: "bg-slate-500/10 border-slate-500/20",   dot: "bg-slate-400" },
+];
+
+const MDP_PRIORITY = [
+  { value: "high",   label: "High",   color: "text-red-400",    bg: "bg-red-500/10 border-red-500/20",     dot: "bg-red-500" },
+  { value: "medium", label: "Medium", color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/20", dot: "bg-yellow-500" },
+  { value: "low",    label: "Low",    color: "text-green-400",  bg: "bg-green-500/10 border-green-500/20",  dot: "bg-green-500" },
+];
+
+function UrgencyBadge({ level }: { level: string }) {
+  const u = MDP_URGENCY.find(x => x.value === level) || MDP_URGENCY[2];
+  return (
+    <span className={cn("inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full border", u.bg, u.color)}>
+      <span className={cn("w-1.5 h-1.5 rounded-full", u.dot)} />{u.label}
+    </span>
+  );
+}
+
+function PriorityChip({ priority }: { priority: string }) {
+  const p = MDP_PRIORITY.find(x => x.value === priority) || MDP_PRIORITY[1];
+  return (
+    <span className={cn("inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full border", p.bg, p.color)}>
+      <span className={cn("w-1.5 h-1.5 rounded-full", p.dot)} />{p.label}
+    </span>
   );
 }
 
@@ -2110,265 +2142,251 @@ function MaterialsDemandPlanningPage() {
                     )}>
                     <Download className="w-4 h-4" /> Export CSV
                   </button>
-                  <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-                  <DialogTrigger asChild>
-                    <button onClick={openAddForm}
-                      className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20">
-                      <Plus className="w-4 h-4" /> New request
-                    </button>
-                  </DialogTrigger>
-                  <DialogContent className="sm:max-w-xl">
-                    <DialogHeader>
-                      <DialogTitle className="text-xl font-display">New Customer Product Request</DialogTitle>
-                      <DialogDescription>
-                        Capture the requested product details and add it to the demand planning queue.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="grid gap-4 py-4">
-                      <div className="grid gap-2">
-                        <Label htmlFor="accountName">Account name</Label>
-                        <Input
-                          id="accountName"
-                          value={formValues.accountName}
-                          onChange={(event) => setFormValues((prev) => ({ ...prev, accountName: event.target.value }))}
-                          placeholder="e.g. Green Peak Labs"
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="company">Company</Label>
-                        <Input
-                          id="company"
-                          value={formValues.company}
-                          onChange={(event) => setFormValues((prev) => ({ ...prev, company: event.target.value }))}
-                          placeholder="e.g. Zentryx Retail"
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="productType">Product type</Label>
-                        <Input
-                          id="productType"
-                          value={formValues.productType}
-                          onChange={(event) => setFormValues((prev) => ({ ...prev, productType: event.target.value }))}
-                          placeholder="e.g. Ingredient blend"
-                        />
-                      </div>
-                      <div className="grid gap-2 sm:grid-cols-2 sm:grid-flow-col">
-                        <div className="grid gap-2">
-                          <Label htmlFor="urgency">Urgency</Label>
-                          <select
-                            id="urgency"
-                            value={formValues.urgency}
-                            onChange={(event) => setFormValues((prev) => ({ ...prev, urgency: event.target.value }))}
-                            className={selectCls(isLight)}
-                          >
-                            <option value="low">Low</option>
-                            <option value="normal">Normal</option>
-                            <option value="high">High</option>
-                            <option value="critical">Critical</option>
-                          </select>
-                        </div>
-                        <div className="grid gap-2">
-                          <Label htmlFor="priority">Priority</Label>
-                          <select
-                            id="priority"
-                            value={formValues.priority}
-                            onChange={(event) => setFormValues((prev) => ({ ...prev, priority: event.target.value }))}
-                            className={selectCls(isLight)}
-                          >
-                            <option value="low">Low</option>
-                            <option value="medium">Medium</option>
-                            <option value="high">High</option>
-                          </select>
-                        </div>
-                      </div>
-                      <div className="grid gap-2 sm:grid-cols-2 sm:grid-flow-col">
-                        <div className="grid gap-2">
-                          <Label htmlFor="volume">Volume (kg)</Label>
-                          <Input
-                            id="volume"
-                            type="number"
-                            min={0}
-                            value={formValues.volume}
-                            onChange={(event) => setFormValues((prev) => ({ ...prev, volume: event.target.value }))}
-                            placeholder="0"
-                          />
-                        </div>
-                        <div className="grid gap-2">
-                          <Label htmlFor="accountManager">Account manager</Label>
-                          <Input
-                            id="accountManager"
-                            value={formValues.accountManager}
-                            onChange={(event) => setFormValues((prev) => ({ ...prev, accountManager: event.target.value }))}
-                            placeholder="e.g. Olivia"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                    <DialogFooter className="space-x-2">
-                      <Button onClick={submitForm} disabled={creating}>
-                        {creating ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <Plus className="mr-2 h-4 w-4" />
-                        )}
-                        Save request
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </div>
-            </div>
-
-            <div className={cn("glass-card rounded-2xl border overflow-hidden", isLight ? "border-slate-200 bg-white" : "border-white/5 bg-white/5")}>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Account</TableHead>
-                      <TableHead>Company</TableHead>
-                      <TableHead>Product type</TableHead>
-                      <TableHead>Urgency</TableHead>
-                      <TableHead>Priority</TableHead>
-                      <TableHead>Volume</TableHead>
-                      <TableHead>Manager</TableHead>
-                      <TableHead>Added</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredProducts.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
-                          No customer products match the current filters.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      filteredProducts.map((product) => (
-                        <TableRow key={product.id}>
-                          <TableCell>{product.accountName}</TableCell>
-                          <TableCell>{product.company}</TableCell>
-                          <TableCell>{product.productType}</TableCell>
-                          <TableCell>{product.urgency}</TableCell>
-                          <TableCell>{product.priority}</TableCell>
-                          <TableCell>{product.volume}</TableCell>
-                          <TableCell>{product.accountManager ?? "—"}</TableCell>
-                          <TableCell>{formatDate(product.dateAdded)}</TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              <Button variant="outline" size="icon" onClick={() => openEditDialog(product)}>
-                                <Edit3 className="h-4 w-4" />
-                              </Button>
-                              <Button variant="destructive" size="icon" onClick={() => deleteMutation.mutate(product.id)}>
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                  <TableCaption className="text-muted-foreground">
-                    Showing {filteredProducts.length} of {products.length} requests.
-                  </TableCaption>
-                </Table>
-              </div>
-            </div>
-
-            <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-              <DialogContent className="sm:max-w-xl">
-                <DialogHeader>
-                  <DialogTitle className="text-xl font-display">Edit Product Request</DialogTitle>
-                  <DialogDescription>
-                    Update urgency, priority, volume, or account manager details.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="editAccountName">Account name</Label>
-                    <Input
-                      id="editAccountName"
-                      value={formValues.accountName}
-                      onChange={(event) => setFormValues((prev) => ({ ...prev, accountName: event.target.value }))}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="editCompany">Company</Label>
-                    <Input
-                      id="editCompany"
-                      value={formValues.company}
-                      onChange={(event) => setFormValues((prev) => ({ ...prev, company: event.target.value }))}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="editProductType">Product type</Label>
-                    <Input
-                      id="editProductType"
-                      value={formValues.productType}
-                      onChange={(event) => setFormValues((prev) => ({ ...prev, productType: event.target.value }))}
-                    />
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-2 sm:grid-flow-col">
-                    <div className="grid gap-2">
-                      <Label htmlFor="editUrgency">Urgency</Label>
-                      <select
-                        id="editUrgency"
-                        value={formValues.urgency}
-                        onChange={(event) => setFormValues((prev) => ({ ...prev, urgency: event.target.value }))}
-                        className={selectCls(isLight)}
-                      >
-                        <option value="low">Low</option>
-                        <option value="normal">Normal</option>
-                        <option value="high">High</option>
-                        <option value="critical">Critical</option>
-                      </select>
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="editPriority">Priority</Label>
-                      <select
-                        id="editPriority"
-                        value={formValues.priority}
-                        onChange={(event) => setFormValues((prev) => ({ ...prev, priority: event.target.value }))}
-                        className={selectCls(isLight)}
-                      >
-                        <option value="low">Low</option>
-                        <option value="medium">Medium</option>
-                        <option value="high">High</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-2 sm:grid-flow-col">
-                    <div className="grid gap-2">
-                      <Label htmlFor="editVolume">Volume (kg)</Label>
-                      <Input
-                        id="editVolume"
-                        type="number"
-                        min={0}
-                        value={formValues.volume}
-                        onChange={(event) => setFormValues((prev) => ({ ...prev, volume: event.target.value }))}
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="editAccountManager">Account manager</Label>
-                      <Input
-                        id="editAccountManager"
-                        value={formValues.accountManager}
-                        onChange={(event) => setFormValues((prev) => ({ ...prev, accountManager: event.target.value }))}
-                      />
-                    </div>
-                  </div>
+                  <button onClick={openAddForm}
+                    className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20">
+                    <Plus className="w-4 h-4" /> Add Product
+                  </button>
                 </div>
-                <DialogFooter className="space-x-2">
-                  <Button onClick={submitForm} disabled={updating}>
-                    {updating ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Edit3 className="mr-2 h-4 w-4" />
-                    )}
-                    Save changes
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+              </div>
+
+            {/* ── Customer Products Table ── */}
+            <div className={cn("glass-card rounded-2xl overflow-hidden border", isLight ? "border-slate-200 bg-white" : "border-white/5")}>
+              <table className="w-full text-sm">
+                <thead className={cn("text-xs text-muted-foreground border-b", isLight ? "bg-slate-50 border-slate-200" : "bg-white/5 border-white/5")}>
+                  <tr>
+                    <th className="px-5 py-3 text-left font-medium">Account</th>
+                    <th className="px-5 py-3 text-left font-medium">Company</th>
+                    <th className="px-5 py-3 text-left font-medium">Product Type</th>
+                    <th className="px-5 py-3 text-left font-medium">Volume (kg)</th>
+                    <th className="px-5 py-3 text-left font-medium">Manager</th>
+                    <th className="px-5 py-3 text-left font-medium">Urgency</th>
+                    <th className="px-5 py-3 text-left font-medium">Priority</th>
+                    <th className="px-5 py-3 text-left font-medium">Added</th>
+                    <th className="px-5 py-3 text-left font-medium" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredProducts.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="py-12 text-center text-muted-foreground text-sm">
+                        No customer products match the current filters.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredProducts.map((product) => (
+                      <tr key={product.id}
+                        className={cn("border-b last:border-0 transition-colors group",
+                          isLight ? "border-slate-100 hover:bg-slate-50/70" : "border-white/5 hover:bg-white/[0.03]"
+                        )}>
+                        <td className="px-5 py-3">
+                          <p className="font-medium text-foreground text-sm">{product.accountName}</p>
+                        </td>
+                        <td className="px-5 py-3 text-xs text-muted-foreground">{product.company}</td>
+                        <td className="px-5 py-3 text-xs text-muted-foreground">{product.productType}</td>
+                        <td className="px-5 py-3 text-xs text-foreground font-medium">{Number(product.volume).toLocaleString()}</td>
+                        <td className="px-5 py-3 text-xs text-muted-foreground">{product.accountManager ?? "—"}</td>
+                        <td className="px-5 py-3"><UrgencyBadge level={product.urgency} /></td>
+                        <td className="px-5 py-3"><PriorityChip priority={product.priority} /></td>
+                        <td className="px-5 py-3 text-xs text-muted-foreground">{formatDate(product.dateAdded)}</td>
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => openEditDialog(product)}
+                              className="p-1.5 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors" title="Edit">
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => deleteMutation.mutate(product.id)}
+                              className="p-1.5 rounded-lg text-muted-foreground hover:bg-red-500/10 hover:text-red-400 transition-colors" title="Delete">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+              <div className={cn("px-5 py-2.5 text-xs text-muted-foreground border-t", isLight ? "border-slate-100" : "border-white/5")}>
+                Showing {filteredProducts.length} of {products.length} requests
+              </div>
+            </div>
+
+            {/* ── Add Product Modal ── */}
+            <AnimatePresence>
+              {isAddOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+                  <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                    className={cn("border rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col", isLight ? "bg-white border-gray-200" : "glass-panel border-white/10")}>
+                    <div className={cn("flex items-center justify-between px-6 py-4 border-b", isLight ? "border-gray-100" : "border-white/5")}>
+                      <div>
+                        <h2 className="text-lg font-bold text-foreground">Add Product</h2>
+                        <p className="text-xs text-muted-foreground mt-0.5">Add a new customer product to the demand planning queue</p>
+                      </div>
+                      <button onClick={() => setIsAddOpen(false)} className={cn("p-1.5 rounded-lg transition-colors", isLight ? "hover:bg-gray-100 text-gray-500" : "hover:bg-white/10 text-muted-foreground")}>
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto custom-scrollbar">
+                      <div className="p-6 space-y-5">
+                        {(() => {
+                          const iCls = cn("w-full h-10 rounded-xl border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground", isLight ? "border-gray-200 bg-white" : "border-white/10 bg-black/30");
+                          const lCls = "text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block";
+                          return (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <div>
+                                <label className={lCls}>Account Name *</label>
+                                <input value={formValues.accountName} onChange={e => setFormValues(p => ({ ...p, accountName: e.target.value }))} placeholder="e.g. Green Peak Labs" className={iCls} />
+                              </div>
+                              <div>
+                                <label className={lCls}>Company *</label>
+                                <input value={formValues.company} onChange={e => setFormValues(p => ({ ...p, company: e.target.value }))} placeholder="e.g. Zentryx Retail" className={iCls} />
+                              </div>
+                              <div className="sm:col-span-2">
+                                <label className={lCls}>Product Type *</label>
+                                <input value={formValues.productType} onChange={e => setFormValues(p => ({ ...p, productType: e.target.value }))} placeholder="e.g. Seasoning, Dairy Premix" className={iCls} />
+                              </div>
+                              <div>
+                                <label className={lCls}>Volume (kg/month)</label>
+                                <input value={formValues.volume} onChange={e => setFormValues(p => ({ ...p, volume: e.target.value }))} placeholder="0" type="number" min="0" className={iCls} />
+                              </div>
+                              <div>
+                                <label className={lCls}>Account Manager</label>
+                                <input value={formValues.accountManager} onChange={e => setFormValues(p => ({ ...p, accountManager: e.target.value }))} placeholder="e.g. Olivia" className={iCls} />
+                              </div>
+                              <div>
+                                <label className={lCls}>Urgency Level</label>
+                                <div className="flex gap-2 flex-wrap mt-1">
+                                  {MDP_URGENCY.map(u => (
+                                    <button key={u.value} type="button" onClick={() => setFormValues(p => ({ ...p, urgency: u.value }))}
+                                      className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all",
+                                        formValues.urgency === u.value ? cn(u.bg, u.color) : isLight ? "border-gray-200 text-gray-500 hover:border-gray-300" : "border-white/10 text-muted-foreground hover:border-white/20"
+                                      )}>
+                                      <span className={cn("w-2 h-2 rounded-full", u.dot)} />{u.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                              <div>
+                                <label className={lCls}>Priority</label>
+                                <div className="flex gap-2 flex-wrap mt-1">
+                                  {MDP_PRIORITY.map(p => (
+                                    <button key={p.value} type="button" onClick={() => setFormValues(prev => ({ ...prev, priority: p.value }))}
+                                      className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all",
+                                        formValues.priority === p.value ? cn(p.bg, p.color) : isLight ? "border-gray-200 text-gray-500 hover:border-gray-300" : "border-white/10 text-muted-foreground hover:border-white/20"
+                                      )}>
+                                      <span className={cn("w-2 h-2 rounded-full", p.dot)} />{p.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                    <div className={cn("px-6 py-4 border-t flex gap-3", isLight ? "border-gray-100" : "border-white/5")}>
+                      <button onClick={submitForm} disabled={creating}
+                        className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-60">
+                        {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                        {creating ? "Saving…" : "Add Product"}
+                      </button>
+                      <button onClick={() => setIsAddOpen(false)}
+                        className={cn("px-5 py-2.5 border rounded-xl text-sm transition-colors", isLight ? "border-gray-200 text-gray-600 hover:bg-gray-50" : "border-white/10 text-muted-foreground hover:text-foreground")}>
+                        Cancel
+                      </button>
+                    </div>
+                  </motion.div>
+                </div>
+              )}
+            </AnimatePresence>
+
+            {/* ── Edit Product Modal ── */}
+            <AnimatePresence>
+              {isEditOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+                  <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                    className={cn("border rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col", isLight ? "bg-white border-gray-200" : "glass-panel border-white/10")}>
+                    <div className={cn("flex items-center justify-between px-6 py-4 border-b", isLight ? "border-gray-100" : "border-white/5")}>
+                      <div>
+                        <h2 className="text-lg font-bold text-foreground">Edit Product</h2>
+                        <p className="text-xs text-muted-foreground mt-0.5">Update urgency, priority, volume or manager details</p>
+                      </div>
+                      <button onClick={() => setIsEditOpen(false)} className={cn("p-1.5 rounded-lg transition-colors", isLight ? "hover:bg-gray-100 text-gray-500" : "hover:bg-white/10 text-muted-foreground")}>
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto custom-scrollbar">
+                      <div className="p-6 space-y-5">
+                        {(() => {
+                          const iCls = cn("w-full h-10 rounded-xl border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground", isLight ? "border-gray-200 bg-white" : "border-white/10 bg-black/30");
+                          const lCls = "text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block";
+                          return (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <div>
+                                <label className={lCls}>Account Name</label>
+                                <input value={formValues.accountName} onChange={e => setFormValues(p => ({ ...p, accountName: e.target.value }))} className={iCls} />
+                              </div>
+                              <div>
+                                <label className={lCls}>Company</label>
+                                <input value={formValues.company} onChange={e => setFormValues(p => ({ ...p, company: e.target.value }))} className={iCls} />
+                              </div>
+                              <div className="sm:col-span-2">
+                                <label className={lCls}>Product Type</label>
+                                <input value={formValues.productType} onChange={e => setFormValues(p => ({ ...p, productType: e.target.value }))} className={iCls} />
+                              </div>
+                              <div>
+                                <label className={lCls}>Volume (kg/month)</label>
+                                <input value={formValues.volume} onChange={e => setFormValues(p => ({ ...p, volume: e.target.value }))} type="number" min="0" className={iCls} />
+                              </div>
+                              <div>
+                                <label className={lCls}>Account Manager</label>
+                                <input value={formValues.accountManager} onChange={e => setFormValues(p => ({ ...p, accountManager: e.target.value }))} className={iCls} />
+                              </div>
+                              <div>
+                                <label className={lCls}>Urgency Level</label>
+                                <div className="flex gap-2 flex-wrap mt-1">
+                                  {MDP_URGENCY.map(u => (
+                                    <button key={u.value} type="button" onClick={() => setFormValues(p => ({ ...p, urgency: u.value }))}
+                                      className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all",
+                                        formValues.urgency === u.value ? cn(u.bg, u.color) : isLight ? "border-gray-200 text-gray-500 hover:border-gray-300" : "border-white/10 text-muted-foreground hover:border-white/20"
+                                      )}>
+                                      <span className={cn("w-2 h-2 rounded-full", u.dot)} />{u.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                              <div>
+                                <label className={lCls}>Priority</label>
+                                <div className="flex gap-2 flex-wrap mt-1">
+                                  {MDP_PRIORITY.map(p => (
+                                    <button key={p.value} type="button" onClick={() => setFormValues(prev => ({ ...prev, priority: p.value }))}
+                                      className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all",
+                                        formValues.priority === p.value ? cn(p.bg, p.color) : isLight ? "border-gray-200 text-gray-500 hover:border-gray-300" : "border-white/10 text-muted-foreground hover:border-white/20"
+                                      )}>
+                                      <span className={cn("w-2 h-2 rounded-full", p.dot)} />{p.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                    <div className={cn("px-6 py-4 border-t flex gap-3", isLight ? "border-gray-100" : "border-white/5")}>
+                      <button onClick={submitForm} disabled={updating}
+                        className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-60">
+                        {updating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Edit3 className="w-4 h-4" />}
+                        {updating ? "Saving…" : "Save Changes"}
+                      </button>
+                      <button onClick={() => setIsEditOpen(false)}
+                        className={cn("px-5 py-2.5 border rounded-xl text-sm transition-colors", isLight ? "border-gray-200 text-gray-600 hover:bg-gray-50" : "border-white/10 text-muted-foreground hover:text-foreground")}>
+                        Cancel
+                      </button>
+                    </div>
+                  </motion.div>
+                </div>
+              )}
+            </AnimatePresence>
           </div>
           )}
 
