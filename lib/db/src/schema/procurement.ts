@@ -127,6 +127,10 @@ export const vendorPerformanceTable = pgTable("vendor_performance", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const procurementRequestsTable = purchaseRequestsTable;
+export const procurementOrdersTable = purchaseOrdersTable;
+export const procurementVendorsTable = vendorsTable;
+
 export type Vendor = typeof vendorsTable.$inferSelect;
 export type PurchaseRequest = typeof purchaseRequestsTable.$inferSelect;
 export type PurchaseOrder = typeof purchaseOrdersTable.$inferSelect;

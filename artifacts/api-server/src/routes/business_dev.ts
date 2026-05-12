@@ -30,7 +30,7 @@ router.get("/", requireAuth, async (req, res) => {
 
 router.get("/:id", requireAuth, async (req, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const [item] = await db.select().from(businessDevTable).where(eq(businessDevTable.id, id)).limit(1);
     if (!item) { res.status(404).json({ error: "NotFound" }); return; }
     res.json(await enrichBD(item));
@@ -56,7 +56,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res) => {
 
 router.put("/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const { name, description, stage, status, leadId, assigneeIds, startDate, targetDate, customerName, customerEmail, customerPhone, costTarget, productType } = req.body;
     const [item] = await db.update(businessDevTable).set({
       ...(name !== undefined && { name }),
@@ -81,7 +81,7 @@ router.put("/:id", requireAuth, async (req: AuthRequest, res) => {
 
 router.delete("/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     await db.delete(businessDevTable).where(eq(businessDevTable.id, id));
     res.status(204).send();
   } catch { res.status(500).json({ error: "InternalServerError" }); }

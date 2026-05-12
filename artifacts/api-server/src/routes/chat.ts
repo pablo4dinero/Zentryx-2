@@ -130,7 +130,7 @@ router.post("/rooms", requireAuth, async (req: AuthRequest, res) => {
 // Delete a room (creator only) or leave it
 router.delete("/rooms/:roomId", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const roomId = parseInt(req.params.roomId);
+    const roomId = parseInt(Array.isArray(req.params.roomId) ? req.params.roomId[0] : req.params.roomId as string);
     const userId = req.user!.userId;
     const [room] = await db.select().from(chatRoomsTable).where(eq(chatRoomsTable.id, roomId)).limit(1);
     if (!room) { res.status(404).json({ error: "NotFound" }); return; }
@@ -149,9 +149,9 @@ router.delete("/rooms/:roomId", requireAuth, async (req: AuthRequest, res) => {
 // Get messages for a room + mark as read
 router.get("/rooms/:roomId/messages", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const roomId = parseInt(req.params.roomId);
+    const roomId = parseInt(Array.isArray(req.params.roomId) ? req.params.roomId[0] : req.params.roomId as string);
     const userId = req.user!.userId;
-    const limit = Math.min(parseInt(req.query.limit as string) || 100, 200);
+    const limit = Math.min(parseInt(Array.isArray(req.query.limit) ? String(req.query.limit[0]) : String(req.query.limit)) || 100, 200);
     const messages = await db.select(MSG_SELECT)
       .from(chatMessagesTable)
       .leftJoin(usersTable, eq(chatMessagesTable.senderId, usersTable.id))
@@ -188,7 +188,7 @@ router.get("/rooms/:roomId/messages", requireAuth, async (req: AuthRequest, res)
 // Mark room as read (explicit)
 router.post("/rooms/:roomId/read", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const roomId = parseInt(req.params.roomId);
+    const roomId = parseInt(Array.isArray(req.params.roomId) ? req.params.roomId[0] : req.params.roomId as string);
     const userId = req.user!.userId;
     const { messageId } = req.body;
     await markRead(userId, roomId, messageId);
@@ -199,7 +199,7 @@ router.post("/rooms/:roomId/read", requireAuth, async (req: AuthRequest, res) =>
 // Send a text message
 router.post("/rooms/:roomId/messages", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const roomId = parseInt(req.params.roomId);
+    const roomId = parseInt(Array.isArray(req.params.roomId) ? req.params.roomId[0] : req.params.roomId as string);
     const { content, messageType } = req.body;
     const [msg] = await db.insert(chatMessagesTable).values({
       roomId, senderId: req.user!.userId,
@@ -219,7 +219,7 @@ router.post("/rooms/:roomId/messages", requireAuth, async (req: AuthRequest, res
 // Delete a message (sender only)
 router.delete("/rooms/:roomId/messages/:messageId", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const messageId = parseInt(req.params.messageId);
+    const messageId = parseInt(Array.isArray(req.params.messageId) ? req.params.messageId[0] : req.params.messageId as string);
     const userId = req.user!.userId;
     const [msg] = await db.select().from(chatMessagesTable).where(eq(chatMessagesTable.id, messageId)).limit(1);
     if (!msg) { res.status(404).json({ error: "NotFound" }); return; }
@@ -245,7 +245,7 @@ router.post("/rooms/:roomId/upload", requireAuth, (req: AuthRequest, res, next) 
 }, async (req: AuthRequest, res) => {
   try {
     if (!req.file) { res.status(400).json({ error: "No file uploaded" }); return; }
-    const roomId = parseInt(req.params.roomId);
+    const roomId = parseInt(Array.isArray(req.params.roomId) ? req.params.roomId[0] : req.params.roomId as string);
     const messageType = (req.body.messageType as any) || (req.file.mimetype.startsWith("audio") ? "voice_note" : "image");
     const fileUrl = `/api/chat/uploads/${req.file.filename}`;
     const [msg] = await db.insert(chatMessagesTable).values({

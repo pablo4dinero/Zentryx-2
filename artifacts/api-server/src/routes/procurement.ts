@@ -144,7 +144,7 @@ router.post("/vendors", requireAuth, async (req: AuthRequest, res) => {
 
 router.get("/vendors/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const [vendor] = await db.select().from(vendorsTable).where(eq(vendorsTable.id, id));
     if (!vendor) { res.status(404).json({ error: "NotFound" }); return; }
 
@@ -164,7 +164,7 @@ router.get("/vendors/:id", requireAuth, async (req: AuthRequest, res) => {
 
 router.put("/vendors/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const b = req.body;
     const [vendor] = await db.update(vendorsTable).set({
       name: b.name, category: b.category, contactName: b.contactName, contactEmail: b.contactEmail,
@@ -178,7 +178,7 @@ router.put("/vendors/:id", requireAuth, async (req: AuthRequest, res) => {
 
 router.delete("/vendors/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     await db.update(vendorsTable).set({ status: "inactive", updatedAt: new Date() }).where(eq(vendorsTable.id, id));
     res.json({ success: true });
   } catch { res.status(500).json({ error: "InternalServerError" }); }
@@ -363,7 +363,7 @@ router.post("/requests/:id/submit", requireAuth, async (req: AuthRequest, res) =
 
 router.post("/requests/:id/approve", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const userId = (req as any).user?.id;
     const userRole = (req as any).user?.role;
     const { comment } = req.body;
@@ -445,7 +445,7 @@ router.post("/requests/:id/approve", requireAuth, async (req: AuthRequest, res) 
 
 router.post("/requests/:id/reject", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const userId = (req as any).user?.id;
     const { comment } = req.body;
     if (!comment) { res.status(400).json({ error: "Comment required for rejection" }); return; }
@@ -470,7 +470,7 @@ router.post("/requests/:id/reject", requireAuth, async (req: AuthRequest, res) =
 
 router.delete("/requests/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const userId = (req as any).user?.id;
     const [pr] = await db.select().from(purchaseRequestsTable).where(eq(purchaseRequestsTable.id, id));
     if (!pr) { res.status(404).json({ error: "NotFound" }); return; }
@@ -484,7 +484,7 @@ router.delete("/requests/:id", requireAuth, async (req: AuthRequest, res) => {
 
 router.post("/requests/:id/convert-to-po", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const userId = req.user?.userId ?? (req as any).user?.id ?? (req as any).user?.userId;
     const [pr] = await db.select().from(purchaseRequestsTable).where(eq(purchaseRequestsTable.id, id));
     if (!pr || pr.status !== "approved") { res.status(400).json({ error: "Request must be Approved" }); return; }
@@ -502,6 +502,8 @@ if (!vendorId) {
   return;
 }
 
+const vendorIdNumber = vendorId;
+
 // Parse line items from PR justification if stored as JSON
 let prLineItems: any[] = [];
 try {
@@ -511,7 +513,7 @@ try {
 } catch {}
 
 const [po] = await db.insert(purchaseOrdersTable).values({
-  poNumber, purchaseRequestId: id, vendorId,
+  poNumber, purchaseRequestId: id, vendorId: vendorIdNumber,
   raisedById: userId, status: "draft", totalAmount: pr.estimatedAmount, currency: pr.currency ?? "usd",
   paymentStatus: "unpaid", 
   notes: pr.title ?? "",
@@ -538,13 +540,13 @@ if (prLineItems.length > 0) {
       .where(eq(purchaseRequestsTable.id, id));
 
     // Update notes with item descriptions as title
-if (b.items?.length) {
-  const title = b.items.filter((it: any) => it.description).map((it: any) => it.description).join(", ");
-  if (title) {
-    await db.update(purchaseOrdersTable).set({ notes: title }).where(eq(purchaseOrdersTable.id, po.id));
-    po.notes = title;
-  }
-}
+    if (prLineItems.length > 0) {
+      const title = prLineItems.filter((it: any) => it.description).map((it: any) => it.description).join(", ");
+      if (title) {
+        await db.update(purchaseOrdersTable).set({ notes: title }).where(eq(purchaseOrdersTable.id, po.id));
+        po.notes = title;
+      }
+    }
 res.status(201).json(po);
   } catch (e) { console.error(e); res.status(500).json({ error: "InternalServerError" }); }
 });
@@ -578,9 +580,14 @@ router.post("/orders", requireAuth, async (req: AuthRequest, res) => {
     console.log("Creating PO with body:", JSON.stringify(b));
     console.log("userId:", userId);
     const poNumber = b.poNumber?.trim() || generatePoNumber();
+    const vendorId = b.vendorId ? parseInt(b.vendorId) : undefined;
+    if (!vendorId) {
+      res.status(400).json({ error: "vendorId is required" });
+      return;
+    }
     const [po] = await db.insert(purchaseOrdersTable).values({
       poNumber, purchaseRequestId: b.purchaseRequestId ?? null,
-      vendorId: b.vendorId ? parseInt(b.vendorId) : null, raisedById: userId, status: "draft",
+      vendorId, raisedById: userId, status: "draft",
       totalAmount: b.totalAmount ? String(b.totalAmount) : null, currency: b.currency ?? "ngn",
       paymentStatus: "unpaid", paymentDue: b.paymentDue ?? null,
       deliveryAddress: b.deliveryAddress ?? "", deliveryDue: b.deliveryDue ?? null, notes: b.notes ?? "",
@@ -600,7 +607,7 @@ router.post("/orders", requireAuth, async (req: AuthRequest, res) => {
 
 router.get("/orders/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const [po] = await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, id));
     if (!po) { res.status(404).json({ error: "NotFound" }); return; }
     const [userMap, vendorMap] = await Promise.all([getUserMap(), getVendorMap()]);
@@ -612,7 +619,7 @@ router.get("/orders/:id", requireAuth, async (req: AuthRequest, res) => {
 
 router.put("/orders/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const [existing] = await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, id));
     if (!existing || existing.status !== "draft") { res.status(400).json({ error: "Can only edit Draft POs" }); return; }
     const b = req.body;
@@ -640,7 +647,7 @@ router.put("/orders/:id", requireAuth, async (req: AuthRequest, res) => {
 
 router.delete("/orders/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     await db.delete(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, id));
     res.json({ success: true });
   } catch (e) { console.error(e); res.status(500).json({ error: "InternalServerError" }); }
@@ -648,7 +655,7 @@ router.delete("/orders/:id", requireAuth, async (req: AuthRequest, res) => {
 
 router.post("/orders/:id/send", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const [po] = await db.update(purchaseOrdersTable)
       .set({ status: "sent_to_vendor", updatedAt: new Date() })
       .where(eq(purchaseOrdersTable.id, id)).returning();
@@ -658,7 +665,7 @@ router.post("/orders/:id/send", requireAuth, async (req: AuthRequest, res) => {
 
 router.post("/orders/:id/receive", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const userId = (req as any).user?.id;
     const { quantityReceived, condition, notes } = req.body;
 
@@ -684,7 +691,7 @@ router.post("/orders/:id/receive", requireAuth, async (req: AuthRequest, res) =>
 
 router.post("/orders/:id/rate-vendor", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const userId = (req as any).user?.id;
     const { deliveryScore, qualityScore, communicationScore, notes } = req.body;
     const [po] = await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, id));
@@ -713,7 +720,7 @@ router.post("/orders/:id/rate-vendor", requireAuth, async (req: AuthRequest, res
 
 router.post("/orders/:id/items", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const purchaseOrderId = parseInt(req.params.id);
+    const purchaseOrderId = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const b = req.body;
     const [item] = await db.insert(purchaseOrderItemsTable).values({
       purchaseOrderId, description: b.description, quantity: String(b.quantity),
@@ -727,7 +734,7 @@ router.post("/orders/:id/items", requireAuth, async (req: AuthRequest, res) => {
 
 router.delete("/orders/:orderId/items/:itemId", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const itemId = parseInt(req.params.itemId);
+    const itemId = parseInt(Array.isArray(req.params.itemId) ? req.params.itemId[0] : req.params.itemId as string);
     await db.delete(purchaseOrderItemsTable).where(eq(purchaseOrderItemsTable.id, itemId));
     res.json({ success: true });
   } catch { res.status(500).json({ error: "InternalServerError" }); }

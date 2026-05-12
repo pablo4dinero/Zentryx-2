@@ -47,7 +47,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res) => {
 
 router.patch("/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const { title, description, startDate, endDate, location, attendeeIds, eventType, color } = req.body;
     const updates: any = { updatedAt: new Date() };
     if (title !== undefined) updates.title = title;
@@ -65,7 +65,7 @@ router.patch("/:id", requireAuth, async (req: AuthRequest, res) => {
 
 router.delete("/:id", requireAuth, async (req, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     await db.delete(eventsTable).where(eq(eventsTable.id, id));
     res.json({ deleted: true });
   } catch (err) { console.error(err); res.status(500).json({ error: "InternalServerError" }); }

@@ -20,6 +20,7 @@ import forecastsRouter from "./forecasts";
 import productionOrdersRouter from "./production_orders";
 import weeklyActivitiesRouter from "./weekly_activities";
 import procurementRouter from "./procurement";
+import mdpRouter from "./mdp";
 
 const router: IRouter = Router();
 
@@ -44,5 +45,6 @@ router.use("/production-orders", productionOrdersRouter);
 router.use("/forecasts", forecastsRouter);
 router.use("/weekly-activities", weeklyActivitiesRouter);
 router.use("/procurement", procurementRouter);
+router.use("/mdp", mdpRouter);
 
 export default router;

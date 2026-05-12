@@ -132,7 +132,7 @@ router.post("/today", requireAuth, async (req: AuthRequest, res) => {
 
 router.delete("/today/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const [row] = await db.select().from(todayProductionOrdersTable).where(eq(todayProductionOrdersTable.id, id)).limit(1);
     if (!row) {
       res.status(404).json({ error: "NotFound" });

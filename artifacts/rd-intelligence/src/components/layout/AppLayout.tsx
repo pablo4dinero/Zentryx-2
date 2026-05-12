@@ -5,7 +5,7 @@ import {
   Search, LogOut, Menu, X, MessageSquare, Briefcase, Sun, Moon, Zap,
   ChevronDown, User, FlaskConical as Flask, CheckSquare, Building2,
   ArrowRight, Loader2, CalendarDays, UserCircle, TrendingUp, ClipboardList,
-  PanelLeftClose, PanelLeftOpen, Lock, Unlock, ShoppingCart
+  PanelLeftClose, PanelLeftOpen, Lock, Unlock, ShoppingCart, Package
 } from "lucide-react";
 import { useAuthStore } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
@@ -25,6 +25,7 @@ const ALL_NAV_ITEMS = [
   { href: "/weekly-activities", label: "Weekly Activities", icon: ClipboardList },
   { href: "/business-dev", label: "Business Development", icon: Briefcase },
   { href: "/sales-force", label: "Sales Force", icon: TrendingUp },
+  { href: "/materials-demand-planning", label: "Materials & Demand Planning", icon: Package },
   { href: "/procurement", label: "Procurement", icon: ShoppingCart },
   { href: "/team", label: "Team Directory", icon: Users },
   { href: "/events", label: "Events", icon: CalendarDays },
@@ -242,7 +243,7 @@ const CATEGORY_META: Record<string, { label: string; icon: React.ElementType; co
 
 function GlobalSearch({ isLight }: { isLight: boolean }) {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<any>(null);
+  const [results, setResults] = useState<Record<string, any[]> | null>(null);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -271,7 +272,7 @@ function GlobalSearch({ isLight }: { isLight: boolean }) {
     }, 300);
   }, [query]);
 
-  const totalResults = results ? Object.values(results).reduce((sum: number, arr: any) => sum + (Array.isArray(arr) ? arr.length : 0), 0) : 0;
+  const totalResults: number = results ? Object.values(results).reduce((sum: number, arr: any) => sum + (Array.isArray(arr) ? arr.length : 0), 0) : 0;
 
   const handleSelect = (href: string) => {
     setQuery(""); setOpen(false); setResults(null);

@@ -53,8 +53,8 @@ function generateWeekTemplates(year: number, month: number) {
 
 router.get("/weeks", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const month = parseInt(req.query.month as string) || new Date().getMonth() + 1;
-    const year = parseInt(req.query.year as string) || new Date().getFullYear();
+    const month = parseInt(Array.isArray(req.query.month) ? String(req.query.month[0]) : String(req.query.month)) || new Date().getMonth() + 1;
+    const year = parseInt(Array.isArray(req.query.year) ? String(req.query.year[0]) : String(req.query.year)) || new Date().getFullYear();
 
     const templates = generateWeekTemplates(year, month);
     const existing = await db.select().from(weeklyReportsTable)
@@ -83,7 +83,7 @@ router.get("/weeks", requireAuth, async (req: AuthRequest, res) => {
 
 router.put("/weeks/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const { samplesSent } = req.body;
     const [row] = await db.update(weeklyReportsTable)
       .set({ samplesSent: samplesSent ?? "", updatedAt: new Date() })
@@ -97,7 +97,7 @@ router.put("/weeks/:id", requireAuth, async (req: AuthRequest, res) => {
 
 router.get("/weeks/:id/activities", requireAuth, async (_req: AuthRequest, res) => {
   try {
-    const id = parseInt(_req.params.id);
+    const id = parseInt(Array.isArray(_req.params.id) ? _req.params.id[0] : _req.params.id as string);
     const activities = await db.select().from(weeklyActivitiesTable)
       .where(eq(weeklyActivitiesTable.weeklyReportId, id))
       .orderBy(weeklyActivitiesTable.createdAt);
@@ -116,7 +116,7 @@ router.get("/weeks/:id/activities", requireAuth, async (_req: AuthRequest, res) 
 
 router.post("/weeks/:id/activities", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const weeklyReportId = parseInt(req.params.id);
+    const weeklyReportId = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const b = req.body;
     const [row] = await db.insert(weeklyActivitiesTable).values({
       weeklyReportId,
@@ -137,7 +137,7 @@ router.post("/weeks/:id/activities", requireAuth, async (req: AuthRequest, res) 
 
 router.put("/activities/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const { createdAt, weeklyReportId, assignedUser, ...rest } = req.body;
     const [row] = await db.update(weeklyActivitiesTable)
       .set({ ...rest, updatedAt: new Date() })
@@ -153,7 +153,7 @@ router.put("/activities/:id", requireAuth, async (req: AuthRequest, res) => {
 
 router.delete("/activities/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     await db.delete(weeklyActivitiesTable).where(eq(weeklyActivitiesTable.id, id));
     res.json({ success: true });
   } catch {
@@ -204,7 +204,7 @@ router.post("/dispatch", requireAuth, async (req: AuthRequest, res) => {
 
 router.put("/dispatch/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const b = req.body;
     const [row] = await db.update(dispatchRecordsTable).set({
       sampleCode: b.sampleCode,
@@ -229,7 +229,7 @@ router.put("/dispatch/:id", requireAuth, async (req: AuthRequest, res) => {
 
 router.delete("/dispatch/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     await db.delete(dispatchRecordsTable).where(eq(dispatchRecordsTable.id, id));
     res.json({ success: true });
   } catch { res.status(500).json({ error: "InternalServerError" }); }
