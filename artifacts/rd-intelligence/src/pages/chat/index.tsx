@@ -758,8 +758,8 @@ export default function ChatRoom() {
                             {msg._sending
                               ? <Clock className="w-3 h-3 text-muted-foreground animate-pulse" />
                               : (msg.seenBy?.length > 0)
-                                ? <CheckCheck className="w-3.5 h-3.5 text-blue-400" title="Seen" />
-                                : <Check className="w-3 h-3 text-muted-foreground" title="Sent" />
+                                ? <CheckCheck className="w-3.5 h-3.5 text-blue-400" aria-label="Seen" />
+                                : <Check className="w-3 h-3 text-muted-foreground" aria-label="Sent" />
                             }
                           </span>
                         )}

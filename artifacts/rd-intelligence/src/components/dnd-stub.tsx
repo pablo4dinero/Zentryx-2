@@ -99,11 +99,14 @@ export function Draggable({
 }: {
   draggableId: string;
   index: number;
-  children: (provided: {
-    innerRef: any;
-    draggableProps: any;
-    dragHandleProps: any;
-  }) => React.ReactNode;
+  children: (
+    provided: {
+      innerRef: any;
+      draggableProps: any;
+      dragHandleProps: any;
+    },
+    snapshot: { isDragging: boolean }
+  ) => React.ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({ id: draggableId });
@@ -123,7 +126,7 @@ export function Draggable({
         innerRef: setNodeRef,
         draggableProps: { style },
         dragHandleProps: { ...listeners, ...attributes },
-      })}
+      }, { isDragging })}
     </>
   );
 }

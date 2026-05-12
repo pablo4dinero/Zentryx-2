@@ -94,7 +94,7 @@ router.get("/export", requireAuth, async (_req, res) => {
 
 router.get("/:id", requireAuth, async (req, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, id)).limit(1);
     if (!project) { res.status(404).json({ error: "NotFound" }); return; }
     res.json(await enrichProject(project));
@@ -134,7 +134,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res) => {
 
 router.put("/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const { name, description, stage, status, priority, leadId, assigneeIds, startDate, targetDate, successRate, revenueImpact, productCategory, productType, customerName, customerEmail, customerPhone, costTarget, sellingPrice, volumeKgPerMonth, tags } = req.body;
     const [project] = await db.update(projectsTable).set({
       ...(name !== undefined && { name }),
@@ -170,7 +170,7 @@ router.put("/:id", requireAuth, async (req: AuthRequest, res) => {
 
 router.delete("/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     await db.delete(projectsTable).where(eq(projectsTable.id, id));
     await logActivity(req.user!.userId, "deleted", "project", id, `Deleted project #${id}`);
     res.status(204).send();

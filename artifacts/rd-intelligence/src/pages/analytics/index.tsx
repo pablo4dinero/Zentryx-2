@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
 import { useListProjects } from "@/api-client";
 import { PageLoader } from "@/components/ui/spinner";
 import {
@@ -39,7 +39,7 @@ function useChartTheme() {
   };
 }
 
-function ExpandBtn({ full, setFull }: { full: boolean; setFull: (v: boolean) => void }) {
+function ExpandBtn({ full, setFull }: { full: boolean; setFull: React.Dispatch<React.SetStateAction<boolean>> }) {
   return (
     <button onClick={() => setFull(f => !f)}
       className="p-1.5 hover:bg-white/10 rounded-lg text-muted-foreground hover:text-foreground transition-colors"
@@ -93,23 +93,24 @@ export default function Analytics() {
 
   if (isLoading) return <PageLoader />;
   const projectsList = projects || [];
+  const typedProjects = projectsList as any[];
 
   const byProductType = PRODUCT_TYPES.map(type => ({
     name: type,
-    count: projectsList.filter(p => p.productType === type).length,
-    approved: projectsList.filter(p => p.productType === type && p.status === "approved").length,
-    inProgress: projectsList.filter(p => p.productType === type && p.status === "in_progress").length,
+    count: typedProjects.filter(p => p.productType === type).length,
+    approved: typedProjects.filter(p => p.productType === type && p.status === "approved").length,
+    inProgress: typedProjects.filter(p => p.productType === type && p.status === "in_progress").length,
   })).filter(d => d.count > 0);
 
   const byStage = Object.entries(
-    projectsList.reduce((acc: Record<string, number>, p) => {
+    typedProjects.reduce((acc: Record<string, number>, p: any) => {
       acc[p.stage] = (acc[p.stage] || 0) + 1;
       return acc;
     }, {})
   ).map(([stage, count]) => ({ stage: stage.replace(/_/g, ' '), count }));
 
   const byStatus = Object.entries(
-    projectsList.reduce((acc: Record<string, number>, p) => {
+    typedProjects.reduce((acc: Record<string, number>, p: any) => {
       acc[p.status] = (acc[p.status] || 0) + 1;
       return acc;
     }, {})
@@ -117,8 +118,8 @@ export default function Analytics() {
 
   const radarData = PRODUCT_TYPES.slice(0, 6).map(type => ({
     subject: type.length > 12 ? type.slice(0, 12) + '…' : type,
-    Approved: projectsList.filter(p => p.productType === type && p.status === "approved").length,
-    InProgress: projectsList.filter(p => p.productType === type && p.status === "in_progress").length,
+    Approved: typedProjects.filter(p => p.productType === type && p.status === "approved").length,
+    InProgress: typedProjects.filter(p => p.productType === type && p.status === "in_progress").length,
   }));
 
   const typeToggleBtn = (label: string, active: boolean, onClick: () => void) => (
@@ -140,10 +141,10 @@ export default function Analytics() {
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
-          { label: "Total Projects", value: projectsList.length, color: ct.isLight ? "text-indigo-600" : "text-primary" },
-          { label: "Approved", value: projectsList.filter(p => p.status === "approved").length, color: ct.isLight ? "text-emerald-600" : "text-green-400" },
-          { label: "In Progress", value: projectsList.filter(p => p.status === "in_progress").length, color: ct.isLight ? "text-cyan-600" : "text-blue-400" },
-          { label: "Pushed to Live", value: projectsList.filter(p => p.status === "pushed_to_live").length, color: ct.isLight ? "text-purple-600" : "text-emerald-400" },
+          { label: "Total Projects", value: typedProjects.length, color: ct.isLight ? "text-indigo-600" : "text-primary" },
+          { label: "Approved", value: typedProjects.filter((p: any) => p.status === "approved").length, color: ct.isLight ? "text-emerald-600" : "text-green-400" },
+          { label: "In Progress", value: typedProjects.filter((p: any) => p.status === "in_progress").length, color: ct.isLight ? "text-cyan-600" : "text-blue-400" },
+          { label: "Pushed to Live", value: typedProjects.filter((p: any) => p.status === "pushed_to_live").length, color: ct.isLight ? "text-purple-600" : "text-emerald-400" },
         ].map(kpi => (
           <div key={kpi.label} className={cn("glass-card p-5 rounded-2xl", ct.isLight && "border border-slate-200")}>
             <p className="text-xs text-muted-foreground mb-1">{kpi.label}</p>

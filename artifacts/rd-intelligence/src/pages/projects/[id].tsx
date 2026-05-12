@@ -645,9 +645,9 @@ const selectCls = isLight
         <div className="space-y-6">
           <p className="text-xs text-muted-foreground">Click any field to edit it directly.</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-            <InlineEdit label="Customer Name" value={project.customerName || ""} onSave={v => saveField("customerName", v)} icon={<User className="w-3.5 h-3.5" />} placeholder="Customer / client name" />
-            <InlineEdit label="Customer Email" value={project.customerEmail || ""} onSave={v => saveField("customerEmail", v)} type="email" icon={<Mail className="w-3.5 h-3.5" />} placeholder="email@example.com" />
-            <InlineEdit label="Customer Phone" value={project.customerPhone || ""} onSave={v => saveField("customerPhone", v)} icon={<Phone className="w-3.5 h-3.5" />} placeholder="+27 xx xxx xxxx" />
+            <InlineEdit label="Customer Name" value={(project as any).customerName || ""} onSave={v => saveField("customerName", v)} icon={<User className="w-3.5 h-3.5" />} placeholder="Customer / client name" />
+            <InlineEdit label="Customer Email" value={(project as any).customerEmail || ""} onSave={v => saveField("customerEmail", v)} type="email" icon={<Mail className="w-3.5 h-3.5" />} placeholder="email@example.com" />
+            <InlineEdit label="Customer Phone" value={(project as any).customerPhone || ""} onSave={v => saveField("customerPhone", v)} icon={<Phone className="w-3.5 h-3.5" />} placeholder="+27 xx xxx xxxx" />
             <InlineEdit label="Product Type" value={(project as any).productType || ""} onSave={v => saveField("productType", v)} options={PRODUCT_TYPES} icon={<Package className="w-3.5 h-3.5" />} />
             <CostTargetField value={(project as any).costTarget ? String(parseFloat(String((project as any).costTarget))) : ""} onSave={v => saveField("costTarget", v)} />
             <SellingPriceField value={(project as any).sellingPrice ? String(parseFloat(String((project as any).sellingPrice))) : ""} onSave={v => saveField("sellingPrice", v)} />

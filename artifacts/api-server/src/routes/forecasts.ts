@@ -42,7 +42,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res) => {
 
 router.put("/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const { createdAt, ...rest } = req.body;
     const [f] = await db.update(accountForecastsTable)
       .set({ ...rest, updatedAt: new Date() })
@@ -56,7 +56,7 @@ router.put("/:id", requireAuth, async (req: AuthRequest, res) => {
 
 router.delete("/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     await db.delete(accountForecastsTable).where(eq(accountForecastsTable.id, id));
     res.json({ success: true });
   } catch {

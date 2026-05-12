@@ -53,7 +53,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res) => {
 
 router.put("/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const { title, description, status, priority, assigneeId, dueDate } = req.body;
     const [task] = await db.update(tasksTable).set({
       ...(title !== undefined && { title }),
@@ -74,7 +74,7 @@ router.put("/:id", requireAuth, async (req: AuthRequest, res) => {
 
 router.delete("/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     await db.delete(tasksTable).where(eq(tasksTable.id, id));
     await logActivity(req.user!.userId, "deleted", "task", id, `Deleted task #${id}`);
     res.status(204).send();
