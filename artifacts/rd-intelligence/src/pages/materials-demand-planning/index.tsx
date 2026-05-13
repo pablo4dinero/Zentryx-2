@@ -97,6 +97,7 @@ type ProductionOrder = {
   remarks?: string | null;
   orderStatus?: string | null;
   isPlanned?: boolean;
+  expectedDeliveryDate?: string | null;
 };
 
 type SFOrder = {
@@ -1055,7 +1056,7 @@ function ProductionPlanningTab() {
   const [planningView, setPlanningView] = React.useState<PlanningViewMode>("weekly");
   const [assistedState, setAssistedState] = React.useState<"idle" | "optimizing" | "done">("idle");
   const [printOpen, setPrintOpen] = React.useState(false);
-  const [expandedFloorId, setExpandedFloorId] = React.useState<number | null>(null);
+  const [expandedDay, setExpandedDay] = React.useState<string | null>(null);
   const [dragged, setDragged] = React.useState<{
     type: "planned" | "assigned";
     productionOrderId: number;
@@ -1125,6 +1126,21 @@ function ProductionPlanningTab() {
     },
     staleTime: 1000 * 60 * 2,
   }) as UseQueryResult<ProductionOrder[], Error>;
+
+  const planningAccountsQuery = useQuery({
+    queryKey: ["/api/accounts"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}api/accounts`, { headers: authHeaders() });
+      return res.json() as Promise<{id: number; company: string; productName: string | null; productType: string | null}[]>;
+    },
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const planningAccountMap = React.useMemo(() => {
+    const map: Record<number, {company: string; productName: string | null; productType: string | null}> = {};
+    (planningAccountsQuery.data ?? []).forEach(a => { map[a.id] = { company: a.company, productName: a.productName, productType: a.productType }; });
+    return map;
+  }, [planningAccountsQuery.data]);
 
   const floors = floorsQuery.data ?? [];
   const assignments = assignmentsQuery.data ?? [];
@@ -1623,10 +1639,6 @@ function ProductionPlanningTab() {
 
             const floorActionButtons = (floor: ProductionFloor) => (
               <div className="flex items-center gap-1 shrink-0">
-                <button onClick={() => setExpandedFloorId(floor.id)}
-                  className={cn("p-1 rounded-md transition-colors text-muted-foreground hover:text-primary", isLight ? "hover:bg-primary/5" : "hover:bg-primary/10")} title="Expand">
-                  <Maximize2 className="w-3 h-3" />
-                </button>
                 <button onClick={() => { setEditingFloor(floor); setEditFloorForm({ floorName: floor.floorName, blendCategory: floor.blendCategory, maxCapacityKg: String(floor.maxCapacityKg) }); setEditFloorOpen(true); }}
                   className={cn("p-1 rounded-md transition-colors text-muted-foreground hover:text-foreground", isLight ? "hover:bg-slate-100" : "hover:bg-white/10")} title="Edit">
                   <Edit3 className="w-3 h-3" />
@@ -1732,6 +1744,10 @@ function ProductionPlanningTab() {
                               isLight ? "border-slate-200 text-slate-500 bg-slate-50" : "border-white/10 text-muted-foreground bg-white/5"
                             )}>{totalDayKg.toLocaleString()} KG total</span>
                           )}
+                          <button onClick={() => setExpandedDay(day)}
+                            className={cn("p-1 rounded-md transition-colors text-muted-foreground hover:text-primary", isLight ? "hover:bg-primary/5" : "hover:bg-primary/10")} title={`Expand ${dayFull}`}>
+                            <Maximize2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                         <div className={cn("h-px flex-1", isLight ? "bg-slate-200" : "bg-white/10")} />
                       </div>
@@ -1851,39 +1867,55 @@ function ProductionPlanningTab() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {assignedRightOrders.map(({ order, assigned }) => (
-                      <div
-                        key={order.id}
-                        draggable={!assigned}
-                        onDragStart={(event) => {
-                          if (!assigned) {
-                            event.dataTransfer.effectAllowed = "move";
-                            setDragged({ type: "planned", productionOrderId: order.id });
-                          }
-                        }}
-                        className={cn("rounded-xl border p-3 transition-colors",
-                          assigned
-                            ? isLight ? "border-slate-200 bg-slate-100/60 opacity-60" : "border-white/10 bg-white/5 opacity-60"
-                            : isLight ? "border-slate-200 bg-white hover:border-primary/30 cursor-grab" : "border-white/10 bg-black/10 hover:border-white/20 cursor-grab"
-                        )}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <div className="flex items-center gap-2 text-sm">
-                              <span className={`h-2.5 w-2.5 rounded-full ${getMicrobialColor(order.microbialAnalysis ?? "Normal")}`} />
-                              <span className="font-semibold text-foreground">{order.accountName ?? "Unknown account"}</span>
+                    {assignedRightOrders.map(({ order, assigned }) => {
+                      const acc = planningAccountMap[order.accountId ?? 0];
+                      const company = acc?.company ?? order.accountName ?? "Unknown account";
+                      const productName = acc?.productName ?? order.productName ?? null;
+                      const productType = acc?.productType ?? order.productType ?? null;
+                      const productTypeLabel = PRODUCT_TYPES.find(p => p.value === productType)?.label ?? productType ?? "—";
+                      return (
+                        <div
+                          key={order.id}
+                          draggable={!assigned}
+                          onDragStart={(event) => {
+                            if (!assigned) {
+                              event.dataTransfer.effectAllowed = "move";
+                              setDragged({ type: "planned", productionOrderId: order.id });
+                            }
+                          }}
+                          className={cn("rounded-xl border p-3 transition-colors",
+                            assigned
+                              ? isLight ? "border-slate-200 bg-slate-100/60 opacity-60" : "border-white/10 bg-white/5 opacity-60"
+                              : isLight ? "border-slate-200 bg-white hover:border-primary/30 cursor-grab" : "border-white/10 bg-black/10 hover:border-white/20 cursor-grab"
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 mb-0.5">
+                                <span className={`h-2 w-2 rounded-full shrink-0 ${getMicrobialColor(order.microbialAnalysis ?? "Normal")}`} />
+                                <span className="font-bold text-foreground text-sm truncate">{company}</span>
+                              </div>
+                              {productName && <p className="text-xs text-muted-foreground truncate pl-3.5">{productName}</p>}
+                              <div className="mt-1.5 pl-3.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                <span className="text-[11px] text-muted-foreground">{productTypeLabel}</span>
+                                {order.expectedDeliveryDate && (
+                                  <span className="text-[11px] text-muted-foreground">· Due: {order.expectedDeliveryDate}</span>
+                                )}
+                              </div>
                             </div>
-                            <div className="mt-2 text-sm text-muted-foreground">{order.productType ?? "Unknown product"}</div>
+                            <div className="shrink-0 text-right">
+                              <p className="text-sm font-bold text-foreground">{Number(order.volume ?? 0).toLocaleString()} KG</p>
+                              <VolumeTag volume={String(order.volume ?? 0)} />
+                            </div>
                           </div>
-                          <div className="text-sm font-semibold">{Number(order.volume ?? 0)} KG</div>
+                          {assigned && (
+                            <div className="mt-2 inline-flex items-center rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-300">
+                              Assigned ✓
+                            </div>
+                          )}
                         </div>
-                        {assigned && (
-                          <div className="mt-3 inline-flex items-center rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-300">
-                            Assigned ✓
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1993,69 +2025,77 @@ function ProductionPlanningTab() {
                     ))}
                   </div>
 
-                  {/* Per-floor schedules */}
+                  {/* Per-day schedules (day-first layout matching weekly view) */}
                   <div className="space-y-6">
-                    {floors.map((floor, floorIdx) => {
-                      const assignedRows = floorOrder(floor.id);
-                      const totalFloorKg = assignedRows.reduce((s, r) => s + Number(r.order.volume ?? 0), 0);
-                      const util = Math.min(100, Math.round((totalFloorKg / (floor.maxCapacityKg * weekDaysPrint.length || 1)) * 100));
+                    {weekDaysPrint.map((day, dayIdx) => {
+                      const dayDate = selectedWeek?.days[dayIdx];
+                      const dayFull = dayDate
+                        ? dayDate.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })
+                        : day;
+                      const totalDayKgPrint = floors.reduce((sum, floor) => {
+                        return sum + floorOrder(floor.id)
+                          .filter(r => r.assignment.assignedDay === day)
+                          .reduce((s, r) => s + Number(r.order.volume ?? 0), 0);
+                      }, 0);
                       return (
-                        <div key={floor.id} className={cn("print-no-break", floorIdx > 0 ? "print-break-before" : "")}>
-                          {/* Floor Header */}
+                        <div key={day} className="print-no-break">
+                          {/* Day Header */}
                           <div className="flex items-center justify-between border border-slate-200 rounded-t-xl px-4 py-3 bg-slate-800 text-white">
                             <div className="flex items-center gap-3">
-                              <div className="w-2 h-2 rounded-full bg-emerald-400" />
-                              <span className="font-bold text-sm">{floor.floorName}</span>
-                              <span className="text-slate-300 text-xs">|</span>
-                              <span className="text-slate-300 text-xs">{floor.blendCategory}</span>
+                              <div className="w-2 h-2 rounded-full bg-sky-400" />
+                              <span className="font-bold text-sm">{dayFull}</span>
                             </div>
                             <div className="flex items-center gap-4 text-xs">
-                              <span className="text-slate-300">Capacity: <span className="text-white font-semibold">{floor.maxCapacityKg.toLocaleString()} KG/day</span></span>
-                              <span className="text-slate-300">Week Total: <span className="text-white font-semibold">{totalFloorKg.toLocaleString()} KG</span></span>
-                              <span className="text-slate-300">Utilisation: <span className={cn("font-semibold", util > 90 ? "text-red-300" : util > 70 ? "text-amber-300" : "text-emerald-300")}>{util}%</span></span>
+                              <span className="text-slate-300">Day Total: <span className="text-white font-semibold">{totalDayKgPrint.toLocaleString()} KG</span></span>
+                              <span className="text-slate-300">Floors: <span className="text-white font-semibold">{floors.length}</span></span>
                             </div>
                           </div>
 
-                          {/* Day columns table */}
-                          <div className={`grid border border-t-0 border-slate-200 rounded-b-xl overflow-hidden`} style={{ gridTemplateColumns: `repeat(${weekDaysPrint.length}, 1fr)` }}>
-                            {weekDaysPrint.map((day, di) => {
-                              const dayDate = selectedWeek?.days[di];
-                              const dayRows = assignedRows.filter(r => r.assignment.assignedDay === day);
+                          {/* Floor columns */}
+                          <div className="grid border border-t-0 border-slate-200 rounded-b-xl overflow-hidden"
+                            style={{ gridTemplateColumns: `repeat(${floors.length || 1}, 1fr)` }}>
+                            {floors.map((floor, floorIdx) => {
+                              const dayRows = floorOrder(floor.id).filter(r => r.assignment.assignedDay === day);
                               const dayKg = dayRows.reduce((s, r) => s + Number(r.order.volume ?? 0), 0);
                               const dayUtil = Math.min(100, Math.round((dayKg / (floor.maxCapacityKg || 1)) * 100));
                               return (
-                                <div key={day} className={cn("border-r border-slate-200 last:border-r-0", di % 2 === 0 ? "bg-white" : "bg-slate-50/50")}>
-                                  {/* Day header */}
+                                <div key={floor.id} className={cn("border-r border-slate-200 last:border-r-0 flex flex-col", floorIdx % 2 === 0 ? "bg-white" : "bg-slate-50/50")}>
+                                  {/* Floor header */}
                                   <div className="border-b border-slate-200 px-3 py-2 bg-slate-100">
-                                    <p className="text-[11px] font-bold text-slate-700">{day}</p>
-                                    {dayDate && <p className="text-[10px] text-slate-400">{dayDate.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</p>}
+                                    <p className="text-[11px] font-bold text-slate-700">{floor.floorName}</p>
+                                    <p className="text-[10px] text-slate-400">{floor.blendCategory} · {floor.maxCapacityKg.toLocaleString()} KG/day</p>
+                                    {dayRows.length > 0 && (
+                                      <div className="mt-1 h-1 rounded-full bg-slate-200 overflow-hidden">
+                                        <div className={cn("h-full rounded-full", dayUtil > 90 ? "bg-red-500" : dayUtil > 70 ? "bg-amber-500" : "bg-emerald-500")} style={{ width: `${dayUtil}%` }} />
+                                      </div>
+                                    )}
                                   </div>
                                   {/* Orders */}
-                                  <div className="p-2 space-y-2 min-h-[100px]">
+                                  <div className="p-2 space-y-2 min-h-[100px] flex-1">
                                     {dayRows.length === 0 ? (
                                       <p className="text-[10px] text-slate-300 text-center py-4">—</p>
                                     ) : (
-                                      dayRows.map(row => (
-                                        <div key={row.assignment.id} className="border border-slate-200 rounded-lg p-2 bg-white">
-                                          <p className="text-[11px] font-bold text-slate-800 leading-tight truncate">{row.order.accountName ?? "Unknown"}</p>
-                                          <p className="text-[10px] text-slate-500 truncate">{row.order.productType ?? "—"}</p>
-                                          <div className="flex items-center justify-between mt-1.5 gap-1">
-                                            <span className="text-[10px] font-semibold text-slate-700">{Number(row.order.volume ?? 0).toLocaleString()} KG</span>
-                                            <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded", row.order.microbialAnalysis === "Critical" ? "bg-red-100 text-red-700" : row.order.microbialAnalysis === "Important" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700")}>{row.order.microbialAnalysis ?? "Normal"}</span>
+                                      dayRows.map(row => {
+                                        const acc = planningAccountMap[row.order.accountId ?? 0];
+                                        return (
+                                          <div key={row.assignment.id} className="border border-slate-200 rounded-lg p-2 bg-white">
+                                            <p className="text-[11px] font-bold text-slate-800 leading-tight truncate">{acc?.company ?? row.order.accountName ?? "Unknown"}</p>
+                                            <p className="text-[10px] text-slate-500 truncate">{acc?.productName ?? row.order.productName ?? "—"}</p>
+                                            <div className="flex items-center justify-between mt-1.5 gap-1">
+                                              <span className="text-[10px] font-semibold text-slate-700">{Number(row.order.volume ?? 0).toLocaleString()} KG</span>
+                                              <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded", row.order.microbialAnalysis === "Critical" ? "bg-red-100 text-red-700" : row.order.microbialAnalysis === "Important" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700")}>{row.order.microbialAnalysis ?? "Normal"}</span>
+                                            </div>
                                           </div>
-                                        </div>
-                                      ))
+                                        );
+                                      })
                                     )}
                                   </div>
-                                  {/* Day footer */}
+                                  {/* Floor footer */}
                                   {dayRows.length > 0 && (
                                     <div className="border-t border-slate-200 px-3 py-1.5 bg-slate-50">
                                       <div className="flex justify-between items-center">
                                         <span className="text-[10px] text-slate-500">{dayKg.toLocaleString()} KG</span>
                                         <span className={cn("text-[10px] font-bold", dayUtil > 90 ? "text-red-600" : dayUtil > 70 ? "text-amber-600" : "text-emerald-600")}>{dayUtil}% util</span>
-                                      </div>
-                                      <div className="mt-1 h-1 rounded-full bg-slate-200 overflow-hidden">
-                                        <div className={cn("h-full rounded-full", dayUtil > 90 ? "bg-red-500" : dayUtil > 70 ? "bg-amber-500" : "bg-emerald-500")} style={{ width: `${dayUtil}%` }} />
                                       </div>
                                     </div>
                                   )}
@@ -2085,91 +2125,89 @@ function ProductionPlanningTab() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Expand Floor Full Screen Modal ── */}
+      {/* ── Expand Day Full Screen Modal ── */}
       <AnimatePresence>
-        {expandedFloorId != null && (() => {
-          const floor = floors.find(f => f.id === expandedFloorId);
-          if (!floor) return null;
-          const assignedRows = floorOrder(floor.id);
+        {expandedDay != null && (() => {
           const weekDaysEx = ["Mon", "Tue", "Wed", "Thu", "Fri", ...(includeSaturday ? ["Sat"] : [])];
-          const totalKgEx = assignedRows.reduce((s, r) => s + Number(r.order.volume ?? 0), 0);
-          const progressEx = Math.min(100, Math.round((totalKgEx / (floor.maxCapacityKg || 1)) * 100));
-          const barClassEx = progressEx > 90 ? "bg-red-500" : progressEx > 70 ? "bg-amber-500" : "bg-emerald-500";
+          const dayIdx = weekDaysEx.indexOf(expandedDay);
+          const dayDate = selectedWeek?.days[dayIdx];
+          const dayFull = dayDate
+            ? dayDate.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })
+            : expandedDay;
+          const totalDayKgEx = floors.reduce((sum, floor) => {
+            return sum + floorOrder(floor.id)
+              .filter(r => r.assignment.assignedDay === expandedDay)
+              .reduce((s, r) => s + Number(r.order.volume ?? 0), 0);
+          }, 0);
           return (
             <div className="fixed inset-0 z-50 flex flex-col bg-black/90 backdrop-blur-sm">
               <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 24 }}
                 className="flex flex-col h-full">
                 {/* Header */}
                 <div className={cn("flex items-center justify-between px-6 py-4 border-b shrink-0", isLight ? "bg-white border-slate-200" : "bg-slate-900 border-white/10")}>
-                  <div className="flex items-center gap-4">
-                    <div>
-                      <h2 className="text-lg font-bold text-foreground">{floor.floorName}</h2>
-                      <p className="text-xs text-muted-foreground mt-0.5">{floor.blendCategory} · {floor.maxCapacityKg.toLocaleString()} KG/day capacity</p>
-                    </div>
-                    <div className="flex items-center gap-2 ml-4">
-                      <div className={cn("h-1.5 w-32 rounded-full overflow-hidden", isLight ? "bg-slate-200" : "bg-white/10")}>
-                        <div className={`${barClassEx} h-full transition-all`} style={{ width: `${progressEx}%` }} />
-                      </div>
-                      <span className="text-xs font-semibold text-muted-foreground">{totalKgEx.toLocaleString()} / {floor.maxCapacityKg.toLocaleString()} KG ({progressEx}%)</span>
-                    </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-foreground">{dayFull}</h2>
+                    <p className="text-xs text-muted-foreground mt-0.5">{selectedWeekLabel} · All production floors · {totalDayKgEx.toLocaleString()} KG scheduled</p>
                   </div>
-                  <button onClick={() => setExpandedFloorId(null)}
+                  <button onClick={() => setExpandedDay(null)}
                     className={cn("p-2 rounded-xl transition-colors", isLight ? "hover:bg-slate-100 text-slate-600" : "hover:bg-white/10 text-muted-foreground")}>
                     <X className="w-5 h-5" />
                   </button>
                 </div>
-                {/* Week label */}
-                <div className={cn("px-6 py-2 text-xs text-muted-foreground border-b shrink-0", isLight ? "bg-slate-50 border-slate-200" : "bg-slate-900/50 border-white/5")}>
-                  {selectedWeekLabel}
-                </div>
-                {/* Day grid */}
+                {/* Floor grid for this day */}
                 <div className={cn("flex-1 overflow-auto p-6", isLight ? "bg-slate-50" : "bg-slate-950")}>
-                  <div className={cn("grid gap-4 h-full", weekDaysEx.length === 6 ? "grid-cols-6" : "grid-cols-5")}>
-                    {weekDaysEx.map((day, di) => {
-                      const dayDate = selectedWeek?.days[di];
-                      const dayRows = assignedRows.filter(r => r.assignment.assignedDay === day);
-                      const dayKg = dayRows.reduce((s, r) => s + Number(r.order.volume ?? 0), 0);
-                      const dayUtil = Math.min(100, Math.round((dayKg / (floor.maxCapacityKg || 1)) * 100));
-                      const dayBar = dayUtil > 90 ? "bg-red-500" : dayUtil > 70 ? "bg-amber-500" : "bg-emerald-500";
-                      return (
-                        <div key={day} className={cn("rounded-2xl border flex flex-col", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-slate-900")}>
-                          {/* Day header */}
-                          <div className={cn("px-4 py-3 border-b rounded-t-2xl", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5")}>
-                            <p className="text-sm font-bold text-foreground">{day}</p>
-                            {dayDate && <p className="text-xs text-muted-foreground">{dayDate.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</p>}
-                            <div className="mt-2 flex items-center gap-2">
-                              <div className={cn("h-1.5 flex-1 rounded-full overflow-hidden", isLight ? "bg-slate-200" : "bg-white/10")}>
-                                <div className={`${dayBar} h-full transition-all`} style={{ width: `${dayUtil}%` }} />
+                  {floors.length === 0 ? (
+                    <div className="flex h-full items-center justify-center text-sm text-muted-foreground/40">No production floors defined.</div>
+                  ) : (
+                    <div className="grid gap-4 h-full" style={{ gridTemplateColumns: `repeat(${floors.length}, minmax(0, 1fr))` }}>
+                      {floors.map(floor => {
+                        const dayRows = floorOrder(floor.id).filter(r => r.assignment.assignedDay === expandedDay);
+                        const dayKg = dayRows.reduce((s, r) => s + Number(r.order.volume ?? 0), 0);
+                        const dayUtil = Math.min(100, Math.round((dayKg / (floor.maxCapacityKg || 1)) * 100));
+                        const dayBar = dayUtil > 90 ? "bg-red-500" : dayUtil > 70 ? "bg-amber-500" : "bg-emerald-500";
+                        return (
+                          <div key={floor.id} className={cn("rounded-2xl border flex flex-col", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-slate-900")}>
+                            {/* Floor header */}
+                            <div className={cn("px-4 py-3 border-b rounded-t-2xl", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5")}>
+                              <p className="text-sm font-bold text-foreground">{floor.floorName}</p>
+                              <p className="text-xs text-muted-foreground">{floor.blendCategory} · {floor.maxCapacityKg.toLocaleString()} KG/day</p>
+                              <div className="mt-2 flex items-center gap-2">
+                                <div className={cn("h-1.5 flex-1 rounded-full overflow-hidden", isLight ? "bg-slate-200" : "bg-white/10")}>
+                                  <div className={`${dayBar} h-full transition-all`} style={{ width: `${dayUtil}%` }} />
+                                </div>
+                                <span className="text-xs text-muted-foreground">{dayKg.toLocaleString()} / {floor.maxCapacityKg.toLocaleString()} KG · {dayUtil}%</span>
                               </div>
-                              <span className="text-xs text-muted-foreground">{dayKg.toLocaleString()} KG · {dayUtil}%</span>
+                            </div>
+                            {/* Orders */}
+                            <div className="flex-1 p-3 space-y-2 overflow-y-auto">
+                              {dayRows.length === 0 ? (
+                                <div className="flex h-full min-h-[80px] items-center justify-center text-sm text-muted-foreground/40">No orders</div>
+                              ) : (
+                                dayRows.map(row => {
+                                  const acc = planningAccountMap[row.order.accountId ?? 0];
+                                  return (
+                                    <div key={row.assignment.id} className={cn("rounded-xl border p-3", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5")}>
+                                      <div className="flex items-start justify-between gap-2 mb-2">
+                                        <div className="min-w-0">
+                                          <p className="font-bold text-foreground text-sm truncate">{acc?.company ?? row.order.accountName ?? "Unknown"}</p>
+                                          <p className="text-xs text-muted-foreground truncate">{acc?.productName ?? row.order.productName ?? "—"}</p>
+                                        </div>
+                                        <span className="text-sm font-bold text-foreground shrink-0">{Number(row.order.volume ?? 0).toLocaleString()} KG</span>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <span className={cn("h-2 w-2 rounded-full shrink-0", getMicrobialColor(row.order.microbialAnalysis ?? "Normal"))} />
+                                        <span className="text-xs text-muted-foreground">{row.order.microbialAnalysis ?? "Normal"}</span>
+                                      </div>
+                                    </div>
+                                  );
+                                })
+                              )}
                             </div>
                           </div>
-                          {/* Orders */}
-                          <div className="flex-1 p-3 space-y-2 overflow-y-auto">
-                            {dayRows.length === 0 ? (
-                              <div className="flex h-full min-h-[80px] items-center justify-center text-sm text-muted-foreground/40">No orders</div>
-                            ) : (
-                              dayRows.map(row => (
-                                <div key={row.assignment.id} className={cn("rounded-xl border p-3", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5")}>
-                                  <div className="flex items-start justify-between gap-2 mb-2">
-                                    <div className="min-w-0">
-                                      <p className="font-semibold text-foreground text-sm truncate">{row.order.accountName ?? "Unknown"}</p>
-                                      <p className="text-xs text-muted-foreground truncate">{row.order.productType ?? "—"}</p>
-                                    </div>
-                                    <span className="text-sm font-bold text-foreground shrink-0">{Number(row.order.volume ?? 0).toLocaleString()} KG</span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <span className={cn("h-2 w-2 rounded-full shrink-0", getMicrobialColor(row.order.microbialAnalysis ?? "Normal"))} />
-                                    <span className="text-xs text-muted-foreground">{row.order.microbialAnalysis ?? "Normal"}</span>
-                                  </div>
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </motion.div>
             </div>
