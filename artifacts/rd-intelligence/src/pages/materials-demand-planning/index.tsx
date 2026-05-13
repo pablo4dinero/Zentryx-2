@@ -1273,7 +1273,10 @@ function ProductionPlanningTab() {
   });
 
   const produceAssignmentMutation = useMutation({
-    mutationFn: async ({ assignmentId, orderId }: { assignmentId: number; orderId: number }) => {
+    mutationFn: async ({ assignmentId, orderId, accountName, productName, productType, volume, floorId: fId }: {
+      assignmentId: number; orderId: number;
+      accountName: string; productName: string; productType: string; volume: number; floorId?: number;
+    }) => {
       const res = await fetch(`${BASE}api/mdp/floor-assignments/${assignmentId}/produce`, {
         method: "PUT",
         headers: authHeaders(),
@@ -1285,12 +1288,20 @@ function ProductionPlanningTab() {
       await fetch(`${BASE}api/mdp/produced-orders`, {
         method: "POST",
         headers: authHeaders(),
-        body: JSON.stringify({ productionOrderId: orderId, assignedAt: new Date().toISOString() }),
+        body: JSON.stringify({
+          productionOrderId: orderId,
+          accountName,
+          productName,
+          productType,
+          volume,
+          floorId: fId ?? null,
+          producedAt: new Date().toISOString(),
+        }),
       });
       await fetch(`${BASE}api/mdp/production-orders/${orderId}`, {
         method: "PUT",
         headers: authHeaders(),
-        body: JSON.stringify({ is_produced: true, order_status: "Produced" }),
+        body: JSON.stringify({ isProduced: true, orderStatus: "Produced" }),
       });
       return res.json();
     },
@@ -1395,10 +1406,20 @@ function ProductionPlanningTab() {
     toast({ title: "Order unassigned", description: "The order was returned to the unassigned list." });
   };
 
-  const handleProduce = async (assignmentId: number, orderId: number) => {
+  const handleProduce = async (assignmentId: number, orderId: number, floorId?: number) => {
     try {
-      await produceAssignmentMutation.mutateAsync({ assignmentId, orderId });
-      toast({ title: "Produced", description: "The assigned order has been moved to production history." });
+      const fullOrder = mdpOrderByMdpId.get(orderId);
+      const acc = planningAccountMap[fullOrder?.accountId ?? 0];
+      await produceAssignmentMutation.mutateAsync({
+        assignmentId,
+        orderId,
+        accountName: acc?.company ?? fullOrder?.accountName ?? "Unknown",
+        productName: acc?.productName ?? fullOrder?.productName ?? "Unknown",
+        productType: acc?.productType ?? fullOrder?.productType ?? "Unknown",
+        volume: Number(fullOrder?.volume ?? 0),
+        floorId,
+      });
+      toast({ title: "Produced", description: "The order has been moved to production history." });
     } catch (error: any) {
       toast({ title: "Could not produce order", description: error?.message || "Try again.", variant: "destructive" });
     }
@@ -1476,12 +1497,18 @@ function ProductionPlanningTab() {
     [plannedOrders, assignedMap]
   );
 
+  const mdpOrderByMdpId = React.useMemo(() => {
+    const map = new Map<number, ProductionOrder>();
+    (productionOrdersQuery.data ?? []).forEach(o => map.set(o.id, o));
+    return map;
+  }, [productionOrdersQuery.data]);
+
   const printStyles = `
     @media print {
-      @page { margin: 1.2cm; size: A4 landscape; }
-      body * { visibility: hidden; }
-      #print-schedule, #print-schedule * { visibility: visible; }
-      #print-schedule { position: absolute; top: 0; left: 0; width: 100%; font-family: 'Inter', system-ui, sans-serif; color: #111; background: #fff; }
+      @page { margin: 1cm; size: A4 landscape; }
+      body * { visibility: hidden !important; }
+      #print-schedule { visibility: visible !important; position: fixed; top: 0; left: 0; width: 100%; background: #fff !important; font-family: 'Inter', system-ui, sans-serif; color: #111 !important; }
+      #print-schedule * { visibility: visible !important; color-adjust: exact; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       .print-no-break { page-break-inside: avoid; }
       .print-break-before { page-break-before: always; }
     }
@@ -1612,30 +1639,42 @@ function ProductionPlanningTab() {
           {(() => {
             const weekDays = ["Mon", "Tue", "Wed", "Thu", "Fri", ...(includeSaturday ? ["Sat"] : [])];
 
-            const makeOrderCard = (floorId: number) => (row: FloorAssignmentRow) => (
-              <div
-                key={row.assignment.id}
-                draggable
-                onDragStart={e => { e.dataTransfer.effectAllowed = "move"; setDragged({ type: "assigned", productionOrderId: row.order.id, assignmentId: row.assignment.id, floorId }); }}
-                onDragOver={e => e.preventDefault()}
-                onDrop={e => { e.preventDefault(); if (dragged?.type === "assigned" && dragged.assignmentId && dragged.floorId === floorId) handleReorder(floorId, dragged.assignmentId, row.assignment.id); }}
-                className={cn("rounded-xl border p-2.5 cursor-grab active:cursor-grabbing",
-                  isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5"
-                )}
-              >
-                <div className="flex items-start justify-between gap-2 mb-2">
-                  <div className="min-w-0">
-                    <div className="font-medium text-foreground text-xs truncate">{row.order.accountName ?? "Unknown"}</div>
-                    <div className="text-[10px] text-muted-foreground truncate">{row.order.productType ?? "—"}</div>
+            const makeOrderCard = (floorId: number) => (row: FloorAssignmentRow) => {
+              const fullOrder = mdpOrderByMdpId.get(row.order.id);
+              const acc = planningAccountMap[fullOrder?.accountId ?? 0];
+              const company = acc?.company ?? row.order.accountName ?? "Unknown";
+              const productName = acc?.productName ?? row.order.productName ?? null;
+              const productTypeKey = acc?.productType ?? row.order.productType ?? null;
+              const productTypeLabel = PRODUCT_TYPES.find(p => p.value === productTypeKey)?.label ?? productTypeKey ?? "—";
+              const volume = Number(fullOrder?.volume ?? row.order.volume ?? 0);
+              const expected = fullOrder?.expectedDeliveryDate ?? null;
+              return (
+                <div
+                  key={row.assignment.id}
+                  draggable
+                  onDragStart={e => { e.dataTransfer.effectAllowed = "move"; setDragged({ type: "assigned", productionOrderId: row.order.id, assignmentId: row.assignment.id, floorId }); }}
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={e => { e.preventDefault(); if (dragged?.type === "assigned" && dragged.assignmentId && dragged.floorId === floorId) handleReorder(floorId, dragged.assignmentId, row.assignment.id); }}
+                  className={cn("rounded-xl border p-2.5 cursor-grab active:cursor-grabbing",
+                    isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5"
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-bold text-foreground text-xs truncate">{company}</div>
+                      {productName && <div className="text-[10px] text-muted-foreground truncate">{productName}</div>}
+                      <div className="text-[10px] text-muted-foreground">{productTypeLabel}</div>
+                      {expected && <div className="text-[10px] text-muted-foreground">Due: {expected}</div>}
+                    </div>
+                    <div className="text-xs font-bold text-foreground shrink-0">{volume.toLocaleString()} KG</div>
                   </div>
-                  <div className="text-xs font-semibold text-foreground shrink-0">{Number(row.order.volume ?? 0).toLocaleString()} KG</div>
+                  <div className="flex gap-1.5">
+                    <button onClick={() => handleUnassign(row.assignment.id)} className={cn("flex-1 py-1 rounded-lg text-[10px] font-semibold border transition-colors", isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}>Unplan</button>
+                    <button onClick={() => handleProduce(row.assignment.id, row.order.id, floorId)} className="flex-1 py-1 rounded-lg text-[10px] font-semibold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-colors">Produced</button>
+                  </div>
                 </div>
-                <div className="flex gap-1.5">
-                  <button onClick={() => handleUnassign(row.assignment.id)} className={cn("flex-1 py-1 rounded-lg text-[10px] font-semibold border transition-colors", isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}>Unplan</button>
-                  <button onClick={() => handleProduce(row.assignment.id, row.order.id)} className="flex-1 py-1 rounded-lg text-[10px] font-semibold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-colors">Produced</button>
-                </div>
-              </div>
-            );
+              );
+            };
 
             const floorActionButtons = (floor: ProductionFloor) => (
               <div className="flex items-center gap-1 shrink-0">
@@ -1981,7 +2020,7 @@ function ProductionPlanningTab() {
       </AnimatePresence>
 
       <Dialog open={printOpen} onOpenChange={setPrintOpen}>
-        <DialogContent className="sm:max-w-5xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className={cn("sm:max-w-5xl max-h-[90vh] overflow-y-auto", isLight ? "bg-white border-slate-200" : "")}>
           <DialogHeader>
             <DialogTitle>Print Week Schedule</DialogTitle>
             <DialogDescription>Production schedule for {selectedWeekLabel}. Click Print to generate a PDF.</DialogDescription>
@@ -2119,7 +2158,11 @@ function ProductionPlanningTab() {
           </div>
 
           <DialogFooter className="space-x-2 mt-2">
-            <Button variant="outline" onClick={() => setPrintOpen(false)}>Close</Button>
+            <Button
+              variant="outline"
+              onClick={() => setPrintOpen(false)}
+              className={isLight ? "bg-red-500 text-white border-red-500 hover:bg-red-600 hover:text-white hover:border-red-600" : ""}
+            >Close</Button>
             <Button onClick={() => window.print()}>Print / Save PDF</Button>
           </DialogFooter>
         </DialogContent>
@@ -2235,12 +2278,23 @@ function ProductionHistoryTab() {
     staleTime: 1000 * 60,
   }) as UseQueryResult<ProductionOrder[], Error>;
 
+  const historyAccountsQuery = useQuery({
+    queryKey: ["/api/accounts"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}api/accounts`, { headers: authHeaders() });
+      return res.json() as Promise<{id: number; company: string; productName: string | null; productType: string | null}[]>;
+    },
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const historyAccountMap = React.useMemo(() => {
+    const map: Record<number, {company: string; productName: string | null; productType: string | null}> = {};
+    (historyAccountsQuery.data ?? []).forEach(a => { map[a.id] = { company: a.company, productName: a.productName, productType: a.productType }; });
+    return map;
+  }, [historyAccountsQuery.data]);
+
   const pendingOrders = React.useMemo(() => {
-    const all = allOrdersQuery.data ?? [];
-    const now = new Date();
-    const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay() + 1); weekStart.setHours(0,0,0,0);
-    const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 6);
-    return all.filter(o => !o.isPlanned);
+    return (allOrdersQuery.data ?? []).filter(o => !o.isPlanned);
   }, [allOrdersQuery.data]);
 
   const producedHistoryQuery = useQuery({
@@ -2292,167 +2346,165 @@ function ProductionHistoryTab() {
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-2">
-          <div className={cn("flex gap-1 p-1 rounded-xl border w-fit", isLight ? "bg-slate-100 border-slate-200" : "bg-white/5 border-white/10")}>
-            {(["daily", "weekly", "monthly", "yearly"] as ProductionHistoryView[]).map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => setView(option)}
-                className={cn("rounded-lg px-3 py-1.5 text-xs font-semibold transition-all",
-                  view === option
-                    ? "bg-primary text-white shadow-sm shadow-primary/20"
-                    : isLight ? "text-slate-600 hover:text-slate-900" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {option.charAt(0).toUpperCase() + option.slice(1)}
-              </button>
-            ))}
-          </div>
-          <p className="text-xs text-muted-foreground">Viewing: {rangeLabel}</p>
-        </div>
+    <div className="space-y-4">
+      {/* ── Split layout: Pending (left) | History (right) ── */}
+      <div className={cn("flex min-h-[640px] rounded-2xl border overflow-hidden", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5")}>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className={cn("flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-medium border transition-all",
-              isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:border-white/20"
-            )}>
-              <Download className="w-4 h-4" /> Export
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-[180px]">
-            <DropdownMenuItem onClick={() => downloadProductionHistoryCsv(producedOrders, view)}>
-              Export CSV
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => downloadProductionHistoryXlsx(producedOrders, view)}>
-              Export XLSX
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-
-      {/* ── Pending Orders ── */}
-      <div>
-        <div className="flex items-center gap-2 mb-3">
-          <h3 className="text-base font-semibold text-foreground">Pending Orders</h3>
-          <span className={cn("text-xs font-semibold px-2 py-0.5 rounded-full", pendingOrders.length > 0 ? "bg-amber-500/10 text-amber-400" : "bg-white/5 text-muted-foreground")}>
-            {pendingOrders.length}
-          </span>
-        </div>
-        {pendingOrders.length === 0 ? (
-          <div className={cn("rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5")}>
-            All production orders for this week have been planned.
+        {/* ── LEFT: Pending Orders ── */}
+        <div className={cn("w-[38%] shrink-0 flex flex-col border-r overflow-hidden", isLight ? "border-slate-200" : "border-white/10")}>
+          <div className={cn("px-5 py-4 border-b shrink-0", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5")}>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-foreground">Pending Orders</h3>
+              <span className={cn("text-xs font-semibold px-2 py-0.5 rounded-full", pendingOrders.length > 0 ? "bg-amber-500/10 text-amber-400" : isLight ? "bg-slate-100 text-slate-500" : "bg-white/5 text-muted-foreground")}>
+                {pendingOrders.length}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">Orders not yet planned</p>
           </div>
-        ) : (
-          <div className={cn("glass-card rounded-2xl border overflow-x-auto", isLight ? "border-slate-200 bg-white" : "border-white/5 bg-white/5")}>
-            <table className="w-full text-sm">
-              <thead className={cn("text-xs text-muted-foreground border-b", isLight ? "bg-slate-50 border-slate-200" : "bg-white/5 border-white/5")}>
-                <tr>
-                  <th className="px-4 py-3 text-left font-medium">Account / Product</th>
-                  <th className="px-4 py-3 text-left font-medium">Product Type</th>
-                  <th className="px-4 py-3 text-right font-medium">Volume (KG)</th>
-                  <th className="px-4 py-3 text-left font-medium">Raw Material</th>
-                  <th className="px-4 py-3 text-left font-medium">Microbial</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pendingOrders.map(order => (
-                  <tr key={order.id} className={cn("border-b last:border-0", isLight ? "border-slate-100" : "border-white/5")}>
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-foreground text-sm">{getOrderAccountText(order)}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{getOrderProductText(order)}</p>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {PRODUCT_TYPES.find(p => p.value === order.productType)?.label ?? order.productType ?? "—"}
-                    </td>
-                    <td className="px-4 py-3 text-right text-sm font-medium">{Number(order.volume ?? 0).toLocaleString()}</td>
-                    <td className="px-4 py-3">
-                      <span className={cn("text-xs font-semibold px-2 py-0.5 rounded-full",
-                        order.rawMaterialStatus === "Available" ? "bg-emerald-500/10 text-emerald-400" :
-                        order.rawMaterialStatus === "Not Available" ? "bg-red-500/10 text-red-400" :
-                        "bg-amber-500/10 text-amber-400"
-                      )}>{order.rawMaterialStatus ?? "Pending"}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1.5">
-                        <span className={cn("w-2 h-2 rounded-full", getMicrobialColor(order.microbialAnalysis ?? "Normal"))} />
-                        <span className="text-xs text-muted-foreground">{order.microbialAnalysis ?? "Normal"}</span>
-                      </div>
-                    </td>
+
+          <div className="flex-1 overflow-y-auto">
+            {pendingOrders.length === 0 ? (
+              <div className="flex h-full items-center justify-center p-8 text-center">
+                <div>
+                  <p className="text-sm font-medium text-foreground">All orders planned</p>
+                  <p className="text-xs text-muted-foreground mt-1">No pending production orders.</p>
+                </div>
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className={cn("text-xs text-muted-foreground border-b sticky top-0 z-10", isLight ? "bg-slate-50 border-slate-200" : "bg-[#0f1117] border-white/5")}>
+                  <tr>
+                    <th className="px-4 py-2.5 text-left font-medium">Account</th>
+                    <th className="px-3 py-2.5 text-left font-medium">Type</th>
+                    <th className="px-3 py-2.5 text-right font-medium">Vol.</th>
+                    <th className="px-3 py-2.5 text-left font-medium">Material</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {pendingOrders.map(order => {
+                    const acc = historyAccountMap[order.accountId ?? 0];
+                    const company = acc?.company ?? order.accountName ?? order.accountCompany ?? "—";
+                    const productName = acc?.productName ?? order.productName ?? null;
+                    const productTypeKey = acc?.productType ?? order.productType ?? null;
+                    const productTypeLabel = PRODUCT_TYPES.find(p => p.value === productTypeKey)?.label ?? productTypeKey ?? "—";
+                    const rawMat = order.rawMaterialStatus ?? "Pending";
+                    return (
+                      <tr key={order.id} className={cn("border-b last:border-0 transition-colors", isLight ? "border-slate-100 hover:bg-slate-50" : "border-white/5 hover:bg-white/[0.02]")}>
+                        <td className="px-4 py-2.5">
+                          <p className="font-semibold text-foreground text-xs leading-tight truncate max-w-[130px]">{company}</p>
+                          {productName && <p className="text-[10px] text-muted-foreground truncate max-w-[130px]">{productName}</p>}
+                        </td>
+                        <td className="px-3 py-2.5 text-[10px] text-muted-foreground">{productTypeLabel}</td>
+                        <td className="px-3 py-2.5 text-right text-xs font-semibold">{Number(order.volume ?? 0).toLocaleString()}</td>
+                        <td className="px-3 py-2.5">
+                          <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-full",
+                            rawMat === "Available" ? "bg-emerald-500/10 text-emerald-400" :
+                            rawMat === "Not Available" ? "bg-red-500/10 text-red-400" :
+                            "bg-amber-500/10 text-amber-400"
+                          )}>{rawMat}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
-        )}
-      </div>
+        </div>
 
-      {/* ── Production History ── */}
-      <div>
-        <h3 className="text-base font-semibold text-foreground mb-3">Production History</h3>
-      {producedOrders.length === 0 ? (
-        <div className={cn("rounded-2xl border border-dashed p-10 text-center", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5")}>
-          <p className="text-lg font-semibold text-foreground">No production history yet.</p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Click "Produced" on any floor assignment in Production Planning to log output.
-          </p>
+        {/* ── RIGHT: Production History ── */}
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+          <div className={cn("px-5 py-4 border-b shrink-0 flex items-center justify-between gap-3", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5")}>
+            <div>
+              <h3 className="text-sm font-bold text-foreground">Production History</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">Viewing: {rangeLabel}</p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className={cn("flex gap-0.5 p-0.5 rounded-xl border", isLight ? "bg-slate-100 border-slate-200" : "bg-white/5 border-white/10")}>
+                {(["daily", "weekly", "monthly", "yearly"] as ProductionHistoryView[]).map((option) => (
+                  <button key={option} type="button" onClick={() => setView(option)}
+                    className={cn("rounded-lg px-2.5 py-1 text-[10px] font-semibold transition-all",
+                      view === option ? "bg-primary text-white shadow-sm" : isLight ? "text-slate-600 hover:text-slate-900" : "text-muted-foreground hover:text-foreground"
+                    )}>
+                    {option.charAt(0).toUpperCase() + option.slice(1)}
+                  </button>
+                ))}
+              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className={cn("flex items-center gap-1 h-8 px-2.5 rounded-xl text-xs font-medium border transition-all",
+                    isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:border-white/20"
+                  )}>
+                    <Download className="w-3.5 h-3.5" /> Export
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-[160px]">
+                  <DropdownMenuItem onClick={() => downloadProductionHistoryCsv(producedOrders, view)}>Export CSV</DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => downloadProductionHistoryXlsx(producedOrders, view)}>Export XLSX</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto">
+            {producedOrders.length === 0 ? (
+              <div className="flex h-full items-center justify-center p-10 text-center">
+                <div>
+                  <p className="text-base font-semibold text-foreground">No production history yet.</p>
+                  <p className="mt-2 text-sm text-muted-foreground">Click "Produced" on any floor assignment in Production Planning.</p>
+                </div>
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className={cn("text-xs text-muted-foreground border-b sticky top-0 z-10", isLight ? "bg-slate-50 border-slate-200" : "bg-[#0f1117] border-white/5")}>
+                  <tr>
+                    <th className="px-4 py-2.5 text-left font-medium">Account</th>
+                    <th className="px-3 py-2.5 text-left font-medium">Product Type</th>
+                    <th className="px-3 py-2.5 text-right font-medium">Volume (KG)</th>
+                    <th className="px-3 py-2.5 text-left font-medium">Produced At</th>
+                    <th className="px-3 py-2.5 text-left font-medium">Status</th>
+                    <th className="px-3 py-2.5 text-right font-medium">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {producedOrders.map((order) => (
+                    <tr key={order.id} className={cn("border-b last:border-0 transition-colors", isLight ? "border-slate-100 hover:bg-slate-50" : "border-white/5 hover:bg-white/[0.02]")}>
+                      <td className="px-4 py-3">
+                        <p className="font-bold text-foreground text-sm leading-tight">{order.accountName}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{order.productName}</p>
+                      </td>
+                      <td className="px-3 py-3 text-xs text-muted-foreground">
+                        {PRODUCT_TYPES.find(p => p.value === order.productType)?.label ?? order.productType}
+                      </td>
+                      <td className="px-3 py-3 text-right font-semibold text-sm">{Number(order.volume ?? 0).toLocaleString()}</td>
+                      <td className="px-3 py-3 text-xs text-muted-foreground">{formatDateTime(order.producedAt)}</td>
+                      <td className="px-3 py-3">
+                        <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold border",
+                          order.deliveryStatus === "Delivered"
+                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                            : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                        )}>
+                          {order.deliveryStatus}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 text-right">
+                        {order.deliveryStatus === "Pending" ? (
+                          <button onClick={() => deliverMutation.mutate(order.id)}
+                            className="px-3 py-1.5 text-xs font-semibold bg-primary text-white rounded-xl hover:bg-primary/90 transition-colors">
+                            Mark Delivered
+                          </button>
+                        ) : (
+                          <span className="text-xs text-emerald-400 font-semibold">✓ Delivered</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
-      ) : (
-        <div className={cn("glass-card rounded-2xl border overflow-x-auto", isLight ? "border-slate-200 bg-white" : "border-white/5 bg-white/5")}>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Account/Product</TableHead>
-                <TableHead>Product Type</TableHead>
-                <TableHead>Volume (KG)</TableHead>
-                <TableHead>Produced At</TableHead>
-                <TableHead>Delivery Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {producedOrders.map((order) => (
-                <TableRow key={order.id}>
-                  <TableCell>
-                    <div className="space-y-1">
-                      <p className="font-semibold text-foreground">{order.accountName}</p>
-                      <p className="text-sm text-muted-foreground">{order.productName}</p>
-                    </div>
-                  </TableCell>
-                  <TableCell>{order.productType}</TableCell>
-                  <TableCell className="font-mono">{order.volume}</TableCell>
-                  <TableCell>{formatDateTime(order.producedAt)}</TableCell>
-                  <TableCell>
-                    <span
-                      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
-                        order.deliveryStatus === "Delivered"
-                          ? "bg-emerald-500/10 text-emerald-300 border border-emerald-500/20"
-                          : "bg-amber-500/10 text-amber-300 border border-amber-500/20"
-                      }`}
-                    >
-                      {order.deliveryStatus}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {order.deliveryStatus === "Pending" ? (
-                      <Button size="sm" onClick={() => deliverMutation.mutate(order.id)}>
-                        Mark Delivered
-                      </Button>
-                    ) : (
-                      <span className="inline-flex rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-300">
-                        ✓ Delivered
-                      </span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
       </div>
     </div>
   );

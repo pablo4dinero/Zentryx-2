@@ -176,6 +176,28 @@ router.post("/production-floors", requireAuth, async (req: AuthRequest, res) => 
   }
 });
 
+router.put("/production-floors/:id", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const id = Number(req.params.id);
+    const body = req.body as any;
+    const [updated] = await db.update(mdpProductionFloorsTable).set({
+      floorName: body.floorName,
+      blendCategory: body.blendCategory,
+      maxCapacityKg: body.maxCapacityKg !== undefined ? Number(body.maxCapacityKg) : undefined,
+    }).where(eq(mdpProductionFloorsTable.id, id)).returning();
+
+    if (!updated) {
+      res.status(404).json({ error: "NotFound" });
+      return;
+    }
+
+    res.json(updated);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
 router.delete("/production-floors/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
     const id = Number(req.params.id);
