@@ -538,10 +538,13 @@ function getOrderCategory(order: ProductionOrder) {
 function buildOptimizedAssignments(
   floors: ProductionFloor[],
   unassignedOrders: ProductionOrder[],
-  weekLabel: string
+  weekLabel: string,
+  includeSat = false
 ): FloorAssignmentPayload[] {
+  const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", ...(includeSat ? ["Sat"] : [])];
+
   const eligibleOrders = unassignedOrders
-    .filter((order) => order.rawMaterialStatus === "Available")
+    .filter((order) => order.rawMaterialStatus !== "Not Available")
     .slice()
     .sort((a, b) => {
       const priority = getMicrobialPriority(a.microbialAnalysis) - getMicrobialPriority(b.microbialAnalysis);
@@ -549,65 +552,50 @@ function buildOptimizedAssignments(
       return Number(b.volume ?? 0) - Number(a.volume ?? 0);
     });
 
-  const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri"];
-
   const assignments: FloorAssignmentPayload[] = [];
 
+  const dayUsageByFloor: Record<number, Record<string, number>> = {};
+  const dayTypesByFloor: Record<number, Record<string, string[]>> = {};
   for (const floor of floors) {
-    const dayUsage = dayNames.reduce<Record<string, number>>((acc, day) => {
-      acc[day] = 0;
-      return acc;
-    }, {} as Record<string, number>);
+    dayUsageByFloor[floor.id] = Object.fromEntries(dayNames.map(d => [d, 0]));
+    dayTypesByFloor[floor.id] = Object.fromEntries(dayNames.map(d => [d, [] as string[]]));
+  }
 
-    const qualified = eligibleOrders.filter((order) => isAssignEligibleForFloor(order, floor.blendCategory));
+  const preferredDayForOrder = (order: ProductionOrder): string[] => {
+    const m = order.microbialAnalysis;
+    if (m === "Critical") return dayNames;
+    if (m === "Important") return [...dayNames.slice(1), dayNames[0]];
+    return [...dayNames.slice(3), ...dayNames.slice(0, 3)];
+  };
 
-    const remaining = [...qualified];
-    const takeNext = (preferredCategories: string[]) => {
-      const index = remaining.findIndex((order) => preferredCategories.includes(getOrderCategory(order)));
-      if (index >= 0) {
-        return remaining.splice(index, 1)[0];
-      }
-      return remaining.shift();
-    };
+  const canAssign = (floor: ProductionFloor, day: string, order: ProductionOrder): boolean => {
+    if (!isAssignEligibleForFloor(order, floor.blendCategory)) return false;
+    const cat = getOrderCategory(order);
+    const existing = dayTypesByFloor[floor.id][day];
+    if (cat === "Seasoning" && existing.includes("Dairy Premix")) return false;
+    if (cat === "Dairy Premix" && existing.includes("Seasoning")) return false;
+    return (dayUsageByFloor[floor.id][day] + Number(order.volume ?? 0)) <= floor.maxCapacityKg;
+  };
 
-    for (const day of dayNames) {
-      let assigned = true;
-      while (assigned) {
-        assigned = false;
-        if (!remaining.length) break;
-        const order = (() => {
-          if (floor.blendCategory === "Sweet/Savory") {
-            if (["Mon", "Tue", "Wed"].includes(day)) {
-              return takeNext(["Dairy Premix", "Bread Premix"]);
-            }
-            return takeNext(["Seasoning"]);
-          }
-          if (floor.blendCategory === "Savory/Sweet") {
-            return takeNext(["Seasoning", "Savoury Flavours", "Bread Premix", "Dairy Premix"]);
-          }
-          if (floor.blendCategory === "Savory") {
-            return takeNext(["Seasoning", "Savoury Flavours"]);
-          }
-          return remaining.shift();
-        })();
-
-        if (!order) break;
-
-        const nextVolume = (dayUsage[day] ?? 0) + Number(order.volume ?? 0);
-        if (nextVolume <= floor.maxCapacityKg) {
-          dayUsage[day] = nextVolume;
+  for (const order of eligibleOrders) {
+    let placed = false;
+    for (const floor of floors) {
+      const days = preferredDayForOrder(order);
+      for (const day of days) {
+        if (canAssign(floor, day, order)) {
+          dayUsageByFloor[floor.id][day] += Number(order.volume ?? 0);
+          dayTypesByFloor[floor.id][day].push(getOrderCategory(order));
           assignments.push({
             floor_id: floor.id,
             production_order_id: order.id,
             week_label: weekLabel,
             assigned_day: day,
           });
-          assigned = true;
-        } else {
-          remaining.unshift(order);
+          placed = true;
           break;
         }
       }
+      if (placed) break;
     }
   }
 
@@ -621,9 +609,23 @@ function ProductionOrdersTab() {
   const isLight = theme === "light";
   const { addPlannedOrder, removePlannedOrder, isPlanningOrder } = usePlannedOrders();
   const [searchOrders, setSearchOrders] = React.useState("");
-  const [remarksById, setRemarksById] = React.useState<Record<number, string>>({});
   const [microbialById, setMicrobialById] = React.useState<Record<number, string>>({});
-  const [statusById, setStatusById] = React.useState<Record<number, string>>({});
+  const [rawMaterialById, setRawMaterialById] = React.useState<Record<number, string>>({});
+  const [isNewOrderOpen, setIsNewOrderOpen] = React.useState(false);
+  const [newOrderForm, setNewOrderForm] = React.useState({
+    accountId: "", volume: "", price: "", expectedDeliveryDate: "",
+    rawMaterialStatus: "Pending", microbialAnalysis: "Normal",
+  });
+
+  const accountsForOrderQuery = useQuery({
+    queryKey: ["/api/accounts"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}api/accounts`, { headers: authHeaders() });
+      return res.json() as Promise<{id: number; company: string; productName: string | null; productType: string | null}[]>;
+    },
+    staleTime: 1000 * 60 * 5,
+  });
+  const orderAccounts = accountsForOrderQuery.data ?? [];
 
   const productionOrdersQuery = useQuery({
     queryKey: ["/api/mdp/production-orders"],
@@ -642,132 +644,82 @@ function ProductionOrdersTab() {
 
   React.useEffect(() => {
     if (!productionOrders.length) return;
-
-    setRemarksById((current) => {
-      const next = { ...current };
-      productionOrders.forEach((order) => {
-        if (!(order.id in next)) {
-          next[order.id] = order.remarks ?? "";
-        }
-      });
-      return next;
-    });
     setMicrobialById((current) => {
       const next = { ...current };
       productionOrders.forEach((order) => {
-        if (!(order.id in next)) {
-          next[order.id] = order.microbialAnalysis ?? "Normal";
-        }
+        if (!(order.id in next)) next[order.id] = order.microbialAnalysis ?? "Normal";
       });
       return next;
     });
-    setStatusById((current) => {
+    setRawMaterialById((current) => {
       const next = { ...current };
       productionOrders.forEach((order) => {
-        if (!(order.id in next)) {
-          next[order.id] = order.orderStatus ?? "Ordered";
-        }
+        if (!(order.id in next)) next[order.id] = order.rawMaterialStatus ?? "Pending";
       });
       return next;
     });
     productionOrders.forEach((order) => {
-      if (order.isPlanned) {
-        addPlannedOrder(order.id);
-      }
+      if (order.isPlanned) addPlannedOrder(order.id);
     });
   }, [productionOrders, addPlannedOrder]);
 
   const productionUpdate = useMutation({
     mutationFn: async ({ orderId, changes }: { orderId: number; changes: Record<string, unknown> }) => {
       const res = await fetch(`${BASE}api/mdp/production-orders/${orderId}`, {
-        method: "PUT",
-        headers: authHeaders(),
-        body: JSON.stringify(changes),
+        method: "PUT", headers: authHeaders(), body: JSON.stringify(changes),
       });
-      if (!res.ok) {
-        const error = await res.json().catch(() => ({}));
-        throw new Error(error.error || "Failed to save production order");
-      }
+      if (!res.ok) { const error = await res.json().catch(() => ({})); throw new Error(error.error || "Failed to save"); }
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] }),
+  });
+
+  const createOrderMutation = useMutation({
+    mutationFn: async (payload: Record<string, unknown>) => {
+      const res = await fetch(`${BASE}api/mdp/production-orders`, {
+        method: "POST", headers: authHeaders(), body: JSON.stringify(payload),
+      });
+      if (!res.ok) { const error = await res.json().catch(() => ({})); throw new Error(error.error || "Failed to create order"); }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
+      setIsNewOrderOpen(false);
+      setNewOrderForm({ accountId: "", volume: "", price: "", expectedDeliveryDate: "", rawMaterialStatus: "Pending", microbialAnalysis: "Normal" });
+      toast({ title: "Order created" });
     },
+    onError: (error: any) => toast({ title: "Could not create order", description: error?.message, variant: "destructive" }),
   });
-
-  const floorAssignment = useMutation({
-    mutationFn: async (payload: { productionOrderId: number; weekLabel: string; planStatus: string }) => {
-      const res = await fetch(`${BASE}api/mdp/floor-assignments`, {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        const error = await res.json().catch(() => ({}));
-        throw new Error(error.error || "Failed to create floor assignment");
-      }
-      return res.json();
-    },
-  });
-
-  const handleChangeRemarks = (orderId: number, value: string) => {
-    setRemarksById((current) => ({ ...current, [orderId]: value }));
-  };
-
-  const saveRemarks = async (orderId: number) => {
-    const remarks = remarksById[orderId] ?? "";
-    try {
-      await productionUpdate.mutateAsync({ orderId, changes: { remarks } });
-      toast({ title: "Remarks saved" });
-    } catch (error: any) {
-      toast({ title: "Could not save remarks", description: error?.message || "Try again.", variant: "destructive" });
-    }
-  };
 
   const handleChangeMicrobial = async (orderId: number, value: string) => {
-    setMicrobialById((current) => ({ ...current, [orderId]: value }));
-    try {
-      await productionUpdate.mutateAsync({ orderId, changes: { microbialAnalysis: value } });
-      toast({ title: "Microbial analysis updated" });
-    } catch (error: any) {
-      toast({ title: "Could not save microbial analysis", description: error?.message || "Try again.", variant: "destructive" });
-    }
+    setMicrobialById(c => ({ ...c, [orderId]: value }));
+    try { await productionUpdate.mutateAsync({ orderId, changes: { microbialAnalysis: value } }); }
+    catch { toast({ title: "Could not save", variant: "destructive" }); }
   };
 
-  const handleChangeStatus = async (orderId: number, value: string) => {
-    setStatusById((current) => ({ ...current, [orderId]: value }));
-    try {
-      await productionUpdate.mutateAsync({ orderId, changes: { orderStatus: value, isPlanned: value === "Planned" } });
-      if (value === "Planned") {
-        addPlannedOrder(orderId);
-      } else {
-        removePlannedOrder(orderId);
-      }
-      toast({ title: "Status saved" });
-    } catch (error: any) {
-      toast({ title: "Could not save status", description: error?.message || "Try again.", variant: "destructive" });
-    }
+  const handleChangeRawMaterial = async (orderId: number, value: string) => {
+    setRawMaterialById(c => ({ ...c, [orderId]: value }));
+    try { await productionUpdate.mutateAsync({ orderId, changes: { rawMaterialStatus: value } }); }
+    catch { toast({ title: "Could not save", variant: "destructive" }); }
   };
 
   const handlePlanNow = async (orderId: number) => {
-    const weekLabel = getCurrentWeekLabel();
     try {
       await productionUpdate.mutateAsync({ orderId, changes: { orderStatus: "Planned", isPlanned: true } });
-      await floorAssignment.mutateAsync({ productionOrderId: orderId, weekLabel, planStatus: "Planned" });
       addPlannedOrder(orderId);
-      toast({ title: "Order planned", description: "This order is now scheduled for floor assignment." });
+      toast({ title: "Order planned", description: "Now visible in Production Planning → Planned Orders." });
     } catch (error: any) {
-      toast({ title: "Could not plan order", description: error?.message || "Try again.", variant: "destructive" });
+      toast({ title: "Could not plan order", description: error?.message, variant: "destructive" });
     }
   };
 
-  const handleSetOrdered = async (orderId: number) => {
+  const handleUnplan = async (orderId: number) => {
     try {
       await productionUpdate.mutateAsync({ orderId, changes: { orderStatus: "Ordered", isPlanned: false } });
       removePlannedOrder(orderId);
-      toast({ title: "Order reset", description: "The order has been moved back to Ordered." });
+      toast({ title: "Order unplanned" });
     } catch (error: any) {
-      toast({ title: "Could not reset order", description: error?.message || "Try again.", variant: "destructive" });
+      toast({ title: "Could not unplan", description: error?.message, variant: "destructive" });
     }
   };
 
@@ -775,178 +727,216 @@ function ProductionOrdersTab() {
     const term = searchOrders.trim().toLowerCase();
     return productionOrders.filter((order) => {
       if (!term) return true;
-      return [
-        getOrderAccountText(order),
-        getOrderProductText(order),
-        order.productType ?? "",
-        String(order.volume ?? ""),
-        order.remarks ?? "",
-        order.orderStatus ?? "",
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(term);
+      return [getOrderAccountText(order), getOrderProductText(order), order.productType ?? "", String(order.volume ?? "")]
+        .join(" ").toLowerCase().includes(term);
     });
   }, [productionOrders, searchOrders]);
 
-  if (ordersLoading) {
-    return <PageLoader />;
-  }
+  if (ordersLoading) return <PageLoader />;
+
+  const iCls = cn("w-full h-10 rounded-xl border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground", isLight ? "border-gray-200 bg-white" : "border-white/10 bg-black/30");
+  const lCls = "text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block";
 
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div className="grid gap-1">
+        <div>
           <h2 className="text-lg font-semibold text-foreground">New Production Orders</h2>
-          <p className="text-sm text-muted-foreground">Manage demand plan updates, auto-save microbial analysis, remarks, and order status inline.</p>
+          <p className="text-sm text-muted-foreground">Manage production orders, raw material availability and microbial analysis.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button onClick={() => downloadProductionOrdersCsv(tableOrders)}
-            className={cn("flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-medium border transition-all",
-              isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:border-white/20"
-            )}>
+          <button onClick={() => downloadProductionOrdersCsv(tableOrders)} className={cn("flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-medium border transition-all", isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:border-white/20")}>
             <Download className="w-4 h-4" /> Export CSV
           </button>
-          <button onClick={() => downloadProductionOrdersXlsx(tableOrders)}
-            className={cn("flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-medium border transition-all",
-              isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:border-white/20"
-            )}>
+          <button onClick={() => downloadProductionOrdersXlsx(tableOrders)} className={cn("flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-medium border transition-all", isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:border-white/20")}>
             <Download className="w-4 h-4" /> Export XLSX
+          </button>
+          <button onClick={() => setIsNewOrderOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20">
+            <Plus className="w-4 h-4" /> New Production Order
           </button>
         </div>
       </div>
 
       <div className="relative w-64">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <input
-          value={searchOrders}
-          onChange={(event) => setSearchOrders(event.target.value)}
-          placeholder="Search orders..."
-          className={cn("h-9 pl-9 pr-4 rounded-xl border text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/50",
-            isLight ? "bg-white border-slate-200 text-slate-800 placeholder:text-slate-400" : "bg-black/20 border-white/10 text-foreground placeholder:text-muted-foreground"
-          )}
-        />
+        <input value={searchOrders} onChange={e => setSearchOrders(e.target.value)} placeholder="Search orders..." className={cn("h-9 pl-9 pr-4 rounded-xl border text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/50", isLight ? "bg-white border-slate-200 text-slate-800 placeholder:text-slate-400" : "bg-black/20 border-white/10 text-foreground placeholder:text-muted-foreground")} />
       </div>
 
       <div className={cn("glass-card rounded-2xl overflow-x-auto border", isLight ? "border-slate-200 bg-white" : "border-white/5 bg-white/5")}>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="font-mono">Order ID</TableHead>
-              <TableHead>Account / Product</TableHead>
-              <TableHead>Product Type</TableHead>
-              <TableHead className="text-right">Volume (KG)</TableHead>
-              <TableHead>Raw Material</TableHead>
-              <TableHead>Microbial Analysis</TableHead>
-              <TableHead>Remarks</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+        <table className="w-full text-sm">
+          <thead className={cn("text-xs text-muted-foreground border-b", isLight ? "bg-slate-50 border-slate-200" : "bg-white/5 border-white/5")}>
+            <tr>
+              <th className="px-4 py-3 text-left font-medium">Order ID</th>
+              <th className="px-4 py-3 text-left font-medium">Account / Product</th>
+              <th className="px-4 py-3 text-left font-medium">Product Type</th>
+              <th className="px-4 py-3 text-right font-medium">Volume (KG)</th>
+              <th className="px-4 py-3 text-left font-medium">Raw Material</th>
+              <th className="px-4 py-3 text-left font-medium">Microbial Analysis</th>
+              <th className="px-4 py-3 text-left font-medium">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
             {tableOrders.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
-                  No production orders match the current search.
-                </TableCell>
-              </TableRow>
+              <tr><td colSpan={7} className="py-8 text-center text-muted-foreground">No production orders found.</td></tr>
             ) : (
               tableOrders.map((order) => {
-                const remarks = remarksById[order.id] ?? order.remarks ?? "";
                 const microbial = microbialById[order.id] ?? order.microbialAnalysis ?? "Normal";
-                const status = statusById[order.id] ?? order.orderStatus ?? "Ordered";
-                const rawMaterial = getRawMaterialStatus(order);
+                const rawMaterial = rawMaterialById[order.id] ?? order.rawMaterialStatus ?? "Pending";
                 const planned = order.isPlanned || isPlanningOrder(order.id);
-
                 return (
-                  <TableRow key={order.id}>
-                    <TableCell className="font-mono text-xs text-muted-foreground">{order.id}</TableCell>
-                    <TableCell>
-                      <div>
-                        <div className="font-medium text-foreground">{getOrderAccountText(order)}</div>
-                        <div className="text-sm text-muted-foreground">{getOrderProductText(order)}</div>
-                      </div>
-                    </TableCell>
-                    <TableCell>{order.productType ?? "—"}</TableCell>
-                    <TableCell className="text-right">{Number(order.volume ?? 0).toLocaleString()}</TableCell>
-                    <TableCell>
-                      <Badge variant={rawMaterial === "Available" ? "success" : "warning"}>
-                        {rawMaterial}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
+                  <tr key={order.id} className={cn("border-b last:border-0 transition-colors", isLight ? "border-slate-100 hover:bg-slate-50/70" : "border-white/5 hover:bg-white/[0.03]")}>
+                    <td className="px-4 py-3 font-mono text-xs text-muted-foreground">#{order.id}</td>
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-foreground text-sm">{getOrderAccountText(order)}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{getOrderProductText(order)}</p>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      {PRODUCT_TYPES.find(p => p.value === order.productType)?.label ?? order.productType ?? "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right font-medium text-sm">{Number(order.volume ?? 0).toLocaleString()}</td>
+                    <td className="px-4 py-3">
+                      <select value={rawMaterial} onChange={e => handleChangeRawMaterial(order.id, e.target.value)}
+                        className={cn("rounded-lg border px-2 py-1.5 text-xs font-semibold cursor-pointer focus:outline-none",
+                          rawMaterial === "Available" ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" :
+                          rawMaterial === "Not Available" ? "bg-red-500/10 border-red-500/20 text-red-400" :
+                          "bg-amber-500/10 border-amber-500/20 text-amber-400"
+                        )}>
+                        <option value="Available" className="bg-black text-white">Available</option>
+                        <option value="Not Available" className="bg-black text-white">Not Available</option>
+                        <option value="Pending" className="bg-black text-white">Pending</option>
+                      </select>
+                    </td>
+                    <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <span className={`h-2.5 w-2.5 rounded-full ${getMicrobialColor(microbial)}`} />
-                        <select
-                          value={microbial}
-                          onChange={(event) => handleChangeMicrobial(order.id, event.target.value)}
-                          className={cn("rounded-xl border px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50",
+                        <span className={cn("h-2.5 w-2.5 rounded-full flex-shrink-0", getMicrobialColor(microbial))} />
+                        <select value={microbial} onChange={e => handleChangeMicrobial(order.id, e.target.value)}
+                          className={cn("rounded-xl border px-2 py-1 text-xs focus:outline-none cursor-pointer",
+                            microbial === "Critical" ? "bg-red-500/10 border-red-500/20 text-red-400" :
+                            microbial === "Important" ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" :
                             isLight ? "border-slate-200 bg-white text-slate-700" : "border-white/10 bg-black/10 text-foreground"
-                          )}
-                        >
-                          {MICROBIAL_OPTIONS.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
+                          )}>
+                          {MICROBIAL_OPTIONS.map(opt => <option key={opt.value} value={opt.value} className="bg-black text-white">{opt.label}</option>)}
                         </select>
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        value={remarks}
-                        onChange={(event) => handleChangeRemarks(order.id, event.target.value)}
-                        onBlur={() => saveRemarks(order.id)}
-                        placeholder="Add remarks…"
-                        className="min-w-[220px]"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <select
-                        value={status}
-                        onChange={(event) => handleChangeStatus(order.id, event.target.value)}
-                        className={cn("rounded-full border px-3 py-1 text-sm font-semibold cursor-pointer focus:outline-none", getStatusClasses(status))}
-                      >
-                        {STATUS_OPTIONS.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            className={`rounded-full min-w-[92px] px-4 ${planned ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20" : ""}`}
-                          >
-                            {planned ? "✓ Planned" : "Select"}
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-52">
-                          <div className="space-y-2">
-                            <Button variant="secondary" size="sm" className="w-full justify-start" onClick={() => handleSetOrdered(order.id)}>
-                              Ordered
-                            </Button>
-                            <Button variant="default" size="sm" className="w-full justify-start" onClick={() => handlePlanNow(order.id)}>
-                              Plan Now
-                            </Button>
-                          </div>
-                        </PopoverContent>
-                      </Popover>
-                    </TableCell>
-                  </TableRow>
+                    </td>
+                    <td className="px-4 py-3">
+                      <button onClick={() => planned ? handleUnplan(order.id) : handlePlanNow(order.id)}
+                        className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all whitespace-nowrap",
+                          planned
+                            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-red-500/10 hover:border-red-500/20 hover:text-red-400"
+                            : isLight ? "border-slate-200 text-slate-700 hover:bg-primary/10 hover:border-primary/30 hover:text-primary"
+                              : "border-white/10 text-muted-foreground hover:bg-primary/10 hover:border-primary/30 hover:text-primary"
+                        )}>
+                        {planned ? "✓ Un-plan" : "Plan Now"}
+                      </button>
+                    </td>
+                  </tr>
                 );
               })
             )}
-          </TableBody>
-          <TableCaption className="text-muted-foreground pb-3">
-            Showing {tableOrders.length} of {productionOrders.length} production orders.
-          </TableCaption>
-        </Table>
+          </tbody>
+        </table>
+        <div className={cn("px-4 py-2.5 text-xs text-muted-foreground border-t", isLight ? "border-slate-100" : "border-white/5")}>
+          Showing {tableOrders.length} of {productionOrders.length} production orders
+        </div>
       </div>
+
+      {/* ── New Production Order Modal ── */}
+      <AnimatePresence>
+        {isNewOrderOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className={cn("border rounded-2xl shadow-2xl w-full max-w-lg flex flex-col", isLight ? "bg-white border-gray-200" : "glass-panel border-white/10")}>
+              <div className={cn("flex items-center justify-between px-6 py-4 border-b", isLight ? "border-gray-100" : "border-white/5")}>
+                <div>
+                  <h2 className="text-lg font-bold text-foreground">New Production Order</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">Create a production order from an existing account</p>
+                </div>
+                <button onClick={() => setIsNewOrderOpen(false)} className={cn("p-1.5 rounded-lg transition-colors", isLight ? "hover:bg-gray-100 text-gray-500" : "hover:bg-white/10 text-muted-foreground")}>
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className={lCls}>Account *</label>
+                  <select value={newOrderForm.accountId} onChange={e => setNewOrderForm(p => ({ ...p, accountId: e.target.value }))} className={iCls + " cursor-pointer"}>
+                    <option value="" className="bg-black text-white">Select account…</option>
+                    {orderAccounts.map(a => (
+                      <option key={a.id} value={a.id} className="bg-black text-white">
+                        {a.company}{a.productName ? ` — ${a.productName}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className={lCls}>Volume (kg) *</label>
+                    <input value={newOrderForm.volume} onChange={e => setNewOrderForm(p => ({ ...p, volume: e.target.value }))} placeholder="0" type="number" min="0" className={iCls} />
+                  </div>
+                  <div>
+                    <label className={lCls}>Price ($/kg)</label>
+                    <input value={newOrderForm.price} onChange={e => setNewOrderForm(p => ({ ...p, price: e.target.value }))} placeholder="0.00" type="number" step="0.01" min="0" className={iCls} />
+                  </div>
+                </div>
+                <div>
+                  <label className={lCls}>Expected Delivery Date</label>
+                  <input value={newOrderForm.expectedDeliveryDate} onChange={e => setNewOrderForm(p => ({ ...p, expectedDeliveryDate: e.target.value }))} type="date" className={iCls} />
+                </div>
+                <div>
+                  <label className={lCls}>Raw Material Status</label>
+                  <select value={newOrderForm.rawMaterialStatus} onChange={e => setNewOrderForm(p => ({ ...p, rawMaterialStatus: e.target.value }))} className={iCls + " cursor-pointer"}>
+                    <option value="Available" className="bg-black text-white">Available</option>
+                    <option value="Not Available" className="bg-black text-white">Not Available</option>
+                    <option value="Pending" className="bg-black text-white">Pending</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={lCls}>Microbial Analysis</label>
+                  <div className="flex gap-2 flex-wrap mt-1">
+                    {MICROBIAL_OPTIONS.map(opt => (
+                      <button key={opt.value} type="button" onClick={() => setNewOrderForm(p => ({ ...p, microbialAnalysis: opt.value }))}
+                        className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all",
+                          newOrderForm.microbialAnalysis === opt.value
+                            ? opt.value === "Critical" ? "bg-red-500/10 border-red-500/20 text-red-400"
+                              : opt.value === "Important" ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                              : "bg-blue-500/10 border-blue-500/20 text-blue-400"
+                            : isLight ? "border-gray-200 text-gray-500 hover:border-gray-300" : "border-white/10 text-muted-foreground hover:border-white/20"
+                        )}>
+                        <span className={cn("w-2 h-2 rounded-full", opt.color)} />{opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className={cn("px-6 py-4 border-t flex gap-3", isLight ? "border-gray-100" : "border-white/5")}>
+                <button onClick={() => {
+                    if (!newOrderForm.accountId || !newOrderForm.volume) {
+                      toast({ title: "Account and Volume are required", variant: "destructive" }); return;
+                    }
+                    createOrderMutation.mutate({
+                      accountId: Number(newOrderForm.accountId),
+                      volume: Number(newOrderForm.volume),
+                      price: newOrderForm.price || null,
+                      expectedDeliveryDate: newOrderForm.expectedDeliveryDate || null,
+                      rawMaterialStatus: newOrderForm.rawMaterialStatus,
+                      microbialAnalysis: newOrderForm.microbialAnalysis,
+                      orderStatus: "Ordered",
+                      isPlanned: false,
+                    });
+                  }}
+                  disabled={createOrderMutation.status === "pending"}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-60">
+                  {createOrderMutation.status === "pending" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                  {createOrderMutation.status === "pending" ? "Creating…" : "Create Order"}
+                </button>
+                <button onClick={() => setIsNewOrderOpen(false)} className={cn("px-5 py-2.5 border rounded-xl text-sm transition-colors", isLight ? "border-gray-200 text-gray-600 hover:bg-gray-50" : "border-white/10 text-muted-foreground hover:text-foreground")}>
+                  Cancel
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -967,6 +957,11 @@ function ProductionPlanningTab() {
     blendCategory: "Sweet" as ProductionFloor["blendCategory"],
     maxCapacityKg: "0",
   });
+  const [editFloorOpen, setEditFloorOpen] = React.useState(false);
+  const [editingFloor, setEditingFloor] = React.useState<ProductionFloor | null>(null);
+  const [editFloorForm, setEditFloorForm] = React.useState({ floorName: "", blendCategory: "Sweet" as ProductionFloor["blendCategory"], maxCapacityKg: "0" });
+  const [deleteConfirmFloorId, setDeleteConfirmFloorId] = React.useState<number | null>(null);
+  const [includeSaturday, setIncludeSaturday] = React.useState(false);
   const [planningView, setPlanningView] = React.useState<PlanningViewMode>("weekly");
   const [assistedState, setAssistedState] = React.useState<"idle" | "optimizing" | "done">("idle");
   const [printOpen, setPrintOpen] = React.useState(false);
@@ -1081,25 +1076,51 @@ function ProductionPlanningTab() {
   const createFloorMutation = useMutation({
     mutationFn: async (payload: Record<string, unknown>) => {
       const res = await fetch(`${BASE}api/mdp/production-floors`, {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify(payload),
+        method: "POST", headers: authHeaders(), body: JSON.stringify(payload),
       });
-      if (!res.ok) {
-        const error = await res.json().catch(() => ({}));
-        throw new Error(error.error || "Failed to create production floor");
-      }
+      if (!res.ok) { const error = await res.json().catch(() => ({})); throw new Error(error.error || "Failed to create production floor"); }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-floors"] });
       setFloorModalOpen(false);
       setFloorForm({ floorName: "", blendCategory: "Sweet", maxCapacityKg: "0" });
-      toast({ title: "Floor added", description: "New production floor was created." });
+      toast({ title: "Floor added" });
     },
-    onError: (error: any) => {
-      toast({ title: "Could not add floor", description: error?.message || "Try again.", variant: "destructive" });
+    onError: (error: any) => toast({ title: "Could not add floor", description: error?.message, variant: "destructive" }),
+  });
+
+  const updateFloorMutation = useMutation({
+    mutationFn: async ({ id, ...payload }: { id: number } & Record<string, unknown>) => {
+      const res = await fetch(`${BASE}api/mdp/production-floors/${id}`, {
+        method: "PUT", headers: authHeaders(), body: JSON.stringify(payload),
+      });
+      if (!res.ok) { const error = await res.json().catch(() => ({})); throw new Error(error.error || "Failed to update floor"); }
+      return res.json();
     },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-floors"] });
+      setEditFloorOpen(false);
+      setEditingFloor(null);
+      toast({ title: "Floor updated" });
+    },
+    onError: (error: any) => toast({ title: "Could not update floor", description: error?.message, variant: "destructive" }),
+  });
+
+  const deleteFloorMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`${BASE}api/mdp/production-floors/${id}`, {
+        method: "DELETE", headers: authHeaders(),
+      });
+      if (!res.ok) { const error = await res.json().catch(() => ({})); throw new Error(error.error || "Failed to delete floor"); }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-floors"] });
+      setDeleteConfirmFloorId(null);
+      toast({ title: "Floor deleted" });
+    },
+    onError: (error: any) => toast({ title: "Could not delete floor", description: error?.message, variant: "destructive" }),
   });
 
   const createAssignmentMutation = useMutation({
@@ -1283,22 +1304,43 @@ function ProductionPlanningTab() {
     });
   };
 
+  const handleDropOnFloorDay = async (floor: ProductionFloor, day: string, event: React.DragEvent) => {
+    event.preventDefault();
+    setDragOverFloorId(null);
+    if (!dragged) return;
+    const plannedOrder = plannedOrders.find((order) => order.id === dragged.productionOrderId);
+    if (!plannedOrder) return;
+
+    if (dragged.type === "planned") {
+      await createAssignmentMutation.mutateAsync({
+        floorId: floor.id, productionOrderId: plannedOrder.id,
+        weekLabel: selectedWeekLabel, assignedDay: day, planStatus: "Planned",
+      });
+      toast({ title: "Order assigned", description: `Assigned to ${floor.floorName} — ${day}.` });
+    }
+    if (dragged.type === "assigned" && dragged.assignmentId && dragged.floorId !== undefined) {
+      await deleteAssignmentMutation.mutateAsync(dragged.assignmentId);
+      await createAssignmentMutation.mutateAsync({
+        floorId: floor.id, productionOrderId: plannedOrder.id,
+        weekLabel: selectedWeekLabel, assignedDay: day, planStatus: "Planned",
+      });
+    }
+    setDragged(null);
+  };
+
   const handleAssistedPlanning = async () => {
     setAssistedState("optimizing");
     try {
       const unassignedOrders = plannedOrders.filter((order) => !assignedMap.has(order.id));
-      const assignmentPayloads = buildOptimizedAssignments(floors, unassignedOrders, selectedWeekLabel);
+      const assignmentPayloads = buildOptimizedAssignments(floors, unassignedOrders, selectedWeekLabel, includeSaturday);
       await Promise.all(
         assignmentPayloads.map((payload) =>
           fetch(`${BASE}api/mdp/floor-assignments`, {
             method: "POST",
             headers: authHeaders(),
             body: JSON.stringify({
-              floorId: payload.floor_id,
-              productionOrderId: payload.production_order_id,
-              weekLabel: payload.week_label,
-              assignedDay: payload.assigned_day,
-              planStatus: "Planned",
+              floorId: payload.floor_id, productionOrderId: payload.production_order_id,
+              weekLabel: payload.week_label, assignedDay: payload.assigned_day, planStatus: "Planned",
             }),
           })
         )
@@ -1307,7 +1349,7 @@ function ProductionPlanningTab() {
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
       setAssistedState("done");
       window.setTimeout(() => setAssistedState("idle"), 3000);
-      toast({ title: "Plan Optimized", description: "Planned orders have been assigned." });
+      toast({ title: "AI Plan Optimized", description: `Planned orders sorted across floors — Critical first, Seasoning/Dairy Premix separated.` });
     } catch (error: any) {
       setAssistedState("idle");
       toast({ title: "Could not optimize plan", description: error?.message || "Try again.", variant: "destructive" });
@@ -1350,14 +1392,24 @@ function ProductionPlanningTab() {
           </select>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {planningView === "weekly" && (
+            <label className={cn("flex items-center gap-2 px-3 h-9 rounded-xl border text-xs font-medium cursor-pointer transition-all",
+              isLight ? "border-slate-200 text-slate-700 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5"
+            )}>
+              <input type="checkbox" checked={includeSaturday} onChange={e => setIncludeSaturday(e.target.checked)} className="accent-primary" />
+              Include Saturday
+            </label>
+          )}
           <button
             onClick={handleAssistedPlanning}
-            disabled={assistedState === "optimizing" || !!assignedMap.size === false}
+            disabled={assistedState === "optimizing"}
             className={cn("flex items-center gap-1.5 h-9 px-4 rounded-xl text-xs font-semibold border transition-all disabled:opacity-50",
-              isLight ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50" : "border-white/10 bg-white/5 text-foreground hover:bg-white/10"
+              assistedState === "done"
+                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                : "bg-primary/10 border-primary/30 text-primary hover:bg-primary hover:text-white"
             )}
           >
-            {assistedState === "optimizing" ? "Optimizing…" : assistedState === "done" ? "✓ Plan Optimized" : "Assisted Planning"}
+            {assistedState === "optimizing" ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> AI Planning…</> : assistedState === "done" ? "✓ AI Plan Applied" : "🤖 AI Assisted Planning"}
           </button>
           <button
             onClick={() => setPrintOpen(true)}
@@ -1447,106 +1499,121 @@ function ProductionPlanningTab() {
                 const assignedRows = floorOrder(floor.id);
                 const totalKg = assignedRows.reduce((sum, row) => sum + Number(row.order.volume ?? 0), 0);
                 const progress = Math.min(100, Math.round((totalKg / (floor.maxCapacityKg || 1)) * 100));
-                const barClass =
-                  progress > 90 ? "bg-red-500" : progress > 70 ? "bg-amber-500" : "bg-emerald-500";
+                const barClass = progress > 90 ? "bg-red-500" : progress > 70 ? "bg-amber-500" : "bg-emerald-500";
+                const weekDays = ["Mon", "Tue", "Wed", "Thu", "Fri", ...(includeSaturday ? ["Sat"] : [])];
+
+                const assignedOrderCard = (row: FloorAssignmentRow) => (
+                  <div
+                    key={row.assignment.id}
+                    draggable
+                    onDragStart={e => { e.dataTransfer.effectAllowed = "move"; setDragged({ type: "assigned", productionOrderId: row.order.id, assignmentId: row.assignment.id, floorId: floor.id }); }}
+                    onDragOver={e => e.preventDefault()}
+                    onDrop={e => { e.preventDefault(); if (dragged?.type === "assigned" && dragged.assignmentId && dragged.floorId === floor.id) handleReorder(floor.id, dragged.assignmentId, row.assignment.id); }}
+                    className={cn("rounded-xl border p-2.5 cursor-grab active:cursor-grabbing",
+                      isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5"
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="min-w-0">
+                        <div className="font-medium text-foreground text-xs truncate">{row.order.accountName ?? "Unknown"}</div>
+                        <div className="text-[10px] text-muted-foreground truncate">{row.order.productType ?? "—"}</div>
+                      </div>
+                      <div className="text-xs font-semibold text-foreground shrink-0">{Number(row.order.volume ?? 0).toLocaleString()} KG</div>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button onClick={() => handleUnassign(row.assignment.id)} className={cn("flex-1 py-1 rounded-lg text-[10px] font-semibold border transition-colors", isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}>Unplan</button>
+                      <button onClick={() => handleProduce(row.assignment.id, row.order.id)} className="flex-1 py-1 rounded-lg text-[10px] font-semibold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-colors">Produced</button>
+                    </div>
+                  </div>
+                );
 
                 return (
-                  <div
-                    key={floor.id}
-                    className={cn("rounded-2xl border p-4 transition-colors",
-                      dragOverFloorId === floor.id
-                        ? "border-primary/50 bg-primary/5"
-                        : isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5"
-                    )}
-                    onDragOver={(event) => {
-                      event.preventDefault();
-                      setDragOverFloorId(floor.id);
-                    }}
-                    onDragLeave={() => setDragOverFloorId((current) => (current === floor.id ? null : current))}
-                    onDrop={(event) => handleDropOnFloor(floor, event)}
+                  <div key={floor.id} className={cn("rounded-2xl border p-4 transition-colors",
+                    dragOverFloorId === floor.id ? "border-primary/50 bg-primary/5"
+                      : isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5"
+                  )}
+                    onDragOver={e => { if (planningView === "daily") { e.preventDefault(); setDragOverFloorId(floor.id); } }}
+                    onDragLeave={() => setDragOverFloorId(c => c === floor.id ? null : c)}
+                    onDrop={e => planningView === "daily" ? handleDropOnFloor(floor, e) : undefined}
                   >
-                    <div className="flex flex-col gap-3">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <h3 className="text-sm font-semibold text-foreground">{floor.floorName}</h3>
-                          <Badge variant="secondary" className="mt-1.5">
-                            {floor.blendCategory}
-                          </Badge>
-                        </div>
-                        <div className="text-right text-xs text-muted-foreground">
-                          <div>{totalKg} / {floor.maxCapacityKg} KG</div>
-                          <div className={cn("mt-2 h-1.5 overflow-hidden rounded-full", isLight ? "bg-slate-200" : "bg-white/10")}>
+                    {/* Header */}
+                    <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+                      <div>
+                        <h3 className="text-sm font-semibold text-foreground">{floor.floorName}</h3>
+                        <span className={cn("inline-flex mt-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border",
+                          isLight ? "border-slate-200 text-slate-600 bg-white" : "border-white/10 text-muted-foreground bg-white/5"
+                        )}>{floor.blendCategory}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="text-right text-xs text-muted-foreground mr-1">
+                          <div className="font-medium">{totalKg.toLocaleString()} / {floor.maxCapacityKg.toLocaleString()} KG</div>
+                          <div className={cn("mt-1 h-1.5 w-24 overflow-hidden rounded-full", isLight ? "bg-slate-200" : "bg-white/10")}>
                             <div className={`${barClass} h-full transition-all`} style={{ width: `${progress}%` }} />
                           </div>
                         </div>
-                      </div>
-
-                      <div className={cn("min-h-[160px] rounded-xl border border-dashed p-3",
-                        isLight ? "border-slate-200 bg-white/60" : "border-white/10 bg-black/5"
-                      )}>
-                        {assignedRows.length === 0 ? (
-                          <div className="flex h-full min-h-[120px] items-center justify-center text-sm text-muted-foreground/60">
-                            Drop orders here
+                        <button onClick={() => { setEditingFloor(floor); setEditFloorForm({ floorName: floor.floorName, blendCategory: floor.blendCategory, maxCapacityKg: String(floor.maxCapacityKg) }); setEditFloorOpen(true); }}
+                          className={cn("p-1.5 rounded-lg transition-colors text-muted-foreground hover:text-foreground", isLight ? "hover:bg-slate-100" : "hover:bg-white/10")} title="Edit floor">
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        {deleteConfirmFloorId === floor.id ? (
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => deleteFloorMutation.mutate(floor.id)} className="px-2 py-1 rounded-lg text-[10px] font-bold bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20">Confirm</button>
+                            <button onClick={() => setDeleteConfirmFloorId(null)} className={cn("px-2 py-1 rounded-lg text-[10px] font-medium", isLight ? "text-slate-500 hover:bg-slate-100" : "text-muted-foreground hover:bg-white/5")}>Cancel</button>
                           </div>
                         ) : (
-                          <div className="space-y-2">
-                            {assignedRows.map((row) => (
-                              <div
-                                key={row.assignment.id}
-                                draggable
-                                onDragStart={(event) => {
-                                  event.dataTransfer.effectAllowed = "move";
-                                  setDragged({
-                                    type: "assigned",
-                                    productionOrderId: row.order.id,
-                                    assignmentId: row.assignment.id,
-                                    floorId: floor.id,
-                                  });
-                                }}
-                                onDragOver={(event) => {
-                                  event.preventDefault();
-                                }}
-                                onDrop={(event) => {
-                                  event.preventDefault();
-                                  if (dragged?.type === "assigned" && dragged.assignmentId && dragged.floorId === floor.id) {
-                                    handleReorder(floor.id, dragged.assignmentId, row.assignment.id);
-                                  }
-                                }}
-                                className={cn("rounded-xl border p-3 cursor-grab active:cursor-grabbing",
-                                  isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5"
-                                )}
-                              >
-                                <div className="flex flex-col gap-2">
-                                  <div className="flex items-center justify-between gap-3">
-                                    <div>
-                                      <div className="font-medium text-foreground">{row.order.accountName ?? "Unknown account"}</div>
-                                      <div className="text-sm text-muted-foreground">{row.order.productType ?? "Unknown product"}</div>
-                                    </div>
-                                    <div className="text-sm text-muted-foreground">{Number(row.order.volume ?? 0)} KG</div>
-                                  </div>
-                                  <div className="flex flex-wrap gap-2">
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => handleUnassign(row.assignment.id)}
-                                    >
-                                      Unplan
-                                    </Button>
-                                    <Button
-                                      variant="secondary"
-                                      size="sm"
-                                      onClick={() => handleProduce(row.assignment.id, row.order.id)}
-                                    >
-                                      Produced
-                                    </Button>
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
+                          <button onClick={() => setDeleteConfirmFloorId(floor.id)}
+                            className={cn("p-1.5 rounded-lg transition-colors text-muted-foreground hover:text-red-400", isLight ? "hover:bg-red-50" : "hover:bg-red-500/10")} title="Delete floor">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         )}
                       </div>
                     </div>
+
+                    {/* Daily view: flat drop zone */}
+                    {planningView === "daily" && (
+                      <div className={cn("min-h-[120px] rounded-xl border border-dashed p-3",
+                        isLight ? "border-slate-200 bg-white/60" : "border-white/10 bg-black/5"
+                      )}>
+                        {assignedRows.length === 0 ? (
+                          <div className="flex h-full min-h-[80px] items-center justify-center text-xs text-muted-foreground/60">Drop orders here</div>
+                        ) : (
+                          <div className="space-y-2">{assignedRows.map(assignedOrderCard)}</div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Weekly view: day columns */}
+                    {planningView === "weekly" && (
+                      <div className={cn("grid gap-2 mt-1", includeSaturday ? "grid-cols-6" : "grid-cols-5")}>
+                        {weekDays.map(day => {
+                          const dayRows = assignedRows.filter(r => r.assignment.assignedDay === day);
+                          const dayKg = dayRows.reduce((s, r) => s + Number(r.order.volume ?? 0), 0);
+                          const dayProgress = Math.min(100, Math.round((dayKg / (floor.maxCapacityKg || 1)) * 100));
+                          const dayBar = dayProgress > 90 ? "bg-red-500" : dayProgress > 70 ? "bg-amber-500" : "bg-emerald-500";
+                          return (
+                            <div key={day}
+                              onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOverFloorId(floor.id); }}
+                              onDragLeave={() => setDragOverFloorId(null)}
+                              onDrop={e => { e.stopPropagation(); handleDropOnFloorDay(floor, day, e); }}
+                              className={cn("rounded-xl border border-dashed p-2 min-h-[100px] transition-colors",
+                                dragOverFloorId === floor.id ? "border-primary/50 bg-primary/5"
+                                  : isLight ? "border-slate-200 bg-white/60" : "border-white/10 bg-black/5"
+                              )}>
+                              <div className="text-[10px] font-bold text-muted-foreground mb-1">{day}</div>
+                              <div className={cn("h-1 rounded-full mb-2 overflow-hidden", isLight ? "bg-slate-100" : "bg-white/10")}>
+                                <div className={`${dayBar} h-full`} style={{ width: `${dayProgress}%` }} />
+                              </div>
+                              <div className="text-[9px] text-muted-foreground/60 mb-1.5">{dayKg.toLocaleString()}/{floor.maxCapacityKg.toLocaleString()} kg</div>
+                              <div className="space-y-1.5">
+                                {dayRows.length === 0
+                                  ? <div className="text-[9px] text-muted-foreground/40 text-center py-2">Drop here</div>
+                                  : dayRows.map(assignedOrderCard)}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })
@@ -1661,6 +1728,48 @@ function ProductionPlanningTab() {
         </div>
       </div>
 
+      {/* ── Edit Floor Modal ── */}
+      <AnimatePresence>
+        {editFloorOpen && editingFloor && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className={cn("border rounded-2xl shadow-2xl w-full max-w-md flex flex-col", isLight ? "bg-white border-gray-200" : "glass-panel border-white/10")}>
+              <div className={cn("flex items-center justify-between px-6 py-4 border-b", isLight ? "border-gray-100" : "border-white/5")}>
+                <h2 className="text-base font-bold text-foreground">Edit Production Floor</h2>
+                <button onClick={() => setEditFloorOpen(false)} className={cn("p-1.5 rounded-lg", isLight ? "hover:bg-gray-100 text-gray-500" : "hover:bg-white/10 text-muted-foreground")}><X className="w-4 h-4" /></button>
+              </div>
+              <div className="p-6 space-y-4">
+                {(() => {
+                  const iCls = cn("w-full h-10 rounded-xl border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground", isLight ? "border-gray-200 bg-white" : "border-white/10 bg-black/30");
+                  const lCls = "text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block";
+                  return (<>
+                    <div><label className={lCls}>Floor Name</label><input value={editFloorForm.floorName} onChange={e => setEditFloorForm(p => ({ ...p, floorName: e.target.value }))} className={iCls} /></div>
+                    <div>
+                      <label className={lCls}>Blend Category</label>
+                      <select value={editFloorForm.blendCategory} onChange={e => setEditFloorForm(p => ({ ...p, blendCategory: e.target.value as ProductionFloor["blendCategory"] }))} className={iCls + " cursor-pointer"}>
+                        <option value="Sweet" className="bg-black text-white">Sweet</option>
+                        <option value="Savory" className="bg-black text-white">Savory</option>
+                        <option value="Sweet/Savory" className="bg-black text-white">Sweet/Savory</option>
+                        <option value="Savory/Sweet" className="bg-black text-white">Savory/Sweet</option>
+                      </select>
+                    </div>
+                    <div><label className={lCls}>Max Capacity (kg/day)</label><input value={editFloorForm.maxCapacityKg} onChange={e => setEditFloorForm(p => ({ ...p, maxCapacityKg: e.target.value }))} type="number" min="0" className={iCls} /></div>
+                  </>);
+                })()}
+              </div>
+              <div className={cn("px-6 py-4 border-t flex gap-3", isLight ? "border-gray-100" : "border-white/5")}>
+                <button onClick={() => updateFloorMutation.mutate({ id: editingFloor.id, floorName: editFloorForm.floorName, blendCategory: editFloorForm.blendCategory, maxCapacityKg: Number(editFloorForm.maxCapacityKg) })}
+                  disabled={!editFloorForm.floorName.trim() || Number(editFloorForm.maxCapacityKg) <= 0}
+                  className="flex-1 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-60">
+                  Save Changes
+                </button>
+                <button onClick={() => setEditFloorOpen(false)} className={cn("px-5 py-2.5 border rounded-xl text-sm", isLight ? "border-gray-200 text-gray-600" : "border-white/10 text-muted-foreground")}>Cancel</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       <Dialog open={printOpen} onOpenChange={setPrintOpen}>
         <DialogContent className="sm:max-w-4xl">
           <DialogHeader>
@@ -1715,6 +1824,24 @@ function ProductionHistoryTab() {
   const { theme } = useTheme();
   const isLight = theme === "light";
   const [view, setView] = React.useState<ProductionHistoryView>("weekly");
+
+  const allOrdersQuery = useQuery({
+    queryKey: ["/api/mdp/production-orders"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}api/mdp/production-orders`, { headers: authHeaders() });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || "Failed to load orders"); }
+      return res.json() as Promise<ProductionOrder[]>;
+    },
+    staleTime: 1000 * 60,
+  }) as UseQueryResult<ProductionOrder[], Error>;
+
+  const pendingOrders = React.useMemo(() => {
+    const all = allOrdersQuery.data ?? [];
+    const now = new Date();
+    const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay() + 1); weekStart.setHours(0,0,0,0);
+    const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 6);
+    return all.filter(o => !o.isPlanned);
+  }, [allOrdersQuery.data]);
 
   const producedHistoryQuery = useQuery({
     queryKey: ["/api/mdp/produced-orders", view],
@@ -1807,6 +1934,65 @@ function ProductionHistoryTab() {
         </DropdownMenu>
       </div>
 
+      {/* ── Pending Orders ── */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <h3 className="text-base font-semibold text-foreground">Pending Orders</h3>
+          <span className={cn("text-xs font-semibold px-2 py-0.5 rounded-full", pendingOrders.length > 0 ? "bg-amber-500/10 text-amber-400" : "bg-white/5 text-muted-foreground")}>
+            {pendingOrders.length}
+          </span>
+        </div>
+        {pendingOrders.length === 0 ? (
+          <div className={cn("rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5")}>
+            All production orders for this week have been planned.
+          </div>
+        ) : (
+          <div className={cn("glass-card rounded-2xl border overflow-x-auto", isLight ? "border-slate-200 bg-white" : "border-white/5 bg-white/5")}>
+            <table className="w-full text-sm">
+              <thead className={cn("text-xs text-muted-foreground border-b", isLight ? "bg-slate-50 border-slate-200" : "bg-white/5 border-white/5")}>
+                <tr>
+                  <th className="px-4 py-3 text-left font-medium">Account / Product</th>
+                  <th className="px-4 py-3 text-left font-medium">Product Type</th>
+                  <th className="px-4 py-3 text-right font-medium">Volume (KG)</th>
+                  <th className="px-4 py-3 text-left font-medium">Raw Material</th>
+                  <th className="px-4 py-3 text-left font-medium">Microbial</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingOrders.map(order => (
+                  <tr key={order.id} className={cn("border-b last:border-0", isLight ? "border-slate-100" : "border-white/5")}>
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-foreground text-sm">{getOrderAccountText(order)}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{getOrderProductText(order)}</p>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      {PRODUCT_TYPES.find(p => p.value === order.productType)?.label ?? order.productType ?? "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm font-medium">{Number(order.volume ?? 0).toLocaleString()}</td>
+                    <td className="px-4 py-3">
+                      <span className={cn("text-xs font-semibold px-2 py-0.5 rounded-full",
+                        order.rawMaterialStatus === "Available" ? "bg-emerald-500/10 text-emerald-400" :
+                        order.rawMaterialStatus === "Not Available" ? "bg-red-500/10 text-red-400" :
+                        "bg-amber-500/10 text-amber-400"
+                      )}>{order.rawMaterialStatus ?? "Pending"}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5">
+                        <span className={cn("w-2 h-2 rounded-full", getMicrobialColor(order.microbialAnalysis ?? "Normal"))} />
+                        <span className="text-xs text-muted-foreground">{order.microbialAnalysis ?? "Normal"}</span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── Production History ── */}
+      <div>
+        <h3 className="text-base font-semibold text-foreground mb-3">Production History</h3>
       {producedOrders.length === 0 ? (
         <div className={cn("rounded-2xl border border-dashed p-10 text-center", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5")}>
           <p className="text-lg font-semibold text-foreground">No production history yet.</p>
@@ -1867,6 +2053,7 @@ function ProductionHistoryTab() {
           </Table>
         </div>
       )}
+      </div>
     </div>
   );
 }
