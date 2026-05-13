@@ -167,7 +167,6 @@ router.post("/production-floors", requireAuth, async (req: AuthRequest, res) => 
       floorName: body.floorName,
       blendCategory: body.blendCategory,
       maxCapacityKg: body.maxCapacityKg !== undefined ? Number(body.maxCapacityKg) : 0,
-      blenderCapacityKg: body.blenderCapacityKg !== undefined ? Number(body.blenderCapacityKg) : 0,
       createdAt: new Date(),
     }).returning();
     res.status(201).json(created);
@@ -185,7 +184,6 @@ router.put("/production-floors/:id", requireAuth, async (req: AuthRequest, res) 
       floorName: body.floorName,
       blendCategory: body.blendCategory,
       maxCapacityKg: body.maxCapacityKg !== undefined ? Number(body.maxCapacityKg) : undefined,
-      blenderCapacityKg: body.blenderCapacityKg !== undefined ? Number(body.blenderCapacityKg) : undefined,
     }).where(eq(mdpProductionFloorsTable.id, id)).returning();
 
     if (!updated) {
@@ -243,7 +241,6 @@ router.post("/floor-assignments", requireAuth, async (req: AuthRequest, res) => 
       productionOrderId: Number(body.productionOrderId),
       weekLabel: body.weekLabel,
       assignedDay: body.assignedDay,
-      shift: body.shift ?? "Day",
       planStatus: body.planStatus ?? "Planned",
       assignedAt: new Date(),
       producedAt: body.producedAt ? new Date(body.producedAt) : null,
