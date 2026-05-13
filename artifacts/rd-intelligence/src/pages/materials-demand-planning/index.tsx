@@ -1592,144 +1592,211 @@ function ProductionPlanningTab() {
             </Dialog>
           </div>
 
-          <div className="space-y-4">
-            {floors.length === 0 ? (
-              <div className={cn("rounded-2xl border border-dashed p-8 text-center text-sm text-muted-foreground",
-                isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5"
-              )}>
-                No floors defined yet. Add a production floor to begin scheduling.
-              </div>
-            ) : (
-              floors.map((floor) => {
-                const assignedRows = floorOrder(floor.id);
-                const totalKg = assignedRows.reduce((sum, row) => sum + Number(row.order.volume ?? 0), 0);
-                const progress = Math.min(100, Math.round((totalKg / (floor.maxCapacityKg || 1)) * 100));
-                const barClass = progress > 90 ? "bg-red-500" : progress > 70 ? "bg-amber-500" : "bg-emerald-500";
-                const weekDays = ["Mon", "Tue", "Wed", "Thu", "Fri", ...(includeSaturday ? ["Sat"] : [])];
+          {/* ── Shared order card renderer ── */}
+          {(() => {
+            const weekDays = ["Mon", "Tue", "Wed", "Thu", "Fri", ...(includeSaturday ? ["Sat"] : [])];
 
-                const assignedOrderCard = (row: FloorAssignmentRow) => (
-                  <div
-                    key={row.assignment.id}
-                    draggable
-                    onDragStart={e => { e.dataTransfer.effectAllowed = "move"; setDragged({ type: "assigned", productionOrderId: row.order.id, assignmentId: row.assignment.id, floorId: floor.id }); }}
-                    onDragOver={e => e.preventDefault()}
-                    onDrop={e => { e.preventDefault(); if (dragged?.type === "assigned" && dragged.assignmentId && dragged.floorId === floor.id) handleReorder(floor.id, dragged.assignmentId, row.assignment.id); }}
-                    className={cn("rounded-xl border p-2.5 cursor-grab active:cursor-grabbing",
-                      isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5"
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-2 mb-2">
-                      <div className="min-w-0">
-                        <div className="font-medium text-foreground text-xs truncate">{row.order.accountName ?? "Unknown"}</div>
-                        <div className="text-[10px] text-muted-foreground truncate">{row.order.productType ?? "—"}</div>
-                      </div>
-                      <div className="text-xs font-semibold text-foreground shrink-0">{Number(row.order.volume ?? 0).toLocaleString()} KG</div>
-                    </div>
-                    <div className="flex gap-1.5">
-                      <button onClick={() => handleUnassign(row.assignment.id)} className={cn("flex-1 py-1 rounded-lg text-[10px] font-semibold border transition-colors", isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}>Unplan</button>
-                      <button onClick={() => handleProduce(row.assignment.id, row.order.id)} className="flex-1 py-1 rounded-lg text-[10px] font-semibold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-colors">Produced</button>
-                    </div>
+            const makeOrderCard = (floorId: number) => (row: FloorAssignmentRow) => (
+              <div
+                key={row.assignment.id}
+                draggable
+                onDragStart={e => { e.dataTransfer.effectAllowed = "move"; setDragged({ type: "assigned", productionOrderId: row.order.id, assignmentId: row.assignment.id, floorId }); }}
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => { e.preventDefault(); if (dragged?.type === "assigned" && dragged.assignmentId && dragged.floorId === floorId) handleReorder(floorId, dragged.assignmentId, row.assignment.id); }}
+                className={cn("rounded-xl border p-2.5 cursor-grab active:cursor-grabbing",
+                  isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5"
+                )}
+              >
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div className="min-w-0">
+                    <div className="font-medium text-foreground text-xs truncate">{row.order.accountName ?? "Unknown"}</div>
+                    <div className="text-[10px] text-muted-foreground truncate">{row.order.productType ?? "—"}</div>
                   </div>
-                );
+                  <div className="text-xs font-semibold text-foreground shrink-0">{Number(row.order.volume ?? 0).toLocaleString()} KG</div>
+                </div>
+                <div className="flex gap-1.5">
+                  <button onClick={() => handleUnassign(row.assignment.id)} className={cn("flex-1 py-1 rounded-lg text-[10px] font-semibold border transition-colors", isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}>Unplan</button>
+                  <button onClick={() => handleProduce(row.assignment.id, row.order.id)} className="flex-1 py-1 rounded-lg text-[10px] font-semibold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-colors">Produced</button>
+                </div>
+              </div>
+            );
 
-                return (
-                  <div key={floor.id} className={cn("rounded-2xl border p-4 transition-colors",
-                    dragOverFloorId === floor.id ? "border-primary/50 bg-primary/5"
-                      : isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5"
-                  )}
-                    onDragOver={e => { if (planningView === "daily") { e.preventDefault(); setDragOverFloorId(floor.id); } }}
-                    onDragLeave={() => setDragOverFloorId(c => c === floor.id ? null : c)}
-                    onDrop={e => planningView === "daily" ? handleDropOnFloor(floor, e) : undefined}
-                  >
-                    {/* Header */}
-                    <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
-                      <div>
-                        <h3 className="text-sm font-semibold text-foreground">{floor.floorName}</h3>
-                        <span className={cn("inline-flex mt-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border",
-                          isLight ? "border-slate-200 text-slate-600 bg-white" : "border-white/10 text-muted-foreground bg-white/5"
-                        )}>{floor.blendCategory}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <div className="text-right text-xs text-muted-foreground mr-1">
-                          <div className="font-medium">{totalKg.toLocaleString()} / {floor.maxCapacityKg.toLocaleString()} KG</div>
-                          <div className={cn("mt-1 h-1.5 w-24 overflow-hidden rounded-full", isLight ? "bg-slate-200" : "bg-white/10")}>
-                            <div className={`${barClass} h-full transition-all`} style={{ width: `${progress}%` }} />
+            const floorActionButtons = (floor: ProductionFloor) => (
+              <div className="flex items-center gap-1 shrink-0">
+                <button onClick={() => setExpandedFloorId(floor.id)}
+                  className={cn("p-1 rounded-md transition-colors text-muted-foreground hover:text-primary", isLight ? "hover:bg-primary/5" : "hover:bg-primary/10")} title="Expand">
+                  <Maximize2 className="w-3 h-3" />
+                </button>
+                <button onClick={() => { setEditingFloor(floor); setEditFloorForm({ floorName: floor.floorName, blendCategory: floor.blendCategory, maxCapacityKg: String(floor.maxCapacityKg) }); setEditFloorOpen(true); }}
+                  className={cn("p-1 rounded-md transition-colors text-muted-foreground hover:text-foreground", isLight ? "hover:bg-slate-100" : "hover:bg-white/10")} title="Edit">
+                  <Edit3 className="w-3 h-3" />
+                </button>
+                {deleteConfirmFloorId === floor.id ? (
+                  <>
+                    <button onClick={() => deleteFloorMutation.mutate(floor.id)} className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20">Yes</button>
+                    <button onClick={() => setDeleteConfirmFloorId(null)} className={cn("px-1.5 py-0.5 rounded text-[9px]", isLight ? "text-slate-500" : "text-muted-foreground")}>No</button>
+                  </>
+                ) : (
+                  <button onClick={() => setDeleteConfirmFloorId(floor.id)}
+                    className={cn("p-1 rounded-md transition-colors text-muted-foreground hover:text-red-400", isLight ? "hover:bg-red-50" : "hover:bg-red-500/10")} title="Delete">
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            );
+
+            if (floors.length === 0) {
+              return (
+                <div className={cn("rounded-2xl border border-dashed p-8 text-center text-sm text-muted-foreground",
+                  isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5"
+                )}>
+                  No floors defined yet. Add a production floor to begin scheduling.
+                </div>
+              );
+            }
+
+            /* ── DAILY VIEW ── */
+            if (planningView === "daily") {
+              return (
+                <div className="space-y-4">
+                  {floors.map(floor => {
+                    const assignedRows = floorOrder(floor.id);
+                    const totalKg = assignedRows.reduce((s, r) => s + Number(r.order.volume ?? 0), 0);
+                    const progress = Math.min(100, Math.round((totalKg / (floor.maxCapacityKg || 1)) * 100));
+                    const barClass = progress > 90 ? "bg-red-500" : progress > 70 ? "bg-amber-500" : "bg-emerald-500";
+                    return (
+                      <div key={floor.id}
+                        className={cn("rounded-2xl border p-4 transition-colors",
+                          dragOverFloorId === floor.id ? "border-primary/50 bg-primary/5"
+                            : isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5"
+                        )}
+                        onDragOver={e => { e.preventDefault(); setDragOverFloorId(floor.id); }}
+                        onDragLeave={() => setDragOverFloorId(c => c === floor.id ? null : c)}
+                        onDrop={e => handleDropOnFloor(floor, e)}
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+                          <div>
+                            <h3 className="text-sm font-semibold text-foreground">{floor.floorName}</h3>
+                            <span className={cn("inline-flex mt-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border",
+                              isLight ? "border-slate-200 text-slate-600 bg-white" : "border-white/10 text-muted-foreground bg-white/5"
+                            )}>{floor.blendCategory}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <div className="text-right text-xs text-muted-foreground mr-1">
+                              <div className="font-medium">{totalKg.toLocaleString()} / {floor.maxCapacityKg.toLocaleString()} KG</div>
+                              <div className={cn("mt-1 h-1.5 w-24 overflow-hidden rounded-full", isLight ? "bg-slate-200" : "bg-white/10")}>
+                                <div className={`${barClass} h-full transition-all`} style={{ width: `${progress}%` }} />
+                              </div>
+                            </div>
+                            {floorActionButtons(floor)}
                           </div>
                         </div>
-                        <button onClick={() => setExpandedFloorId(floor.id)}
-                          className={cn("p-1.5 rounded-lg transition-colors text-muted-foreground hover:text-primary", isLight ? "hover:bg-primary/5" : "hover:bg-primary/10")} title="Expand full screen">
-                          <Maximize2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button onClick={() => { setEditingFloor(floor); setEditFloorForm({ floorName: floor.floorName, blendCategory: floor.blendCategory, maxCapacityKg: String(floor.maxCapacityKg) }); setEditFloorOpen(true); }}
-                          className={cn("p-1.5 rounded-lg transition-colors text-muted-foreground hover:text-foreground", isLight ? "hover:bg-slate-100" : "hover:bg-white/10")} title="Edit floor">
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-                        {deleteConfirmFloorId === floor.id ? (
-                          <div className="flex items-center gap-1">
-                            <button onClick={() => deleteFloorMutation.mutate(floor.id)} className="px-2 py-1 rounded-lg text-[10px] font-bold bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20">Confirm</button>
-                            <button onClick={() => setDeleteConfirmFloorId(null)} className={cn("px-2 py-1 rounded-lg text-[10px] font-medium", isLight ? "text-slate-500 hover:bg-slate-100" : "text-muted-foreground hover:bg-white/5")}>Cancel</button>
-                          </div>
-                        ) : (
-                          <button onClick={() => setDeleteConfirmFloorId(floor.id)}
-                            className={cn("p-1.5 rounded-lg transition-colors text-muted-foreground hover:text-red-400", isLight ? "hover:bg-red-50" : "hover:bg-red-500/10")} title="Delete floor">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
+                        <div className={cn("min-h-[120px] rounded-xl border border-dashed p-3",
+                          isLight ? "border-slate-200 bg-white/60" : "border-white/10 bg-black/5"
+                        )}>
+                          {assignedRows.length === 0
+                            ? <div className="flex h-full min-h-[80px] items-center justify-center text-xs text-muted-foreground/60">Drop orders here</div>
+                            : <div className="space-y-2">{assignedRows.map(makeOrderCard(floor.id))}</div>
+                          }
+                        </div>
                       </div>
-                    </div>
+                    );
+                  })}
+                </div>
+              );
+            }
 
-                    {/* Daily view: flat drop zone */}
-                    {planningView === "daily" && (
-                      <div className={cn("min-h-[120px] rounded-xl border border-dashed p-3",
-                        isLight ? "border-slate-200 bg-white/60" : "border-white/10 bg-black/5"
-                      )}>
-                        {assignedRows.length === 0 ? (
-                          <div className="flex h-full min-h-[80px] items-center justify-center text-xs text-muted-foreground/60">Drop orders here</div>
-                        ) : (
-                          <div className="space-y-2">{assignedRows.map(assignedOrderCard)}</div>
-                        )}
+            /* ── WEEKLY VIEW: day-first layout ── */
+            return (
+              <div className="space-y-5">
+                {weekDays.map((day, dayIndex) => {
+                  const dayDate = selectedWeek?.days[dayIndex];
+                  const dayFull = dayDate
+                    ? dayDate.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })
+                    : day;
+                  const totalDayKg = floors.reduce((sum, floor) => {
+                    return sum + floorOrder(floor.id)
+                      .filter(r => r.assignment.assignedDay === day)
+                      .reduce((s, r) => s + Number(r.order.volume ?? 0), 0);
+                  }, 0);
+
+                  return (
+                    <div key={day}>
+                      {/* Day header */}
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className={cn("h-px flex-none w-2", isLight ? "bg-slate-300" : "bg-white/20")} />
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className={cn("text-xs font-bold uppercase tracking-widest", isLight ? "text-slate-700" : "text-foreground")}>{dayFull}</span>
+                          {totalDayKg > 0 && (
+                            <span className={cn("text-[10px] px-2 py-0.5 rounded-full border font-semibold",
+                              isLight ? "border-slate-200 text-slate-500 bg-slate-50" : "border-white/10 text-muted-foreground bg-white/5"
+                            )}>{totalDayKg.toLocaleString()} KG total</span>
+                          )}
+                        </div>
+                        <div className={cn("h-px flex-1", isLight ? "bg-slate-200" : "bg-white/10")} />
                       </div>
-                    )}
 
-                    {/* Weekly view: day columns */}
-                    {planningView === "weekly" && (
-                      <div className={cn("grid gap-2 mt-1", includeSaturday ? "grid-cols-6" : "grid-cols-5")}>
-                        {weekDays.map((day, dayIndex) => {
-                          const dayDate = selectedWeek?.days[dayIndex];
-                          const dayLabel = dayDate ? `${day} ${dayDate.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : day;
-                          const dayRows = assignedRows.filter(r => r.assignment.assignedDay === day);
+                      {/* Floor boxes row */}
+                      <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${floors.length}, minmax(0, 1fr))` }}>
+                        {floors.map(floor => {
+                          const dayRows = floorOrder(floor.id).filter(r => r.assignment.assignedDay === day);
                           const dayKg = dayRows.reduce((s, r) => s + Number(r.order.volume ?? 0), 0);
-                          const dayProgress = Math.min(100, Math.round((dayKg / (floor.maxCapacityKg || 1)) * 100));
-                          const dayBar = dayProgress > 90 ? "bg-red-500" : dayProgress > 70 ? "bg-amber-500" : "bg-emerald-500";
+                          const dayUtil = Math.min(100, Math.round((dayKg / (floor.maxCapacityKg || 1)) * 100));
+                          const utilBar = dayUtil > 90 ? "bg-red-500" : dayUtil > 70 ? "bg-amber-500" : "bg-emerald-500";
+                          const isDragTarget = dragOverFloorId === floor.id;
+
                           return (
-                            <div key={day}
+                            <div key={floor.id}
                               onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOverFloorId(floor.id); }}
-                              onDragLeave={() => setDragOverFloorId(null)}
+                              onDragLeave={() => setDragOverFloorId(c => c === floor.id ? null : c)}
                               onDrop={e => { e.stopPropagation(); handleDropOnFloorDay(floor, day, e); }}
-                              className={cn("rounded-xl border border-dashed p-2 min-h-[100px] transition-colors",
-                                dragOverFloorId === floor.id ? "border-primary/50 bg-primary/5"
-                                  : isLight ? "border-slate-200 bg-white/60" : "border-white/10 bg-black/5"
+                              className={cn("rounded-2xl border flex flex-col transition-colors",
+                                isDragTarget ? "border-primary/60 bg-primary/5"
+                                  : isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5"
+                              )}
+                            >
+                              {/* Floor card header */}
+                              <div className={cn("px-3 py-2.5 border-b rounded-t-2xl flex items-start justify-between gap-1",
+                                isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5"
                               )}>
-                              <div className="text-[10px] font-bold text-muted-foreground mb-1">{dayLabel}</div>
-                              <div className={cn("h-1 rounded-full mb-2 overflow-hidden", isLight ? "bg-slate-100" : "bg-white/10")}>
-                                <div className={`${dayBar} h-full`} style={{ width: `${dayProgress}%` }} />
+                                <div className="min-w-0">
+                                  <p className="text-xs font-bold text-foreground truncate">{floor.floorName}</p>
+                                  <p className="text-[10px] text-muted-foreground">{floor.blendCategory} · {floor.maxCapacityKg.toLocaleString()} KG</p>
+                                </div>
+                                {floorActionButtons(floor)}
                               </div>
-                              <div className="text-[9px] text-muted-foreground/60 mb-1.5">{dayKg.toLocaleString()}/{floor.maxCapacityKg.toLocaleString()} kg</div>
-                              <div className="space-y-1.5">
+
+                              {/* Utilisation bar */}
+                              <div className="px-3 pt-2">
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <div className={cn("flex-1 h-1 rounded-full overflow-hidden", isLight ? "bg-slate-200" : "bg-white/10")}>
+                                    <div className={`${utilBar} h-full transition-all`} style={{ width: `${dayUtil}%` }} />
+                                  </div>
+                                  <span className="text-[9px] text-muted-foreground shrink-0">{dayKg.toLocaleString()} / {floor.maxCapacityKg.toLocaleString()} KG · {dayUtil}%</span>
+                                </div>
+                              </div>
+
+                              {/* Orders drop zone */}
+                              <div className={cn("flex-1 p-2 space-y-1.5 min-h-[90px] rounded-b-2xl",
+                                isDragTarget ? "bg-primary/5" : ""
+                              )}>
                                 {dayRows.length === 0
-                                  ? <div className="text-[9px] text-muted-foreground/40 text-center py-2">Drop here</div>
-                                  : dayRows.map(assignedOrderCard)}
+                                  ? <div className={cn("flex h-full min-h-[70px] items-center justify-center text-[10px] rounded-xl border border-dashed",
+                                      isLight ? "border-slate-200 text-slate-400" : "border-white/10 text-muted-foreground/40"
+                                    )}>Drop here</div>
+                                  : dayRows.map(makeOrderCard(floor.id))
+                                }
                               </div>
                             </div>
                           );
                         })}
                       </div>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
 
         <div
