@@ -97,6 +97,28 @@ type ProductionOrder = {
   isPlanned?: boolean;
 };
 
+type SFOrder = {
+  id: number;
+  productionOrderId: number;
+  accountId: number;
+  accountCompany: string | null;
+  productName: string | null;
+  price: string | null;
+  volume: string | null;
+  dateOrdered: string | null;
+  expectedDeliveryDate: string | null;
+  dateDelivered: string | null;
+  createdAt: string;
+};
+
+type MergedOrder = ProductionOrder & {
+  sfId: number;
+  accountId: number;
+  dateOrdered: string | null;
+  expectedDeliveryDate: string | null;
+  createdAt: string;
+};
+
 const DEFAULT_FORM = {
   company: "",
   productName: "",
@@ -609,6 +631,7 @@ function ProductionOrdersTab() {
   const isLight = theme === "light";
   const { addPlannedOrder, removePlannedOrder, isPlanningOrder } = usePlannedOrders();
   const [searchOrders, setSearchOrders] = React.useState("");
+  const [ordersViewMode, setOrdersViewMode] = React.useState<"daily" | "weekly" | "monthly">("daily");
   const [microbialById, setMicrobialById] = React.useState<Record<number, string>>({});
   const [rawMaterialById, setRawMaterialById] = React.useState<Record<number, string>>({});
   const [isNewOrderOpen, setIsNewOrderOpen] = React.useState(false);
@@ -627,7 +650,13 @@ function ProductionOrdersTab() {
   });
   const orderAccounts = accountsForOrderQuery.data ?? [];
 
-  const productionOrdersQuery = useQuery({
+  const accountTypeMap = React.useMemo(() => {
+    const map: Record<number, string | null> = {};
+    orderAccounts.forEach(a => { map[a.id] = a.productType; });
+    return map;
+  }, [orderAccounts]);
+
+  const mdpOrdersQuery = useQuery({
     queryKey: ["/api/mdp/production-orders"],
     queryFn: async () => {
       const res = await fetch(`${BASE}api/mdp/production-orders`, { headers: authHeaders() });
@@ -639,29 +668,71 @@ function ProductionOrdersTab() {
     },
     staleTime: 1000 * 60 * 2,
   }) as UseQueryResult<ProductionOrder[], Error>;
-  const productionOrders = productionOrdersQuery.data ?? [];
-  const ordersLoading = productionOrdersQuery.isLoading;
+
+  const mdpOrderById = React.useMemo(() => {
+    const map: Record<number, ProductionOrder> = {};
+    (mdpOrdersQuery.data ?? []).forEach(o => { map[o.id] = o; });
+    return map;
+  }, [mdpOrdersQuery.data]);
+
+  const sfOrdersQuery = useQuery({
+    queryKey: ["/api/production-orders", ordersViewMode],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}api/production-orders?period=${ordersViewMode}`, { headers: authHeaders() });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error.error || "Failed to load orders");
+      }
+      return res.json() as Promise<SFOrder[]>;
+    },
+    staleTime: 1000 * 60 * 2,
+  });
+
+  const mergedOrders = React.useMemo((): MergedOrder[] => {
+    const sfOrders = sfOrdersQuery.data ?? [];
+    return sfOrders
+      .map(sf => {
+        const mdp = mdpOrderById[sf.productionOrderId] ?? {};
+        return {
+          ...mdp,
+          id: sf.productionOrderId,
+          sfId: sf.id,
+          accountId: sf.accountId,
+          accountCompany: sf.accountCompany,
+          productName: sf.productName,
+          volume: sf.volume,
+          productType: (mdp as ProductionOrder).productType ?? accountTypeMap[sf.accountId] ?? null,
+          sfId_: sf.id,
+          dateOrdered: sf.dateOrdered,
+          expectedDeliveryDate: sf.expectedDeliveryDate,
+          createdAt: sf.createdAt,
+        } as MergedOrder;
+      })
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [sfOrdersQuery.data, mdpOrderById, accountTypeMap]);
+
+  const ordersLoading = sfOrdersQuery.isLoading || mdpOrdersQuery.isLoading;
 
   React.useEffect(() => {
-    if (!productionOrders.length) return;
+    if (!mergedOrders.length) return;
     setMicrobialById((current) => {
       const next = { ...current };
-      productionOrders.forEach((order) => {
+      mergedOrders.forEach((order) => {
         if (!(order.id in next)) next[order.id] = order.microbialAnalysis ?? "Normal";
       });
       return next;
     });
     setRawMaterialById((current) => {
       const next = { ...current };
-      productionOrders.forEach((order) => {
+      mergedOrders.forEach((order) => {
         if (!(order.id in next)) next[order.id] = order.rawMaterialStatus ?? "Pending";
       });
       return next;
     });
-    productionOrders.forEach((order) => {
+    mergedOrders.forEach((order) => {
       if (order.isPlanned) addPlannedOrder(order.id);
     });
-  }, [productionOrders, addPlannedOrder]);
+  }, [mergedOrders, addPlannedOrder]);
 
   const productionUpdate = useMutation({
     mutationFn: async ({ orderId, changes }: { orderId: number; changes: Record<string, unknown> }) => {
@@ -671,7 +742,10 @@ function ProductionOrdersTab() {
       if (!res.ok) { const error = await res.json().catch(() => ({})); throw new Error(error.error || "Failed to save"); }
       return res.json();
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/production-orders"] });
+    },
   });
 
   const createOrderMutation = useMutation({
@@ -684,6 +758,7 @@ function ProductionOrdersTab() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/production-orders"] });
       setIsNewOrderOpen(false);
       setNewOrderForm({ accountId: "", volume: "", price: "", expectedDeliveryDate: "", rawMaterialStatus: "Pending", microbialAnalysis: "Normal" });
       toast({ title: "Order created" });
@@ -725,12 +800,12 @@ function ProductionOrdersTab() {
 
   const tableOrders = React.useMemo(() => {
     const term = searchOrders.trim().toLowerCase();
-    return productionOrders.filter((order) => {
+    return mergedOrders.filter((order) => {
       if (!term) return true;
-      return [getOrderAccountText(order), getOrderProductText(order), order.productType ?? "", String(order.volume ?? "")]
+      return [order.accountCompany ?? "", order.productName ?? "", order.productType ?? "", String(order.volume ?? ""), order.dateOrdered ?? ""]
         .join(" ").toLowerCase().includes(term);
     });
-  }, [productionOrders, searchOrders]);
+  }, [mergedOrders, searchOrders]);
 
   if (ordersLoading) return <PageLoader />;
 
@@ -743,6 +818,15 @@ function ProductionOrdersTab() {
         <div>
           <h2 className="text-lg font-semibold text-foreground">New Production Orders</h2>
           <p className="text-sm text-muted-foreground">Manage production orders, raw material availability and microbial analysis.</p>
+          <div className="flex flex-wrap gap-2 mt-3">
+            {(["daily", "weekly", "monthly"] as const).map(mode => (
+              <button key={mode} onClick={() => setOrdersViewMode(mode)}
+                className={cn("rounded-full px-4 py-1.5 text-xs font-semibold transition duration-150",
+                  ordersViewMode === mode ? "bg-primary text-white" : isLight ? "bg-slate-100 text-slate-600 hover:bg-slate-200" : "bg-white/5 text-muted-foreground hover:bg-white/10")}>
+                {mode === "daily" ? "Daily" : mode === "weekly" ? "Weekly" : "Monthly"}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={() => downloadProductionOrdersCsv(tableOrders)} className={cn("flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-medium border transition-all", isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:border-white/20")}>
@@ -766,10 +850,11 @@ function ProductionOrdersTab() {
         <table className="w-full text-sm">
           <thead className={cn("text-xs text-muted-foreground border-b", isLight ? "bg-slate-50 border-slate-200" : "bg-white/5 border-white/5")}>
             <tr>
-              <th className="px-4 py-3 text-left font-medium">Order ID</th>
-              <th className="px-4 py-3 text-left font-medium">Account / Product</th>
+              <th className="px-4 py-3 text-left font-medium">Account</th>
               <th className="px-4 py-3 text-left font-medium">Product Type</th>
               <th className="px-4 py-3 text-right font-medium">Volume (KG)</th>
+              <th className="px-4 py-3 text-left font-medium">Order</th>
+              <th className="px-4 py-3 text-left font-medium">Expected</th>
               <th className="px-4 py-3 text-left font-medium">Raw Material</th>
               <th className="px-4 py-3 text-left font-medium">Microbial Analysis</th>
               <th className="px-4 py-3 text-left font-medium">Actions</th>
@@ -777,23 +862,24 @@ function ProductionOrdersTab() {
           </thead>
           <tbody>
             {tableOrders.length === 0 ? (
-              <tr><td colSpan={7} className="py-8 text-center text-muted-foreground">No production orders found.</td></tr>
+              <tr><td colSpan={8} className="py-8 text-center text-muted-foreground">No production orders found.</td></tr>
             ) : (
               tableOrders.map((order) => {
                 const microbial = microbialById[order.id] ?? order.microbialAnalysis ?? "Normal";
                 const rawMaterial = rawMaterialById[order.id] ?? order.rawMaterialStatus ?? "Pending";
                 const planned = order.isPlanned || isPlanningOrder(order.id);
                 return (
-                  <tr key={order.id} className={cn("border-b last:border-0 transition-colors", isLight ? "border-slate-100 hover:bg-slate-50/70" : "border-white/5 hover:bg-white/[0.03]")}>
-                    <td className="px-4 py-3 font-mono text-xs text-muted-foreground">#{order.id}</td>
+                  <tr key={order.sfId ?? order.id} className={cn("border-b last:border-0 transition-colors", isLight ? "border-slate-100 hover:bg-slate-50/70" : "border-white/5 hover:bg-white/[0.03]")}>
                     <td className="px-4 py-3">
-                      <p className="font-medium text-foreground text-sm">{getOrderAccountText(order)}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{getOrderProductText(order)}</p>
+                      <p className="font-medium text-foreground text-sm">{order.accountCompany ?? "—"}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{order.productName ?? "—"}</p>
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">
                       {PRODUCT_TYPES.find(p => p.value === order.productType)?.label ?? order.productType ?? "—"}
                     </td>
                     <td className="px-4 py-3 text-right font-medium text-sm">{Number(order.volume ?? 0).toLocaleString()}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{order.dateOrdered ?? "—"}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{order.expectedDeliveryDate ?? "—"}</td>
                     <td className="px-4 py-3">
                       <select value={rawMaterial} onChange={e => handleChangeRawMaterial(order.id, e.target.value)}
                         className={cn("rounded-lg border px-2 py-1.5 text-xs font-semibold cursor-pointer focus:outline-none",
@@ -837,7 +923,7 @@ function ProductionOrdersTab() {
           </tbody>
         </table>
         <div className={cn("px-4 py-2.5 text-xs text-muted-foreground border-t", isLight ? "border-slate-100" : "border-white/5")}>
-          Showing {tableOrders.length} of {productionOrders.length} production orders
+          Showing {tableOrders.length} of {mergedOrders.length} production orders
         </div>
       </div>
 
