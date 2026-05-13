@@ -7,6 +7,15 @@ import * as XLSX from "xlsx";
 
 const BASE = import.meta.env.BASE_URL;
 
+const PRODUCT_TYPE_LABELS: Record<string, string> = {
+  seasoning: "Seasoning",
+  snacks_dusting: "Snacks Dusting",
+  dairy_premix: "Dairy Premix",
+  bakery_dough_premix: "Bakery & Dough Premix",
+  sweet_flavours: "Sweet Flavours",
+  savoury_flavour: "Savoury Flavour",
+};
+
 type TodayOrder = {
   id: number;
   productionOrderId: number;
@@ -25,6 +34,7 @@ type Account = {
   id: number;
   company: string;
   productName: string;
+  productType: string | null;
 };
 
 type ViewMode = "daily" | "weekly" | "monthly";
@@ -140,6 +150,12 @@ export default function NewProductionOrdersPage() {
       return sum + price * volume;
     }, 0);
   }, [filteredOrders]);
+
+  const accountTypeMap = useMemo(() => {
+    const map: Record<number, string | null> = {};
+    accounts.forEach(a => { map[a.id] = a.productType; });
+    return map;
+  }, [accounts]);
 
   const addOrder = async () => {
     if (!form.accountId || !form.price || !form.volume) return;
@@ -312,6 +328,7 @@ export default function NewProductionOrdersPage() {
                 <tr>
                   <th className="px-4 py-3">Account</th>
                   <th className="px-4 py-3">Product</th>
+                  <th className="px-4 py-3">Product Type</th>
                   <th className="px-4 py-3">Price</th>
                   <th className="px-4 py-3">Volume</th>
                   <th className="px-4 py-3">Ordered</th>
@@ -326,6 +343,11 @@ export default function NewProductionOrdersPage() {
                   <tr key={order.id} className="hover:bg-white/5">
                     <td className="px-4 py-3 text-foreground">{order.accountCompany || "Unknown"}</td>
                     <td className="px-4 py-3 text-foreground">{order.productName || "—"}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      {accountTypeMap[order.accountId]
+                        ? (PRODUCT_TYPE_LABELS[accountTypeMap[order.accountId]!] ?? accountTypeMap[order.accountId])
+                        : "—"}
+                    </td>
                     <td className="px-4 py-3">${Number(order.price || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td className="px-4 py-3">{Number(order.volume || 0).toLocaleString()}</td>
                     <td className="px-4 py-3">{order.dateOrdered || "—"}</td>
