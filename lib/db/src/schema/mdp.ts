@@ -33,6 +33,7 @@ export const mdpCustomerProductsTable = pgTable("mdp_customer_products", {
 export const mdpProductionOrdersTable = pgTable("mdp_production_orders", {
   id: serial("id").primaryKey(),
   salesOrderId: integer("sales_order_id"),
+  rawMaterialStatus: text("raw_material_status").default("Pending"),
   microbialAnalysis: text("microbial_analysis").default("Normal"),
   remarks: text("remarks").default(""),
   orderStatus: text("order_status").default("Ordered"),
