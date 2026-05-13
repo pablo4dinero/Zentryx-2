@@ -53,7 +53,6 @@ export const mdpProductionFloorsTable = pgTable("mdp_production_floors", {
   floorName: text("floor_name").notNull(),
   blendCategory: text("blend_category").notNull(),
   maxCapacityKg: integer("max_capacity_kg").notNull(),
-  blenderCapacityKg: integer("blender_capacity_kg").default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -67,7 +66,6 @@ export const mdpFloorAssignmentsTable = pgTable("mdp_floor_assignments", {
   productionOrderId: integer("production_order_id").notNull(),
   weekLabel: text("week_label").notNull(),
   assignedDay: text("assigned_day").notNull(),
-  shift: text("shift").default("Day"),
   planStatus: text("plan_status").default("Planned"),
   assignedAt: timestamp("assigned_at").notNull().defaultNow(),
   producedAt: timestamp("produced_at"),
