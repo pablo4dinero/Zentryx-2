@@ -104,6 +104,8 @@ async function createTablesIfNotExist() {
     await db.execute(sql.raw(`ALTER TABLE today_production_orders ADD COLUMN IF NOT EXISTS expected_delivery_date TEXT;`));
     await db.execute(sql.raw(`ALTER TABLE today_production_orders ADD COLUMN IF NOT EXISTS date_delivered TEXT;`));
     await db.execute(sql.raw(`ALTER TABLE mdp_production_orders ADD COLUMN IF NOT EXISTS raw_material_status TEXT DEFAULT 'Pending';`));
+    await db.execute(sql.raw(`ALTER TABLE mdp_production_floors ADD COLUMN IF NOT EXISTS blender_capacity_kg INTEGER DEFAULT 0;`));
+    await db.execute(sql.raw(`ALTER TABLE mdp_floor_assignments ADD COLUMN IF NOT EXISTS shift TEXT DEFAULT 'Day';`));
 
     logger.info("Database tables created or verified successfully");
   } catch (err) {
