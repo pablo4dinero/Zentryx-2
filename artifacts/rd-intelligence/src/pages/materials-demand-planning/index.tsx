@@ -1,7 +1,7 @@
 import * as React from "react";
 import SalesForecastPage from "@/pages/sales-force/Forecast";
 import html2canvas from "html2canvas";
-import jsPDF from "jspdf";
+import { jsPDF } from "jspdf";
 import { useQuery, useMutation, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -1061,25 +1061,63 @@ function ProductionPlanningTab() {
   const [printOpen, setPrintOpen] = React.useState(false);
   const [isPdfGenerating, setIsPdfGenerating] = React.useState(false);
 
+  const handlePrint = React.useCallback(() => {
+    const style = document.createElement("style");
+    style.id = "zentryx-print-override";
+    style.textContent = `
+      @media print {
+        @page { size: A4 portrait; margin: 1cm; }
+        body * { visibility: hidden !important; }
+        #print-schedule, #print-schedule * { visibility: visible !important; }
+        #print-schedule {
+          position: fixed !important; inset: 0 !important;
+          width: 100% !important; background: white !important;
+          overflow: visible !important; z-index: 99999 !important;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+    window.print();
+    setTimeout(() => { document.getElementById("zentryx-print-override")?.remove(); }, 1500);
+  }, []);
+
   const handleDownloadPdf = React.useCallback(async () => {
     const el = document.getElementById("print-schedule");
     if (!el) return;
     setIsPdfGenerating(true);
     try {
-      const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false });
+      // Clone outside the dialog so overflow:hidden doesn't clip the capture
+      const clone = el.cloneNode(true) as HTMLElement;
+      clone.style.cssText = "position:absolute;top:0;left:-9999px;width:794px;background:white;";
+      document.body.appendChild(clone);
+      const canvas = await html2canvas(clone, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: "#ffffff",
+        logging: false,
+        width: clone.offsetWidth,
+        height: clone.scrollHeight,
+        windowWidth: clone.offsetWidth,
+      });
+      document.body.removeChild(clone);
       const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
       const imgWidth = pageWidth;
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      let y = 0;
-      while (y < imgHeight) {
-        if (y > 0) pdf.addPage();
-        pdf.addImage(imgData, "PNG", 0, -y, imgWidth, imgHeight);
-        y += pageHeight;
+      let yOffset = 0;
+      let page = 0;
+      while (yOffset < imgHeight) {
+        if (page > 0) pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, -yOffset, imgWidth, imgHeight);
+        yOffset += pageHeight;
+        page++;
       }
-      pdf.save(`Production-Schedule-${selectedWeekLabel.replace(/\s/g, "-")}.pdf`);
+      pdf.save(`Production-Schedule-${selectedWeekLabel.replace(/[\s:]/g, "-")}.pdf`);
+    } catch (err) {
+      console.error("PDF generation failed", err);
     } finally {
       setIsPdfGenerating(false);
     }
@@ -2192,10 +2230,11 @@ function ProductionPlanningTab() {
             })()}
           </div>
 
-          <DialogFooter className="space-x-2 mt-2">
+          <DialogFooter className="gap-2 mt-2 flex-wrap">
             <Button variant="outline" onClick={() => setPrintOpen(false)}>Close</Button>
+            <Button variant="outline" onClick={handlePrint}>Print</Button>
             <Button onClick={handleDownloadPdf} disabled={isPdfGenerating}>
-              {isPdfGenerating ? "Generating…" : "Download PDF"}
+              {isPdfGenerating ? "Generating…" : "Download"}
             </Button>
           </DialogFooter>
         </DialogContent>
