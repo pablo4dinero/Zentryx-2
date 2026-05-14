@@ -2049,7 +2049,7 @@ function ProductionPlanningTab() {
             {/* Summary Bar */}
             {(() => {
               const totalPlanned = assignments.length;
-              const totalVolume = assignments.reduce((s, r) => s + Number(r.order.volume ?? 0), 0);
+              const totalVolume = assignments.reduce((s, r) => s + Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0), 0);
               const totalCapacity = floors.reduce((s, f) => s + f.maxCapacityKg, 0);
               const weekDaysPrint = ["Mon", "Tue", "Wed", "Thu", "Fri", ...(includeSaturday ? ["Sat"] : [])];
               return (
@@ -2078,7 +2078,7 @@ function ProductionPlanningTab() {
                       const totalDayKgPrint = floors.reduce((sum, floor) => {
                         return sum + floorOrder(floor.id)
                           .filter(r => r.assignment.assignedDay === day)
-                          .reduce((s, r) => s + Number(r.order.volume ?? 0), 0);
+                          .reduce((s, r) => s + Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0), 0);
                       }, 0);
                       return (
                         <div key={day} className="print-no-break">
@@ -2099,7 +2099,7 @@ function ProductionPlanningTab() {
                             style={{ gridTemplateColumns: `repeat(${floors.length || 1}, 1fr)` }}>
                             {floors.map((floor, floorIdx) => {
                               const dayRows = floorOrder(floor.id).filter(r => r.assignment.assignedDay === day);
-                              const dayKg = dayRows.reduce((s, r) => s + Number(r.order.volume ?? 0), 0);
+                              const dayKg = dayRows.reduce((s, r) => s + Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0), 0);
                               const dayUtil = Math.min(100, Math.round((dayKg / (floor.maxCapacityKg || 1)) * 100));
                               return (
                                 <div key={floor.id} className={cn("border-r border-slate-200 last:border-r-0 flex flex-col", floorIdx % 2 === 0 ? "bg-white" : "bg-slate-50/50")}>
@@ -2119,13 +2119,17 @@ function ProductionPlanningTab() {
                                       <p className="text-[10px] text-slate-300 text-center py-4">—</p>
                                     ) : (
                                       dayRows.map(row => {
-                                        const acc = planningAccountMap[row.order.accountId ?? 0];
+                                        const fullOrder = mdpOrderByMdpId.get(row.order.id);
+                                        const acc = planningAccountMap[fullOrder?.accountId ?? 0];
+                                        const company = acc?.company ?? fullOrder?.accountCompany ?? fullOrder?.accountName ?? "—";
+                                        const productName = acc?.productName ?? fullOrder?.productName ?? null;
+                                        const volume = Number(fullOrder?.volume ?? row.order.volume ?? 0);
                                         return (
                                           <div key={row.assignment.id} className="border border-slate-200 rounded-lg p-2 bg-white">
-                                            <p className="text-[11px] font-bold text-slate-800 leading-tight truncate">{acc?.company ?? row.order.accountName ?? "Unknown"}</p>
-                                            <p className="text-[10px] text-slate-500 truncate">{acc?.productName ?? row.order.productName ?? "—"}</p>
+                                            <p className="text-[11px] font-bold text-slate-800 leading-tight truncate">{company}</p>
+                                            {productName && <p className="text-[10px] text-slate-500 truncate">{productName}</p>}
                                             <div className="flex items-center justify-between mt-1.5 gap-1">
-                                              <span className="text-[10px] font-semibold text-slate-700">{Number(row.order.volume ?? 0).toLocaleString()} KG</span>
+                                              <span className="text-[10px] font-semibold text-slate-700">{volume.toLocaleString()} KG</span>
                                               <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded", row.order.microbialAnalysis === "Critical" ? "bg-red-100 text-red-700" : row.order.microbialAnalysis === "Important" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700")}>{row.order.microbialAnalysis ?? "Normal"}</span>
                                             </div>
                                           </div>
@@ -2167,7 +2171,30 @@ function ProductionPlanningTab() {
               onClick={() => setPrintOpen(false)}
               className={isLight ? "bg-red-500 text-white border-red-500 hover:bg-red-600 hover:text-white hover:border-red-600" : ""}
             >Close</Button>
-            <Button onClick={() => window.print()}>Print / Save PDF</Button>
+            <Button onClick={() => {
+              const el = document.getElementById("print-schedule");
+              if (!el) return;
+              const styleNodes = Array.from(document.querySelectorAll<HTMLElement>('link[rel="stylesheet"], style'));
+              const styleHTML = styleNodes.map(n => n.outerHTML).join("\n");
+              const win = window.open("", "_blank");
+              if (!win) return;
+              win.document.write(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Production Schedule ${selectedWeekLabel}</title>
+${styleHTML}
+<style>
+  @page { size: A4 portrait; margin: 1.5cm; }
+  body { margin: 0; padding: 24px; background: white; font-family: system-ui, -apple-system, sans-serif; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+</style>
+</head>
+<body>${el.innerHTML}</body>
+</html>`);
+              win.document.close();
+              win.addEventListener("load", () => { win.focus(); win.print(); win.close(); });
+            }}>Print / Save PDF</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
