@@ -1713,7 +1713,8 @@ function ProductionPlanningTab() {
                   {floors.map(floor => {
                     const assignedRows = floorOrder(floor.id);
                     const totalKg = assignedRows.reduce((s, r) => s + Number(r.order.volume ?? 0), 0);
-                    const progress = Math.min(100, Math.round((totalKg / (floor.maxCapacityKg || 1)) * 100));
+                    const weekTotalCapacity = floor.maxCapacityKg * weekDays.length;
+                    const progress = Math.min(100, Math.round((totalKg / (weekTotalCapacity || 1)) * 100));
                     const barClass = progress > 90 ? "bg-red-500" : progress > 70 ? "bg-amber-500" : "bg-emerald-500";
                     return (
                       <div key={floor.id}
@@ -1734,7 +1735,7 @@ function ProductionPlanningTab() {
                           </div>
                           <div className="flex items-center gap-1.5">
                             <div className="text-right text-xs text-muted-foreground mr-1">
-                              <div className="font-medium">{(floor.maxCapacityKg - totalKg).toLocaleString()} KG remaining</div>
+                              <div className="font-medium">{(weekTotalCapacity - totalKg).toLocaleString()} KG remaining</div>
                               <div className={cn("mt-1 h-1.5 w-24 overflow-hidden rounded-full", isLight ? "bg-slate-200" : "bg-white/10")}>
                                 <div className={`${barClass} h-full transition-all`} style={{ width: `${progress}%` }} />
                               </div>
