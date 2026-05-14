@@ -1074,14 +1074,15 @@ function ProductionPlanningTab() {
     doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8">${styleHTML}<style>
       @page { size: A4 portrait; margin: 1.2cm; }
       body { margin: 0; padding: 16px; background: white; }
+      @media print { body * { visibility: visible !important; } }
       * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-    </style></head><body>${el.innerHTML}</body></html>`);
+    </style></head><body>${el.outerHTML}</body></html>`);
     doc.close();
     setTimeout(() => {
       iframe.contentWindow!.focus();
       iframe.contentWindow!.print();
-      setTimeout(() => iframe.remove(), 1000);
-    }, 600);
+      setTimeout(() => iframe.remove(), 1500);
+    }, 700);
   }, []);
 
   const handleDownloadPdf = React.useCallback(async () => {
@@ -1089,19 +1090,19 @@ function ProductionPlanningTab() {
     if (!el) return;
     setIsPdfGenerating(true);
     try {
-      // Clone outside the dialog so overflow:hidden doesn't clip the capture
       const clone = el.cloneNode(true) as HTMLElement;
-      clone.style.cssText = "position:absolute;top:0;left:-9999px;width:794px;background:white;";
+      clone.style.cssText = "position:absolute;top:-99999px;left:0;width:794px;background:white;";
       document.body.appendChild(clone);
+      void clone.offsetHeight; // force layout
       const canvas = await html2canvas(clone, {
         scale: 2,
         useCORS: true,
         allowTaint: true,
         backgroundColor: "#ffffff",
         logging: false,
-        width: clone.offsetWidth,
+        width: 794,
         height: clone.scrollHeight,
-        windowWidth: clone.offsetWidth,
+        windowWidth: 794,
       });
       document.body.removeChild(clone);
       const imgData = canvas.toDataURL("image/png");
