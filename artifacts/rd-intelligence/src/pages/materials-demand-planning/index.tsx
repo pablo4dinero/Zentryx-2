@@ -2321,10 +2321,11 @@ function ProductionHistoryTab() {
   }) as UseQueryResult<ProducedOrder[], Error>;
 
   const deliverMutation = useMutation({
-    mutationFn: async (id: number) => {
+    mutationFn: async ({ id, status }: { id: number; status: string }) => {
       const res = await fetch(`${BASE}api/mdp/produced-orders/${id}/deliver`, {
         method: "PUT",
         headers: authHeaders(),
+        body: JSON.stringify({ status }),
       });
       if (!res.ok) {
         const error = await res.json().catch(() => ({}));
@@ -2335,10 +2336,10 @@ function ProductionHistoryTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/produced-orders", view] });
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
-      toast({ title: "Marked Delivered", description: "Production history has been updated." });
+      toast({ title: "Status updated", description: "Production order status has been updated." });
     },
     onError: (error: any) => {
-      toast({ title: "Could not update delivery", description: error?.message || "Try again.", variant: "destructive" });
+      toast({ title: "Could not update status", description: error?.message || "Try again.", variant: "destructive" });
     },
   });
 
@@ -2491,20 +2492,36 @@ function ProductionHistoryTab() {
                         <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold border",
                           order.deliveryStatus === "Delivered"
                             ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                            : order.deliveryStatus === "Stored in Warehouse"
+                            ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
+                            : order.deliveryStatus === "In process"
+                            ? "bg-violet-500/10 text-violet-400 border-violet-500/20"
                             : "bg-amber-500/10 text-amber-400 border-amber-500/20"
                         )}>
                           {order.deliveryStatus}
                         </span>
                       </td>
                       <td className="px-3 py-3 text-right">
-                        {order.deliveryStatus === "Pending" ? (
-                          <button onClick={() => deliverMutation.mutate(order.id)}
-                            className="px-3 py-1.5 text-xs font-semibold bg-primary text-white rounded-xl hover:bg-primary/90 transition-colors">
-                            Mark Delivered
-                          </button>
-                        ) : (
-                          <span className="text-xs text-emerald-400 font-semibold">✓ Delivered</span>
-                        )}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button className={cn("px-3 py-1.5 text-xs font-semibold rounded-xl border transition-colors",
+                              isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5"
+                            )}>
+                              Update Status ▾
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-[190px]">
+                            <DropdownMenuItem onClick={() => deliverMutation.mutate({ id: order.id, status: "Delivered" })}>
+                              Mark as Delivered
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => deliverMutation.mutate({ id: order.id, status: "Stored in Warehouse" })}>
+                              Stored in Warehouse
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => deliverMutation.mutate({ id: order.id, status: "In process" })}>
+                              In process
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </td>
                     </tr>
                   ))}

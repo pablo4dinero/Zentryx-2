@@ -337,9 +337,10 @@ router.post("/produced-orders", requireAuth, async (req: AuthRequest, res) => {
 router.put("/produced-orders/:id/deliver", requireAuth, async (req: AuthRequest, res) => {
   try {
     const id = Number(req.params.id);
+    const status: string = (req.body as any)?.status ?? "Delivered";
     const [updated] = await db.update(mdpProducedOrdersTable).set({
-      deliveryStatus: "Delivered",
-      deliveredAt: new Date(),
+      deliveryStatus: status,
+      deliveredAt: status === "Delivered" ? new Date() : null,
     }).where(eq(mdpProducedOrdersTable.id, id)).returning();
 
     if (!updated) {
