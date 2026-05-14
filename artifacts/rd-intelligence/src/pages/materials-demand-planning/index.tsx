@@ -1556,10 +1556,12 @@ function ProductionPlanningTab() {
   };
 
   const assignedRightOrders = React.useMemo(
-    () => plannedOrders.map((order) => ({
-      order,
-      assigned: assignedMap.has(order.id),
-    })),
+    () => plannedOrders
+      .filter((order) => !assignedMap.has(order.id))
+      .map((order) => ({
+        order,
+        assigned: false,
+      })),
     [plannedOrders, assignedMap]
   );
 
@@ -1989,7 +1991,7 @@ function ProductionPlanningTab() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {assignedRightOrders.map(({ order, assigned }) => {
+                    {assignedRightOrders.map(({ order }) => {
                       const acc = planningAccountMap[order.accountId ?? 0];
                       const company = acc?.company ?? order.accountName ?? "Unknown account";
                       const productName = acc?.productName ?? order.productName ?? null;
@@ -1998,17 +2000,13 @@ function ProductionPlanningTab() {
                       return (
                         <div
                           key={order.id}
-                          draggable={!assigned}
+                          draggable
                           onDragStart={(event) => {
-                            if (!assigned) {
-                              event.dataTransfer.effectAllowed = "move";
-                              setDragged({ type: "planned", productionOrderId: order.id });
-                            }
+                            event.dataTransfer.effectAllowed = "move";
+                            setDragged({ type: "planned", productionOrderId: order.id });
                           }}
-                          className={cn("rounded-xl border p-3 transition-colors",
-                            assigned
-                              ? isLight ? "border-slate-200 bg-slate-100/60 opacity-60" : "border-white/10 bg-white/5 opacity-60"
-                              : isLight ? "border-slate-200 bg-white hover:border-primary/30 cursor-grab" : "border-white/10 bg-black/10 hover:border-white/20 cursor-grab"
+                          className={cn("rounded-xl border p-3 transition-colors cursor-grab",
+                            isLight ? "border-slate-200 bg-white hover:border-primary/30" : "border-white/10 bg-black/10 hover:border-white/20"
                           )}
                         >
                           <div className="flex items-start justify-between gap-3">
@@ -2030,11 +2028,6 @@ function ProductionPlanningTab() {
                               <VolumeTag volume={String(order.volume ?? 0)} />
                             </div>
                           </div>
-                          {assigned && (
-                            <div className="mt-2 inline-flex items-center rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-300">
-                              Assigned ✓
-                            </div>
-                          )}
                         </div>
                       );
                     })}
