@@ -1570,7 +1570,7 @@ function ProductionPlanningTab() {
         </div>
       </div>
 
-      <div id="planning-split-container" className={cn("relative flex min-h-[720px] rounded-2xl border overflow-hidden",
+      <div id="planning-split-container" className={cn("relative flex h-[720px] rounded-2xl border overflow-hidden",
         isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5"
       )}>
         <div style={{ width: `${splitPercent}%` }} className={cn("overflow-y-auto border-r p-5", isLight ? "border-slate-200" : "border-white/10")}>
@@ -1861,9 +1861,25 @@ function ProductionPlanningTab() {
           onMouseDown={() => setIsDividerDragging(true)}
         />
 
-        <div style={{ width: `${100 - splitPercent}%` }} className="overflow-y-auto p-5">
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+        <div style={{ width: `${100 - splitPercent}%` }} className="flex flex-col overflow-hidden p-5 gap-4">
+          {/* Planning Summary — pinned at top */}
+          <div className={cn("rounded-2xl border p-4 shrink-0", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5")}>
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Planning summary</h3>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div className={cn("rounded-xl border p-4", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5")}>
+                <p className="text-xs uppercase tracking-[0.15em] text-muted-foreground">Planned orders</p>
+                <p className="mt-2 text-2xl font-bold text-foreground">{plannedOrders.length}</p>
+              </div>
+              <div className={cn("rounded-xl border p-4", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5")}>
+                <p className="text-xs uppercase tracking-[0.15em] text-muted-foreground">Assigned</p>
+                <p className="mt-2 text-2xl font-bold text-foreground">{Array.from(assignedMap.keys()).length}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Planned Orders — scrollable */}
+          <div className="flex flex-col min-h-0 flex-1 gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 shrink-0">
               <div>
                 <h2 className="text-base font-semibold text-foreground">Planned Orders</h2>
                 <p className="text-xs text-muted-foreground mt-0.5">Drag unassigned orders into floors or unassign existing items.</p>
@@ -1886,7 +1902,7 @@ function ProductionPlanningTab() {
               </div>
             </div>
 
-            <div className={cn("rounded-2xl border p-4", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5")}>
+            <div className={cn("rounded-2xl border p-4 flex-1 overflow-y-auto", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5")}>
               <div
                 className={cn("min-h-[260px] rounded-xl border border-dashed p-3",
                   isLight ? "border-slate-200" : "border-white/10"
@@ -1958,20 +1974,6 @@ function ProductionPlanningTab() {
                     })}
                   </div>
                 )}
-              </div>
-            </div>
-
-            <div className={cn("rounded-2xl border p-4", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5")}>
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Planning summary</h3>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <div className={cn("rounded-xl border p-4", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5")}>
-                  <p className="text-xs uppercase tracking-[0.15em] text-muted-foreground">Planned orders</p>
-                  <p className="mt-2 text-2xl font-bold text-foreground">{plannedOrders.length}</p>
-                </div>
-                <div className={cn("rounded-xl border p-4", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5")}>
-                  <p className="text-xs uppercase tracking-[0.15em] text-muted-foreground">Assigned</p>
-                  <p className="mt-2 text-2xl font-bold text-foreground">{Array.from(assignedMap.keys()).length}</p>
-                </div>
               </div>
             </div>
           </div>
