@@ -53,7 +53,6 @@ export const mdpProductionFloorsTable = pgTable("mdp_production_floors", {
   floorName: text("floor_name").notNull(),
   blendCategory: text("blend_category").notNull(),
   maxCapacityKg: integer("max_capacity_kg").notNull(),
-  blenderCapacityPerBatch: integer("blender_capacity_per_batch"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
