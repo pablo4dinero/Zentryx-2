@@ -1734,7 +1734,7 @@ function ProductionPlanningTab() {
                           </div>
                           <div className="flex items-center gap-1.5">
                             <div className="text-right text-xs text-muted-foreground mr-1">
-                              <div className="font-medium">{totalKg.toLocaleString()} / {floor.maxCapacityKg.toLocaleString()} KG</div>
+                              <div className="font-medium">{(floor.maxCapacityKg - totalKg).toLocaleString()} KG remaining</div>
                               <div className={cn("mt-1 h-1.5 w-24 overflow-hidden rounded-full", isLight ? "bg-slate-200" : "bg-white/10")}>
                                 <div className={`${barClass} h-full transition-all`} style={{ width: `${progress}%` }} />
                               </div>
@@ -1827,7 +1827,7 @@ function ProductionPlanningTab() {
                                   <div className={cn("flex-1 h-1 rounded-full overflow-hidden", isLight ? "bg-slate-200" : "bg-white/10")}>
                                     <div className={`${utilBar} h-full transition-all`} style={{ width: `${dayUtil}%` }} />
                                   </div>
-                                  <span className="text-[9px] text-muted-foreground shrink-0">{dayKg.toLocaleString()} / {floor.maxCapacityKg.toLocaleString()} KG · {dayUtil}%</span>
+                                  <span className="text-[9px] text-muted-foreground shrink-0">{(floor.maxCapacityKg - dayKg).toLocaleString()} KG remaining · {dayUtil}%</span>
                                 </div>
                               </div>
 
@@ -2218,7 +2218,7 @@ function ProductionPlanningTab() {
                                 <div className={cn("h-1.5 flex-1 rounded-full overflow-hidden", isLight ? "bg-slate-200" : "bg-white/10")}>
                                   <div className={`${dayBar} h-full transition-all`} style={{ width: `${dayUtil}%` }} />
                                 </div>
-                                <span className="text-xs text-muted-foreground">{dayKg.toLocaleString()} / {floor.maxCapacityKg.toLocaleString()} KG · {dayUtil}%</span>
+                                <span className="text-xs text-muted-foreground">{(floor.maxCapacityKg - dayKg).toLocaleString()} KG remaining · {dayUtil}%</span>
                               </div>
                             </div>
                             {/* Orders */}
