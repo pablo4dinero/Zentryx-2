@@ -1,5 +1,7 @@
 import * as React from "react";
 import SalesForecastPage from "@/pages/sales-force/Forecast";
+import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
 import { useQuery, useMutation, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -1057,6 +1059,31 @@ function ProductionPlanningTab() {
   const [planningView, setPlanningView] = React.useState<PlanningViewMode>("weekly");
   const [assistedState, setAssistedState] = React.useState<"idle" | "optimizing" | "done">("idle");
   const [printOpen, setPrintOpen] = React.useState(false);
+  const [isPdfGenerating, setIsPdfGenerating] = React.useState(false);
+
+  const handleDownloadPdf = React.useCallback(async () => {
+    const el = document.getElementById("print-schedule");
+    if (!el) return;
+    setIsPdfGenerating(true);
+    try {
+      const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false });
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let y = 0;
+      while (y < imgHeight) {
+        if (y > 0) pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, -y, imgWidth, imgHeight);
+        y += pageHeight;
+      }
+      pdf.save(`Production-Schedule-${selectedWeekLabel.replace(/\s/g, "-")}.pdf`);
+    } finally {
+      setIsPdfGenerating(false);
+    }
+  }, [selectedWeekLabel]);
   const [expandedDay, setExpandedDay] = React.useState<string | null>(null);
   const [dragged, setDragged] = React.useState<{
     type: "planned" | "assigned";
@@ -2166,35 +2193,10 @@ function ProductionPlanningTab() {
           </div>
 
           <DialogFooter className="space-x-2 mt-2">
-            <Button
-              variant="outline"
-              onClick={() => setPrintOpen(false)}
-              className={isLight ? "bg-red-500 text-white border-red-500 hover:bg-red-600 hover:text-white hover:border-red-600" : ""}
-            >Close</Button>
-            <Button onClick={() => {
-              const el = document.getElementById("print-schedule");
-              if (!el) return;
-              const styleNodes = Array.from(document.querySelectorAll<HTMLElement>('link[rel="stylesheet"], style'));
-              const styleHTML = styleNodes.map(n => n.outerHTML).join("\n");
-              const win = window.open("", "_blank");
-              if (!win) return;
-              win.document.write(`<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>Production Schedule ${selectedWeekLabel}</title>
-${styleHTML}
-<style>
-  @page { size: A4 portrait; margin: 1.5cm; }
-  body { margin: 0; padding: 24px; background: white; font-family: system-ui, -apple-system, sans-serif; }
-  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-</style>
-</head>
-<body>${el.innerHTML}</body>
-</html>`);
-              win.document.close();
-              win.addEventListener("load", () => { win.focus(); win.print(); win.close(); });
-            }}>Print / Save PDF</Button>
+            <Button variant="outline" onClick={() => setPrintOpen(false)}>Close</Button>
+            <Button onClick={handleDownloadPdf} disabled={isPdfGenerating}>
+              {isPdfGenerating ? "Generating…" : "Download PDF"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
