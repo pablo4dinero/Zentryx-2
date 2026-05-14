@@ -1,4 +1,5 @@
 import * as React from "react";
+import SalesForecastPage from "@/pages/sales-force/Forecast";
 import { useQuery, useMutation, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -2714,6 +2715,7 @@ function MaterialsDemandPlanningPage() {
     { value: "production-orders", label: "Production Orders" },
     { value: "production-planning", label: "Production Planning" },
     { value: "production-history", label: "Production History" },
+    { value: "forecast", label: "Forecast" },
   ] as const;
   type MdpTab = typeof MDP_TABS[number]["value"];
 
@@ -3129,6 +3131,8 @@ function MaterialsDemandPlanningPage() {
           {activeTab === "production-planning" && <ProductionPlanningTab />}
 
           {activeTab === "production-history" && <ProductionHistoryTab />}
+
+          {activeTab === "forecast" && <SalesForecastPage />}
 
         </motion.div>
       </AnimatePresence>
