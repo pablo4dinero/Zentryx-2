@@ -1062,23 +1062,26 @@ function ProductionPlanningTab() {
   const [isPdfGenerating, setIsPdfGenerating] = React.useState(false);
 
   const handlePrint = React.useCallback(() => {
-    const style = document.createElement("style");
-    style.id = "zentryx-print-override";
-    style.textContent = `
-      @media print {
-        @page { size: A4 portrait; margin: 1cm; }
-        body * { visibility: hidden !important; }
-        #print-schedule, #print-schedule * { visibility: visible !important; }
-        #print-schedule {
-          position: fixed !important; inset: 0 !important;
-          width: 100% !important; background: white !important;
-          overflow: visible !important; z-index: 99999 !important;
-        }
-      }
-    `;
-    document.head.appendChild(style);
-    window.print();
-    setTimeout(() => { document.getElementById("zentryx-print-override")?.remove(); }, 1500);
+    const el = document.getElementById("print-schedule");
+    if (!el) return;
+    const iframe = document.createElement("iframe");
+    iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:210mm;border:none;";
+    document.body.appendChild(iframe);
+    const styleNodes = Array.from(document.querySelectorAll<Element>('link[rel="stylesheet"], style'));
+    const styleHTML = styleNodes.map(n => n.outerHTML).join("\n");
+    const doc = iframe.contentDocument ?? iframe.contentWindow!.document;
+    doc.open();
+    doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8">${styleHTML}<style>
+      @page { size: A4 portrait; margin: 1.2cm; }
+      body { margin: 0; padding: 16px; background: white; }
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    </style></head><body>${el.innerHTML}</body></html>`);
+    doc.close();
+    setTimeout(() => {
+      iframe.contentWindow!.focus();
+      iframe.contentWindow!.print();
+      setTimeout(() => iframe.remove(), 1000);
+    }, 600);
   }, []);
 
   const handleDownloadPdf = React.useCallback(async () => {
