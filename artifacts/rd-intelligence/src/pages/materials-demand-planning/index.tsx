@@ -2228,15 +2228,19 @@ function ProductionPlanningTab() {
                                 <div className="flex h-full min-h-[80px] items-center justify-center text-sm text-muted-foreground/40">No orders</div>
                               ) : (
                                 dayRows.map(row => {
-                                  const acc = planningAccountMap[row.order.accountId ?? 0];
+                                  const fullOrder = mdpOrderByMdpId.get(row.order.id);
+                                  const acc = planningAccountMap[fullOrder?.accountId ?? 0];
+                                  const company = acc?.company ?? fullOrder?.accountCompany ?? fullOrder?.accountName ?? "Unknown";
+                                  const productName = acc?.productName ?? fullOrder?.productName ?? null;
+                                  const volume = Number(fullOrder?.volume ?? row.order.volume ?? 0);
                                   return (
                                     <div key={row.assignment.id} className={cn("rounded-xl border p-3", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5")}>
                                       <div className="flex items-start justify-between gap-2 mb-2">
                                         <div className="min-w-0">
-                                          <p className="font-bold text-foreground text-sm truncate">{acc?.company ?? row.order.accountName ?? "Unknown"}</p>
-                                          <p className="text-xs text-muted-foreground truncate">{acc?.productName ?? row.order.productName ?? "—"}</p>
+                                          <p className="font-bold text-foreground text-sm truncate">{company}</p>
+                                          {productName && <p className="text-xs text-muted-foreground truncate">{productName}</p>}
                                         </div>
-                                        <span className="text-sm font-bold text-foreground shrink-0">{Number(row.order.volume ?? 0).toLocaleString()} KG</span>
+                                        <span className="text-sm font-bold text-foreground shrink-0">{volume.toLocaleString()} KG</span>
                                       </div>
                                       <div className="flex items-center gap-2">
                                         <span className={cn("h-2 w-2 rounded-full shrink-0", getMicrobialColor(row.order.microbialAnalysis ?? "Normal"))} />
