@@ -1712,7 +1712,7 @@ function ProductionPlanningTab() {
                 <div className="space-y-4">
                   {floors.map(floor => {
                     const assignedRows = floorOrder(floor.id);
-                    const totalKg = assignedRows.reduce((s, r) => s + Number(r.order.volume ?? 0), 0);
+                    const totalKg = assignedRows.reduce((s, r) => s + Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0), 0);
                     const weekTotalCapacity = floor.maxCapacityKg * weekDays.length;
                     const progress = Math.min(100, Math.round((totalKg / (weekTotalCapacity || 1)) * 100));
                     const barClass = progress > 90 ? "bg-red-500" : progress > 70 ? "bg-amber-500" : "bg-emerald-500";
@@ -1769,7 +1769,7 @@ function ProductionPlanningTab() {
                   const totalDayKg = floors.reduce((sum, floor) => {
                     return sum + floorOrder(floor.id)
                       .filter(r => r.assignment.assignedDay === day)
-                      .reduce((s, r) => s + Number(r.order.volume ?? 0), 0);
+                      .reduce((s, r) => s + Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0), 0);
                   }, 0);
 
                   return (
@@ -1796,7 +1796,7 @@ function ProductionPlanningTab() {
                       <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${floors.length}, minmax(0, 1fr))` }}>
                         {floors.map(floor => {
                           const dayRows = floorOrder(floor.id).filter(r => r.assignment.assignedDay === day);
-                          const dayKg = dayRows.reduce((s, r) => s + Number(r.order.volume ?? 0), 0);
+                          const dayKg = dayRows.reduce((s, r) => s + Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0), 0);
                           const dayUtil = Math.min(100, Math.round((dayKg / (floor.maxCapacityKg || 1)) * 100));
                           const utilBar = dayUtil > 90 ? "bg-red-500" : dayUtil > 70 ? "bg-amber-500" : "bg-emerald-500";
                           const isDragTarget = dragOverFloorId === floor.id;
@@ -2206,7 +2206,7 @@ function ProductionPlanningTab() {
                     <div className="grid gap-4 h-full" style={{ gridTemplateColumns: `repeat(${floors.length}, minmax(0, 1fr))` }}>
                       {floors.map(floor => {
                         const dayRows = floorOrder(floor.id).filter(r => r.assignment.assignedDay === expandedDay);
-                        const dayKg = dayRows.reduce((s, r) => s + Number(r.order.volume ?? 0), 0);
+                        const dayKg = dayRows.reduce((s, r) => s + Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0), 0);
                         const dayUtil = Math.min(100, Math.round((dayKg / (floor.maxCapacityKg || 1)) * 100));
                         const dayBar = dayUtil > 90 ? "bg-red-500" : dayUtil > 70 ? "bg-amber-500" : "bg-emerald-500";
                         return (
