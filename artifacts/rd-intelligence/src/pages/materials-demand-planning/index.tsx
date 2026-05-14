@@ -456,6 +456,7 @@ type ProductionFloor = {
   floorName: string;
   blendCategory: "Sweet" | "Savory" | "Sweet/Savory" | "Savory/Sweet";
   maxCapacityKg: number;
+  blenderCapacityPerBatch?: number | null;
 };
 
 type FloorAssignmentRow = {
@@ -1047,10 +1048,11 @@ function ProductionPlanningTab() {
     floorName: "",
     blendCategory: "Sweet" as ProductionFloor["blendCategory"],
     maxCapacityKg: "0",
+    blenderCapacityPerBatch: "0",
   });
   const [editFloorOpen, setEditFloorOpen] = React.useState(false);
   const [editingFloor, setEditingFloor] = React.useState<ProductionFloor | null>(null);
-  const [editFloorForm, setEditFloorForm] = React.useState({ floorName: "", blendCategory: "Sweet" as ProductionFloor["blendCategory"], maxCapacityKg: "0" });
+  const [editFloorForm, setEditFloorForm] = React.useState({ floorName: "", blendCategory: "Sweet" as ProductionFloor["blendCategory"], maxCapacityKg: "0", blenderCapacityPerBatch: "0" });
   const [deleteConfirmFloorId, setDeleteConfirmFloorId] = React.useState<number | null>(null);
   const [includeSaturday, setIncludeSaturday] = React.useState(false);
   const [planningView, setPlanningView] = React.useState<PlanningViewMode>("weekly");
@@ -1196,7 +1198,7 @@ function ProductionPlanningTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-floors"] });
       setFloorModalOpen(false);
-      setFloorForm({ floorName: "", blendCategory: "Sweet", maxCapacityKg: "0" });
+      setFloorForm({ floorName: "", blendCategory: "Sweet", maxCapacityKg: "0", blenderCapacityPerBatch: "0" });
       toast({ title: "Floor added" });
     },
     onError: (error: any) => toast({ title: "Could not add floor", description: error?.message, variant: "destructive" }),
@@ -1371,6 +1373,7 @@ function ProductionPlanningTab() {
       floorName: floorForm.floorName,
       blendCategory: floorForm.blendCategory,
       maxCapacityKg: Number(floorForm.maxCapacityKg),
+      blenderCapacityPerBatch: floorForm.blenderCapacityPerBatch ? Number(floorForm.blenderCapacityPerBatch) : null,
     });
   };
 
@@ -1625,6 +1628,17 @@ function ProductionPlanningTab() {
                       placeholder="0"
                     />
                   </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="blenderCapacityPerBatch">Blender Capacity Per Batch (KG)</Label>
+                    <Input
+                      id="blenderCapacityPerBatch"
+                      type="number"
+                      min={0}
+                      value={floorForm.blenderCapacityPerBatch}
+                      onChange={(event) => setFloorForm((prev) => ({ ...prev, blenderCapacityPerBatch: event.target.value }))}
+                      placeholder="0"
+                    />
+                  </div>
                 </div>
                 <DialogFooter className="space-x-2">
                   <Button onClick={handleAddFloor} disabled={!floorForm.floorName.trim() || Number(floorForm.maxCapacityKg) <= 0}>
@@ -1678,7 +1692,7 @@ function ProductionPlanningTab() {
 
             const floorActionButtons = (floor: ProductionFloor) => (
               <div className="flex items-center gap-1 shrink-0">
-                <button onClick={() => { setEditingFloor(floor); setEditFloorForm({ floorName: floor.floorName, blendCategory: floor.blendCategory, maxCapacityKg: String(floor.maxCapacityKg) }); setEditFloorOpen(true); }}
+                <button onClick={() => { setEditingFloor(floor); setEditFloorForm({ floorName: floor.floorName, blendCategory: floor.blendCategory, maxCapacityKg: String(floor.maxCapacityKg), blenderCapacityPerBatch: String(floor.blenderCapacityPerBatch ?? 0) }); setEditFloorOpen(true); }}
                   className={cn("p-1 rounded-md transition-colors text-muted-foreground hover:text-foreground", isLight ? "hover:bg-slate-100" : "hover:bg-white/10")} title="Edit">
                   <Edit3 className="w-3 h-3" />
                 </button>
@@ -2004,11 +2018,12 @@ function ProductionPlanningTab() {
                       </select>
                     </div>
                     <div><label className={lCls}>Max Capacity (kg/day)</label><input value={editFloorForm.maxCapacityKg} onChange={e => setEditFloorForm(p => ({ ...p, maxCapacityKg: e.target.value }))} type="number" min="0" className={iCls} /></div>
+                    <div><label className={lCls}>Blender Capacity Per Batch (KG)</label><input value={editFloorForm.blenderCapacityPerBatch} onChange={e => setEditFloorForm(p => ({ ...p, blenderCapacityPerBatch: e.target.value }))} type="number" min="0" className={iCls} /></div>
                   </>);
                 })()}
               </div>
               <div className={cn("px-6 py-4 border-t flex gap-3", isLight ? "border-gray-100" : "border-white/5")}>
-                <button onClick={() => updateFloorMutation.mutate({ id: editingFloor.id, floorName: editFloorForm.floorName, blendCategory: editFloorForm.blendCategory, maxCapacityKg: Number(editFloorForm.maxCapacityKg) })}
+                <button onClick={() => updateFloorMutation.mutate({ id: editingFloor.id, floorName: editFloorForm.floorName, blendCategory: editFloorForm.blendCategory, maxCapacityKg: Number(editFloorForm.maxCapacityKg), blenderCapacityPerBatch: editFloorForm.blenderCapacityPerBatch ? Number(editFloorForm.blenderCapacityPerBatch) : null })}
                   disabled={!editFloorForm.floorName.trim() || Number(editFloorForm.maxCapacityKg) <= 0}
                   className="flex-1 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-60">
                   Save Changes
@@ -2228,15 +2243,19 @@ function ProductionPlanningTab() {
                                 <div className="flex h-full min-h-[80px] items-center justify-center text-sm text-muted-foreground/40">No orders</div>
                               ) : (
                                 dayRows.map(row => {
-                                  const acc = planningAccountMap[row.order.accountId ?? 0];
+                                  const fullOrder = mdpOrderByMdpId.get(row.order.id);
+                                  const acc = planningAccountMap[fullOrder?.accountId ?? 0];
+                                  const company = acc?.company ?? fullOrder?.accountCompany ?? fullOrder?.accountName ?? row.order.accountName ?? "Unknown";
+                                  const productName = acc?.productName ?? fullOrder?.productName ?? row.order.productName ?? null;
+                                  const volume = Number(fullOrder?.volume ?? row.order.volume ?? 0);
                                   return (
                                     <div key={row.assignment.id} className={cn("rounded-xl border p-3", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5")}>
                                       <div className="flex items-start justify-between gap-2 mb-2">
                                         <div className="min-w-0">
-                                          <p className="font-bold text-foreground text-sm truncate">{acc?.company ?? row.order.accountName ?? "Unknown"}</p>
-                                          <p className="text-xs text-muted-foreground truncate">{acc?.productName ?? row.order.productName ?? "—"}</p>
+                                          <p className="font-bold text-foreground text-sm truncate">{company}</p>
+                                          {productName && <p className="text-xs text-muted-foreground truncate">{productName}</p>}
                                         </div>
-                                        <span className="text-sm font-bold text-foreground shrink-0">{Number(row.order.volume ?? 0).toLocaleString()} KG</span>
+                                        <span className="text-sm font-bold text-foreground shrink-0">{volume.toLocaleString()} KG</span>
                                       </div>
                                       <div className="flex items-center gap-2">
                                         <span className={cn("h-2 w-2 rounded-full shrink-0", getMicrobialColor(row.order.microbialAnalysis ?? "Normal"))} />
