@@ -17,17 +17,9 @@ import * as XLSX from "xlsx";
 import SalesChartsPage from "./Charts";
 import SalesForecastPage from "./Forecast";
 import NewProductionOrdersPage from "./NewProductionOrders";
+import { useCustomOptions, DEFAULT_PRODUCT_TYPES, displayLabel } from "@/lib/project-options";
 
 const BASE = import.meta.env.BASE_URL;
-
-const PRODUCT_TYPES = [
-  { value: "seasoning", label: "Seasoning" },
-  { value: "snacks_dusting", label: "Snacks Dusting" },
-  { value: "dairy_premix", label: "Dairy Premix" },
-  { value: "bakery_dough_premix", label: "Bakery & Dough Premix" },
-  { value: "sweet_flavours", label: "Sweet Flavours" },
-  { value: "savoury_flavour", label: "Savoury Flavour" },
-];
 
 const URGENCY = [
   { value: "urgent", label: "Urgent", color: "text-red-400", bg: "bg-red-500/10 border-red-500/20", dot: "bg-red-500" },
@@ -207,9 +199,10 @@ function AddAccountModal({ onSuccess }: { onSuccess: () => void }) {
   const { fmtNGN } = useExchangeRate();
   const { toast } = useToast();
   const [manSearch, setManSearch] = useState("");
+  const typeOpts = useCustomOptions("productType", DEFAULT_PRODUCT_TYPES);
   const [form, setForm] = useState({
     company: "", productName: "", accountManagers: [] as number[], contactPerson: "",
-    cpPhone: "", cpEmail: "", customerType: "new", productType: "seasoning",
+    cpPhone: "", cpEmail: "", customerType: "new", productType: "",
     application: "", targetPrice: "", volume: "", urgencyLevel: "normal",
     competitorReference: "",
   });
@@ -244,7 +237,7 @@ function AddAccountModal({ onSuccess }: { onSuccess: () => void }) {
       if (!res.ok) throw new Error("Failed");
       onSuccess();
       setOpen(false);
-      setForm({ company: "", productName: "", accountManagers: [], contactPerson: "", cpPhone: "", cpEmail: "", customerType: "new", productType: "seasoning", application: "", targetPrice: "", volume: "", urgencyLevel: "normal", competitorReference: "" });
+      setForm({ company: "", productName: "", accountManagers: [], contactPerson: "", cpPhone: "", cpEmail: "", customerType: "new", productType: "", application: "", targetPrice: "", volume: "", urgencyLevel: "normal", competitorReference: "" });
       toast({ title: "Account created" });
     } catch {
       toast({ title: "Failed to create account", variant: "destructive" });
@@ -283,7 +276,8 @@ function AddAccountModal({ onSuccess }: { onSuccess: () => void }) {
                     <div>
                       <label className={lCls}>Product Type *</label>
                       <select value={form.productType} onChange={e => setF("productType", e.target.value)} className={iCls + " cursor-pointer"}>
-                        {PRODUCT_TYPES.map(p => <option key={p.value} value={p.value} className="bg-white text-black">{p.label}</option>)}
+                        <option value="">— Select —</option>
+                        {typeOpts.options.map(p => <option key={p} value={p} className="bg-white text-black">{displayLabel(p)}</option>)}
                       </select>
                     </div>
                     <div>
@@ -402,7 +396,7 @@ function AccountCard({ account, onClick, onDelete }: { account: any; onClick: ()
       <div className="space-y-2">
         <div className="flex items-center justify-between text-xs">
           <span className="text-muted-foreground">Product Type</span>
-          <span className="text-foreground font-medium">{PRODUCT_TYPES.find(p => p.value === account.productType)?.label || account.productType}</span>
+          <span className="text-foreground font-medium">{account.productType}</span>
         </div>
         <div className="flex items-center justify-between text-xs">
           <span className="text-muted-foreground">Volume</span>
@@ -451,7 +445,7 @@ function AccountRow({ account, onClick, onDelete }: { account: any; onClick: () 
         </div>
       </td>
       <td className="px-5 py-3 text-xs text-muted-foreground">
-        {PRODUCT_TYPES.find(p => p.value === account.productType)?.label}
+        {account.productType ?? "—"}
       </td>
       <td className="px-5 py-3 text-xs">
         <div className="flex items-center gap-1.5">
@@ -558,6 +552,7 @@ function AccountsPage() {
   const [showExport, setShowExport] = useState(false);
   const { theme } = useTheme();
   const isLight = theme === "light";
+  const typeOpts = useCustomOptions("productType", DEFAULT_PRODUCT_TYPES);
 
   const { data: accounts = [], isLoading } = useQuery({
     queryKey: ["/api/accounts"],
@@ -619,7 +614,7 @@ function AccountsPage() {
               isLight ? "bg-white border-slate-200 text-slate-700" : "bg-black/20 border-white/10 text-foreground"
             )}>
             <option value="all">All Products</option>
-            {PRODUCT_TYPES.map(p => <option key={p.value} value={p.value} className="bg-white text-black">{p.label}</option>)}
+            {typeOpts.options.map(p => <option key={p} value={p} className="bg-white text-black">{displayLabel(p)}</option>)}
           </select>
 
           <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
