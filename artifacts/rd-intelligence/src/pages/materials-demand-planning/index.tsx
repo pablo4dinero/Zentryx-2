@@ -1067,7 +1067,7 @@ body{margin:0;padding:0;font-family:ui-sans-serif,system-ui,-apple-system,sans-s
 .font-bold{font-weight:700}.font-semibold{font-weight:600}.font-medium{font-weight:500}
 .tracking-tight{letter-spacing:-.025em}.tracking-widest{letter-spacing:.1em}
 .uppercase{text-transform:uppercase}.italic{font-style:italic}
-.truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.truncate{overflow:visible;text-overflow:clip;white-space:normal}
 .leading-tight{line-height:1.25}.text-right{text-align:right}.text-center{text-align:center}
 .opacity-40{opacity:.4}
 .border{border-width:1px;border-style:solid}.border-2{border-width:2px;border-style:solid}
@@ -1139,8 +1139,6 @@ function ProductionPlanningTab() {
     const el = document.getElementById("print-schedule");
     if (!el) return;
     setIsPdfGenerating(true);
-    // Clone outside the dialog (no overflow-y:auto constraint) so html2canvas
-    // can measure the full content height.
     const wrapper = document.createElement("div");
     wrapper.style.cssText = "position:fixed;top:0;left:-10000px;width:794px;overflow:visible;background:white;z-index:9999;pointer-events:none";
     const clone = el.cloneNode(true) as HTMLElement;
@@ -1148,6 +1146,40 @@ function ProductionPlanningTab() {
     document.body.appendChild(wrapper);
     try {
       await new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+
+      // A4 height in logical px, proportional to our 794px-wide canvas
+      const A4_H = Math.round(794 * 297 / 210); // ≈ 1123 px
+      const totalH = clone.scrollHeight;
+      const wrapperTop = wrapper.getBoundingClientRect().top;
+
+      // Measure each day section (class="print-no-break") before capture so we can
+      // cut pages between sections rather than slicing through content mid-card.
+      const dayEls = Array.from(clone.querySelectorAll<HTMLElement>(".print-no-break"));
+      const sections = dayEls.map(d => {
+        const r = d.getBoundingClientRect();
+        return { top: Math.round(r.top - wrapperTop), bottom: Math.round(r.bottom - wrapperTop) };
+      });
+
+      // Greedy slice: accumulate sections onto each page; start a new page when the
+      // next section would overflow. Force-slice any section taller than A4.
+      const slices: Array<{ start: number; end: number }> = [];
+      let pageStart = 0;
+      let prevBottom = 0;
+      sections.forEach(({ top, bottom }) => {
+        if (bottom - pageStart > A4_H) {
+          const cutAt = prevBottom > pageStart ? prevBottom : top;
+          slices.push({ start: pageStart, end: cutAt });
+          pageStart = cutAt;
+          while (bottom - pageStart > A4_H) {
+            slices.push({ start: pageStart, end: pageStart + A4_H });
+            pageStart += A4_H;
+          }
+        }
+        prevBottom = bottom;
+      });
+      if (pageStart < totalH) slices.push({ start: pageStart, end: totalH });
+
+      // Capture the full template as one canvas (oklch stripped via onclone)
       const canvas = await html2canvas(clone, {
         scale: 2,
         useCORS: true,
@@ -1155,10 +1187,8 @@ function ProductionPlanningTab() {
         backgroundColor: "#ffffff",
         logging: false,
         width: 794,
-        height: clone.scrollHeight,
+        height: totalH,
         windowWidth: 794,
-        // Tailwind v4 uses oklch() which html2canvas 1.4.1 cannot parse.
-        // Strip all stylesheets and inject a safe hex/rgb-only CSS so parsing succeeds.
         onclone: (clonedDoc: Document) => {
           clonedDoc.documentElement.classList.remove("dark");
           clonedDoc.querySelectorAll<HTMLElement>('link[rel="stylesheet"], style').forEach(s => s.remove());
@@ -1167,20 +1197,23 @@ function ProductionPlanningTab() {
           clonedDoc.head.appendChild(safe);
         },
       });
-      const imgData = canvas.toDataURL("image/png");
+
       const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-      const pageWidthMm = pdf.internal.pageSize.getWidth();   // 210
-      const pageHeightMm = pdf.internal.pageSize.getHeight(); // 297
-      const imgWidthMm = pageWidthMm;
-      const imgHeightMm = (canvas.height * imgWidthMm) / canvas.width;
-      let yOffset = 0;
-      let page = 0;
-      while (yOffset < imgHeightMm) {
-        if (page > 0) pdf.addPage();
-        pdf.addImage(imgData, "PNG", 0, -yOffset, imgWidthMm, imgHeightMm);
-        yOffset += pageHeightMm;
-        page++;
-      }
+      const pxToMm = 210 / 794;
+
+      // Extract each slice from the full canvas and add as a separate PDF page
+      slices.forEach(({ start, end }, idx) => {
+        if (idx > 0) pdf.addPage();
+        const sliceH = (end - start) * 2; // canvas is scale:2
+        const pageCanvas = document.createElement("canvas");
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = sliceH;
+        pageCanvas.getContext("2d")!.drawImage(
+          canvas, 0, start * 2, canvas.width, sliceH, 0, 0, canvas.width, sliceH
+        );
+        pdf.addImage(pageCanvas.toDataURL("image/png"), "PNG", 0, 0, 210, (end - start) * pxToMm);
+      });
+
       pdf.save(`Production-Schedule-${selectedWeekLabel.replace(/[\s:]/g, "-")}.pdf`);
     } catch (err) {
       console.error("PDF generation failed:", err);
