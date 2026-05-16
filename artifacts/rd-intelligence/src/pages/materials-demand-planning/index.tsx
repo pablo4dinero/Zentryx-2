@@ -1061,38 +1061,53 @@ function ProductionPlanningTab() {
     if (!el) return;
     const win = window.open("", "_blank", "width=900,height=700");
     if (!win) return;
-    // Copy compiled CSS links only — no dark class on <html> so Tailwind dark: variants won't fire
+    // Copy <link> stylesheets only — skip inline <style> tags because the page's
+    // printStyles block uses position:fixed which pins content to 1 page.
+    // New window has no dark class so Tailwind dark: variants stay dormant.
     const styleLinks = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'))
       .map(l => `<link rel="stylesheet" href="${l.href}">`)
       .join("\n");
     win.document.write(
-      `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Production Schedule — ${selectedWeekLabel}</title>${styleLinks}<style>@page{size:A4 portrait;margin:1.5cm}html,body{background:white!important;margin:0;padding:0}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}</style></head><body>${el.outerHTML}</body></html>`
+      `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Production Schedule — ${selectedWeekLabel}</title>${styleLinks}<style>
+        @page { size: A4 portrait; margin: 1.5cm; }
+        html, body { background: white !important; margin: 0; padding: 0; }
+        /* Remove overflow clipping so all rows print across multiple pages */
+        #print-schedule, #print-schedule * { overflow: visible !important; max-height: none !important; }
+        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        .print-no-break { page-break-inside: avoid; break-inside: avoid; }
+        .print-break-before { page-break-before: always; break-before: page; }
+      </style></head><body>${el.outerHTML}</body></html>`
     );
     win.document.close();
     setTimeout(() => {
       win.focus();
       win.print();
       setTimeout(() => win.close(), 1000);
-    }, 800);
+    }, 1200);
   }, [selectedWeekLabel]);
 
   const handleDownloadPdf = React.useCallback(async () => {
     const el = document.getElementById("print-schedule");
     if (!el) return;
     setIsPdfGenerating(true);
+    // Render clone off-screen in a fixed container so it isn't clipped by the
+    // dialog's overflow-y:auto, giving html2canvas the full content height.
+    const wrapper = document.createElement("div");
+    wrapper.style.cssText = "position:fixed;top:0;left:-10000px;width:794px;overflow:visible;background:white;z-index:9999;pointer-events:none";
+    const clone = el.cloneNode(true) as HTMLElement;
+    wrapper.appendChild(clone);
+    document.body.appendChild(wrapper);
     try {
-      // Capture the element directly; onclone strips the dark class from the cloned
-      // document so Tailwind dark: utilities won't apply during rendering
-      const canvas = await html2canvas(el, {
+      await new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+      const canvas = await html2canvas(clone, {
         scale: 2,
         useCORS: true,
         allowTaint: true,
         backgroundColor: "#ffffff",
         logging: false,
-        width: el.offsetWidth,
-        height: el.scrollHeight,
-        scrollX: 0,
-        scrollY: -window.scrollY,
+        width: 794,
+        height: clone.scrollHeight,
+        windowWidth: 794,
         onclone: (clonedDoc: Document) => {
           clonedDoc.documentElement.classList.remove("dark");
         },
@@ -1101,7 +1116,6 @@ function ProductionPlanningTab() {
       const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
       const pageWidthMm = pdf.internal.pageSize.getWidth();   // 210
       const pageHeightMm = pdf.internal.pageSize.getHeight(); // 297
-      // canvas.width = el.offsetWidth * scale (2), so canvas represents the full content
       const imgWidthMm = pageWidthMm;
       const imgHeightMm = (canvas.height * imgWidthMm) / canvas.width;
       let yOffset = 0;
@@ -1114,11 +1128,13 @@ function ProductionPlanningTab() {
       }
       pdf.save(`Production-Schedule-${selectedWeekLabel.replace(/[\s:]/g, "-")}.pdf`);
     } catch (err) {
-      console.error("PDF generation failed", err);
+      console.error("PDF generation failed:", err);
+      toast({ title: "Could not generate PDF", description: String(err), variant: "destructive" });
     } finally {
+      document.body.removeChild(wrapper);
       setIsPdfGenerating(false);
     }
-  }, [selectedWeekLabel]);
+  }, [selectedWeekLabel, toast]);
   const [expandedDay, setExpandedDay] = React.useState<string | null>(null);
   const [dragged, setDragged] = React.useState<{
     type: "planned" | "assigned";
