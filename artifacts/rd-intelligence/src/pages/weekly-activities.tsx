@@ -909,7 +909,7 @@ export default function WeeklyActivities() {
       updateActivity(id, { assignedUserId: uid });
       return;
     }
-    const isText = field === "projectTitle" || field === "remarks";
+    const isText = field === "projectTitle" || field === "remarks" || field === "productType";
     if (isText) {
       if (saveTimers.current[id]) clearTimeout(saveTimers.current[id]);
       saveTimers.current[id] = setTimeout(() => updateActivity(id, { [field]: value }), 600);
@@ -1162,6 +1162,13 @@ export default function WeeklyActivities() {
                           list="wa-product-type-options"
                           value={row.productType ?? ""}
                           onChange={e => handleFieldChange(row.id, "productType", e.target.value || null)}
+                          onBlur={e => {
+                            if (saveTimers.current[row.id]) {
+                              clearTimeout(saveTimers.current[row.id]);
+                              delete saveTimers.current[row.id];
+                            }
+                            updateActivity(row.id, { productType: e.target.value || null });
+                          }}
                           placeholder="Product type…"
                           className={cn("text-xs rounded-lg border px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary/40 w-full",
                             isLight ? "bg-slate-50 border-slate-200 text-slate-700" : "bg-black/20 border-white/10 text-foreground")}
