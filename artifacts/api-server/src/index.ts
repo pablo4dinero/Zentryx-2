@@ -138,6 +138,20 @@ async function createTablesIfNotExist() {
       END $$;
     `));
 
+    // Migrate accounts table product_type enum column to text so custom values are accepted
+    await db.execute(sql.raw(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'accounts' AND column_name = 'product_type' AND data_type = 'USER-DEFINED'
+        ) THEN
+          ALTER TABLE accounts
+            ALTER COLUMN product_type TYPE text USING product_type::text;
+        END IF;
+      END $$;
+    `));
+
     logger.info("Database tables created or verified successfully");
   } catch (err) {
     logger.error({ err }, "Failed to create database tables");
