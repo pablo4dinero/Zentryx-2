@@ -12,6 +12,8 @@ import { cn } from "@/lib/utils";
 type SortKey = "name" | "stage" | "status" | "productType" | "customerName" | "targetDate" | "progress" | "createdAt";
 type SortDir = "asc" | "desc";
 
+const BASE = import.meta.env.BASE_URL;
+
 const STATUSES = [
   { value: "approved", label: "Approved" },
   { value: "awaiting_feedback", label: "Awaiting Feedback" },
@@ -50,6 +52,7 @@ export function ListView({ projects }: Props) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; projectId: number; currentStatus: string } | null>(null);
   const [statusReport, setStatusReport] = useState<{ project: any } | null>(null);
   const [reportText, setReportText] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -166,11 +169,27 @@ export function ListView({ projects }: Props) {
     textareaRef.current?.focus();
   };
 
-  const submitReport = () => {
+  const submitReport = async () => {
     if (!reportText.trim() || !statusReport) return;
-    toast({ title: "Status report added", description: `Report for "${statusReport.project.name}" saved.` });
-    setReportText("");
-    setStatusReport(null);
+    setIsSubmitting(true);
+    const mentionedUserIds = (users as any[])
+      .filter(u => reportText.includes(`@${u.name}`))
+      .map(u => u.id);
+    try {
+      const res = await fetch(`${BASE}api/projects/${statusReport.project.id}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("rd_token")}` },
+        body: JSON.stringify({ content: reportText, mentionedUserIds }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      toast({ title: "Status report added", description: `Report for "${statusReport.project.name}" saved.` });
+      setReportText("");
+      setStatusReport(null);
+    } catch {
+      toast({ title: "Error", description: "Could not save the status report.", variant: "destructive" });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const SortIcon = ({ k }: { k: SortKey }) => {
@@ -410,11 +429,11 @@ export function ListView({ projects }: Props) {
                   </button>
                   <button
                     onClick={submitReport}
-                    disabled={!reportText.trim()}
+                    disabled={!reportText.trim() || isSubmitting}
                     className="px-4 py-2 rounded-xl text-sm bg-primary text-white font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                   >
                     <Send className="w-3.5 h-3.5" />
-                    Submit Report
+                    {isSubmitting ? "Saving…" : "Submit Report"}
                   </button>
                 </div>
               </div>
