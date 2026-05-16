@@ -1,9 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useListProjects, useCreateProject, useDeleteProject, useListUsers, useUpdateProject } from "@/api-client";
 import { PageLoader } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Search, Download, Layers } from "lucide-react";
+import { Plus, Search, Download, Layers, ChevronDown, Edit3, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -17,10 +17,234 @@ import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import * as XLSX from "xlsx";
 
-const STAGES = ["testing", "reformulation", "innovation", "cost_optimization", "modification"] as const;
-const STATUSES = ["approved", "awaiting_feedback", "on_hold", "in_progress", "new_inventory", "cancelled", "pushed_to_live"] as const;
-const PRODUCT_TYPES = ["Seasoning", "Snack Dusting", "Bread & Dough Premix", "Dairy Premix", "Functional Blend", "Pasta Sauce", "Sweet Flavour", "Savoury Flavour"] as const;
+// ── Default option seeds ─────────────────────────────────────────────────────
+const DEFAULT_STAGES    = ["testing", "reformulation", "innovation", "cost_optimization", "modification"];
+const DEFAULT_STATUSES  = ["approved", "awaiting_feedback", "on_hold", "in_progress", "new_inventory", "cancelled", "pushed_to_live"];
+const DEFAULT_PRODUCT_TYPES = ["Seasoning", "Snack Dusting", "Bread & Dough Premix", "Dairy Premix", "Functional Blend", "Pasta Sauce", "Sweet Flavour", "Savoury Flavour"];
+const DEFAULT_PRIORITIES = ["low", "medium", "high", "critical"];
 
+// Legacy aliases used by views/filters
+const STAGES = DEFAULT_STAGES as readonly string[];
+const STATUSES = DEFAULT_STATUSES as readonly string[];
+const PRODUCT_TYPES = DEFAULT_PRODUCT_TYPES as readonly string[];
+
+// ── Custom options hook (localStorage) ──────────────────────────────────────
+function useCustomOptions(key: string, defaults: string[]) {
+  const storageKey = `project-opts-${key}`;
+  const [options, setOptions] = useState<string[]>(() => {
+    try {
+      const s = localStorage.getItem(storageKey);
+      return s ? JSON.parse(s) : [...defaults];
+    } catch { return [...defaults]; }
+  });
+
+  const save = useCallback((next: string[]) => {
+    setOptions(next);
+    try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch {}
+  }, [storageKey]);
+
+  const addOption = useCallback((value: string) => {
+    const v = value.trim();
+    if (!v) return;
+    setOptions(prev => {
+      if (prev.includes(v)) return prev;
+      const next = [...prev, v];
+      try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, [storageKey]);
+
+  const deleteOption = useCallback((value: string) => {
+    setOptions(prev => {
+      const next = prev.filter(o => o !== value);
+      try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, [storageKey]);
+
+  const renameOption = useCallback((oldValue: string, newValue: string) => {
+    const v = newValue.trim();
+    if (!v) return;
+    setOptions(prev => {
+      if (v !== oldValue && prev.includes(v)) return prev;
+      const next = prev.map(o => o === oldValue ? v : o);
+      try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, [storageKey]);
+
+  return { options, save, addOption, deleteOption, renameOption };
+}
+
+type CustomOptionsHandle = ReturnType<typeof useCustomOptions>;
+
+// ── CustomOptionsSelect component ────────────────────────────────────────────
+interface CustomOptionsSelectProps {
+  value: string;
+  onChange: (v: string) => void;
+  handle: CustomOptionsHandle;
+  displayFn?: (v: string) => string;
+  placeholder?: string;
+  isLight: boolean;
+}
+
+function CustomOptionsSelect({
+  value, onChange, handle, displayFn = v => v, placeholder = "Select...", isLight,
+}: CustomOptionsSelectProps) {
+  const { options, addOption, deleteOption, renameOption } = handle;
+  const [open, setOpen] = useState(false);
+  const [newOption, setNewOption] = useState("");
+  const [editingOpt, setEditingOpt] = useState<string | null>(null);
+  const [editVal, setEditVal] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setEditingOpt(null);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const commitEdit = (opt: string) => {
+    if (editVal.trim()) {
+      const renamed = editVal.trim();
+      renameOption(opt, renamed);
+      if (value === opt) onChange(renamed);
+    }
+    setEditingOpt(null);
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      {/* Trigger */}
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className={cn(
+          "flex h-10 w-full items-center justify-between rounded-xl border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-colors",
+          isLight
+            ? "border-gray-200 bg-white text-black hover:border-gray-300"
+            : "border-white/10 bg-black/20 text-foreground hover:border-white/20"
+        )}
+      >
+        <span className={cn("truncate capitalize", !value && (isLight ? "text-gray-400" : "text-muted-foreground"))}>
+          {value ? displayFn(value) : placeholder}
+        </span>
+        <ChevronDown className={cn("w-4 h-4 shrink-0 ml-2 transition-transform", open && "rotate-180", isLight ? "text-gray-500" : "opacity-50")} />
+      </button>
+
+      {/* Dropdown */}
+      {open && (
+        <div className={cn(
+          "absolute top-[calc(100%+4px)] left-0 right-0 z-[200] rounded-xl border shadow-xl overflow-hidden",
+          isLight ? "bg-white border-gray-200" : "bg-card border-white/10"
+        )}>
+          <div className="max-h-48 overflow-y-auto">
+            {options.length === 0 && (
+              <p className="px-3 py-3 text-xs text-center text-muted-foreground">No options yet</p>
+            )}
+            {options.map(opt => (
+              <div
+                key={opt}
+                className={cn(
+                  "flex items-center group",
+                  isLight ? "hover:bg-slate-50" : "hover:bg-white/5"
+                )}
+              >
+                {editingOpt === opt ? (
+                  <input
+                    autoFocus
+                    value={editVal}
+                    onChange={e => setEditVal(e.target.value)}
+                    onBlur={() => commitEdit(opt)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") { e.preventDefault(); commitEdit(opt); }
+                      if (e.key === "Escape") setEditingOpt(null);
+                    }}
+                    className={cn(
+                      "flex-1 px-3 py-2 text-sm bg-transparent border-none focus:outline-none",
+                      isLight ? "text-black" : "text-foreground"
+                    )}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => { onChange(opt); setOpen(false); }}
+                    className={cn(
+                      "flex-1 text-left px-3 py-2 text-sm capitalize transition-colors",
+                      value === opt
+                        ? "text-primary font-semibold"
+                        : isLight ? "text-black" : "text-foreground"
+                    )}
+                  >
+                    {displayFn(opt)}
+                  </button>
+                )}
+                <div className="flex items-center gap-0.5 pr-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    type="button"
+                    title="Rename"
+                    onClick={e => { e.stopPropagation(); setEditingOpt(opt); setEditVal(opt); }}
+                    className={cn(
+                      "p-1 rounded transition-colors text-muted-foreground",
+                      isLight ? "hover:bg-slate-200 hover:text-slate-800" : "hover:bg-white/10 hover:text-foreground"
+                    )}
+                  >
+                    <Edit3 className="w-3 h-3" />
+                  </button>
+                  <button
+                    type="button"
+                    title="Delete"
+                    onClick={e => { e.stopPropagation(); deleteOption(opt); if (value === opt) onChange(""); }}
+                    className="p-1 rounded transition-colors text-muted-foreground hover:bg-red-500/10 hover:text-red-400"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Add custom option */}
+          <div className={cn("border-t p-2 flex gap-1.5", isLight ? "border-gray-100" : "border-white/10")}>
+            <input
+              type="text"
+              value={newOption}
+              onChange={e => setNewOption(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Enter") { e.preventDefault(); addOption(newOption); setNewOption(""); }
+              }}
+              placeholder="Add custom option..."
+              className={cn(
+                "flex-1 h-7 px-2 rounded-lg text-xs border focus:outline-none focus:ring-1 focus:ring-primary/50",
+                isLight
+                  ? "border-gray-200 bg-slate-50 text-black placeholder:text-slate-400"
+                  : "border-white/10 bg-white/5 text-foreground placeholder:text-muted-foreground"
+              )}
+            />
+            <button
+              type="button"
+              onClick={() => { addOption(newOption); setNewOption(""); }}
+              disabled={!newOption.trim()}
+              className="h-7 px-2.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 text-xs font-semibold disabled:opacity-40 transition-colors"
+            >
+              Add
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const displayLabel = (v: string) => v.replace(/_/g, " ");
+
+// ── Main page ────────────────────────────────────────────────────────────────
 export default function ProjectsList() {
   const [searchTerm, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"projects" | "export">("projects");
@@ -28,6 +252,12 @@ export default function ProjectsList() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [productTypeFilter, setProductTypeFilter] = useState<string>("all");
   const [groupByType, setGroupByType] = useState(false);
+
+  // Custom option stores (shared between filter + modal)
+  const productTypeOpts = useCustomOptions("productType", DEFAULT_PRODUCT_TYPES);
+  const stageOpts       = useCustomOptions("stage",       DEFAULT_STAGES);
+  const statusOpts      = useCustomOptions("status",      DEFAULT_STATUSES);
+  const priorityOpts    = useCustomOptions("priority",    DEFAULT_PRIORITIES);
 
   const { data: projects, isLoading } = useListProjects({});
   const { data: users } = useListUsers();
@@ -133,7 +363,13 @@ export default function ProjectsList() {
           <p className="text-muted-foreground mt-1">Manage end-to-end R&D lifecycles.</p>
         </div>
         <div className="flex items-center gap-2">
-          <CreateProjectModal users={users || []} />
+          <CreateProjectModal
+            users={users || []}
+            productTypeOpts={productTypeOpts}
+            stageOpts={stageOpts}
+            statusOpts={statusOpts}
+            priorityOpts={priorityOpts}
+          />
         </div>
       </div>
 
@@ -174,13 +410,13 @@ export default function ProjectsList() {
               >
                 All
               </button>
-              {STATUSES.map(s => (
+              {statusOpts.options.map(s => (
                 <button
                   key={s}
                   onClick={() => setStatusFilter(s === statusFilter ? "all" : s)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border capitalize ${statusFilter === s ? "bg-primary text-white border-primary" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5"}`}
                 >
-                  {s.replace(/_/g, " ")}
+                  {displayLabel(s)}
                 </button>
               ))}
             </div>
@@ -194,11 +430,11 @@ export default function ProjectsList() {
               value={productTypeFilter}
               onChange={e => setProductTypeFilter(e.target.value)}
               className={cn("h-8 px-3 rounded-lg border text-xs focus:outline-none cursor-pointer",
-                isLight ? "bg-white border-slate-200 text-slate-700" : "bg-black/20 border-white/10 text-foreground"
+                isLight ? "bg-white border-slate-200 text-black" : "bg-black/20 border-white/10 text-foreground"
               )}
             >
               <option value="all">All Types</option>
-              {PRODUCT_TYPES.map(t => <option key={t} value={t} className="bg-white text-black">{t}</option>)}
+              {productTypeOpts.options.map(t => <option key={t} value={t} className="bg-white text-black">{t}</option>)}
             </select>
             {view === "portfolio" && (
               <button
@@ -285,7 +521,16 @@ function ExportTab({ projects, onExportCSV, onExportXLSX }: { projects: any[]; o
   );
 }
 
-function CreateProjectModal({ users }: { users: any[] }) {
+// ── Create Project Modal ─────────────────────────────────────────────────────
+function CreateProjectModal({
+  users, productTypeOpts, stageOpts, statusOpts, priorityOpts,
+}: {
+  users: any[];
+  productTypeOpts: CustomOptionsHandle;
+  stageOpts: CustomOptionsHandle;
+  statusOpts: CustomOptionsHandle;
+  priorityOpts: CustomOptionsHandle;
+}) {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
   const createMutation = useCreateProject();
@@ -336,8 +581,7 @@ function CreateProjectModal({ users }: { users: any[] }) {
     });
   };
 
-  const inputCls = `flex h-10 w-full rounded-xl border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground ${isCpmLight ? "border-gray-200 bg-white" : "border-white/10 bg-black/20"}`;
-  const selectCls = `flex h-10 w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground ${isCpmLight ? "border-gray-200 bg-white" : "border-white/10 bg-black/20"}`;
+  const inputCls = `flex h-10 w-full rounded-xl border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground ${isCpmLight ? "border-gray-200 bg-white text-black" : "border-white/10 bg-black/20"}`;
   const labelCls = cn("text-sm font-medium", isCpmLight ? "text-gray-900" : "");
 
   return (
@@ -357,33 +601,60 @@ function CreateProjectModal({ users }: { users: any[] }) {
             </div>
             <div className="sm:col-span-2 space-y-1.5">
               <label className={labelCls}>Description</label>
-              <textarea value={form.description} onChange={e => setF("description", e.target.value)} placeholder="Project objectives..." className={`flex min-h-[70px] w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground ${isCpmLight ? "border-gray-200 bg-white" : "border-white/10 bg-black/20"}`} />
+              <textarea value={form.description} onChange={e => setF("description", e.target.value)} placeholder="Project objectives..." className={`flex min-h-[70px] w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground ${isCpmLight ? "border-gray-200 bg-white text-black" : "border-white/10 bg-black/20"}`} />
             </div>
+
+            {/* Stage */}
             <div className="space-y-1.5">
               <label className={labelCls}>Stage</label>
-              <select value={form.stage} onChange={e => setF("stage", e.target.value)} className={selectCls}>
-                {STAGES.map(s => <option key={s} value={s} className="bg-card capitalize">{s.replace(/_/g, " ")}</option>)}
-              </select>
+              <CustomOptionsSelect
+                value={form.stage}
+                onChange={v => setF("stage", v)}
+                handle={stageOpts}
+                displayFn={displayLabel}
+                placeholder="Select stage..."
+                isLight={isCpmLight}
+              />
             </div>
+
+            {/* Status */}
             <div className="space-y-1.5">
               <label className={labelCls}>Status</label>
-              <select value={form.status} onChange={e => setF("status", e.target.value)} className={selectCls}>
-                {STATUSES.map(s => <option key={s} value={s} className="bg-card capitalize">{s.replace(/_/g, " ")}</option>)}
-              </select>
+              <CustomOptionsSelect
+                value={form.status}
+                onChange={v => setF("status", v)}
+                handle={statusOpts}
+                displayFn={displayLabel}
+                placeholder="Select status..."
+                isLight={isCpmLight}
+              />
             </div>
+
+            {/* Priority */}
             <div className="space-y-1.5">
               <label className={labelCls}>Priority</label>
-              <select value={form.priority} onChange={e => setF("priority", e.target.value)} className={selectCls}>
-                {["low", "medium", "high", "critical"].map(p => <option key={p} value={p} className="bg-card capitalize">{p}</option>)}
-              </select>
+              <CustomOptionsSelect
+                value={form.priority}
+                onChange={v => setF("priority", v)}
+                handle={priorityOpts}
+                displayFn={displayLabel}
+                placeholder="Select priority..."
+                isLight={isCpmLight}
+              />
             </div>
+
+            {/* Product Type */}
             <div className="space-y-1.5">
               <label className={labelCls}>Product Type</label>
-              <select value={form.productType} onChange={e => setF("productType", e.target.value)} className={selectCls}>
-                <option value="" className="bg-card">Select type...</option>
-                {PRODUCT_TYPES.map(p => <option key={p} value={p} className="bg-card">{p}</option>)}
-              </select>
+              <CustomOptionsSelect
+                value={form.productType}
+                onChange={v => setF("productType", v)}
+                handle={productTypeOpts}
+                placeholder="Select type..."
+                isLight={isCpmLight}
+              />
             </div>
+
             <div className={`sm:col-span-2 border-t pt-3 ${isCpmLight ? "border-gray-200" : "border-white/10"}`}>
               <p className={cn("text-sm font-semibold uppercase tracking-wide mb-3", isCpmLight ? "text-gray-500" : "text-muted-foreground")}>Customer Information</p>
             </div>
