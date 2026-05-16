@@ -1104,6 +1104,18 @@ body{margin:0;padding:0;font-family:ui-sans-serif,system-ui,-apple-system,sans-s
 .text-amber-600{color:#d97706}
 .text-sky-400{color:#38bdf8}
 .border-slate-200{border-color:#e2e8f0}.border-slate-800{border-color:#1e293b}
+.rounded-2xl{border-radius:1rem}.rounded-t-2xl{border-top-left-radius:1rem;border-top-right-radius:1rem}.rounded-b-2xl{border-bottom-left-radius:1rem;border-bottom-right-radius:1rem}
+.w-3{width:.75rem}.w-4{width:1rem}.h-1\\.5{height:.375rem}.h-3{height:.75rem}.h-4{height:1rem}
+.min-h-\\[90px\\]{min-height:90px}
+.mt-3{margin-top:.75rem}
+.gap-1\\.5{gap:.375rem}.space-y-1\\.5>*+*{margin-top:.375rem}
+.py-2\\.5{padding-top:.625rem;padding-bottom:.625rem}.px-2\\.5{padding-left:.625rem;padding-right:.625rem}.p-2\\.5{padding:.625rem}
+.text-indigo-400{color:#818cf8}.text-indigo-500{color:#6366f1}.text-indigo-600{color:#4f46e5}.text-indigo-800{color:#3730a3}
+.bg-indigo-50{background-color:#eef2ff}.bg-indigo-100{background-color:#e0e7ff}.bg-indigo-500{background-color:#6366f1}
+.bg-indigo-50\\/30{background-color:rgba(238,242,255,.3)}.bg-indigo-50\\/40{background-color:rgba(238,242,255,.4)}
+.bg-indigo-500\\/5{background-color:rgba(99,102,241,.05)}.bg-indigo-500\\/10{background-color:rgba(99,102,241,.1)}
+.border-indigo-100{border-color:#e0e7ff}.border-indigo-200{border-color:#c7d2fe}
+.border-indigo-500\\/15{border-color:rgba(99,102,241,.15)}.border-indigo-500\\/20{border-color:rgba(99,102,241,.2)}.border-indigo-500\\/60{border-color:rgba(99,102,241,.6)}
 `;
 
 function ProductionPlanningTab() {
@@ -1138,31 +1150,26 @@ function ProductionPlanningTab() {
   const handleDownloadPdf = React.useCallback(() => {
     const el = document.getElementById("print-schedule");
     if (!el) return;
-    // Use the browser's own print pipeline (same as the Print button) so the full
-    // template — day shifts, night shifts, all pages — renders correctly without any
-    // html2canvas limitations (oklch colours, truncation, page-break artifacts).
     const win = window.open("", "_blank", "width=900,height=700");
     if (!win) {
       toast({ title: "Popup blocked", description: "Allow popups for this site, then try again.", variant: "destructive" });
       return;
     }
-    const styleLinks = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'))
-      .map(l => `<link rel="stylesheet" href="${l.href}">`)
-      .join("\n");
     const filename = `Production-Schedule-${selectedWeekLabel.replace(/[\s:]/g, "-")}`;
-    win.document.write(
-      `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${filename}</title>${styleLinks}<style>
-        @page { size: A4 portrait; margin: 1.5cm; }
-        html, body { background: white !important; margin: 0; padding: 0; }
-        #print-schedule, #print-schedule * { overflow: visible !important; max-height: none !important; }
-        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-        .print-no-break { page-break-inside: avoid; break-inside: avoid; }
-        .print-break-before { page-break-before: always; break-before: page; }
-      </style></head><body>${el.outerHTML}</body></html>`
-    );
+    // PRINT_CANVAS_CSS is self-contained (hex/rgb, no external loads). This avoids
+    // Tailwind preflight's "html,body{height:100%}" which clamps the popup body to
+    // the window height (~700px) and causes only 1 page to appear in print.
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${filename}</title><style>
+${PRINT_CANVAS_CSS}
+html,body{height:auto!important;overflow:visible!important;background:#fff}
+@page{size:A4 portrait;margin:1.5cm}
+*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+.print-no-break{page-break-inside:avoid;break-inside:avoid}
+.print-break-before{page-break-before:always;break-before:page}
+</style></head><body>${el.outerHTML}</body></html>`);
     win.document.close();
-    // Auto-trigger print; browser shows "Save as PDF" as a destination option.
-    setTimeout(() => { win.focus(); win.print(); setTimeout(() => win.close(), 500); }, 1200);
+    // No external assets — 600 ms is enough for layout to settle before printing.
+    setTimeout(() => { win.focus(); win.print(); setTimeout(() => win.close(), 500); }, 600);
   }, [selectedWeekLabel, toast]);
   const [expandedDay, setExpandedDay] = React.useState<string | null>(null);
   const [dragged, setDragged] = React.useState<{
