@@ -14,6 +14,7 @@ import {
   Loader2,
   X,
   Maximize2,
+  Moon,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 
@@ -1056,6 +1057,7 @@ function ProductionPlanningTab() {
   const [editFloorForm, setEditFloorForm] = React.useState({ floorName: "", blendCategory: "Sweet" as ProductionFloor["blendCategory"], maxCapacityKg: "0" });
   const [deleteConfirmFloorId, setDeleteConfirmFloorId] = React.useState<number | null>(null);
   const [includeSaturday, setIncludeSaturday] = React.useState(false);
+  const [includeNightShift, setIncludeNightShift] = React.useState(false);
   const [planningView, setPlanningView] = React.useState<PlanningViewMode>("weekly");
   const [assistedState, setAssistedState] = React.useState<"idle" | "optimizing" | "done">("idle");
   const [printOpen, setPrintOpen] = React.useState(false);
@@ -1074,14 +1076,15 @@ function ProductionPlanningTab() {
     doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8">${styleHTML}<style>
       @page { size: A4 portrait; margin: 1.2cm; }
       body { margin: 0; padding: 16px; background: white; }
+      @media print { body * { visibility: visible !important; } }
       * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-    </style></head><body>${el.innerHTML}</body></html>`);
+    </style></head><body>${el.outerHTML}</body></html>`);
     doc.close();
     setTimeout(() => {
       iframe.contentWindow!.focus();
       iframe.contentWindow!.print();
-      setTimeout(() => iframe.remove(), 1000);
-    }, 600);
+      setTimeout(() => iframe.remove(), 1500);
+    }, 700);
   }, []);
 
   const handleDownloadPdf = React.useCallback(async () => {
@@ -1089,19 +1092,19 @@ function ProductionPlanningTab() {
     if (!el) return;
     setIsPdfGenerating(true);
     try {
-      // Clone outside the dialog so overflow:hidden doesn't clip the capture
       const clone = el.cloneNode(true) as HTMLElement;
-      clone.style.cssText = "position:absolute;top:0;left:-9999px;width:794px;background:white;";
+      clone.style.cssText = "position:absolute;top:-99999px;left:0;width:794px;background:white;";
       document.body.appendChild(clone);
+      void clone.offsetHeight; // force layout
       const canvas = await html2canvas(clone, {
         scale: 2,
         useCORS: true,
         allowTaint: true,
         backgroundColor: "#ffffff",
         logging: false,
-        width: clone.offsetWidth,
+        width: 794,
         height: clone.scrollHeight,
-        windowWidth: clone.offsetWidth,
+        windowWidth: 794,
       });
       document.body.removeChild(clone);
       const imgData = canvas.toDataURL("image/png");
@@ -1134,6 +1137,7 @@ function ProductionPlanningTab() {
   } | null>(null);
   const [localFloorOrder, setLocalFloorOrder] = React.useState<Record<number, number[]>>({});
   const [dragOverFloorId, setDragOverFloorId] = React.useState<number | null>(null);
+  const [dragOverNightFloorId, setDragOverNightFloorId] = React.useState<number | null>(null);
 
   const now = React.useMemo(() => new Date(), []);
   const weeks = React.useMemo(() => getWorkingWeeksForMonth(now.getFullYear(), now.getMonth()), [now]);
@@ -1615,6 +1619,14 @@ function ProductionPlanningTab() {
             <label className={cn("flex items-center gap-2 px-3 h-9 rounded-xl border text-xs font-medium cursor-pointer transition-all",
               isLight ? "border-slate-200 text-slate-700 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5"
             )}>
+              <input type="checkbox" checked={includeNightShift} onChange={e => setIncludeNightShift(e.target.checked)} className="accent-primary" />
+              Include Night Shift
+            </label>
+          )}
+          {planningView === "weekly" && (
+            <label className={cn("flex items-center gap-2 px-3 h-9 rounded-xl border text-xs font-medium cursor-pointer transition-all",
+              isLight ? "border-slate-200 text-slate-700 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5"
+            )}>
               <input type="checkbox" checked={includeSaturday} onChange={e => setIncludeSaturday(e.target.checked)} className="accent-primary" />
               Include Saturday
             </label>
@@ -1918,6 +1930,62 @@ function ProductionPlanningTab() {
                           );
                         })}
                       </div>
+
+                      {/* Night Shift row — Mon–Fri only */}
+                      {includeNightShift && day !== "Sat" && (
+                        <>
+                          <div className="flex items-center gap-2 mt-3 mb-2">
+                            <Moon className="w-3 h-3 text-indigo-400" />
+                            <span className="text-[10px] font-semibold uppercase tracking-widest text-indigo-400">Night Shift</span>
+                          </div>
+                          <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${floors.length}, minmax(0, 1fr))` }}>
+                            {floors.map(floor => {
+                              const nightDay = `${day}-NS`;
+                              const nightRows = floorOrder(floor.id).filter(r => r.assignment.assignedDay === nightDay);
+                              const nightKg = nightRows.reduce((s, r) => s + Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0), 0);
+                              const nightUtil = Math.min(100, Math.round((nightKg / (floor.maxCapacityKg || 1)) * 100));
+                              const nightUtilBar = nightUtil > 90 ? "bg-red-500" : nightUtil > 70 ? "bg-amber-500" : "bg-indigo-500";
+                              const isNightTarget = dragOverNightFloorId === floor.id;
+                              return (
+                                <div key={`${floor.id}-NS`}
+                                  onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOverNightFloorId(floor.id); }}
+                                  onDragLeave={() => setDragOverNightFloorId(c => c === floor.id ? null : c)}
+                                  onDrop={e => { e.stopPropagation(); setDragOverNightFloorId(null); handleDropOnFloorDay(floor, nightDay, e); }}
+                                  className={cn("rounded-2xl border flex flex-col transition-colors",
+                                    isNightTarget ? "border-indigo-500/60 bg-indigo-500/5"
+                                      : isLight ? "border-indigo-100 bg-indigo-50/40" : "border-indigo-500/15 bg-indigo-500/5"
+                                  )}
+                                >
+                                  <div className={cn("px-3 py-2.5 border-b rounded-t-2xl flex items-start gap-1",
+                                    isLight ? "border-indigo-100 bg-indigo-50" : "border-indigo-500/15 bg-indigo-500/10"
+                                  )}>
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-bold text-foreground truncate">{floor.floorName}</p>
+                                      <p className="text-[10px] text-muted-foreground">{floor.blendCategory} · {floor.maxCapacityKg.toLocaleString()} KG</p>
+                                    </div>
+                                  </div>
+                                  <div className="px-3 pt-2">
+                                    <div className="flex items-center gap-1.5 mb-1">
+                                      <div className={cn("flex-1 h-1 rounded-full overflow-hidden", isLight ? "bg-indigo-100" : "bg-indigo-500/15")}>
+                                        <div className={`${nightUtilBar} h-full transition-all`} style={{ width: `${nightUtil}%` }} />
+                                      </div>
+                                      <span className="text-[9px] text-muted-foreground shrink-0">{(floor.maxCapacityKg - nightKg).toLocaleString()} KG remaining · {nightUtil}%</span>
+                                    </div>
+                                  </div>
+                                  <div className={cn("flex-1 p-2 space-y-1.5 min-h-[90px] rounded-b-2xl", isNightTarget ? "bg-indigo-500/5" : "")}>
+                                    {nightRows.length === 0
+                                      ? <div className={cn("flex h-full min-h-[70px] items-center justify-center text-[10px] rounded-xl border border-dashed",
+                                          isLight ? "border-indigo-200 text-indigo-300" : "border-indigo-500/20 text-indigo-500/40"
+                                        )}>Drop here</div>
+                                      : nightRows.map(makeOrderCard(floor.id))
+                                    }
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </>
+                      )}
                     </div>
                   );
                 })}
@@ -2155,7 +2223,7 @@ function ProductionPlanningTab() {
                             </div>
                           </div>
 
-                          {/* Floor columns */}
+                          {/* Floor columns — Day Shift */}
                           <div className="grid border border-t-0 border-slate-200 rounded-b-xl overflow-hidden"
                             style={{ gridTemplateColumns: `repeat(${floors.length || 1}, 1fr)` }}>
                             {floors.map((floor, floorIdx) => {
@@ -2164,7 +2232,6 @@ function ProductionPlanningTab() {
                               const dayUtil = Math.min(100, Math.round((dayKg / (floor.maxCapacityKg || 1)) * 100));
                               return (
                                 <div key={floor.id} className={cn("border-r border-slate-200 last:border-r-0 flex flex-col", floorIdx % 2 === 0 ? "bg-white" : "bg-slate-50/50")}>
-                                  {/* Floor header */}
                                   <div className="border-b border-slate-200 px-3 py-2 bg-slate-100">
                                     <p className="text-[11px] font-bold text-slate-700">{floor.floorName}</p>
                                     <p className="text-[10px] text-slate-400">{floor.blendCategory} · {floor.maxCapacityKg.toLocaleString()} KG/day</p>
@@ -2174,7 +2241,6 @@ function ProductionPlanningTab() {
                                       </div>
                                     )}
                                   </div>
-                                  {/* Orders */}
                                   <div className="p-2 space-y-2 min-h-[100px] flex-1">
                                     {dayRows.length === 0 ? (
                                       <p className="text-[10px] text-slate-300 text-center py-4">—</p>
@@ -2198,7 +2264,6 @@ function ProductionPlanningTab() {
                                       })
                                     )}
                                   </div>
-                                  {/* Floor footer */}
                                   {dayRows.length > 0 && (
                                     <div className="border-t border-slate-200 px-3 py-1.5 bg-slate-50">
                                       <div className="flex justify-between items-center">
@@ -2211,6 +2276,63 @@ function ProductionPlanningTab() {
                               );
                             })}
                           </div>
+
+                          {/* Night Shift rows — print */}
+                          {includeNightShift && day !== "Sat" && (
+                            <>
+                              <div className="flex items-center gap-2 mt-3 mb-1 px-1">
+                                <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-600">Night Shift</span>
+                              </div>
+                              <div className="grid border border-indigo-200 rounded-xl overflow-hidden"
+                                style={{ gridTemplateColumns: `repeat(${floors.length || 1}, 1fr)` }}>
+                                {floors.map((floor, floorIdx) => {
+                                  const nightDay = `${day}-NS`;
+                                  const nightRows = floorOrder(floor.id).filter(r => r.assignment.assignedDay === nightDay);
+                                  const nightKg = nightRows.reduce((s, r) => s + Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0), 0);
+                                  const nightUtil = Math.min(100, Math.round((nightKg / (floor.maxCapacityKg || 1)) * 100));
+                                  return (
+                                    <div key={`${floor.id}-NS`} className={cn("border-r border-indigo-100 last:border-r-0 flex flex-col", floorIdx % 2 === 0 ? "bg-indigo-50/30" : "bg-white")}>
+                                      <div className="border-b border-indigo-100 px-3 py-2 bg-indigo-100">
+                                        <p className="text-[11px] font-bold text-indigo-800">{floor.floorName}</p>
+                                        <p className="text-[10px] text-indigo-400">{floor.blendCategory} · {floor.maxCapacityKg.toLocaleString()} KG/day</p>
+                                      </div>
+                                      <div className="p-2 space-y-2 min-h-[80px] flex-1">
+                                        {nightRows.length === 0 ? (
+                                          <p className="text-[10px] text-slate-300 text-center py-4">—</p>
+                                        ) : (
+                                          nightRows.map(row => {
+                                            const fullOrder = mdpOrderByMdpId.get(row.order.id);
+                                            const acc = planningAccountMap[fullOrder?.accountId ?? 0];
+                                            const company = acc?.company ?? fullOrder?.accountCompany ?? fullOrder?.accountName ?? "—";
+                                            const productName = acc?.productName ?? fullOrder?.productName ?? null;
+                                            const volume = Number(fullOrder?.volume ?? row.order.volume ?? 0);
+                                            return (
+                                              <div key={row.assignment.id} className="border border-indigo-200 rounded-lg p-2 bg-white">
+                                                <p className="text-[11px] font-bold text-slate-800 leading-tight truncate">{company}</p>
+                                                {productName && <p className="text-[10px] text-slate-500 truncate">{productName}</p>}
+                                                <div className="flex items-center justify-between mt-1.5 gap-1">
+                                                  <span className="text-[10px] font-semibold text-slate-700">{volume.toLocaleString()} KG</span>
+                                                  <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded", row.order.microbialAnalysis === "Critical" ? "bg-red-100 text-red-700" : row.order.microbialAnalysis === "Important" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700")}>{row.order.microbialAnalysis ?? "Normal"}</span>
+                                                </div>
+                                              </div>
+                                            );
+                                          })
+                                        )}
+                                      </div>
+                                      {nightRows.length > 0 && (
+                                        <div className="border-t border-indigo-100 px-3 py-1.5 bg-indigo-50">
+                                          <div className="flex justify-between items-center">
+                                            <span className="text-[10px] text-indigo-500">{nightKg.toLocaleString()} KG</span>
+                                            <span className={cn("text-[10px] font-bold", nightUtil > 90 ? "text-red-600" : nightUtil > 70 ? "text-amber-600" : "text-indigo-600")}>{nightUtil}% util</span>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </>
+                          )}
                         </div>
                       );
                     })}
@@ -2266,62 +2388,126 @@ function ProductionPlanningTab() {
                   </button>
                 </div>
                 {/* Floor grid for this day */}
-                <div className={cn("flex-1 overflow-auto p-6", isLight ? "bg-slate-50" : "bg-slate-950")}>
+                <div className={cn("flex-1 overflow-auto p-6 space-y-6", isLight ? "bg-slate-50" : "bg-slate-950")}>
                   {floors.length === 0 ? (
                     <div className="flex h-full items-center justify-center text-sm text-muted-foreground/40">No production floors defined.</div>
                   ) : (
-                    <div className="grid gap-4 h-full" style={{ gridTemplateColumns: `repeat(${floors.length}, minmax(0, 1fr))` }}>
-                      {floors.map(floor => {
-                        const dayRows = floorOrder(floor.id).filter(r => r.assignment.assignedDay === expandedDay);
-                        const dayKg = dayRows.reduce((s, r) => s + Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0), 0);
-                        const dayUtil = Math.min(100, Math.round((dayKg / (floor.maxCapacityKg || 1)) * 100));
-                        const dayBar = dayUtil > 90 ? "bg-red-500" : dayUtil > 70 ? "bg-amber-500" : "bg-emerald-500";
-                        return (
-                          <div key={floor.id} className={cn("rounded-2xl border flex flex-col", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-slate-900")}>
-                            {/* Floor header */}
-                            <div className={cn("px-4 py-3 border-b rounded-t-2xl", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5")}>
-                              <p className="text-sm font-bold text-foreground">{floor.floorName}</p>
-                              <p className="text-xs text-muted-foreground">{floor.blendCategory} · {floor.maxCapacityKg.toLocaleString()} KG/day</p>
-                              <div className="mt-2 flex items-center gap-2">
-                                <div className={cn("h-1.5 flex-1 rounded-full overflow-hidden", isLight ? "bg-slate-200" : "bg-white/10")}>
-                                  <div className={`${dayBar} h-full transition-all`} style={{ width: `${dayUtil}%` }} />
-                                </div>
-                                <span className="text-xs text-muted-foreground">{(floor.maxCapacityKg - dayKg).toLocaleString()} KG remaining · {dayUtil}%</span>
-                              </div>
-                            </div>
-                            {/* Orders */}
-                            <div className="flex-1 p-3 space-y-2 overflow-y-auto">
-                              {dayRows.length === 0 ? (
-                                <div className="flex h-full min-h-[80px] items-center justify-center text-sm text-muted-foreground/40">No orders</div>
-                              ) : (
-                                dayRows.map(row => {
-                                  const fullOrder = mdpOrderByMdpId.get(row.order.id);
-                                  const acc = planningAccountMap[fullOrder?.accountId ?? 0];
-                                  const company = acc?.company ?? fullOrder?.accountCompany ?? fullOrder?.accountName ?? "Unknown";
-                                  const productName = acc?.productName ?? fullOrder?.productName ?? null;
-                                  const volume = Number(fullOrder?.volume ?? row.order.volume ?? 0);
-                                  return (
-                                    <div key={row.assignment.id} className={cn("rounded-xl border p-3", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5")}>
-                                      <div className="flex items-start justify-between gap-2 mb-2">
-                                        <div className="min-w-0">
-                                          <p className="font-bold text-foreground text-sm truncate">{company}</p>
-                                          {productName && <p className="text-xs text-muted-foreground truncate">{productName}</p>}
-                                        </div>
-                                        <span className="text-sm font-bold text-foreground shrink-0">{volume.toLocaleString()} KG</span>
-                                      </div>
-                                      <div className="flex items-center gap-2">
-                                        <span className={cn("h-2 w-2 rounded-full shrink-0", getMicrobialColor(row.order.microbialAnalysis ?? "Normal"))} />
-                                        <span className="text-xs text-muted-foreground">{row.order.microbialAnalysis ?? "Normal"}</span>
-                                      </div>
+                    <>
+                      {/* Day Shift */}
+                      <div>
+                        <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${floors.length}, minmax(0, 1fr))` }}>
+                          {floors.map(floor => {
+                            const dayRows = floorOrder(floor.id).filter(r => r.assignment.assignedDay === expandedDay);
+                            const dayKg = dayRows.reduce((s, r) => s + Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0), 0);
+                            const dayUtil = Math.min(100, Math.round((dayKg / (floor.maxCapacityKg || 1)) * 100));
+                            const dayBar = dayUtil > 90 ? "bg-red-500" : dayUtil > 70 ? "bg-amber-500" : "bg-emerald-500";
+                            return (
+                              <div key={floor.id} className={cn("rounded-2xl border flex flex-col", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-slate-900")}>
+                                <div className={cn("px-4 py-3 border-b rounded-t-2xl", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5")}>
+                                  <p className="text-sm font-bold text-foreground">{floor.floorName}</p>
+                                  <p className="text-xs text-muted-foreground">{floor.blendCategory} · {floor.maxCapacityKg.toLocaleString()} KG/day</p>
+                                  <div className="mt-2 flex items-center gap-2">
+                                    <div className={cn("h-1.5 flex-1 rounded-full overflow-hidden", isLight ? "bg-slate-200" : "bg-white/10")}>
+                                      <div className={`${dayBar} h-full transition-all`} style={{ width: `${dayUtil}%` }} />
                                     </div>
-                                  );
-                                })
-                              )}
-                            </div>
+                                    <span className="text-xs text-muted-foreground">{(floor.maxCapacityKg - dayKg).toLocaleString()} KG remaining · {dayUtil}%</span>
+                                  </div>
+                                </div>
+                                <div className="flex-1 p-3 space-y-2 overflow-y-auto">
+                                  {dayRows.length === 0 ? (
+                                    <div className="flex h-full min-h-[80px] items-center justify-center text-sm text-muted-foreground/40">No orders</div>
+                                  ) : (
+                                    dayRows.map(row => {
+                                      const fullOrder = mdpOrderByMdpId.get(row.order.id);
+                                      const acc = planningAccountMap[fullOrder?.accountId ?? 0];
+                                      const company = acc?.company ?? fullOrder?.accountCompany ?? fullOrder?.accountName ?? "Unknown";
+                                      const productName = acc?.productName ?? fullOrder?.productName ?? null;
+                                      const volume = Number(fullOrder?.volume ?? row.order.volume ?? 0);
+                                      return (
+                                        <div key={row.assignment.id} className={cn("rounded-xl border p-3", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5")}>
+                                          <div className="flex items-start justify-between gap-2 mb-2">
+                                            <div className="min-w-0">
+                                              <p className="font-bold text-foreground text-sm truncate">{company}</p>
+                                              {productName && <p className="text-xs text-muted-foreground truncate">{productName}</p>}
+                                            </div>
+                                            <span className="text-sm font-bold text-foreground shrink-0">{volume.toLocaleString()} KG</span>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <span className={cn("h-2 w-2 rounded-full shrink-0", getMicrobialColor(row.order.microbialAnalysis ?? "Normal"))} />
+                                            <span className="text-xs text-muted-foreground">{row.order.microbialAnalysis ?? "Normal"}</span>
+                                          </div>
+                                        </div>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Night Shift — expanded view */}
+                      {includeNightShift && expandedDay !== "Sat" && (
+                        <div>
+                          <div className="flex items-center gap-2 mb-3">
+                            <Moon className="w-4 h-4 text-indigo-400" />
+                            <span className="text-xs font-bold uppercase tracking-widest text-indigo-400">Night Shift</span>
                           </div>
-                        );
-                      })}
-                    </div>
+                          <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${floors.length}, minmax(0, 1fr))` }}>
+                            {floors.map(floor => {
+                              const nightDay = `${expandedDay}-NS`;
+                              const nightRows = floorOrder(floor.id).filter(r => r.assignment.assignedDay === nightDay);
+                              const nightKg = nightRows.reduce((s, r) => s + Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0), 0);
+                              const nightUtil = Math.min(100, Math.round((nightKg / (floor.maxCapacityKg || 1)) * 100));
+                              const nightBar = nightUtil > 90 ? "bg-red-500" : nightUtil > 70 ? "bg-amber-500" : "bg-indigo-500";
+                              return (
+                                <div key={`${floor.id}-NS`} className={cn("rounded-2xl border flex flex-col", isLight ? "border-indigo-100 bg-indigo-50/40" : "border-indigo-500/20 bg-indigo-500/5")}>
+                                  <div className={cn("px-4 py-3 border-b rounded-t-2xl", isLight ? "border-indigo-100 bg-indigo-50" : "border-indigo-500/20 bg-indigo-500/10")}>
+                                    <p className="text-sm font-bold text-foreground">{floor.floorName}</p>
+                                    <p className="text-xs text-muted-foreground">{floor.blendCategory} · {floor.maxCapacityKg.toLocaleString()} KG/day</p>
+                                    <div className="mt-2 flex items-center gap-2">
+                                      <div className={cn("h-1.5 flex-1 rounded-full overflow-hidden", isLight ? "bg-indigo-100" : "bg-indigo-500/15")}>
+                                        <div className={`${nightBar} h-full transition-all`} style={{ width: `${nightUtil}%` }} />
+                                      </div>
+                                      <span className="text-xs text-muted-foreground">{(floor.maxCapacityKg - nightKg).toLocaleString()} KG remaining · {nightUtil}%</span>
+                                    </div>
+                                  </div>
+                                  <div className="flex-1 p-3 space-y-2 overflow-y-auto">
+                                    {nightRows.length === 0 ? (
+                                      <div className="flex h-full min-h-[80px] items-center justify-center text-sm text-muted-foreground/40">No night shift orders</div>
+                                    ) : (
+                                      nightRows.map(row => {
+                                        const fullOrder = mdpOrderByMdpId.get(row.order.id);
+                                        const acc = planningAccountMap[fullOrder?.accountId ?? 0];
+                                        const company = acc?.company ?? fullOrder?.accountCompany ?? fullOrder?.accountName ?? "Unknown";
+                                        const productName = acc?.productName ?? fullOrder?.productName ?? null;
+                                        const volume = Number(fullOrder?.volume ?? row.order.volume ?? 0);
+                                        return (
+                                          <div key={row.assignment.id} className={cn("rounded-xl border p-3", isLight ? "border-indigo-100 bg-white" : "border-indigo-500/20 bg-indigo-500/5")}>
+                                            <div className="flex items-start justify-between gap-2 mb-2">
+                                              <div className="min-w-0">
+                                                <p className="font-bold text-foreground text-sm truncate">{company}</p>
+                                                {productName && <p className="text-xs text-muted-foreground truncate">{productName}</p>}
+                                              </div>
+                                              <span className="text-sm font-bold text-foreground shrink-0">{volume.toLocaleString()} KG</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                              <span className={cn("h-2 w-2 rounded-full shrink-0", getMicrobialColor(row.order.microbialAnalysis ?? "Normal"))} />
+                                              <span className="text-xs text-muted-foreground">{row.order.microbialAnalysis ?? "Normal"}</span>
+                                            </div>
+                                          </div>
+                                        );
+                                      })
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </motion.div>
