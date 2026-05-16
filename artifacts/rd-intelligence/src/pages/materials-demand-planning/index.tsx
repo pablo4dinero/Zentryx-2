@@ -1059,59 +1059,57 @@ function ProductionPlanningTab() {
   const handlePrint = React.useCallback(() => {
     const el = document.getElementById("print-schedule");
     if (!el) return;
-    const iframe = document.createElement("iframe");
-    iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:210mm;border:none;";
-    document.body.appendChild(iframe);
-    const styleNodes = Array.from(document.querySelectorAll<Element>('link[rel="stylesheet"], style'));
-    const styleHTML = styleNodes.map(n => n.outerHTML).join("\n");
-    const doc = iframe.contentDocument ?? iframe.contentWindow!.document;
-    doc.open();
-    doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8">${styleHTML}<style>
-      @page { size: A4 portrait; margin: 1.2cm; }
-      body { margin: 0; padding: 16px; background: white; }
-      @media print { body * { visibility: visible !important; } }
-      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-    </style></head><body>${el.outerHTML}</body></html>`);
-    doc.close();
+    const win = window.open("", "_blank", "width=900,height=700");
+    if (!win) return;
+    // Copy compiled CSS links only — no dark class on <html> so Tailwind dark: variants won't fire
+    const styleLinks = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'))
+      .map(l => `<link rel="stylesheet" href="${l.href}">`)
+      .join("\n");
+    win.document.write(
+      `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Production Schedule — ${selectedWeekLabel}</title>${styleLinks}<style>@page{size:A4 portrait;margin:1.5cm}html,body{background:white!important;margin:0;padding:0}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}</style></head><body>${el.outerHTML}</body></html>`
+    );
+    win.document.close();
     setTimeout(() => {
-      iframe.contentWindow!.focus();
-      iframe.contentWindow!.print();
-      setTimeout(() => iframe.remove(), 1500);
-    }, 700);
-  }, []);
+      win.focus();
+      win.print();
+      setTimeout(() => win.close(), 1000);
+    }, 800);
+  }, [selectedWeekLabel]);
 
   const handleDownloadPdf = React.useCallback(async () => {
     const el = document.getElementById("print-schedule");
     if (!el) return;
     setIsPdfGenerating(true);
     try {
-      const clone = el.cloneNode(true) as HTMLElement;
-      clone.style.cssText = "position:absolute;top:-99999px;left:0;width:794px;background:white;";
-      document.body.appendChild(clone);
-      void clone.offsetHeight; // force layout
-      const canvas = await html2canvas(clone, {
+      // Capture the element directly; onclone strips the dark class from the cloned
+      // document so Tailwind dark: utilities won't apply during rendering
+      const canvas = await html2canvas(el, {
         scale: 2,
         useCORS: true,
         allowTaint: true,
         backgroundColor: "#ffffff",
         logging: false,
-        width: 794,
-        height: clone.scrollHeight,
-        windowWidth: 794,
+        width: el.offsetWidth,
+        height: el.scrollHeight,
+        scrollX: 0,
+        scrollY: -window.scrollY,
+        onclone: (clonedDoc: Document) => {
+          clonedDoc.documentElement.classList.remove("dark");
+        },
       });
-      document.body.removeChild(clone);
       const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const imgWidth = pageWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      const pageWidthMm = pdf.internal.pageSize.getWidth();   // 210
+      const pageHeightMm = pdf.internal.pageSize.getHeight(); // 297
+      // canvas.width = el.offsetWidth * scale (2), so canvas represents the full content
+      const imgWidthMm = pageWidthMm;
+      const imgHeightMm = (canvas.height * imgWidthMm) / canvas.width;
       let yOffset = 0;
       let page = 0;
-      while (yOffset < imgHeight) {
+      while (yOffset < imgHeightMm) {
         if (page > 0) pdf.addPage();
-        pdf.addImage(imgData, "PNG", 0, -yOffset, imgWidth, imgHeight);
-        yOffset += pageHeight;
+        pdf.addImage(imgData, "PNG", 0, -yOffset, imgWidthMm, imgHeightMm);
+        yOffset += pageHeightMm;
         page++;
       }
       pdf.save(`Production-Schedule-${selectedWeekLabel.replace(/[\s:]/g, "-")}.pdf`);
