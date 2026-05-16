@@ -122,6 +122,22 @@ async function createTablesIfNotExist() {
       END $$;
     `));
 
+    // Migrate business_dev table enum columns to text
+    await db.execute(sql.raw(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'business_dev' AND column_name = 'stage' AND data_type = 'USER-DEFINED'
+        ) THEN
+          ALTER TABLE business_dev
+            ALTER COLUMN stage TYPE text USING stage::text,
+            ALTER COLUMN status TYPE text USING status::text,
+            ALTER COLUMN product_type TYPE text USING product_type::text;
+        END IF;
+      END $$;
+    `));
+
     logger.info("Database tables created or verified successfully");
   } catch (err) {
     logger.error({ err }, "Failed to create database tables");
