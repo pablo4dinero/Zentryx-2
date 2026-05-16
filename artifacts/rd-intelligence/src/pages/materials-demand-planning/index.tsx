@@ -32,17 +32,9 @@ import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
 import { useListUsers } from "@/api-client";
 import { PlannedOrdersProvider, usePlannedOrders } from "./planned-orders-context";
+import { useCustomOptions, DEFAULT_PRODUCT_TYPES, displayLabel } from "@/lib/project-options";
 
 const BASE = import.meta.env.BASE_URL;
-
-const PRODUCT_TYPES = [
-  { value: "seasoning", label: "Seasoning" },
-  { value: "snacks_dusting", label: "Snacks Dusting" },
-  { value: "dairy_premix", label: "Dairy Premix" },
-  { value: "bakery_dough_premix", label: "Bakery & Dough Premix" },
-  { value: "sweet_flavours", label: "Sweet Flavours" },
-  { value: "savoury_flavour", label: "Savoury Flavour" },
-];
 
 const SF_URGENCY = [
   { value: "urgent", label: "Urgent", color: "text-red-400",    bg: "bg-red-500/10 border-red-500/20",       dot: "bg-red-500" },
@@ -129,7 +121,7 @@ type MergedOrder = ProductionOrder & {
 const DEFAULT_FORM = {
   company: "",
   productName: "",
-  productType: "seasoning",
+  productType: "",
   customerType: "new",
   contactPerson: "",
   cpPhone: "",
@@ -181,7 +173,7 @@ function downloadCsv(accounts: Account[]) {
   const rows = accounts.map((a) => [
     a.company,
     a.productName ?? "-",
-    PRODUCT_TYPES.find(p => p.value === a.productType)?.label ?? a.productType ?? "-",
+    a.productType ?? "-",
     a.urgencyLevel,
     a.volume ?? "0",
     (a.accountManagerNames || []).join(", ") || "-",
@@ -884,7 +876,7 @@ function ProductionOrdersTab() {
                       <p className="text-xs text-muted-foreground mt-0.5">{order.productName ?? "—"}</p>
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {PRODUCT_TYPES.find(p => p.value === order.productType)?.label ?? order.productType ?? "—"}
+                      {order.productType ?? "—"}
                     </td>
                     <td className="px-4 py-3 text-right font-medium text-sm">{Number(order.volume ?? 0).toLocaleString()}</td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">{order.dateOrdered ?? "—"}</td>
@@ -1747,7 +1739,7 @@ function ProductionPlanningTab() {
               const company = acc?.company ?? row.order.accountName ?? "Unknown";
               const productName = acc?.productName ?? row.order.productName ?? null;
               const productTypeKey = acc?.productType ?? row.order.productType ?? null;
-              const productTypeLabel = PRODUCT_TYPES.find(p => p.value === productTypeKey)?.label ?? productTypeKey ?? "—";
+              const productTypeLabel = productTypeKey ?? "—";
               const volume = Number(fullOrder?.volume ?? row.order.volume ?? 0);
               const expected = fullOrder?.expectedDeliveryDate ?? null;
               return (
@@ -2086,7 +2078,7 @@ function ProductionPlanningTab() {
                       const company = acc?.company ?? order.accountName ?? "Unknown account";
                       const productName = acc?.productName ?? order.productName ?? null;
                       const productType = acc?.productType ?? order.productType ?? null;
-                      const productTypeLabel = PRODUCT_TYPES.find(p => p.value === productType)?.label ?? productType ?? "—";
+                      const productTypeLabel = productType ?? "—";
                       return (
                         <div
                           key={order.id}
@@ -2664,7 +2656,7 @@ function ProductionHistoryTab() {
                     const company = acc?.company ?? order.accountName ?? order.accountCompany ?? "—";
                     const productName = acc?.productName ?? order.productName ?? null;
                     const productTypeKey = acc?.productType ?? order.productType ?? null;
-                    const productTypeLabel = PRODUCT_TYPES.find(p => p.value === productTypeKey)?.label ?? productTypeKey ?? "—";
+                    const productTypeLabel = productTypeKey ?? "—";
                     const rawMat = order.rawMaterialStatus ?? "Pending";
                     return (
                       <tr key={order.id} className={cn("border-b last:border-0 transition-colors", isLight ? "border-slate-100 hover:bg-slate-50" : "border-white/5 hover:bg-white/[0.02]")}>
@@ -2753,7 +2745,7 @@ function ProductionHistoryTab() {
                         <p className="text-xs text-muted-foreground mt-0.5">{order.productName}</p>
                       </td>
                       <td className="px-3 py-3 text-xs text-muted-foreground">
-                        {PRODUCT_TYPES.find(p => p.value === order.productType)?.label ?? order.productType}
+                        {order.productType ?? "—"}
                       </td>
                       <td className="px-3 py-3 text-right font-semibold text-sm">{Number(order.volume ?? 0).toLocaleString()}</td>
                       <td className="px-3 py-3 text-xs text-muted-foreground">{formatDateTime(order.producedAt)}</td>
@@ -2815,6 +2807,7 @@ function MaterialsDemandPlanningPage() {
   const [editingProduct, setEditingProduct] = React.useState<Account | null>(null);
   const [formValues, setFormValues] = React.useState({ ...DEFAULT_FORM });
   const [manSearch, setManSearch] = React.useState("");
+  const typeOpts = useCustomOptions("productType", DEFAULT_PRODUCT_TYPES);
 
   const { data: users } = useListUsers();
 
@@ -2956,7 +2949,7 @@ function MaterialsDemandPlanningPage() {
     setFormValues({
       company: account.company,
       productName: account.productName ?? "",
-      productType: account.productType ?? "seasoning",
+      productType: account.productType ?? "",
       customerType: account.customerType ?? "new",
       contactPerson: account.contactPerson ?? "",
       cpPhone: account.cpPhone ?? "",
@@ -3127,7 +3120,7 @@ function MaterialsDemandPlanningPage() {
                           <p className="text-xs text-muted-foreground mt-0.5">{account.productName ?? "—"}</p>
                         </td>
                         <td className="px-5 py-3 text-xs text-muted-foreground">
-                          {PRODUCT_TYPES.find(p => p.value === account.productType)?.label ?? account.productType ?? "—"}
+                          {account.productType ?? "—"}
                         </td>
                         <td className="px-5 py-3 text-xs">
                           <div className="flex items-center gap-1.5">
@@ -3195,7 +3188,8 @@ function MaterialsDemandPlanningPage() {
                               <div>
                                 <label className={lCls}>Product Type *</label>
                                 <select value={formValues.productType} onChange={e => setFormValues(p => ({ ...p, productType: e.target.value }))} className={iCls + " cursor-pointer"}>
-                                  {PRODUCT_TYPES.map(pt => <option key={pt.value} value={pt.value} className="bg-white text-black">{pt.label}</option>)}
+                                  <option value="">— Select —</option>
+                                  {typeOpts.options.map(pt => <option key={pt} value={pt} className="bg-white text-black">{displayLabel(pt)}</option>)}
                                 </select>
                               </div>
                               <div>
@@ -3319,7 +3313,8 @@ function MaterialsDemandPlanningPage() {
                               <div>
                                 <label className={lCls}>Product Type *</label>
                                 <select value={formValues.productType} onChange={e => setFormValues(p => ({ ...p, productType: e.target.value }))} className={iCls + " cursor-pointer"}>
-                                  {PRODUCT_TYPES.map(pt => <option key={pt.value} value={pt.value} className="bg-white text-black">{pt.label}</option>)}
+                                  <option value="">— Select —</option>
+                                  {typeOpts.options.map(pt => <option key={pt} value={pt} className="bg-white text-black">{displayLabel(pt)}</option>)}
                                 </select>
                               </div>
                               <div>
