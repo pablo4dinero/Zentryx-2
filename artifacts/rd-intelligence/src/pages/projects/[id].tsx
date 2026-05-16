@@ -368,6 +368,11 @@ export default function ProjectDetail() {
     }
   }, [project]);
 
+  const stageOpts    = useCustomOptions("stage",       DEFAULT_STAGES);
+  const statusOpts   = useCustomOptions("status",      DEFAULT_STATUSES);
+  const priorityOpts = useCustomOptions("priority",    DEFAULT_PRIORITIES);
+  const typeOpts     = useCustomOptions("productType", DEFAULT_PRODUCT_TYPES);
+
   if (loadingProj || loadingTasks) return <PageLoader />;
   if (!project) return <div className="glass-card p-12 text-center rounded-2xl text-muted-foreground">Project not found</div>;
 
@@ -452,11 +457,6 @@ export default function ProjectDetail() {
   const selectCls = isLight
     ? "h-8 rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50 text-gray-900"
     : "h-8 rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50 text-foreground";
-
-  const stageOpts    = useCustomOptions("stage",       DEFAULT_STAGES);
-  const statusOpts   = useCustomOptions("status",      DEFAULT_STATUSES);
-  const priorityOpts = useCustomOptions("priority",    DEFAULT_PRIORITIES);
-  const typeOpts     = useCustomOptions("productType", DEFAULT_PRODUCT_TYPES);
 
   return (
     <div className="space-y-6">
