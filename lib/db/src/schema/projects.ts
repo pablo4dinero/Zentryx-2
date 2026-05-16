@@ -1,8 +1,9 @@
-import { pgTable, serial, text, integer, numeric, timestamp, pgEnum, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, numeric, timestamp, pgEnum } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
 
+// Enum exports kept for tasks and business_dev tables that still reference them
 export const projectStageEnum = pgEnum("project_stage", [
   "testing", "reformulation", "innovation", "cost_optimization", "modification",
   "ideation", "research", "formulation", "validation", "scale_up", "commercialization"
@@ -26,9 +27,9 @@ export const projectsTable = pgTable("projects", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
-  stage: projectStageEnum("stage").notNull().default("innovation"),
-  status: projectStatusEnum("status").notNull().default("in_progress"),
-  priority: priorityEnum("priority").notNull().default("medium"),
+  stage: text("stage").notNull().default("innovation"),
+  status: text("status").notNull().default("in_progress"),
+  priority: text("priority").notNull().default("medium"),
   leadId: integer("lead_id").references(() => usersTable.id),
   assigneeIds: integer("assignee_ids").array().notNull().default([]),
   startDate: timestamp("start_date"),
@@ -39,7 +40,7 @@ export const projectsTable = pgTable("projects", {
   costTarget: numeric("cost_target", { precision: 15, scale: 2 }),
   sellingPrice: numeric("selling_price", { precision: 15, scale: 2 }),
   volumeKgPerMonth: numeric("volume_kg_per_month", { precision: 15, scale: 2 }),
-  productType: productTypeEnum("product_type"),
+  productType: text("product_type"),
   successRate: numeric("success_rate", { precision: 5, scale: 2 }),
   revenueImpact: numeric("revenue_impact", { precision: 15, scale: 2 }),
   productCategory: text("product_category"),
