@@ -33,6 +33,7 @@ import { useTheme } from "@/lib/theme";
 import { useListUsers } from "@/api-client";
 import { PlannedOrdersProvider, usePlannedOrders } from "./planned-orders-context";
 import { useCustomOptions, DEFAULT_PRODUCT_TYPES, displayLabel } from "@/lib/project-options";
+import { CustomOptionsSelect } from "@/components/ui/CustomOptionsSelect";
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -3187,10 +3188,14 @@ function MaterialsDemandPlanningPage() {
                               </div>
                               <div>
                                 <label className={lCls}>Product Type *</label>
-                                <select value={formValues.productType} onChange={e => setFormValues(p => ({ ...p, productType: e.target.value }))} className={iCls + " cursor-pointer"}>
-                                  <option value="">— Select —</option>
-                                  {typeOpts.options.map(pt => <option key={pt} value={pt} className="bg-white text-black">{displayLabel(pt)}</option>)}
-                                </select>
+                                <CustomOptionsSelect
+                                  value={formValues.productType}
+                                  onChange={v => setFormValues(p => ({ ...p, productType: v }))}
+                                  handle={typeOpts}
+                                  displayFn={displayLabel}
+                                  placeholder="Select product type…"
+                                  isLight={isLight}
+                                />
                               </div>
                               <div>
                                 <label className={lCls}>Customer Type</label>
@@ -3312,10 +3317,14 @@ function MaterialsDemandPlanningPage() {
                               </div>
                               <div>
                                 <label className={lCls}>Product Type *</label>
-                                <select value={formValues.productType} onChange={e => setFormValues(p => ({ ...p, productType: e.target.value }))} className={iCls + " cursor-pointer"}>
-                                  <option value="">— Select —</option>
-                                  {typeOpts.options.map(pt => <option key={pt} value={pt} className="bg-white text-black">{displayLabel(pt)}</option>)}
-                                </select>
+                                <CustomOptionsSelect
+                                  value={formValues.productType}
+                                  onChange={v => setFormValues(p => ({ ...p, productType: v }))}
+                                  handle={typeOpts}
+                                  displayFn={displayLabel}
+                                  placeholder="Select product type…"
+                                  isLight={isLight}
+                                />
                               </div>
                               <div>
                                 <label className={lCls}>Customer Type</label>
