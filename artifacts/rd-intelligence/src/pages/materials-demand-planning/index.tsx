@@ -1187,6 +1187,17 @@ function ProductionPlanningTab() {
     staleTime: 1000 * 60 * 1,
   }) as UseQueryResult<FloorAssignmentRow[], Error>;
 
+  // All assignments across all weeks — used to permanently hide ordered orders from Planned Orders list
+  const allAssignmentsQuery = useQuery({
+    queryKey: ["/api/mdp/floor-assignments"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}api/mdp/floor-assignments`, { headers: authHeaders() });
+      if (!res.ok) throw new Error("Failed to load all floor assignments");
+      return res.json() as Promise<FloorAssignmentRow[]>;
+    },
+    staleTime: 1000 * 60 * 1,
+  }) as UseQueryResult<FloorAssignmentRow[], Error>;
+
   const productionOrdersQuery = useQuery({
     queryKey: ["/api/mdp/production-orders"],
     queryFn: async () => {
@@ -1217,6 +1228,14 @@ function ProductionPlanningTab() {
 
   const floors = floorsQuery.data ?? [];
   const assignments = assignmentsQuery.data ?? [];
+
+  // Set of productionOrderIds that have been assigned to a floor in any week
+  const globallyAssignedOrderIds = React.useMemo(() => {
+    const set = new Set<number>();
+    (allAssignmentsQuery.data ?? []).forEach(row => set.add(row.assignment.productionOrderId));
+    return set;
+  }, [allAssignmentsQuery.data]);
+
   const plannedOrders = React.useMemo(
     () => (productionOrdersQuery.data ?? []).filter((order) => order.isPlanned),
     [productionOrdersQuery.data]
@@ -1322,7 +1341,7 @@ function ProductionPlanningTab() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments", selectedWeekLabel] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
     },
   });
@@ -1340,7 +1359,7 @@ function ProductionPlanningTab() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments", selectedWeekLabel] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
     },
   });
@@ -1379,7 +1398,7 @@ function ProductionPlanningTab() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments", selectedWeekLabel] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
     },
   });
@@ -1551,7 +1570,7 @@ function ProductionPlanningTab() {
           })
         )
       );
-      queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments", selectedWeekLabel] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
       setAssistedState("done");
       window.setTimeout(() => setAssistedState("idle"), 3000);
@@ -1564,12 +1583,12 @@ function ProductionPlanningTab() {
 
   const assignedRightOrders = React.useMemo(
     () => plannedOrders
-      .filter((order) => !assignedMap.has(order.id))
+      .filter((order) => !globallyAssignedOrderIds.has(order.id))
       .map((order) => ({
         order,
         assigned: false,
       })),
-    [plannedOrders, assignedMap]
+    [plannedOrders, globallyAssignedOrderIds]
   );
 
   const mdpOrderByMdpId = React.useMemo(() => {
@@ -1589,7 +1608,7 @@ function ProductionPlanningTab() {
     }
   `;
 
-  if (floorsQuery.isLoading || assignmentsQuery.isLoading || productionOrdersQuery.isLoading) {
+  if (floorsQuery.isLoading || assignmentsQuery.isLoading || allAssignmentsQuery.isLoading || productionOrdersQuery.isLoading) {
     return <PageLoader />;
   }
 
