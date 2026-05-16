@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
 import { NewRequestModal } from "@/pages/procurement/RequestsTab";
 import * as XLSX from "xlsx";
+import { useCustomOptions, DEFAULT_PRODUCT_TYPES, DEFAULT_PRIORITIES, displayLabel } from "@/lib/project-options";
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -17,27 +18,24 @@ const MONTHS_LONG = [
   "July","August","September","October","November","December"
 ];
 
-const PRODUCT_TYPES = [
-  { value: "seasoning", label: "Seasoning" },
-  { value: "dairy_premix", label: "Dairy Premix" },
-  { value: "dough_and_bread_premix", label: "Dough & Bread Premix" },
-  { value: "snack_dusting", label: "Snack Dusting" },
-  { value: "functional_blend", label: "Functional Blend" },
-  { value: "sweet_flavors", label: "Sweet Flavors" },
-  { value: "savoury_flavours", label: "Savoury Flavours" },
-];
+function getStatusCls(val: string) {
+  const m: Record<string, string> = {
+    not_started: "text-slate-400 bg-slate-500/10 border-slate-500/20",
+    ongoing: "text-amber-400 bg-amber-500/10 border-amber-500/20",
+    completed: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
+  };
+  return m[val] ?? "text-muted-foreground bg-white/5 border-white/10";
+}
 
-const STATUS_OPTS = [
-  { value: "not_started", label: "Not Started", cls: "text-slate-400 bg-slate-500/10 border-slate-500/20" },
-  { value: "ongoing", label: "Ongoing", cls: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
-  { value: "completed", label: "Completed", cls: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
-];
-
-const PRIORITY_OPTS = [
-  { value: "low", label: "Low", cls: "text-blue-400 bg-blue-500/10" },
-  { value: "medium", label: "Medium", cls: "text-amber-400 bg-amber-500/10" },
-  { value: "high", label: "High", cls: "text-red-400 bg-red-500/10" },
-];
+function getPriorityCls(val: string) {
+  const m: Record<string, string> = {
+    low: "text-blue-400 bg-blue-500/10",
+    medium: "text-amber-400 bg-amber-500/10",
+    high: "text-red-400 bg-red-500/10",
+    critical: "text-red-600 bg-red-600/10",
+  };
+  return m[val] ?? "text-muted-foreground bg-white/5";
+}
 
 function authHeaders() {
   return { Authorization: `Bearer ${localStorage.getItem("rd_token")}`, "Content-Type": "application/json" };
@@ -796,6 +794,9 @@ export default function WeeklyActivities() {
   const { theme } = useTheme();
   const isLight = theme === "light";
   const qc = useQueryClient();
+  const typeOpts = useCustomOptions("productType", DEFAULT_PRODUCT_TYPES);
+  const priorityOpts = useCustomOptions("priority", DEFAULT_PRIORITIES);
+  const actStatusOpts = useCustomOptions("activity-status", ["not_started", "ongoing", "completed"]);
 
   const { data: usersData } = useQuery({
     queryKey: ["/api/users"],
@@ -1058,7 +1059,7 @@ export default function WeeklyActivities() {
                     className={cn("text-xs rounded-lg border pl-2.5 pr-7 py-1.5 appearance-none focus:outline-none focus:ring-2 focus:ring-primary/40",
                       isLight ? "bg-white border-slate-200 text-slate-700" : "bg-black/20 border-white/10 text-foreground")}>
                     <option value="all">All Products</option>
-                    {PRODUCT_TYPES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                    {typeOpts.options.map(p => <option key={p} value={p}>{displayLabel(p)}</option>)}
                   </select>
                   <ChevronDown className="w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                 </div>
@@ -1163,7 +1164,7 @@ export default function WeeklyActivities() {
                             isLight ? "bg-slate-50 border-slate-200 text-slate-700" : "bg-black/20 border-white/10 text-foreground")}
                         >
                           <option value="">— Select —</option>
-                          {PRODUCT_TYPES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                          {typeOpts.options.map(p => <option key={p} value={p}>{displayLabel(p)}</option>)}
                         </select>
                       </td>
 
@@ -1172,12 +1173,11 @@ export default function WeeklyActivities() {
                           value={row.status}
                           onChange={e => handleFieldChange(row.id, "status", e.target.value)}
                           className={cn("text-xs rounded-lg border px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary/40 w-full appearance-none",
-                            STATUS_OPTS.find(s => s.value === row.status)?.cls ?? "",
-                            "border-current/20 bg-current/5"
+                            getStatusCls(row.status)
                           )}
                           style={{ colorScheme: "dark" }}
                         >
-                          {STATUS_OPTS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                          {actStatusOpts.options.map(s => <option key={s} value={s}>{displayLabel(s)}</option>)}
                         </select>
                       </td>
 
@@ -1186,9 +1186,10 @@ export default function WeeklyActivities() {
                           value={row.priority}
                           onChange={e => handleFieldChange(row.id, "priority", e.target.value)}
                           className={cn("text-xs rounded-lg border px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary/40 w-full appearance-none",
-                            isLight ? "bg-slate-50 border-slate-200 text-slate-700" : "bg-black/20 border-white/10 text-foreground")}
+                            getPriorityCls(row.priority),
+                            isLight ? "border-slate-200" : "border-white/10")}
                         >
-                          {PRIORITY_OPTS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                          {priorityOpts.options.map(p => <option key={p} value={p}>{displayLabel(p)}</option>)}
                         </select>
                       </td>
 
