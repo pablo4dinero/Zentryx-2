@@ -1135,93 +1135,34 @@ function ProductionPlanningTab() {
     window.print();
   }, []);
 
-  const handleDownloadPdf = React.useCallback(async () => {
+  const handleDownloadPdf = React.useCallback(() => {
     const el = document.getElementById("print-schedule");
     if (!el) return;
-    setIsPdfGenerating(true);
-    const wrapper = document.createElement("div");
-    wrapper.style.cssText = "position:fixed;top:0;left:-10000px;width:794px;overflow:visible;background:white;z-index:9999;pointer-events:none";
-    const clone = el.cloneNode(true) as HTMLElement;
-    wrapper.appendChild(clone);
-    document.body.appendChild(wrapper);
-    try {
-      await new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r())));
-
-      // A4 height in logical px, proportional to our 794px-wide canvas
-      const A4_H = Math.round(794 * 297 / 210); // ≈ 1123 px
-      const totalH = clone.scrollHeight;
-      const wrapperTop = wrapper.getBoundingClientRect().top;
-
-      // Measure each day section (class="print-no-break") before capture so we can
-      // cut pages between sections rather than slicing through content mid-card.
-      const dayEls = Array.from(clone.querySelectorAll<HTMLElement>(".print-no-break"));
-      const sections = dayEls.map(d => {
-        const r = d.getBoundingClientRect();
-        return { top: Math.round(r.top - wrapperTop), bottom: Math.round(r.bottom - wrapperTop) };
-      });
-
-      // Greedy slice: accumulate sections onto each page; start a new page when the
-      // next section would overflow. Force-slice any section taller than A4.
-      const slices: Array<{ start: number; end: number }> = [];
-      let pageStart = 0;
-      let prevBottom = 0;
-      sections.forEach(({ top, bottom }) => {
-        if (bottom - pageStart > A4_H) {
-          const cutAt = prevBottom > pageStart ? prevBottom : top;
-          slices.push({ start: pageStart, end: cutAt });
-          pageStart = cutAt;
-          while (bottom - pageStart > A4_H) {
-            slices.push({ start: pageStart, end: pageStart + A4_H });
-            pageStart += A4_H;
-          }
-        }
-        prevBottom = bottom;
-      });
-      if (pageStart < totalH) slices.push({ start: pageStart, end: totalH });
-
-      // Capture the full template as one canvas (oklch stripped via onclone)
-      const canvas = await html2canvas(clone, {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: "#ffffff",
-        logging: false,
-        width: 794,
-        height: totalH,
-        windowWidth: 794,
-        onclone: (clonedDoc: Document) => {
-          clonedDoc.documentElement.classList.remove("dark");
-          clonedDoc.querySelectorAll<HTMLElement>('link[rel="stylesheet"], style').forEach(s => s.remove());
-          const safe = clonedDoc.createElement("style");
-          safe.textContent = PRINT_CANVAS_CSS;
-          clonedDoc.head.appendChild(safe);
-        },
-      });
-
-      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-      const pxToMm = 210 / 794;
-
-      // Extract each slice from the full canvas and add as a separate PDF page
-      slices.forEach(({ start, end }, idx) => {
-        if (idx > 0) pdf.addPage();
-        const sliceH = (end - start) * 2; // canvas is scale:2
-        const pageCanvas = document.createElement("canvas");
-        pageCanvas.width = canvas.width;
-        pageCanvas.height = sliceH;
-        pageCanvas.getContext("2d")!.drawImage(
-          canvas, 0, start * 2, canvas.width, sliceH, 0, 0, canvas.width, sliceH
-        );
-        pdf.addImage(pageCanvas.toDataURL("image/png"), "PNG", 0, 0, 210, (end - start) * pxToMm);
-      });
-
-      pdf.save(`Production-Schedule-${selectedWeekLabel.replace(/[\s:]/g, "-")}.pdf`);
-    } catch (err) {
-      console.error("PDF generation failed:", err);
-      toast({ title: "Could not generate PDF", description: String(err), variant: "destructive" });
-    } finally {
-      document.body.removeChild(wrapper);
-      setIsPdfGenerating(false);
+    // Use the browser's own print pipeline (same as the Print button) so the full
+    // template — day shifts, night shifts, all pages — renders correctly without any
+    // html2canvas limitations (oklch colours, truncation, page-break artifacts).
+    const win = window.open("", "_blank", "width=900,height=700");
+    if (!win) {
+      toast({ title: "Popup blocked", description: "Allow popups for this site, then try again.", variant: "destructive" });
+      return;
     }
+    const styleLinks = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'))
+      .map(l => `<link rel="stylesheet" href="${l.href}">`)
+      .join("\n");
+    const filename = `Production-Schedule-${selectedWeekLabel.replace(/[\s:]/g, "-")}`;
+    win.document.write(
+      `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${filename}</title>${styleLinks}<style>
+        @page { size: A4 portrait; margin: 1.5cm; }
+        html, body { background: white !important; margin: 0; padding: 0; }
+        #print-schedule, #print-schedule * { overflow: visible !important; max-height: none !important; }
+        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        .print-no-break { page-break-inside: avoid; break-inside: avoid; }
+        .print-break-before { page-break-before: always; break-before: page; }
+      </style></head><body>${el.outerHTML}</body></html>`
+    );
+    win.document.close();
+    // Auto-trigger print; browser shows "Save as PDF" as a destination option.
+    setTimeout(() => { win.focus(); win.print(); setTimeout(() => win.close(), 500); }, 1200);
   }, [selectedWeekLabel, toast]);
   const [expandedDay, setExpandedDay] = React.useState<string | null>(null);
   const [dragged, setDragged] = React.useState<{
