@@ -19,7 +19,7 @@ export const accountsTable = pgTable("accounts", {
   cpPhone: text("cp_phone"),
   cpEmail: text("cp_email"),
   customerType: customerTypeSfEnum("customer_type").default("new"),
-  productType: productTypeSfEnum("product_type").notNull(),
+  productType: text("product_type").notNull(),
   application: text("application"),
   targetPrice: numeric("target_price", { precision: 10, scale: 2 }),
   volume: numeric("volume", { precision: 10, scale: 2 }),
