@@ -15,13 +15,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useExchangeRate, fmtNGN } from "@/hooks/useExchangeRate";
 
+import {
+  useCustomOptions, DEFAULT_STAGES, DEFAULT_STATUSES, DEFAULT_PRODUCT_TYPES, DEFAULT_PRIORITIES,
+} from "@/lib/project-options";
+
 const BASE = import.meta.env.BASE_URL;
 const TASK_STATUSES = ['todo', 'in_progress', 'review', 'done', 'blocked'] as const;
 type TaskStatus = typeof TASK_STATUSES[number];
-const STAGES = ["testing", "reformulation", "innovation", "cost_optimization", "modification"];
-const STATUSES = ["approved", "awaiting_feedback", "on_hold", "in_progress", "new_inventory", "cancelled", "pushed_to_live"];
-const PRIORITIES = ["low", "medium", "high", "critical"];
-const PRODUCT_TYPES = ["Seasoning", "Snack Dusting", "Bread & Dough Premix", "Dairy Premix", "Functional Blend", "Pasta Sauce", "Sweet Flavour", "Savoury Flavour"];
 
 const COLUMN_COLORS: Record<string, string> = {
   todo: "border-white/10",
@@ -448,10 +448,15 @@ export default function ProjectDetail() {
   };
 
   const { theme } = useTheme();
-const isLight = theme === "light";
-const selectCls = isLight
-  ? "h-8 rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50 text-gray-900"
-  : "h-8 rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50 text-foreground";
+  const isLight = theme === "light";
+  const selectCls = isLight
+    ? "h-8 rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50 text-gray-900"
+    : "h-8 rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50 text-foreground";
+
+  const stageOpts    = useCustomOptions("stage",       DEFAULT_STAGES);
+  const statusOpts   = useCustomOptions("status",      DEFAULT_STATUSES);
+  const priorityOpts = useCustomOptions("priority",    DEFAULT_PRIORITIES);
+  const typeOpts     = useCustomOptions("productType", DEFAULT_PRODUCT_TYPES);
 
   return (
     <div className="space-y-6">
@@ -479,13 +484,13 @@ const selectCls = isLight
             )}
             <div className="flex items-center gap-3 mt-2 flex-wrap">
               <select value={project.stage} onChange={e => saveField("stage", e.target.value)} className={selectCls}>
-                {STAGES.map(s => <option key={s} value={s} className="bg-white text-black capitalize">{s.replace(/_/g, ' ')}</option>)}
+                {stageOpts.options.map(s => <option key={s} value={s} className="bg-white text-black capitalize">{s.replace(/_/g, ' ')}</option>)}
               </select>
               <select value={project.status} onChange={e => saveField("status", e.target.value)} className={selectCls}>
-                {STATUSES.map(s => <option key={s} value={s} className="bg-white text-black capitalize">{s.replace(/_/g, ' ')}</option>)}
+                {statusOpts.options.map(s => <option key={s} value={s} className="bg-white text-black capitalize">{s.replace(/_/g, ' ')}</option>)}
               </select>
               <select value={project.priority || "medium"} onChange={e => saveField("priority", e.target.value)} className={selectCls}>
-                {PRIORITIES.map(p => <option key={p} value={p} className="bg-white text-black capitalize">{p} Priority</option>)}
+                {priorityOpts.options.map(p => <option key={p} value={p} className="bg-white text-black capitalize">{p} Priority</option>)}
               </select>
             </div>
             <div className="mt-3 max-w-2xl">
@@ -648,13 +653,13 @@ const selectCls = isLight
             <InlineEdit label="Customer Name" value={(project as any).customerName || ""} onSave={v => saveField("customerName", v)} icon={<User className="w-3.5 h-3.5" />} placeholder="Customer / client name" />
             <InlineEdit label="Customer Email" value={(project as any).customerEmail || ""} onSave={v => saveField("customerEmail", v)} type="email" icon={<Mail className="w-3.5 h-3.5" />} placeholder="email@example.com" />
             <InlineEdit label="Customer Phone" value={(project as any).customerPhone || ""} onSave={v => saveField("customerPhone", v)} icon={<Phone className="w-3.5 h-3.5" />} placeholder="+27 xx xxx xxxx" />
-            <InlineEdit label="Product Type" value={(project as any).productType || ""} onSave={v => saveField("productType", v)} options={PRODUCT_TYPES} icon={<Package className="w-3.5 h-3.5" />} />
+            <InlineEdit label="Product Type" value={(project as any).productType || ""} onSave={v => saveField("productType", v)} options={typeOpts.options} icon={<Package className="w-3.5 h-3.5" />} />
             <CostTargetField value={(project as any).costTarget ? String(parseFloat(String((project as any).costTarget))) : ""} onSave={v => saveField("costTarget", v)} />
             <SellingPriceField value={(project as any).sellingPrice ? String(parseFloat(String((project as any).sellingPrice))) : ""} onSave={v => saveField("sellingPrice", v)} />
             <InlineEdit label="Volume (kg/Month)" value={(project as any).volumeKgPerMonth ? String(parseFloat(String((project as any).volumeKgPerMonth))) : ""} onSave={v => saveField("volumeKgPerMonth", v)} type="number" icon={<Package className="w-3.5 h-3.5" />} placeholder="e.g. 500" />
-            <InlineEdit label="Priority" value={project.priority || "medium"} onSave={v => saveField("priority", v)} options={PRIORITIES} icon={<Edit3 className="w-3.5 h-3.5" />} />
-            <InlineEdit label="Stage" value={project.stage || ""} onSave={v => saveField("stage", v)} options={STAGES} icon={<Edit3 className="w-3.5 h-3.5" />} />
-            <InlineEdit label="Status" value={project.status || ""} onSave={v => saveField("status", v)} options={STATUSES} icon={<Edit3 className="w-3.5 h-3.5" />} />
+            <InlineEdit label="Priority" value={project.priority || "medium"} onSave={v => saveField("priority", v)} options={priorityOpts.options} icon={<Edit3 className="w-3.5 h-3.5" />} />
+            <InlineEdit label="Stage" value={project.stage || ""} onSave={v => saveField("stage", v)} options={stageOpts.options} icon={<Edit3 className="w-3.5 h-3.5" />} />
+            <InlineEdit label="Status" value={project.status || ""} onSave={v => saveField("status", v)} options={statusOpts.options} icon={<Edit3 className="w-3.5 h-3.5" />} />
             <InlineEdit label="Start Date" value={project.startDate ? format(new Date(project.startDate), "yyyy-MM-dd") : ""} onSave={v => saveField("startDate", v)} type="date" icon={<Calendar className="w-3.5 h-3.5" />} />
             <InlineEdit label="Due Date" value={project.targetDate ? format(new Date(project.targetDate), "yyyy-MM-dd") : ""} onSave={v => saveField("targetDate", v)} type="date" icon={<Calendar className="w-3.5 h-3.5" />} />
           </div>

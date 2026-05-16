@@ -10,12 +10,13 @@ import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { useExchangeRate } from "@/hooks/useExchangeRate";
+import {
+  useCustomOptions, DEFAULT_STAGES, DEFAULT_STATUSES, DEFAULT_PRODUCT_TYPES, DEFAULT_PRIORITIES,
+  type CustomOptionsHandle,
+} from "@/lib/project-options";
+import { CustomOptionsSelect } from "@/components/ui/CustomOptionsSelect";
 
 const BASE = import.meta.env.BASE_URL;
-const STAGES = ["testing", "reformulation", "innovation", "cost_optimization", "modification"] as const;
-const STATUSES = ["approved", "awaiting_feedback", "on_hold", "in_progress", "new_inventory", "cancelled", "pushed_to_live"] as const;
-const PRODUCT_TYPES = ["Seasoning", "Snack Dusting", "Bread & Dough Premix", "Dairy Premix", "Functional Blend", "Pasta Sauce", "Sweet Flavour", "Savoury Flavour"] as const;
-const PRIORITIES = ["low", "medium", "high", "critical"] as const;
 
 type ViewMode = "list" | "portfolio" | "matrix";
 
@@ -115,6 +116,11 @@ export default function BusinessDev() {
   const isLight = theme === "light";
   const { fmtNGN } = useExchangeRate();
 
+  const stageOpts    = useCustomOptions("stage",       DEFAULT_STAGES);
+  const statusOpts   = useCustomOptions("status",      DEFAULT_STATUSES);
+  const priorityOpts = useCustomOptions("priority",    DEFAULT_PRIORITIES);
+  const typeOpts     = useCustomOptions("productType", DEFAULT_PRODUCT_TYPES);
+
   const filtered = items.filter(item => {
     const matchSearch = item.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -173,7 +179,7 @@ export default function BusinessDev() {
         </div>
         <div className="flex gap-2">
           <Button onClick={handleExport} className="gap-2"><Download className="w-4 h-4" /> Export</Button>
-          <CreateBDModal users={users || []} onCreate={create} />
+          <CreateBDModal users={users || []} onCreate={create} stageOpts={stageOpts} statusOpts={statusOpts} priorityOpts={priorityOpts} typeOpts={typeOpts} />
         </div>
       </div>
 
@@ -197,7 +203,7 @@ export default function BusinessDev() {
           <Input placeholder="Search BD items..." className="pl-9" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
         </div>
         <div className="flex flex-wrap gap-2">
-          {["all", ...STATUSES].map(s => (
+          {["all", ...statusOpts.options].map(s => (
             <button key={s} onClick={() => setStatusFilter(s === statusFilter && s !== "all" ? "all" : s)}
               className={cn("px-3 py-1.5 rounded-lg text-xs font-medium border transition-all capitalize",
                 statusFilter === s
@@ -221,6 +227,8 @@ export default function BusinessDev() {
           onUpdate={update}
           onDelete={handleDelete}
           onEdit={setEditingCard}
+          stageOpts={stageOpts}
+          statusOpts={statusOpts}
         />
       )}
       {viewMode === "list" && (
@@ -253,19 +261,19 @@ export default function BusinessDev() {
       )}
 
       {editingCard && (
-        <EditBDModal item={editingCard} users={users || []} onUpdate={update} onClose={() => setEditingCard(null)} />
+        <EditBDModal item={editingCard} users={users || []} onUpdate={update} onClose={() => setEditingCard(null)} stageOpts={stageOpts} statusOpts={statusOpts} priorityOpts={priorityOpts} typeOpts={typeOpts} />
       )}
     </div>
   );
 }
 
 /* ─────────────────────────────── Portfolio View ─────────────────────────── */
-function PortfolioView({ items, isLight, fmtNGN, onUpdate, onDelete, onEdit }: any) {
+function PortfolioView({ items, isLight, fmtNGN, onUpdate, onDelete, onEdit, stageOpts, statusOpts }: any) {
   if (items.length === 0) return null;
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
       {items.map((item: any) => (
-        <BDCard key={item.id} item={item} isLight={isLight} fmtNGN={fmtNGN} onUpdate={onUpdate} onDelete={onDelete} onEdit={onEdit} />
+        <BDCard key={item.id} item={item} isLight={isLight} fmtNGN={fmtNGN} onUpdate={onUpdate} onDelete={onDelete} onEdit={onEdit} stageOpts={stageOpts} statusOpts={statusOpts} />
       ))}
     </div>
   );
@@ -476,7 +484,7 @@ function MatrixView({ items, isLight, fmtNGN, onUpdate, onDelete, onEdit }: any)
 }
 
 /* ─────────────────────────────── Portfolio Card ────────────────────────── */
-function BDCard({ item, isLight, fmtNGN, onUpdate, onDelete, onEdit }: { item: any; isLight: boolean; fmtNGN: (v: number) => string; onUpdate: any; onDelete: any; onEdit: any }) {
+function BDCard({ item, isLight, fmtNGN, onUpdate, onDelete, onEdit, stageOpts, statusOpts }: { item: any; isLight: boolean; fmtNGN: (v: number) => string; onUpdate: any; onDelete: any; onEdit: any; stageOpts: CustomOptionsHandle; statusOpts: CustomOptionsHandle }) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleVal, setTitleVal] = useState(item.name);
 
@@ -494,13 +502,27 @@ function BDCard({ item, isLight, fmtNGN, onUpdate, onDelete, onEdit }: { item: a
 
   return (
     <div className={cn("rounded-2xl p-6 flex flex-col relative group", isLight ? "bg-white border border-slate-200 shadow-sm hover:shadow-md transition-shadow" : "glass-card")}>
-      <div className="flex justify-between items-start mb-3">
-        <select value={item.stage} onChange={e => onUpdate(item.id, { stage: e.target.value })} className={`${cls} text-xs capitalize`} onClick={e => e.stopPropagation()}>
-          {STAGES.map(s => <option key={s} value={s} className="bg-card capitalize">{s.replace(/_/g,' ')}</option>)}
-        </select>
-        <select value={item.status} onChange={e => onUpdate(item.id, { status: e.target.value })} className={`${cls} capitalize`} onClick={e => e.stopPropagation()}>
-          {STATUSES.map(s => <option key={s} value={s} className="bg-card capitalize">{s.replace(/_/g,' ')}</option>)}
-        </select>
+      <div className="flex justify-between items-start gap-2 mb-3">
+        <div className="flex-1 min-w-0">
+          <CustomOptionsSelect
+            value={item.stage}
+            onChange={v => onUpdate(item.id, { stage: v })}
+            handle={stageOpts}
+            displayFn={v => v.replace(/_/g, ' ')}
+            placeholder="Stage"
+            isLight={isLight}
+          />
+        </div>
+        <div className="flex-1 min-w-0">
+          <CustomOptionsSelect
+            value={item.status}
+            onChange={v => onUpdate(item.id, { status: v })}
+            handle={statusOpts}
+            displayFn={v => v.replace(/_/g, ' ')}
+            placeholder="Status"
+            isLight={isLight}
+          />
+        </div>
       </div>
 
       {editingTitle ? (
@@ -573,7 +595,7 @@ function BDCard({ item, isLight, fmtNGN, onUpdate, onDelete, onEdit }: { item: a
 }
 
 /* ─────────────────────────────── Edit Modal ─────────────────────────────── */
-function EditBDModal({ item, users, onUpdate, onClose }: { item: any; users: any[]; onUpdate: any; onClose: () => void }) {
+function EditBDModal({ item, users, onUpdate, onClose, stageOpts, statusOpts, priorityOpts, typeOpts }: { item: any; users: any[]; onUpdate: any; onClose: () => void; stageOpts: CustomOptionsHandle; statusOpts: CustomOptionsHandle; priorityOpts: CustomOptionsHandle; typeOpts: CustomOptionsHandle }) {
   const [form, setForm] = useState({
     name: item.name || "",
     description: item.description || "",
@@ -617,10 +639,10 @@ function EditBDModal({ item, users, onUpdate, onClose }: { item: any; users: any
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2 space-y-1.5"><label className={lbl}>Title *</label><input value={form.name} onChange={e => setF("name", e.target.value)} className={cls} /></div>
             <div className="sm:col-span-2 space-y-1.5"><label className={lbl}>Description</label><textarea value={form.description} onChange={e => setF("description", e.target.value)} className={cn("flex min-h-[60px] w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground", isLight ? "border-gray-200 bg-white" : "border-white/10 bg-black/20")} /></div>
-            <div className="space-y-1.5"><label className={lbl}>Stage</label><select value={form.stage} onChange={e => setF("stage", e.target.value)} className={cls}>{STAGES.map(s => <option key={s} value={s} className="bg-card capitalize">{s.replace(/_/g,' ')}</option>)}</select></div>
-            <div className="space-y-1.5"><label className={lbl}>Status</label><select value={form.status} onChange={e => setF("status", e.target.value)} className={cls}>{STATUSES.map(s => <option key={s} value={s} className="bg-card capitalize">{s.replace(/_/g,' ')}</option>)}</select></div>
-            <div className="space-y-1.5"><label className={lbl}>Priority</label><select value={form.priority} onChange={e => setF("priority", e.target.value)} className={cls}>{PRIORITIES.map(p => <option key={p} value={p} className="bg-card capitalize">{p}</option>)}</select></div>
-            <div className="space-y-1.5"><label className={lbl}>Product Type</label><select value={form.productType} onChange={e => setF("productType", e.target.value)} className={cls}><option value="" className="bg-card">Select...</option>{PRODUCT_TYPES.map(p => <option key={p} value={p} className="bg-card">{p}</option>)}</select></div>
+            <div className="space-y-1.5"><label className={lbl}>Stage</label><CustomOptionsSelect value={form.stage} onChange={v => setF("stage", v)} handle={stageOpts} displayFn={v => v.replace(/_/g,' ')} placeholder="Select stage..." isLight={isLight} /></div>
+            <div className="space-y-1.5"><label className={lbl}>Status</label><CustomOptionsSelect value={form.status} onChange={v => setF("status", v)} handle={statusOpts} displayFn={v => v.replace(/_/g,' ')} placeholder="Select status..." isLight={isLight} /></div>
+            <div className="space-y-1.5"><label className={lbl}>Priority</label><CustomOptionsSelect value={form.priority} onChange={v => setF("priority", v)} handle={priorityOpts} placeholder="Select priority..." isLight={isLight} /></div>
+            <div className="space-y-1.5"><label className={lbl}>Product Type</label><CustomOptionsSelect value={form.productType} onChange={v => setF("productType", v)} handle={typeOpts} placeholder="Select type..." isLight={isLight} /></div>
             <div className={cn("sm:col-span-2 border-t pt-2", isLight ? "border-gray-100" : "border-white/10")}><p className={cn("text-xs font-semibold uppercase tracking-wide mb-2", isLight ? "text-gray-500" : "text-muted-foreground")}>Customer</p></div>
             <div className="space-y-1.5"><label className={lbl}>Name</label><input value={form.customerName} onChange={e => setF("customerName", e.target.value)} className={cls} placeholder="Customer name" /></div>
             <div className="space-y-1.5"><label className={lbl}>Email</label><input type="email" value={form.customerEmail} onChange={e => setF("customerEmail", e.target.value)} className={cls} placeholder="email@example.com" /></div>
@@ -654,7 +676,7 @@ function EditBDModal({ item, users, onUpdate, onClose }: { item: any; users: any
 }
 
 /* ─────────────────────────────── Create Modal ───────────────────────────── */
-function CreateBDModal({ users, onCreate }: { users: any[]; onCreate: (data: any) => Promise<any> }) {
+function CreateBDModal({ users, onCreate, stageOpts, statusOpts, priorityOpts, typeOpts }: { users: any[]; onCreate: (data: any) => Promise<any>; stageOpts: CustomOptionsHandle; statusOpts: CustomOptionsHandle; priorityOpts: CustomOptionsHandle; typeOpts: CustomOptionsHandle }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
@@ -690,10 +712,10 @@ function CreateBDModal({ users, onCreate }: { users: any[]; onCreate: (data: any
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2 space-y-1.5"><label className={lbl}>Title *</label><input required value={form.name} onChange={e => setF("name", e.target.value)} placeholder="e.g. Seasoning Launch for Client X" className={cls} /></div>
             <div className="sm:col-span-2 space-y-1.5"><label className={lbl}>Description</label><textarea value={form.description} onChange={e => setF("description", e.target.value)} placeholder="BD opportunity details..." className={cn("flex min-h-[60px] w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground", isLight ? "border-gray-200 bg-white" : "border-white/10 bg-black/20")} /></div>
-            <div className="space-y-1.5"><label className={lbl}>Stage</label><select value={form.stage} onChange={e => setF("stage", e.target.value)} className={cls}>{STAGES.map(s => <option key={s} value={s} className="bg-card capitalize">{s.replace(/_/g,' ')}</option>)}</select></div>
-            <div className="space-y-1.5"><label className={lbl}>Status</label><select value={form.status} onChange={e => setF("status", e.target.value)} className={cls}>{STATUSES.map(s => <option key={s} value={s} className="bg-card capitalize">{s.replace(/_/g,' ')}</option>)}</select></div>
-            <div className="space-y-1.5"><label className={lbl}>Priority</label><select value={form.priority} onChange={e => setF("priority", e.target.value)} className={cls}>{PRIORITIES.map(p => <option key={p} value={p} className="bg-card capitalize">{p}</option>)}</select></div>
-            <div className="space-y-1.5"><label className={lbl}>Product Type</label><select value={form.productType} onChange={e => setF("productType", e.target.value)} className={cls}><option value="" className="bg-card">Select type...</option>{PRODUCT_TYPES.map(p => <option key={p} value={p} className="bg-card">{p}</option>)}</select></div>
+            <div className="space-y-1.5"><label className={lbl}>Stage</label><CustomOptionsSelect value={form.stage} onChange={v => setF("stage", v)} handle={stageOpts} displayFn={v => v.replace(/_/g,' ')} placeholder="Select stage..." isLight={isLight} /></div>
+            <div className="space-y-1.5"><label className={lbl}>Status</label><CustomOptionsSelect value={form.status} onChange={v => setF("status", v)} handle={statusOpts} displayFn={v => v.replace(/_/g,' ')} placeholder="Select status..." isLight={isLight} /></div>
+            <div className="space-y-1.5"><label className={lbl}>Priority</label><CustomOptionsSelect value={form.priority} onChange={v => setF("priority", v)} handle={priorityOpts} placeholder="Select priority..." isLight={isLight} /></div>
+            <div className="space-y-1.5"><label className={lbl}>Product Type</label><CustomOptionsSelect value={form.productType} onChange={v => setF("productType", v)} handle={typeOpts} placeholder="Select type..." isLight={isLight} /></div>
             <div className={cn("sm:col-span-2 border-t pt-2", isLight ? "border-gray-100" : "border-white/10")}><p className={cn("text-xs font-semibold uppercase tracking-wide mb-2", isLight ? "text-gray-500" : "text-muted-foreground")}>Customer Info</p></div>
             <div className="space-y-1.5"><label className={lbl}>Customer Name</label><input value={form.customerName} onChange={e => setF("customerName", e.target.value)} placeholder="Customer name" className={cls} /></div>
             <div className="space-y-1.5"><label className={lbl}>Email</label><input type="email" value={form.customerEmail} onChange={e => setF("customerEmail", e.target.value)} placeholder="email@example.com" className={cls} /></div>

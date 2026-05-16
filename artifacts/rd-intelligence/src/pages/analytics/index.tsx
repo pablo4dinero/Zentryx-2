@@ -11,7 +11,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
-const PRODUCT_TYPES = ["Seasoning", "Snack Dusting", "Bread & Dough Premix", "Dairy Premix", "Functional Blend", "Pasta Sauce", "Sweet Flavour", "Savoury Flavour"];
 const DARK_COLORS = ['hsl(252,89%,65%)', 'hsl(190,90%,50%)', 'hsl(280,80%,60%)', 'hsl(320,80%,60%)', 'hsl(150,80%,50%)', 'hsl(50,90%,55%)', 'hsl(10,80%,60%)', 'hsl(230,80%,60%)'];
 const LIGHT_COLORS = ['#4F46E5', '#06B6D4', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#3B82F6'];
 
@@ -95,12 +94,16 @@ export default function Analytics() {
   const projectsList = projects || [];
   const typedProjects = projectsList as any[];
 
-  const byProductType = PRODUCT_TYPES.map(type => ({
-    name: type,
-    count: typedProjects.filter(p => p.productType === type).length,
-    approved: typedProjects.filter(p => p.productType === type && p.status === "approved").length,
-    inProgress: typedProjects.filter(p => p.productType === type && p.status === "in_progress").length,
-  })).filter(d => d.count > 0);
+  const byProductType = Object.entries(
+    typedProjects.reduce((acc: Record<string, { count: number; approved: number; inProgress: number }>, p: any) => {
+      if (!p.productType) return acc;
+      if (!acc[p.productType]) acc[p.productType] = { count: 0, approved: 0, inProgress: 0 };
+      acc[p.productType].count++;
+      if (p.status === "approved") acc[p.productType].approved++;
+      if (p.status === "in_progress") acc[p.productType].inProgress++;
+      return acc;
+    }, {})
+  ).map(([name, d]) => ({ name, ...d }));
 
   const byStage = Object.entries(
     typedProjects.reduce((acc: Record<string, number>, p: any) => {
@@ -116,10 +119,10 @@ export default function Analytics() {
     }, {})
   ).map(([status, count]) => ({ status: status.replace(/_/g, ' '), count }));
 
-  const radarData = PRODUCT_TYPES.slice(0, 6).map(type => ({
-    subject: type.length > 12 ? type.slice(0, 12) + '…' : type,
-    Approved: typedProjects.filter(p => p.productType === type && p.status === "approved").length,
-    InProgress: typedProjects.filter(p => p.productType === type && p.status === "in_progress").length,
+  const radarData = byProductType.slice(0, 6).map(d => ({
+    subject: d.name.length > 12 ? d.name.slice(0, 12) + '…' : d.name,
+    Approved: d.approved,
+    InProgress: d.inProgress,
   }));
 
   const typeToggleBtn = (label: string, active: boolean, onClick: () => void) => (
