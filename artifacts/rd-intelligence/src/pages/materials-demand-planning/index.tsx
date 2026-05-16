@@ -1031,6 +1031,81 @@ function ProductionOrdersTab() {
 
 type PlanningViewMode = "weekly" | "daily";
 
+// Standalone hex/rgb CSS for the print template — used in html2canvas onclone to
+// replace Tailwind v4's oklch-based stylesheets (which html2canvas 1.4.1 cannot parse).
+const PRINT_CANVAS_CSS = `
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;padding:0;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;background:#fff;color:#0f172a}
+.flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1 1 0%}.shrink-0{flex-shrink:0}
+.items-start{align-items:flex-start}.items-center{align-items:center}.justify-between{justify-content:space-between}
+.gap-1{gap:.25rem}.gap-2{gap:.5rem}.gap-3{gap:.75rem}.gap-4{gap:1rem}
+.grid{display:grid}
+.grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr))}
+.grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.grid-cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.grid-cols-5{grid-template-columns:repeat(5,minmax(0,1fr))}
+.grid-cols-6{grid-template-columns:repeat(6,minmax(0,1fr))}
+.grid-cols-7{grid-template-columns:repeat(7,minmax(0,1fr))}
+.p-2{padding:.5rem}.p-3{padding:.75rem}.p-4{padding:1rem}.p-6{padding:1.5rem}
+.px-1\\.5{padding-left:.375rem;padding-right:.375rem}
+.px-2{padding-left:.5rem;padding-right:.5rem}.px-3{padding-left:.75rem;padding-right:.75rem}.px-4{padding-left:1rem;padding-right:1rem}
+.py-0\\.5{padding-top:.125rem;padding-bottom:.125rem}.py-1{padding-top:.25rem;padding-bottom:.25rem}
+.py-1\\.5{padding-top:.375rem;padding-bottom:.375rem}.py-2{padding-top:.5rem;padding-bottom:.5rem}
+.py-3{padding-top:.75rem;padding-bottom:.75rem}.py-4{padding-top:1rem;padding-bottom:1rem}
+.pb-4{padding-bottom:1rem}.pt-4{padding-top:1rem}
+.mb-0\\.5{margin-bottom:.125rem}.mb-1{margin-bottom:.25rem}.mb-2{margin-bottom:.5rem}
+.mb-3{margin-bottom:.75rem}.mb-4{margin-bottom:1rem}.mb-6{margin-bottom:1.5rem}
+.mt-0\\.5{margin-top:.125rem}.mt-1{margin-top:.25rem}.mt-1\\.5{margin-top:.375rem}
+.mt-2{margin-top:.5rem}.mt-4{margin-top:1rem}.mt-6{margin-top:1.5rem}
+.w-2{width:.5rem}.w-full{width:100%}
+.h-1{height:.25rem}.h-2{height:.5rem}.h-full{height:100%}
+.min-h-\\[100px\\]{min-height:100px}
+.text-\\[9px\\]{font-size:9px;line-height:1.2}.text-\\[10px\\]{font-size:10px;line-height:1.2}.text-\\[11px\\]{font-size:11px;line-height:1.2}
+.text-xs{font-size:.75rem;line-height:1rem}.text-sm{font-size:.875rem;line-height:1.25rem}
+.text-lg{font-size:1.125rem;line-height:1.75rem}.text-2xl{font-size:1.5rem;line-height:2rem}
+.font-bold{font-weight:700}.font-semibold{font-weight:600}.font-medium{font-weight:500}
+.tracking-tight{letter-spacing:-.025em}.tracking-widest{letter-spacing:.1em}
+.uppercase{text-transform:uppercase}.italic{font-style:italic}
+.truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.leading-tight{line-height:1.25}.text-right{text-align:right}.text-center{text-align:center}
+.opacity-40{opacity:.4}
+.border{border-width:1px;border-style:solid}.border-2{border-width:2px;border-style:solid}
+.border-b{border-bottom-width:1px;border-bottom-style:solid}
+.border-b-2{border-bottom-width:2px;border-bottom-style:solid}
+.border-t{border-top-width:1px;border-top-style:solid}
+.border-r{border-right-width:1px;border-right-style:solid}
+.border-t-0{border-top-width:0!important}
+.rounded-lg{border-radius:.5rem}.rounded-xl{border-radius:.75rem}
+.rounded-t-xl{border-top-left-radius:.75rem;border-top-right-radius:.75rem}
+.rounded-b-xl{border-bottom-left-radius:.75rem;border-bottom-right-radius:.75rem}
+.rounded-full{border-radius:9999px}
+.last\\:border-r-0:last-child{border-right-width:0}
+.space-y-2>*+*{margin-top:.5rem}.space-y-4>*+*{margin-top:1rem}.space-y-6>*+*{margin-top:1.5rem}
+.overflow-hidden{overflow:hidden}.overflow-visible{overflow:visible}
+.bg-white{background-color:#fff}
+.bg-slate-50{background-color:#f8fafc}
+.bg-slate-50\\/50{background-color:rgba(248,250,252,.5)}
+.bg-slate-100{background-color:#f1f5f9}
+.bg-slate-200{background-color:#e2e8f0}
+.bg-slate-800{background-color:#1e293b}
+.bg-red-100{background-color:#fee2e2}.bg-red-500{background-color:#ef4444}
+.bg-amber-500{background-color:#f59e0b}
+.bg-emerald-100{background-color:#d1fae5}.bg-emerald-500{background-color:#10b981}
+.bg-blue-100{background-color:#dbeafe}
+.bg-sky-400{background-color:#38bdf8}
+.text-white{color:#fff}
+.text-slate-900{color:#0f172a}.text-slate-800{color:#1e293b}.text-slate-700{color:#334155}
+.text-slate-600{color:#475569}.text-slate-500{color:#64748b}
+.text-slate-400{color:#94a3b8}.text-slate-300{color:#cbd5e1}
+.text-red-700{color:#b91c1c}.text-red-600{color:#dc2626}
+.text-emerald-700{color:#047857}.text-emerald-600{color:#059669}
+.text-blue-700{color:#1d4ed8}
+.text-amber-600{color:#d97706}
+.text-sky-400{color:#38bdf8}
+.border-slate-200{border-color:#e2e8f0}.border-slate-800{border-color:#1e293b}
+`;
+
 function ProductionPlanningTab() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -1057,41 +1132,15 @@ function ProductionPlanningTab() {
   const [isPdfGenerating, setIsPdfGenerating] = React.useState(false);
 
   const handlePrint = React.useCallback(() => {
-    const el = document.getElementById("print-schedule");
-    if (!el) return;
-    const win = window.open("", "_blank", "width=900,height=700");
-    if (!win) return;
-    // Copy <link> stylesheets only — skip inline <style> tags because the page's
-    // printStyles block uses position:fixed which pins content to 1 page.
-    // New window has no dark class so Tailwind dark: variants stay dormant.
-    const styleLinks = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'))
-      .map(l => `<link rel="stylesheet" href="${l.href}">`)
-      .join("\n");
-    win.document.write(
-      `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Production Schedule — ${selectedWeekLabel}</title>${styleLinks}<style>
-        @page { size: A4 portrait; margin: 1.5cm; }
-        html, body { background: white !important; margin: 0; padding: 0; }
-        /* Remove overflow clipping so all rows print across multiple pages */
-        #print-schedule, #print-schedule * { overflow: visible !important; max-height: none !important; }
-        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-        .print-no-break { page-break-inside: avoid; break-inside: avoid; }
-        .print-break-before { page-break-before: always; break-before: page; }
-      </style></head><body>${el.outerHTML}</body></html>`
-    );
-    win.document.close();
-    setTimeout(() => {
-      win.focus();
-      win.print();
-      setTimeout(() => win.close(), 1000);
-    }, 1200);
-  }, [selectedWeekLabel]);
+    window.print();
+  }, []);
 
   const handleDownloadPdf = React.useCallback(async () => {
     const el = document.getElementById("print-schedule");
     if (!el) return;
     setIsPdfGenerating(true);
-    // Render clone off-screen in a fixed container so it isn't clipped by the
-    // dialog's overflow-y:auto, giving html2canvas the full content height.
+    // Clone outside the dialog (no overflow-y:auto constraint) so html2canvas
+    // can measure the full content height.
     const wrapper = document.createElement("div");
     wrapper.style.cssText = "position:fixed;top:0;left:-10000px;width:794px;overflow:visible;background:white;z-index:9999;pointer-events:none";
     const clone = el.cloneNode(true) as HTMLElement;
@@ -1108,8 +1157,14 @@ function ProductionPlanningTab() {
         width: 794,
         height: clone.scrollHeight,
         windowWidth: 794,
+        // Tailwind v4 uses oklch() which html2canvas 1.4.1 cannot parse.
+        // Strip all stylesheets and inject a safe hex/rgb-only CSS so parsing succeeds.
         onclone: (clonedDoc: Document) => {
           clonedDoc.documentElement.classList.remove("dark");
+          clonedDoc.querySelectorAll<HTMLElement>('link[rel="stylesheet"], style').forEach(s => s.remove());
+          const safe = clonedDoc.createElement("style");
+          safe.textContent = PRINT_CANVAS_CSS;
+          clonedDoc.head.appendChild(safe);
         },
       });
       const imgData = canvas.toDataURL("image/png");
@@ -1606,12 +1661,28 @@ function ProductionPlanningTab() {
 
   const printStyles = `
     @media print {
-      @page { margin: 1cm; size: A4 landscape; }
+      @page { margin: 1.5cm; size: A4 portrait; }
       body * { visibility: hidden !important; }
-      #print-schedule { visibility: visible !important; position: fixed; top: 0; left: 0; width: 100%; background: #fff !important; font-family: 'Inter', system-ui, sans-serif; color: #111 !important; }
-      #print-schedule * { visibility: visible !important; color-adjust: exact; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      .print-no-break { page-break-inside: avoid; }
-      .print-break-before { page-break-before: always; }
+      #print-schedule {
+        visibility: visible !important;
+        position: absolute !important;
+        top: 0 !important; left: 0 !important; right: 0 !important;
+        width: 100% !important;
+        overflow: visible !important;
+        max-height: none !important;
+        background: #fff !important;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        color: #0f172a !important;
+      }
+      #print-schedule * {
+        visibility: visible !important;
+        overflow: visible !important;
+        max-height: none !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .print-no-break { page-break-inside: avoid; break-inside: avoid; }
+      .print-break-before { page-break-before: always; break-before: page; }
     }
   `;
 
