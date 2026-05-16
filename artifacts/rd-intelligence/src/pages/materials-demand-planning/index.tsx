@@ -2427,10 +2427,13 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
           </div>
 
           <DialogFooter className="gap-2 mt-2 flex-wrap">
-            <Button variant="outline" onClick={() => setPrintOpen(false)}>Close</Button>
-            <Button variant="outline" onClick={handlePrint}>Print</Button>
+            <Button
+              variant="outline"
+              onClick={() => setPrintOpen(false)}
+              className={isLight ? "bg-red-600 text-white border-red-600 hover:bg-red-700 hover:text-white" : ""}
+            >Close</Button>
             <Button onClick={handleDownloadPdf} disabled={isPdfGenerating}>
-              {isPdfGenerating ? "Generating…" : "Download"}
+              {isPdfGenerating ? "Generating…" : "Print"}
             </Button>
           </DialogFooter>
         </DialogContent>
