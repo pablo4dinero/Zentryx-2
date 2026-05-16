@@ -105,6 +105,23 @@ async function createTablesIfNotExist() {
     await db.execute(sql.raw(`ALTER TABLE today_production_orders ADD COLUMN IF NOT EXISTS date_delivered TEXT;`));
     await db.execute(sql.raw(`ALTER TABLE mdp_production_orders ADD COLUMN IF NOT EXISTS raw_material_status TEXT DEFAULT 'Pending';`));
 
+    // Migrate projects table enum columns to text so custom values are accepted
+    await db.execute(sql.raw(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'projects' AND column_name = 'stage' AND data_type = 'USER-DEFINED'
+        ) THEN
+          ALTER TABLE projects
+            ALTER COLUMN stage TYPE text USING stage::text,
+            ALTER COLUMN status TYPE text USING status::text,
+            ALTER COLUMN priority TYPE text USING priority::text,
+            ALTER COLUMN product_type TYPE text USING product_type::text;
+        END IF;
+      END $$;
+    `));
+
     logger.info("Database tables created or verified successfully");
   } catch (err) {
     logger.error({ err }, "Failed to create database tables");
