@@ -18,6 +18,7 @@ import SalesChartsPage from "./Charts";
 import SalesForecastPage from "./Forecast";
 import NewProductionOrdersPage from "./NewProductionOrders";
 import { useCustomOptions, DEFAULT_PRODUCT_TYPES, displayLabel } from "@/lib/project-options";
+import { CustomOptionsSelect } from "@/components/ui/CustomOptionsSelect";
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -275,10 +276,14 @@ function AddAccountModal({ onSuccess }: { onSuccess: () => void }) {
                     </div>
                     <div>
                       <label className={lCls}>Product Type *</label>
-                      <select value={form.productType} onChange={e => setF("productType", e.target.value)} className={iCls + " cursor-pointer"}>
-                        <option value="">— Select —</option>
-                        {typeOpts.options.map(p => <option key={p} value={p} className="bg-white text-black">{displayLabel(p)}</option>)}
-                      </select>
+                      <CustomOptionsSelect
+                        value={form.productType}
+                        onChange={v => setF("productType", v)}
+                        handle={typeOpts}
+                        displayFn={displayLabel}
+                        placeholder="Select product type…"
+                        isLight={isLight}
+                      />
                     </div>
                     <div>
                       <label className={lCls}>Customer Type</label>

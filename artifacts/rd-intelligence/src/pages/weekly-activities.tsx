@@ -1157,15 +1157,18 @@ export default function WeeklyActivities() {
                       </td>
 
                       <td className="px-2 py-2">
-                        <select
+                        <input
+                          type="text"
+                          list="wa-product-type-options"
                           value={row.productType ?? ""}
                           onChange={e => handleFieldChange(row.id, "productType", e.target.value || null)}
-                          className={cn("text-xs rounded-lg border px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary/40 w-full appearance-none",
+                          placeholder="Product type…"
+                          className={cn("text-xs rounded-lg border px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary/40 w-full",
                             isLight ? "bg-slate-50 border-slate-200 text-slate-700" : "bg-black/20 border-white/10 text-foreground")}
-                        >
-                          <option value="">— Select —</option>
-                          {typeOpts.options.map(p => <option key={p} value={p}>{displayLabel(p)}</option>)}
-                        </select>
+                        />
+                        <datalist id="wa-product-type-options">
+                          {typeOpts.options.map(p => <option key={p} value={p} />)}
+                        </datalist>
                       </td>
 
                       <td className="px-2 py-2">
