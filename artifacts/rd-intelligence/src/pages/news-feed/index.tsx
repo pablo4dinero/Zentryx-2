@@ -154,63 +154,79 @@ function IFTCard({ item, isLight }: { item: NewsItem; isLight: boolean }) {
 
   return (
     <div className={cn(
-      "rounded-xl overflow-hidden border-l-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg flex flex-col",
+      "rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg flex flex-col",
       isLight
-        ? "bg-white shadow-sm border border-gray-100 border-l-indigo-500"
-        : "bg-[#0f0f1e] border border-white/8 border-l-indigo-400",
+        ? "bg-white shadow-sm border border-gray-100"
+        : "bg-[#0f0f1e] border border-white/8",
     )}>
-      {/* Thumbnail (if available) */}
-      {item.imageUrl && !imgFailed && (
-        <div className="relative h-32 w-full flex-shrink-0 overflow-hidden">
+      {/* Image area — always visible; gradient fallback when no real image */}
+      <div className={`relative h-40 w-full flex-shrink-0 overflow-hidden bg-gradient-to-br ${cat.gradient}`}>
+        {item.imageUrl && !imgFailed && (
           <img
             src={item.imageUrl}
             alt={item.imageKeyword}
-            className="w-full h-full object-cover"
+            className="absolute inset-0 w-full h-full object-cover"
             onError={() => setImgFailed(true)}
             referrerPolicy="no-referrer"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/10" />
+        {(!item.imageUrl || imgFailed) && (
+          <span className="absolute inset-0 flex items-center justify-center text-white/10 font-black text-5xl uppercase tracking-widest select-none pointer-events-none">
+            {item.category.split(" ")[0]}
+          </span>
+        )}
+        <div className="absolute top-2.5 left-3 z-10">
+          <span className="text-[10px] font-bold text-white bg-black/40 backdrop-blur-sm px-2.5 py-1 rounded-full">
+            {item.category}
+          </span>
         </div>
-      )}
-
-      <div className="p-4 flex flex-col flex-1 gap-2">
-        <div className="flex items-start justify-between gap-2">
-          <CategoryPill category={item.category} isLight={isLight} />
-          <span className={cn("text-[10px] shrink-0", isLight ? "text-gray-400" : "text-gray-500")}>
+        <div className="absolute bottom-2.5 right-3 z-10">
+          <span className={cn("text-[10px] bg-black/40 backdrop-blur-sm text-white px-2 py-0.5 rounded-full")}>
             {item.readTime} min read
           </span>
         </div>
+      </div>
 
+      <div className="p-4 flex flex-col flex-1 gap-2">
         <h3 className={cn(
-          "font-bold text-sm leading-snug line-clamp-3 flex-1",
+          "font-bold text-sm leading-snug line-clamp-3",
           isLight ? "text-gray-900" : "text-white",
         )}>
           {item.headline}
         </h3>
 
-        <p className={cn("text-xs leading-relaxed line-clamp-2", isLight ? "text-gray-500" : "text-gray-400")}>
+        <p className={cn("text-xs leading-relaxed line-clamp-2 flex-1", isLight ? "text-gray-500" : "text-gray-400")}>
           {item.summary}
         </p>
 
-        <div className={cn(
-          "flex items-center justify-between text-[11px] pt-2 border-t mt-auto",
-          isLight ? "border-gray-100 text-gray-400" : "border-white/5 text-gray-500",
-        )}>
-          <div className="flex items-center gap-1 min-w-0">
-            <span className={cn("font-medium truncate", isLight ? "text-indigo-600" : "text-indigo-400")}>{item.source}</span>
-            <span className="shrink-0">· {timeAgo}</span>
-          </div>
-          {item.readMoreUrl && (
-            <a
-              href={item.readMoreUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="shrink-0 flex items-center gap-1 text-indigo-500 hover:text-indigo-400 font-semibold ml-2 transition-colors"
-            >
-              Read <ExternalLink className="w-3 h-3" />
-            </a>
-          )}
+        <div className={cn("flex items-center gap-1 text-[11px] pb-2", isLight ? "text-gray-400" : "text-gray-500")}>
+          <span className={cn("font-medium truncate", isLight ? "text-indigo-600" : "text-indigo-400")}>{item.source}</span>
+          <span className="shrink-0">· {timeAgo}</span>
         </div>
+
+        {item.readMoreUrl ? (
+          <a
+            href={item.readMoreUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(
+              "flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-colors border",
+              isLight
+                ? "bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border-indigo-200"
+                : "bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border-indigo-500/20",
+            )}
+          >
+            Read Full Article <ExternalLink className="w-3.5 h-3.5" />
+          </a>
+        ) : (
+          <div className={cn(
+            "flex items-center justify-center py-2 rounded-lg text-xs border",
+            isLight ? "bg-slate-50 text-slate-400 border-slate-200" : "bg-white/5 text-gray-600 border-white/8",
+          )}>
+            IFT.org
+          </div>
+        )}
       </div>
     </div>
   );
@@ -255,9 +271,9 @@ function GuardianRow({ item, isLight }: { item: NewsItem; isLight: boolean }) {
       "flex gap-0 rounded-xl overflow-hidden transition-all duration-200 hover:shadow-md",
       isLight ? "bg-white shadow-sm border border-gray-100" : "bg-[#0f0f1e] border border-white/8",
     )}>
-      {/* Left image or gradient swatch */}
+      {/* Left image — always visible */}
       <div className={cn(
-        "relative flex-shrink-0 w-28 sm:w-40",
+        "relative flex-shrink-0 w-32 sm:w-48 min-h-[120px]",
         `bg-gradient-to-br ${cat.gradient}`,
       )}>
         {item.imageUrl && !imgFailed ? (
@@ -277,10 +293,13 @@ function GuardianRow({ item, isLight }: { item: NewsItem; isLight: boolean }) {
       </div>
 
       {/* Content */}
-      <div className="flex flex-col flex-1 px-4 py-3 gap-1.5 min-w-0">
+      <div className="flex flex-col flex-1 px-4 py-3 gap-2 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <CategoryPill category={item.category} isLight={isLight} />
           <span className={cn("text-[10px]", isLight ? "text-gray-400" : "text-gray-500")}>{timeAgo}</span>
+          <span className={cn("flex items-center gap-0.5 text-[10px] shrink-0", isLight ? "text-gray-400" : "text-gray-500")}>
+            <Clock className="w-3 h-3" />{item.readTime}m
+          </span>
         </div>
 
         <h3 className={cn(
@@ -290,28 +309,30 @@ function GuardianRow({ item, isLight }: { item: NewsItem; isLight: boolean }) {
           {item.headline}
         </h3>
 
-        <p className={cn("text-xs leading-relaxed line-clamp-2 hidden sm:block", isLight ? "text-gray-500" : "text-gray-400")}>
+        <p className={cn("text-xs leading-relaxed line-clamp-2 hidden sm:block flex-1", isLight ? "text-gray-500" : "text-gray-400")}>
           {item.summary}
         </p>
 
-        <div className={cn("flex items-center justify-between text-[11px] mt-auto", isLight ? "text-gray-400" : "text-gray-500")}>
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span className={cn("font-semibold truncate", isLight ? "text-emerald-700" : "text-emerald-400")}>
-              {item.source}
-            </span>
-            <span className="flex items-center gap-0.5 shrink-0">
-              <Clock className="w-3 h-3" />{item.readTime}m
-            </span>
-          </div>
-          {item.readMoreUrl && (
+        <div className="flex items-center justify-between gap-3 mt-auto">
+          <span className={cn("text-[11px] font-semibold truncate", isLight ? "text-emerald-700" : "text-emerald-400")}>
+            {item.source}
+          </span>
+          {item.readMoreUrl ? (
             <a
               href={item.readMoreUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="shrink-0 flex items-center gap-1 text-emerald-600 hover:text-emerald-500 font-semibold ml-2 transition-colors"
+              className={cn(
+                "shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border",
+                isLight
+                  ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200"
+                  : "bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/20",
+              )}
             >
-              Read more <ExternalLink className="w-3 h-3" />
+              Read Article <ExternalLink className="w-3 h-3" />
             </a>
+          ) : (
+            <span className={cn("text-[11px]", isLight ? "text-gray-400" : "text-gray-600")}>The Guardian</span>
           )}
         </div>
       </div>
@@ -402,13 +423,18 @@ function SliderCard({ item, isActive, isLight }: { item: NewsItem; isActive: boo
             <span className="truncate font-medium">{item.source}</span>
             <span className="flex items-center gap-0.5 shrink-0"><Clock className="w-3 h-3" />{item.readTime}m</span>
           </div>
-          {isActive && item.readMoreUrl && (
+          {item.readMoreUrl && (
             <a
               href={item.readMoreUrl}
               target="_blank"
               rel="noopener noreferrer"
               onClick={e => e.stopPropagation()}
-              className="shrink-0 flex items-center gap-1 text-primary hover:underline font-semibold ml-2"
+              className={cn(
+                "shrink-0 flex items-center gap-1 font-semibold ml-2 transition-colors",
+                isActive
+                  ? "text-primary hover:underline"
+                  : isLight ? "text-slate-400 hover:text-primary text-[10px]" : "text-gray-600 hover:text-primary text-[10px]",
+              )}
             >
               Read more <ExternalLink className="w-3 h-3" />
             </a>
