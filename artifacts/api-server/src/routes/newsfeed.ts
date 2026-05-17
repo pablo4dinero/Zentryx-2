@@ -46,8 +46,14 @@ function mapSentiment(s: string | null | undefined): "positive" | "neutral" | "n
   return "neutral";
 }
 
-function buildGroqImageUrl(keyword: string): string {
-  return `https://source.unsplash.com/640x360/?${encodeURIComponent(keyword + ",food,nigeria")}`;
+function buildFallbackImageUrl(keyword: string): string {
+  // Seed-based so the same keyword always returns the same image
+  const seed = encodeURIComponent(keyword.replace(/\s+/g, "-").toLowerCase());
+  return `https://picsum.photos/seed/${seed}/640/360`;
+}
+
+function buildReadMoreUrl(headline: string): string {
+  return `https://news.google.com/search?q=${encodeURIComponent(headline)}&hl=en-NG&gl=NG`;
 }
 
 const FOOD_KEYWORDS = [
@@ -135,7 +141,8 @@ const MOCK_ITEMS_RAW = [
 
 const MOCK_ITEMS: NewsItem[] = MOCK_ITEMS_RAW.map(item => ({
   ...item,
-  imageUrl: buildGroqImageUrl(item.imageKeyword),
+  imageUrl: buildFallbackImageUrl(item.imageKeyword),
+  readMoreUrl: buildReadMoreUrl(item.headline),
 }));
 
 // ─── Per-source caches ────────────────────────────────────────────────────────
@@ -170,7 +177,7 @@ async function fetchFromIFT(): Promise<NewsItem[]> {
         publishedAt: parsePubDate(article.pubDate),
         sentiment: "neutral",
         imageKeyword: category.toLowerCase() + " food science",
-        imageUrl: article.imageUrl,
+        imageUrl: article.imageUrl || buildFallbackImageUrl(category.toLowerCase() + " food science"),
         readMoreUrl: article.link,
         readTime: Math.max(2, Math.min(10, Math.ceil(wordCount / 50))),
       };
@@ -289,7 +296,7 @@ async function fetchFromNewsData(): Promise<NewsItem[]> {
         publishedAt: parsePubDate(article.pubDate),
         sentiment: mapSentiment(article.sentiment),
         imageKeyword: category.toLowerCase() + " food",
-        imageUrl: article.image_url || undefined,
+        imageUrl: article.image_url || buildFallbackImageUrl(category.toLowerCase() + " food"),
         readMoreUrl: article.link,
         readTime: Math.max(1, Math.min(5, Math.ceil(wordCount / 50))),
       };
@@ -336,7 +343,8 @@ Return ONLY the array.`,
 
   return items.map(item => ({
     ...item,
-    imageUrl: buildGroqImageUrl(item.imageKeyword),
+    imageUrl: buildFallbackImageUrl(item.imageKeyword),
+    readMoreUrl: buildReadMoreUrl(item.headline),
   }));
 }
 
