@@ -9,12 +9,29 @@ export interface JwtPayload {
   role: string;
 }
 
+export interface MfaJwtPayload {
+  userId: number;
+  email: string;
+  role: string;
+  mfaPending: true;
+}
+
 export function signToken(payload: JwtPayload): string {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" });
 }
 
+export function signMfaToken(payload: Omit<MfaJwtPayload, "mfaPending">): string {
+  return jwt.sign({ ...payload, mfaPending: true }, JWT_SECRET, { expiresIn: "15m" });
+}
+
 export function verifyToken(token: string): JwtPayload {
   return jwt.verify(token, JWT_SECRET) as JwtPayload;
+}
+
+export function verifyMfaToken(token: string): MfaJwtPayload {
+  const payload = jwt.verify(token, JWT_SECRET) as MfaJwtPayload;
+  if (!payload.mfaPending) throw new Error("Not an MFA token");
+  return payload;
 }
 
 export interface AuthRequest extends Request {
@@ -29,7 +46,12 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
   }
   const token = authHeader.slice(7);
   try {
-    req.user = verifyToken(token);
+    const payload = jwt.verify(token, JWT_SECRET) as JwtPayload & { mfaPending?: boolean };
+    if (payload.mfaPending) {
+      res.status(401).json({ error: "MFAPending", message: "SMS verification required" });
+      return;
+    }
+    req.user = payload;
     next();
   } catch {
     res.status(401).json({ error: "Unauthorized", message: "Invalid token" });

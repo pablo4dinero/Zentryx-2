@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { useAuthStore } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Zap, Lock, Mail, User, AlertCircle, Phone, Eye, EyeOff, ArrowLeft, KeyRound, CheckCircle } from "lucide-react";
+import { Zap, Lock, Mail, User, AlertCircle, Phone, Eye, EyeOff, ArrowLeft, KeyRound, CheckCircle, MessageSquare } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -11,7 +11,7 @@ import { useTheme } from "@/lib/theme";
 
 const BASE = import.meta.env.BASE_URL;
 
-type Mode = "login" | "signup" | "signup-otp" | "forgot" | "forgot-otp" | "reset";
+type Mode = "login" | "signup" | "signup-otp" | "forgot" | "forgot-otp" | "reset" | "sms-otp" | "add-phone";
 
 async function apiFetch(path: string, body: object) {
   const r = await fetch(`${BASE}${path}`, {
@@ -58,15 +58,95 @@ export default function Login() {
   const inputLightCls = isLight ? "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:bg-white" : "";
   const iconCls = isLight ? "text-gray-400" : "text-muted-foreground";
 
-  // Handle OAuth redirect callback — pick up token from URL query param
+  // login fields
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
+
+  // signup fields
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [confirmPw, setConfirmPw] = useState("");
+  const [signupOtp, setSignupOtp] = useState("");
+  const [devOtp, setDevOtp] = useState("");
+
+  // forgot password fields
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotOtp, setForgotOtp] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [showNewPw, setShowNewPw] = useState(false);
+  const [devForgotOtp, setDevForgotOtp] = useState("");
+
+  // SMS MFA fields
+  const [mfaToken, setMfaToken] = useState("");
+  const [smsPhone, setSmsPhone] = useState("");
+  const [smsOtp, setSmsOtp] = useState("");
+  const [devSmsOtp, setDevSmsOtp] = useState("");
+  const [addPhoneNum, setAddPhoneNum] = useState("");
+
+  const clearError = () => setError("");
+  const goMode = (m: Mode) => { setMode(m); setError(""); };
+
+  function handleMfaResponse(data: {
+    mfaPending?: boolean;
+    requirePhone?: boolean;
+    mfaToken?: string;
+    phone?: string;
+    devMode?: boolean;
+    code?: string;
+    token?: string;
+    user?: { name: string };
+  }) {
+    if (data.mfaPending && data.mfaToken) {
+      setMfaToken(data.mfaToken);
+      if (data.requirePhone) {
+        goMode("add-phone");
+      } else {
+        setSmsPhone(data.phone || "");
+        setDevSmsOtp(data.devMode && data.code ? data.code : "");
+        if (data.devMode && data.code) {
+          toast({ title: "One-Time SMS code generated", description: "Your SMS code is shown below." });
+        } else {
+          toast({ title: "SMS code sent", description: `A 6-digit code was sent to ${data.phone}` });
+        }
+        goMode("sms-otp");
+      }
+    } else if (data.token) {
+      setToken(data.token);
+      toast({ title: "Welcome!", description: `Signed in as ${data.user?.name ?? ""}` });
+      setLocation("/");
+    }
+  }
+
+  // Handle OAuth / MFA redirect callback
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const oauthToken = params.get("oauth_token");
     const oauthError = params.get("oauth_error");
+    const mfaTokenParam = params.get("mfa_token");
+    const requirePhone = params.get("require_phone");
+    const phoneParam = params.get("phone");
+    const smsCodeParam = params.get("sms_code");
+
+    window.history.replaceState({}, "", window.location.pathname);
+
     if (oauthToken) {
       setToken(oauthToken);
-      window.history.replaceState({}, "", window.location.pathname);
       setLocation("/");
+    } else if (mfaTokenParam) {
+      setMfaToken(mfaTokenParam);
+      if (requirePhone === "true") {
+        goMode("add-phone");
+      } else {
+        setSmsPhone(phoneParam || "");
+        if (smsCodeParam) {
+          setDevSmsOtp(smsCodeParam);
+          toast({ title: "One-Time SMS code generated", description: "Your SMS code is shown below." });
+        } else if (phoneParam) {
+          toast({ title: "SMS code sent", description: `A 6-digit code was sent to ${phoneParam}` });
+        }
+        goMode("sms-otp");
+      }
     } else if (oauthError) {
       setError(oauthError === "cancelled" ? "Sign-in was cancelled." : "OAuth sign-in failed. Please try again.");
     }
@@ -96,29 +176,6 @@ export default function Login() {
     </div>
   );
 
-  // login fields
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPw, setShowPw] = useState(false);
-
-  // signup fields
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [confirmPw, setConfirmPw] = useState("");
-  const [signupOtp, setSignupOtp] = useState("");
-  const [devOtp, setDevOtp] = useState("");
-
-  // forgot password fields
-  const [forgotEmail, setForgotEmail] = useState("");
-  const [forgotOtp, setForgotOtp] = useState("");
-  const [newPw, setNewPw] = useState("");
-  const [showNewPw, setShowNewPw] = useState(false);
-  const [devForgotOtp, setDevForgotOtp] = useState("");
-
-  const clearError = () => setError("");
-
-  const goMode = (m: Mode) => { setMode(m); setError(""); };
-
   // ─── Login ────────────────────────────────────────────────────────────────
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,9 +183,7 @@ export default function Login() {
     setLoading(true);
     try {
       const data = await apiFetch("api/auth/login", { email, password });
-      setToken(data.token);
-      toast({ title: "Welcome back!", description: `Signed in as ${data.user.name}` });
-      setLocation("/");
+      handleMfaResponse(data);
     } catch (err: any) {
       setError(err.message || "Invalid email or password.");
     } finally {
@@ -161,7 +216,7 @@ export default function Login() {
     }
   };
 
-  // ─── Signup step 2 — verify OTP and create account ───────────────────────
+  // ─── Signup step 2 — verify email OTP and create account ─────────────────
   const handleSignupVerify = async (e: React.FormEvent) => {
     e.preventDefault();
     clearError();
@@ -170,9 +225,7 @@ export default function Login() {
       const data = await apiFetch("api/auth/register", {
         email, password, name, phone: phone || undefined, otpCode: signupOtp,
       });
-      setToken(data.token);
-      toast({ title: "Account created!", description: `Welcome to Zentryx, ${data.user.name}` });
-      setLocation("/");
+      handleMfaResponse(data);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -225,6 +278,67 @@ export default function Login() {
     } catch (err: any) {
       setError(err.message);
       if (err.message.includes("Invalid") || err.message.includes("expired")) goMode("forgot-otp");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── SMS OTP — verify ─────────────────────────────────────────────────────
+  const handleSmsVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    clearError();
+    setLoading(true);
+    try {
+      const data = await apiFetch("api/auth/verify-sms", { mfaToken, otpCode: smsOtp });
+      setToken(data.token);
+      toast({ title: "Verified!", description: `Welcome, ${data.user?.name ?? ""}` });
+      setLocation("/");
+    } catch (err: any) {
+      setError(err.message);
+      if (err.message.includes("expired") || err.message.includes("Session")) goMode("login");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── SMS OTP — resend ─────────────────────────────────────────────────────
+  const handleSmsResend = async () => {
+    clearError();
+    setLoading(true);
+    try {
+      const data = await apiFetch("api/auth/resend-sms", { mfaToken });
+      if (data.devMode && data.code) {
+        setDevSmsOtp(data.code);
+        toast({ title: "New code generated", description: "Your SMS code is shown below." });
+      } else {
+        toast({ title: "Code resent", description: `A new code was sent to ${smsPhone}` });
+      }
+      setSmsOtp("");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── Add phone then send SMS ──────────────────────────────────────────────
+  const handleAddPhone = async (e: React.FormEvent) => {
+    e.preventDefault();
+    clearError();
+    if (!addPhoneNum.trim()) { setError("Enter your phone number."); return; }
+    setLoading(true);
+    try {
+      const data = await apiFetch("api/auth/mfa/add-phone", { mfaToken, phone: addPhoneNum.trim() });
+      setSmsPhone(data.phone || addPhoneNum);
+      setDevSmsOtp(data.devMode && data.code ? data.code : "");
+      if (data.devMode && data.code) {
+        toast({ title: "One-Time SMS code generated", description: "Your SMS code is shown below." });
+      } else {
+        toast({ title: "Code sent", description: `A 6-digit code was sent to ${data.phone}` });
+      }
+      goMode("sms-otp");
+    } catch (err: any) {
+      setError(err.message);
     } finally {
       setLoading(false);
     }
@@ -480,6 +594,62 @@ export default function Login() {
                 <Button type="submit" className="w-full h-12 text-base font-semibold" disabled={loading || newPw.length < 6}>
                   {loading ? "Resetting…" : "Set New Password"}
                 </Button>
+              </form>
+            )}
+
+            {/* ── Add Phone ────────────────────────────────────────────── */}
+            {mode === "add-phone" && (
+              <form onSubmit={handleAddPhone} className="space-y-4">
+                <div className="text-center mb-2">
+                  <Phone className="w-10 h-10 text-primary mx-auto mb-2" />
+                  <p className="font-semibold text-foreground">Add your phone number</p>
+                  <p className="text-sm text-muted-foreground mt-1">We'll send a one-time code via SMS or WhatsApp to verify your identity.</p>
+                </div>
+                <div className="space-y-2">
+                  <FieldLabel>Phone Number</FieldLabel>
+                  <div className="relative">
+                    <Phone className={cn("absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5", iconCls)} />
+                    <Input
+                      type="tel" value={addPhoneNum} onChange={e => setAddPhoneNum(e.target.value)}
+                      required className={cn("pl-10 h-12", inputLightCls)} placeholder="+234 xxx xxxx xxxx" autoFocus
+                    />
+                  </div>
+                </div>
+                <ErrorBox />
+                <Button type="submit" className="w-full h-12 text-base font-semibold" disabled={loading || !addPhoneNum.trim()}>
+                  {loading ? "Sending code…" : "Send Verification Code"}
+                </Button>
+              </form>
+            )}
+
+            {/* ── SMS OTP ──────────────────────────────────────────────── */}
+            {mode === "sms-otp" && (
+              <form onSubmit={handleSmsVerify} className="space-y-4">
+                <div className="text-center mb-2">
+                  <MessageSquare className="w-10 h-10 text-primary mx-auto mb-2" />
+                  <p className="font-semibold text-foreground">SMS Verification</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Enter the 6-digit code sent to{" "}
+                    <span className="text-foreground font-medium font-mono">{smsPhone || "your phone"}</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">Required once every 24 hours</p>
+                </div>
+                {devSmsOtp && <DevOtpBanner code={devSmsOtp} />}
+                <div className="space-y-2">
+                  <FieldLabel>Verification Code</FieldLabel>
+                  <Input
+                    value={smsOtp} onChange={e => setSmsOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    required maxLength={6} className={cn("h-12 text-center text-2xl font-mono tracking-[0.5em]", inputLightCls)}
+                    placeholder="000000" autoFocus
+                  />
+                </div>
+                <ErrorBox />
+                <Button type="submit" className="w-full h-12 text-base font-semibold" disabled={loading || smsOtp.length !== 6}>
+                  {loading ? "Verifying…" : "Verify & Enter Workspace"}
+                </Button>
+                <button type="button" onClick={handleSmsResend} disabled={loading} className="w-full text-xs text-muted-foreground hover:text-foreground text-center mt-1 transition-colors disabled:opacity-50">
+                  Didn't receive it? Resend code
+                </button>
               </form>
             )}
 

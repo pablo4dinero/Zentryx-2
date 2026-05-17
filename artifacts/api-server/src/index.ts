@@ -166,6 +166,9 @@ async function createTablesIfNotExist() {
       END $$;
     `));
 
+    // Add sms_verified_at column for SMS MFA feature
+    await db.execute(sql.raw(`ALTER TABLE users ADD COLUMN IF NOT EXISTS sms_verified_at TIMESTAMP;`));
+
     logger.info("Database tables created or verified successfully");
   } catch (err) {
     logger.error({ err }, "Failed to create database tables");
