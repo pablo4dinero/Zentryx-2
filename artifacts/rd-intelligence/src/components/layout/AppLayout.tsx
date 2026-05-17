@@ -6,7 +6,7 @@ import {
   ChevronDown, User, FlaskConical as Flask, CheckSquare, Building2,
   ArrowRight, Loader2, CalendarDays, UserCircle, TrendingUp, ClipboardList,
   PanelLeftClose, PanelLeftOpen, Lock, Unlock, ShoppingCart, Package,
-  ShieldCheck, ShieldX, Mail
+  ShieldCheck, ShieldX, Mail, Rss
 } from "lucide-react";
 import { useAuthStore } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
@@ -20,6 +20,7 @@ const SIDEBAR_LOCK_KEY = "zentryx_sidebar_locked";
 const SIDEBAR_COLLAPSED_KEY = "zentryx_sidebar_collapsed";
 
 const ALL_NAV_ITEMS = [
+  { href: "/news-feed", label: "News Feed", icon: Rss },
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/projects", label: "Project Portfolio", icon: FlaskConical },
   { href: "/analytics", label: "Analytics", icon: LineChart },

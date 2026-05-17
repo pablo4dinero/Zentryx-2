@@ -22,6 +22,7 @@ import SalesForce from "@/pages/sales-force";
 import AccountDetail from "@/pages/sales-force/[id]";
 import MaterialsDemandPlanning from "@/pages/materials-demand-planning";
 import Procurement from "@/pages/procurement";
+import NewsFeed from "@/pages/news-feed";
 import NotFound from "@/pages/not-found";
 
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -57,6 +58,7 @@ function Router() {
       <Route path="/sales-force/:id" component={() => <ProtectedRoute component={AccountDetail} />} />
       <Route path="/materials-demand-planning" component={() => <ProtectedRoute component={MaterialsDemandPlanning} />} />
       <Route path="/procurement" component={() => <ProtectedRoute component={Procurement} />} />
+      <Route path="/news-feed" component={() => <ProtectedRoute component={NewsFeed} />} />
       <Route component={NotFound} />
     </Switch>
   );
