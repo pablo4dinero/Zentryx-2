@@ -6,7 +6,7 @@ import { usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { signToken, signMfaToken, verifyMfaToken, requireAuth, AuthRequest } from "../lib/auth";
 import { sendOtp, verifyOtp } from "../lib/otp";
-import { sendSmsOtp, verifySmsOtp, maskPhone } from "../lib/sms";
+import { sendSmsOtp, sendVoiceOtp, verifySmsOtp, verifyVoiceOtp, maskPhone } from "../lib/sms";
 
 const router = Router();
 
@@ -31,7 +31,7 @@ async function ensureSuperadmin(): Promise<typeof usersTable.$inferSelect | null
 
 function smsVerifiedRecently(user: typeof usersTable.$inferSelect): boolean {
   if (!user.smsVerifiedAt) return false;
-  return (Date.now() - user.smsVerifiedAt.getTime()) < 24 * 60 * 60 * 1000;
+  return (Date.now() - user.smsVerifiedAt.getTime()) < 12 * 60 * 60 * 1000;
 }
 
 // ─── Login ───────────────────────────────────────────────────────────────────
@@ -87,6 +87,7 @@ router.post("/login", async (req, res) => {
       mfaPending: true,
       mfaToken,
       phone: maskPhone(user.phone),
+      smsFailed: result.failed ?? false,
       devMode: result.devMode,
       ...(result.devMode ? { code: result.code } : {}),
     });
@@ -96,10 +97,10 @@ router.post("/login", async (req, res) => {
   }
 });
 
-// ─── Verify SMS OTP ───────────────────────────────────────────────────────────
+// ─── Verify SMS / Voice OTP ───────────────────────────────────────────────────
 router.post("/verify-sms", async (req, res) => {
   try {
-    const { mfaToken, otpCode } = req.body;
+    const { mfaToken, otpCode, isVoice } = req.body;
     if (!mfaToken || !otpCode) {
       res.status(400).json({ error: "BadRequest", message: "mfaToken and otpCode required" });
       return;
@@ -117,7 +118,10 @@ router.post("/verify-sms", async (req, res) => {
       return;
     }
 
-    const valid = verifySmsOtp(user.phone, otpCode);
+    const valid = isVoice
+      ? await verifyVoiceOtp(user.phone, otpCode)
+      : verifySmsOtp(user.phone, otpCode);
+
     if (!valid) {
       res.status(400).json({ error: "InvalidOTP", message: "Invalid or expired code" });
       return;
@@ -133,6 +137,29 @@ router.post("/verify-sms", async (req, res) => {
   } catch (err) {
     console.error("verify-sms error:", err);
     res.status(500).json({ error: "InternalServerError", message: "Verification failed" });
+  }
+});
+
+// ─── Request voice call OTP ───────────────────────────────────────────────────
+router.post("/call-otp", async (req, res) => {
+  try {
+    const { mfaToken } = req.body;
+    if (!mfaToken) { res.status(400).json({ error: "BadRequest", message: "mfaToken required" }); return; }
+
+    let payload;
+    try { payload = verifyMfaToken(mfaToken); } catch {
+      res.status(401).json({ error: "InvalidToken", message: "Session expired, please sign in again" });
+      return;
+    }
+
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, payload.userId)).limit(1);
+    if (!user?.phone) { res.status(400).json({ error: "NoPhone" }); return; }
+
+    const result = await sendVoiceOtp(user.phone);
+    res.json({ called: true, failed: result.failed ?? false, devMode: result.devMode });
+  } catch (err) {
+    console.error("call-otp error:", err);
+    res.status(500).json({ error: "InternalServerError", message: "Failed to initiate call" });
   }
 });
 
@@ -152,7 +179,7 @@ router.post("/resend-sms", async (req, res) => {
     if (!user?.phone) { res.status(400).json({ error: "NoPhone" }); return; }
 
     const result = await sendSmsOtp(user.phone);
-    res.json({ sent: true, devMode: result.devMode, ...(result.devMode ? { code: result.code } : {}) });
+    res.json({ sent: true, failed: result.failed ?? false, devMode: result.devMode, ...(result.devMode ? { code: result.code } : {}) });
   } catch (err) {
     console.error("resend-sms error:", err);
     res.status(500).json({ error: "InternalServerError", message: "Failed to resend code" });
@@ -260,6 +287,7 @@ router.post("/register", async (req, res) => {
       mfaPending: true,
       mfaToken,
       phone: maskPhone(user.phone),
+      smsFailed: result.failed ?? false,
       devMode: result.devMode,
       ...(result.devMode ? { code: result.code } : {}),
     });
@@ -348,18 +376,14 @@ async function oauthFinish(req: Request, res: import("express").Response, user: 
     return;
   }
 
-  try {
-    const result = await sendSmsOtp(user.phone);
-    const params = new URLSearchParams({
-      mfa_token: mfaToken,
-      phone: maskPhone(user.phone),
-    });
-    if (result.devMode && result.code) params.set("sms_code", result.code);
-    res.redirect(`${base}/login?${params}`);
-  } catch {
-    const params = new URLSearchParams({ mfa_token: mfaToken, phone: maskPhone(user.phone) });
-    res.redirect(`${base}/login?${params}`);
-  }
+  const result = await sendSmsOtp(user.phone);
+  const params = new URLSearchParams({
+    mfa_token: mfaToken,
+    phone: maskPhone(user.phone),
+  });
+  if (result.failed) params.set("sms_failed", "true");
+  if (result.devMode && result.code) params.set("sms_code", result.code);
+  res.redirect(`${base}/login?${params}`);
 }
 
 // ─── Google OAuth ─────────────────────────────────────────────────────────────

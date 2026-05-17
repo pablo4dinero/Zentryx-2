@@ -83,6 +83,8 @@ export default function Login() {
   const [smsOtp, setSmsOtp] = useState("");
   const [devSmsOtp, setDevSmsOtp] = useState("");
   const [addPhoneNum, setAddPhoneNum] = useState("");
+  const [smsFailed, setSmsFailed] = useState(false);
+  const [voiceMode, setVoiceMode] = useState(false);
 
   const clearError = () => setError("");
   const goMode = (m: Mode) => { setMode(m); setError(""); };
@@ -92,6 +94,7 @@ export default function Login() {
     requirePhone?: boolean;
     mfaToken?: string;
     phone?: string;
+    smsFailed?: boolean;
     devMode?: boolean;
     code?: string;
     token?: string;
@@ -99,14 +102,16 @@ export default function Login() {
   }) {
     if (data.mfaPending && data.mfaToken) {
       setMfaToken(data.mfaToken);
+      setVoiceMode(false);
       if (data.requirePhone) {
         goMode("add-phone");
       } else {
         setSmsPhone(data.phone || "");
+        setSmsFailed(data.smsFailed ?? false);
         setDevSmsOtp(data.devMode && data.code ? data.code : "");
         if (data.devMode && data.code) {
           toast({ title: "One-Time SMS code generated", description: "Your SMS code is shown below." });
-        } else {
+        } else if (!data.smsFailed) {
           toast({ title: "SMS code sent", description: `A 6-digit code was sent to ${data.phone}` });
         }
         goMode("sms-otp");
@@ -127,6 +132,7 @@ export default function Login() {
     const requirePhone = params.get("require_phone");
     const phoneParam = params.get("phone");
     const smsCodeParam = params.get("sms_code");
+    const smsFailedParam = params.get("sms_failed") === "true";
 
     window.history.replaceState({}, "", window.location.pathname);
 
@@ -135,14 +141,16 @@ export default function Login() {
       setLocation("/");
     } else if (mfaTokenParam) {
       setMfaToken(mfaTokenParam);
+      setVoiceMode(false);
       if (requirePhone === "true") {
         goMode("add-phone");
       } else {
         setSmsPhone(phoneParam || "");
+        setSmsFailed(smsFailedParam);
         if (smsCodeParam) {
           setDevSmsOtp(smsCodeParam);
           toast({ title: "One-Time SMS code generated", description: "Your SMS code is shown below." });
-        } else if (phoneParam) {
+        } else if (phoneParam && !smsFailedParam) {
           toast({ title: "SMS code sent", description: `A 6-digit code was sent to ${phoneParam}` });
         }
         goMode("sms-otp");
@@ -289,7 +297,7 @@ export default function Login() {
     clearError();
     setLoading(true);
     try {
-      const data = await apiFetch("api/auth/verify-sms", { mfaToken, otpCode: smsOtp });
+      const data = await apiFetch("api/auth/verify-sms", { mfaToken, otpCode: smsOtp, isVoice: voiceMode });
       setToken(data.token);
       toast({ title: "Verified!", description: `Welcome, ${data.user?.name ?? ""}` });
       setLocation("/");
@@ -307,13 +315,40 @@ export default function Login() {
     setLoading(true);
     try {
       const data = await apiFetch("api/auth/resend-sms", { mfaToken });
-      if (data.devMode && data.code) {
+      setVoiceMode(false);
+      if (data.failed) {
+        setSmsFailed(true);
+        setError("SMS delivery failed. Try the Call option below.");
+      } else if (data.devMode && data.code) {
+        setSmsFailed(false);
         setDevSmsOtp(data.code);
         toast({ title: "New code generated", description: "Your SMS code is shown below." });
       } else {
+        setSmsFailed(false);
         toast({ title: "Code resent", description: `A new code was sent to ${smsPhone}` });
       }
       setSmsOtp("");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── Voice call OTP ───────────────────────────────────────────────────────
+  const handleVoiceCall = async () => {
+    clearError();
+    setLoading(true);
+    try {
+      const data = await apiFetch("api/auth/call-otp", { mfaToken });
+      if (data.failed) {
+        setError("Call failed. Please retry SMS or try again later.");
+      } else {
+        setVoiceMode(true);
+        setSmsFailed(false);
+        setSmsOtp("");
+        toast({ title: "Calling your phone", description: `Listen for a call on ${smsPhone}` });
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -627,13 +662,26 @@ export default function Login() {
               <form onSubmit={handleSmsVerify} className="space-y-4">
                 <div className="text-center mb-2">
                   <MessageSquare className="w-10 h-10 text-primary mx-auto mb-2" />
-                  <p className="font-semibold text-foreground">SMS Verification</p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Enter the 6-digit code sent to{" "}
-                    <span className="text-foreground font-medium font-mono">{smsPhone || "your phone"}</span>
+                  <p className="font-semibold text-foreground">
+                    {voiceMode ? "Voice Verification" : "SMS Verification"}
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">Required once every 24 hours</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {voiceMode
+                      ? <>Listen for a call on <span className="text-foreground font-medium font-mono">{smsPhone || "your phone"}</span> and enter the code you hear.</>
+                      : <>Enter the 6-digit code sent to <span className="text-foreground font-medium font-mono">{smsPhone || "your phone"}</span></>
+                    }
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">Required once every 12 hours</p>
                 </div>
+
+                {/* SMS failed warning */}
+                {smsFailed && !voiceMode && (
+                  <div className="flex items-start gap-2 text-sm bg-orange-500/10 border border-orange-500/30 rounded-xl px-3 py-2.5 text-orange-600 dark:text-orange-400">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>SMS delivery failed. Use the <strong>Call me</strong> option below to receive your code via phone call.</span>
+                  </div>
+                )}
+
                 {devSmsOtp && <DevOtpBanner code={devSmsOtp} />}
                 <div className="space-y-2">
                   <FieldLabel>Verification Code</FieldLabel>
@@ -647,9 +695,29 @@ export default function Login() {
                 <Button type="submit" className="w-full h-12 text-base font-semibold" disabled={loading || smsOtp.length !== 6}>
                   {loading ? "Verifying…" : "Verify & Enter Workspace"}
                 </Button>
-                <button type="button" onClick={handleSmsResend} disabled={loading} className="w-full text-xs text-muted-foreground hover:text-foreground text-center mt-1 transition-colors disabled:opacity-50">
-                  Didn't receive it? Resend code
-                </button>
+
+                {/* Resend + Call options — always visible so users are never locked out */}
+                <div className={cn("flex rounded-xl overflow-hidden border", isLight ? "border-gray-200" : "border-white/10")}>
+                  <button
+                    type="button" onClick={handleSmsResend} disabled={loading}
+                    className={cn("flex-1 py-2.5 text-xs font-medium transition-colors disabled:opacity-50",
+                      isLight ? "text-gray-600 hover:bg-gray-50 hover:text-gray-900" : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                    )}
+                  >
+                    Resend SMS
+                  </button>
+                  <div className={cn("w-px self-stretch", isLight ? "bg-gray-200" : "bg-white/10")} />
+                  <button
+                    type="button" onClick={handleVoiceCall} disabled={loading}
+                    className={cn("flex-1 py-2.5 text-xs font-medium transition-colors disabled:opacity-50",
+                      smsFailed
+                        ? "text-primary font-semibold"
+                        : isLight ? "text-gray-600 hover:bg-gray-50 hover:text-gray-900" : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                    )}
+                  >
+                    Call me instead
+                  </button>
+                </div>
               </form>
             )}
 
