@@ -1,9 +1,9 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useAuthStore } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Zap, Lock, Mail, User, AlertCircle, Phone, Eye, EyeOff, ArrowLeft, KeyRound, CheckCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { Zap, Lock, Mail, User, AlertCircle, Phone, Eye, EyeOff, ArrowLeft, KeyRound, CheckCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -31,15 +31,43 @@ export default function Login() {
   const [, setLocation] = useLocation();
   const { setToken } = useAuthStore();
   const { toast } = useToast();
-  const scrollRef = useRef<HTMLDivElement>(null);
   const { theme } = useTheme();
   const isLight = theme === "light";
   const inputLightCls = isLight ? "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:bg-white" : "";
   const iconCls = isLight ? "text-gray-400" : "text-muted-foreground";
 
-  const scrollBy = (amount: number) => {
-    scrollRef.current?.scrollBy({ top: amount, behavior: "smooth" });
-  };
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const logoRef = useRef<HTMLImageElement>(null);
+  const posRef = useRef({ x: 50, y: 50 });
+  const velRef = useRef({ x: 2, y: 2 });
+  const rafRef = useRef<number>(0);
+
+  useEffect(() => {
+    const logo = logoRef.current;
+    const canvas = canvasRef.current;
+    if (!logo || !canvas) return;
+
+    const animate = () => {
+      const cw = canvas.clientWidth;
+      const ch = canvas.clientHeight;
+      const lw = logo.offsetWidth;
+      const lh = logo.offsetHeight;
+      if (lw > 0 && lh > 0 && cw > 0 && ch > 0) {
+        posRef.current.x += velRef.current.x;
+        posRef.current.y += velRef.current.y;
+        if (posRef.current.x <= 0) { posRef.current.x = 0; velRef.current.x = Math.abs(velRef.current.x); }
+        if (posRef.current.y <= 0) { posRef.current.y = 0; velRef.current.y = Math.abs(velRef.current.y); }
+        if (posRef.current.x >= cw - lw) { posRef.current.x = cw - lw; velRef.current.x = -Math.abs(velRef.current.x); }
+        if (posRef.current.y >= ch - lh) { posRef.current.y = ch - lh; velRef.current.y = -Math.abs(velRef.current.y); }
+        logo.style.left = posRef.current.x + "px";
+        logo.style.top = posRef.current.y + "px";
+      }
+      rafRef.current = requestAnimationFrame(animate);
+    };
+
+    rafRef.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, []);
 
   // login fields
   const [email, setEmail] = useState("");
@@ -210,10 +238,7 @@ export default function Login() {
   );
 
   return (
-    <div
-      ref={scrollRef}
-      className="fixed inset-0 overflow-y-auto bg-background"
-    >
+    <div className="fixed inset-0 flex flex-col overflow-hidden bg-background">
       {/* Background decoration */}
       <div className="fixed inset-0 z-0 pointer-events-none">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-accent/5 to-secondary/10" />
@@ -221,28 +246,8 @@ export default function Login() {
         <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-accent/5 rounded-full blur-3xl" />
       </div>
 
-      {/* Manual scroll buttons — only on signup, sticks to viewport */}
-      {mode === "signup" && (
-        <div className="fixed right-3 bottom-5 z-50 flex flex-col gap-2">
-          <button
-            onClick={() => scrollBy(-180)}
-            className="w-9 h-9 rounded-full bg-primary/90 hover:bg-primary text-white flex items-center justify-center shadow-lg transition-all active:scale-95"
-            title="Scroll up"
-          >
-            <ChevronUp className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => scrollBy(180)}
-            className="w-9 h-9 rounded-full bg-primary/90 hover:bg-primary text-white flex items-center justify-center shadow-lg transition-all active:scale-95"
-            title="Scroll down"
-          >
-            <ChevronDown className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
-      {/* Card — centred with breathing room on all screens */}
-      <div className="relative z-10 flex flex-col items-center justify-start min-h-full py-6 px-4">
+      {/* Sign in card section — natural height, no scroll */}
+      <div className="relative z-10 flex-shrink-0 flex justify-center px-4 pt-6 pb-4">
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -452,6 +457,27 @@ export default function Login() {
           </motion.div>
         </AnimatePresence>
       </motion.div>
+      </div>
+
+      {/* Bounce area — fills remaining viewport height */}
+      <div
+        ref={canvasRef}
+        className="relative flex-1 overflow-hidden w-full z-10"
+      >
+        <img
+          ref={logoRef}
+          src={`${BASE}images/FH_LOGO_transparent.png`}
+          alt=""
+          style={{
+            position: "absolute",
+            width: 120,
+            height: "auto",
+            pointerEvents: "none",
+            userSelect: "none",
+            left: 50,
+            top: 50,
+          }}
+        />
       </div>
     </div>
   );
