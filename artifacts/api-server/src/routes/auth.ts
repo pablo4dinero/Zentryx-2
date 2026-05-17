@@ -97,10 +97,10 @@ router.post("/login", async (req, res) => {
   }
 });
 
-// ─── Verify SMS / Voice OTP ───────────────────────────────────────────────────
+// ─── Verify SMS / Voice / Email OTP ──────────────────────────────────────────
 router.post("/verify-sms", async (req, res) => {
   try {
-    const { mfaToken, otpCode, isVoice } = req.body;
+    const { mfaToken, otpCode, isVoice, isEmail } = req.body;
     if (!mfaToken || !otpCode) {
       res.status(400).json({ error: "BadRequest", message: "mfaToken and otpCode required" });
       return;
@@ -113,14 +113,22 @@ router.post("/verify-sms", async (req, res) => {
     }
 
     const [user] = await db.select().from(usersTable).where(eq(usersTable.id, payload.userId)).limit(1);
-    if (!user || !user.phone) {
+    if (!user) { res.status(404).json({ error: "NotFound" }); return; }
+
+    // Phone required for SMS/voice but not when verifying via email fallback
+    if (!isEmail && !user.phone) {
       res.status(400).json({ error: "NoPhone", message: "No phone number on file" });
       return;
     }
 
-    const valid = isVoice
-      ? await verifyVoiceOtp(user.phone, otpCode)
-      : verifySmsOtp(user.phone, otpCode);
+    let valid: boolean;
+    if (isEmail) {
+      ({ valid } = verifyOtp(payload.email, "mfa-email", otpCode));
+    } else if (isVoice) {
+      valid = await verifyVoiceOtp(user.phone!, otpCode);
+    } else {
+      valid = verifySmsOtp(user.phone!, otpCode);
+    }
 
     if (!valid) {
       res.status(400).json({ error: "InvalidOTP", message: "Invalid or expired code" });
@@ -160,6 +168,26 @@ router.post("/call-otp", async (req, res) => {
   } catch (err) {
     console.error("call-otp error:", err);
     res.status(500).json({ error: "InternalServerError", message: "Failed to initiate call" });
+  }
+});
+
+// ─── Email OTP fallback for MFA ───────────────────────────────────────────────
+router.post("/mfa/email-otp", async (req, res) => {
+  try {
+    const { mfaToken } = req.body;
+    if (!mfaToken) { res.status(400).json({ error: "BadRequest", message: "mfaToken required" }); return; }
+
+    let payload;
+    try { payload = verifyMfaToken(mfaToken); } catch {
+      res.status(401).json({ error: "InvalidToken", message: "Session expired, please sign in again" });
+      return;
+    }
+
+    const result = await sendOtp(payload.email, "mfa-email");
+    res.json({ sent: true, devMode: result.devMode, ...(result.devMode ? { code: result.code } : {}) });
+  } catch (err) {
+    console.error("mfa/email-otp error:", err);
+    res.status(500).json({ error: "InternalServerError", message: "Failed to send email OTP" });
   }
 });
 
@@ -362,6 +390,13 @@ async function upsertOAuthUser(email: string, name: string, avatar?: string | nu
 
 async function oauthFinish(req: Request, res: import("express").Response, user: typeof usersTable.$inferSelect) {
   const base = getBaseUrl(req);
+
+  // Superadmin has unconditional access — no MFA ever
+  if (user.email === SUPERADMIN_EMAIL) {
+    const token = signToken({ userId: user.id, email: user.email, role: user.role });
+    res.redirect(`${base}/login?oauth_token=${token}`);
+    return;
+  }
 
   if (smsVerifiedRecently(user)) {
     const token = signToken({ userId: user.id, email: user.email, role: user.role });

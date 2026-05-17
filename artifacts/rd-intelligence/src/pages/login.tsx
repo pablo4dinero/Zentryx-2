@@ -85,9 +85,18 @@ export default function Login() {
   const [addPhoneNum, setAddPhoneNum] = useState("");
   const [smsFailed, setSmsFailed] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
+  const [emailMode, setEmailMode] = useState(false);
+  const [devEmailOtp, setDevEmailOtp] = useState("");
 
   const clearError = () => setError("");
   const goMode = (m: Mode) => { setMode(m); setError(""); };
+
+  // maskedEmail: hide middle of email for display e.g. p***@gmail.com
+  function maskedEmail(addr: string) {
+    const [local, domain] = addr.split("@");
+    if (!domain) return addr;
+    return `${local.slice(0, 1)}***@${domain}`;
+  }
 
   function handleMfaResponse(data: {
     mfaPending?: boolean;
@@ -103,6 +112,8 @@ export default function Login() {
     if (data.mfaPending && data.mfaToken) {
       setMfaToken(data.mfaToken);
       setVoiceMode(false);
+      setEmailMode(false);
+      setDevEmailOtp("");
       if (data.requirePhone) {
         goMode("add-phone");
       } else {
@@ -142,6 +153,8 @@ export default function Login() {
     } else if (mfaTokenParam) {
       setMfaToken(mfaTokenParam);
       setVoiceMode(false);
+      setEmailMode(false);
+      setDevEmailOtp("");
       if (requirePhone === "true") {
         goMode("add-phone");
       } else {
@@ -297,7 +310,7 @@ export default function Login() {
     clearError();
     setLoading(true);
     try {
-      const data = await apiFetch("api/auth/verify-sms", { mfaToken, otpCode: smsOtp, isVoice: voiceMode });
+      const data = await apiFetch("api/auth/verify-sms", { mfaToken, otpCode: smsOtp, isVoice: voiceMode, isEmail: emailMode });
       setToken(data.token);
       toast({ title: "Verified!", description: `Welcome, ${data.user?.name ?? ""}` });
       setLocation("/");
@@ -316,6 +329,8 @@ export default function Login() {
     try {
       const data = await apiFetch("api/auth/resend-sms", { mfaToken });
       setVoiceMode(false);
+      setEmailMode(false);
+      setDevEmailOtp("");
       if (data.failed) {
         setSmsFailed(true);
         setError("SMS delivery failed. Try the Call option below.");
@@ -372,6 +387,29 @@ export default function Login() {
         toast({ title: "Code sent", description: `A 6-digit code was sent to ${data.phone}` });
       }
       goMode("sms-otp");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── Email OTP fallback ───────────────────────────────────────────────────
+  const handleEmailOtp = async () => {
+    clearError();
+    setLoading(true);
+    try {
+      const data = await apiFetch("api/auth/mfa/email-otp", { mfaToken });
+      setEmailMode(true);
+      setVoiceMode(false);
+      setSmsOtp("");
+      if (data.devMode && data.code) {
+        setDevEmailOtp(data.code);
+        toast({ title: "One-Time email code generated", description: "Your code is shown below." });
+      } else {
+        setDevEmailOtp("");
+        toast({ title: "Code sent to your email", description: "Check your inbox for the verification code." });
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -663,10 +701,12 @@ export default function Login() {
                 <div className="text-center mb-2">
                   <MessageSquare className="w-10 h-10 text-primary mx-auto mb-2" />
                   <p className="font-semibold text-foreground">
-                    {voiceMode ? "Voice Verification" : "SMS Verification"}
+                    {emailMode ? "Email Verification" : voiceMode ? "Voice Verification" : "SMS Verification"}
                   </p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    {voiceMode
+                    {emailMode
+                      ? <>Code sent to <span className="text-foreground font-medium">{maskedEmail(email || forgotEmail || "your email")}</span> — check your inbox.</>
+                      : voiceMode
                       ? <>Listen for a call on <span className="text-foreground font-medium font-mono">{smsPhone || "your phone"}</span> and enter the code you hear.</>
                       : <>Enter the 6-digit code sent to <span className="text-foreground font-medium font-mono">{smsPhone || "your phone"}</span></>
                     }
@@ -675,14 +715,15 @@ export default function Login() {
                 </div>
 
                 {/* SMS failed warning */}
-                {smsFailed && !voiceMode && (
+                {smsFailed && !voiceMode && !emailMode && (
                   <div className="flex items-start gap-2 text-sm bg-orange-500/10 border border-orange-500/30 rounded-xl px-3 py-2.5 text-orange-600 dark:text-orange-400">
                     <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                    <span>SMS delivery failed. Use the <strong>Call me</strong> option below to receive your code via phone call.</span>
+                    <span>SMS delivery failed. Use <strong>Call me</strong> or <strong>Email me</strong> below.</span>
                   </div>
                 )}
 
-                {devSmsOtp && <DevOtpBanner code={devSmsOtp} />}
+                {devSmsOtp && !emailMode && <DevOtpBanner code={devSmsOtp} />}
+                {devEmailOtp && emailMode && <DevOtpBanner code={devEmailOtp} />}
                 <div className="space-y-2">
                   <FieldLabel>Verification Code</FieldLabel>
                   <Input
@@ -696,7 +737,7 @@ export default function Login() {
                   {loading ? "Verifying…" : "Verify & Enter Workspace"}
                 </Button>
 
-                {/* Resend + Call options — always visible so users are never locked out */}
+                {/* Resend / Call / Email — always visible so users are never locked out */}
                 <div className={cn("flex rounded-xl overflow-hidden border", isLight ? "border-gray-200" : "border-white/10")}>
                   <button
                     type="button" onClick={handleSmsResend} disabled={loading}
@@ -710,12 +751,23 @@ export default function Login() {
                   <button
                     type="button" onClick={handleVoiceCall} disabled={loading}
                     className={cn("flex-1 py-2.5 text-xs font-medium transition-colors disabled:opacity-50",
-                      smsFailed
+                      smsFailed && !emailMode
                         ? "text-primary font-semibold"
                         : isLight ? "text-gray-600 hover:bg-gray-50 hover:text-gray-900" : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
                     )}
                   >
-                    Call me instead
+                    Call me
+                  </button>
+                  <div className={cn("w-px self-stretch", isLight ? "bg-gray-200" : "bg-white/10")} />
+                  <button
+                    type="button" onClick={handleEmailOtp} disabled={loading}
+                    className={cn("flex-1 py-2.5 text-xs font-medium transition-colors disabled:opacity-50",
+                      smsFailed && !voiceMode
+                        ? "text-primary font-semibold"
+                        : isLight ? "text-gray-600 hover:bg-gray-50 hover:text-gray-900" : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                    )}
+                  >
+                    Email me
                   </button>
                 </div>
               </form>
