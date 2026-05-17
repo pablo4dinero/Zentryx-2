@@ -264,19 +264,28 @@ interface GNewsArticle {
 }
 
 async function fetchFromGNews(): Promise<NewsItem[]> {
+  const q = encodeURIComponent(
+    `food OR flavour OR seasoning OR snack OR beverage OR dairy OR bakery OR "Nigeria food" OR "West Africa food"`
+  );
   const url =
     `https://gnews.io/api/v4/search` +
-    `?q=flavour+technology&lang=en&max=10` +
+    `?q=${q}&lang=en&max=10` +
     `&apikey=${GNEWS_API_KEY.trim()}`;
 
   const res = await fetch(url, {
     headers: { "User-Agent": "Zentryx-RD/1.0" },
     signal: AbortSignal.timeout(10000),
   });
-  if (!res.ok) throw new Error(`GNews API ${res.status}`);
 
-  const data = await res.json() as { articles: GNewsArticle[] };
-  if (!Array.isArray(data.articles)) throw new Error("Invalid GNews response");
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`GNews API ${res.status}: ${body.slice(0, 200)}`);
+  }
+
+  const data = await res.json() as { articles?: GNewsArticle[]; errors?: string[] };
+
+  if (data.errors?.length) throw new Error(`GNews error: ${data.errors[0]}`);
+  if (!Array.isArray(data.articles)) throw new Error("GNews: no articles array in response");
 
   return data.articles
     .filter(a => a.title)
