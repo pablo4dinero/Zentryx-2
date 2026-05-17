@@ -1,9 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useListProjects, useCreateProject, useDeleteProject, useListUsers, useUpdateProject } from "@/api-client";
 import { PageLoader } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Search, Download, Layers } from "lucide-react";
+import { Plus, Search, Download, Layers, Pencil, Trash2, Settings2 } from "lucide-react";
 import { format } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -30,6 +30,10 @@ export default function ProjectsList() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [productTypeFilter, setProductTypeFilter] = useState<string>("all");
   const [groupByType, setGroupByType] = useState(false);
+  const [statusManageOpen, setStatusManageOpen] = useState(false);
+  const [statusEditingOption, setStatusEditingOption] = useState<string | null>(null);
+  const [statusEditValue, setStatusEditValue] = useState("");
+  const [statusNewValue, setStatusNewValue] = useState("");
 
   // Custom option stores (shared between filter + modal)
   const productTypeOpts = useCustomOptions("productType", DEFAULT_PRODUCT_TYPES);
@@ -45,6 +49,18 @@ export default function ProjectsList() {
   const { toast } = useToast();
   const { theme: _plTheme } = useTheme();
   const isLight = _plTheme === "light";
+
+  useEffect(() => {
+    if (!statusManageOpen) return;
+    const close = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest("[data-status-manage]")) {
+        setStatusManageOpen(false);
+        setStatusEditingOption(null);
+      }
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [statusManageOpen]);
 
   const handleDateChange = (id: number, date: string) => {
     updateMutation.mutate({ id, data: { targetDate: date || null } as any }, {
@@ -181,22 +197,145 @@ export default function ProjectsList() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input placeholder="Search projects..." className="pl-9" value={searchTerm} onChange={e => setSearchQuery(e.target.value)} />
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 items-center relative" data-status-manage="">
               <button
                 onClick={() => setStatusFilter("all")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${statusFilter === "all" ? "bg-primary text-white border-primary" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5"}`}
-              >
-                All
-              </button>
+                className={cn("px-3 py-1.5 rounded-lg text-xs font-medium transition-all border",
+                  statusFilter === "all"
+                    ? "bg-primary text-white border-primary"
+                    : isLight ? "border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5"
+                )}
+              >All</button>
               {statusOpts.options.map(s => (
                 <button
                   key={s}
                   onClick={() => setStatusFilter(s === statusFilter ? "all" : s)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border capitalize ${statusFilter === s ? "bg-primary text-white border-primary" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5"}`}
-                >
-                  {displayLabel(s)}
-                </button>
+                  className={cn("px-3 py-1.5 rounded-lg text-xs font-medium transition-all border capitalize",
+                    statusFilter === s
+                      ? "bg-primary text-white border-primary"
+                      : isLight ? "border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5"
+                  )}
+                >{displayLabel(s)}</button>
               ))}
+
+              {/* Manage statuses button */}
+              <button
+                data-status-manage=""
+                onClick={() => { setStatusManageOpen(o => !o); setStatusEditingOption(null); setStatusNewValue(""); }}
+                title="Manage statuses"
+                className={cn("p-1.5 rounded-lg border transition-colors",
+                  statusManageOpen
+                    ? "bg-primary/10 border-primary/30 text-primary"
+                    : isLight ? "border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5"
+                )}
+              ><Settings2 className="w-3.5 h-3.5" /></button>
+
+              {/* Manage panel */}
+              {statusManageOpen && (
+                <div
+                  data-status-manage=""
+                  className={cn("absolute top-full left-0 z-50 mt-1 w-64 rounded-xl border shadow-xl overflow-hidden",
+                    isLight ? "bg-white border-gray-200" : "bg-[#1a1a2e] border-white/10"
+                  )}
+                >
+                  <div className={cn("px-3 py-2 border-b", isLight ? "border-gray-100" : "border-white/10")}>
+                    <p className={cn("text-xs font-semibold uppercase tracking-wide", isLight ? "text-gray-500" : "text-muted-foreground")}>
+                      Manage Statuses
+                    </p>
+                  </div>
+
+                  <div className="max-h-52 overflow-y-auto">
+                    {statusOpts.options.map(option => (
+                      <div key={option} className={cn("flex items-center px-3 py-1.5 gap-1 group",
+                        isLight ? "hover:bg-gray-50" : "hover:bg-white/5"
+                      )}>
+                        {statusEditingOption === option ? (
+                          <div className="flex flex-1 items-center gap-1.5">
+                            <input
+                              autoFocus
+                              value={statusEditValue}
+                              onChange={e => setStatusEditValue(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === "Enter") {
+                                  statusOpts.renameOption(option, statusEditValue);
+                                  if (statusFilter === option) setStatusFilter(statusEditValue.trim());
+                                  setStatusEditingOption(null);
+                                }
+                                if (e.key === "Escape") setStatusEditingOption(null);
+                              }}
+                              onBlur={() => {
+                                if (statusEditValue.trim()) {
+                                  statusOpts.renameOption(option, statusEditValue);
+                                  if (statusFilter === option) setStatusFilter(statusEditValue.trim());
+                                }
+                                setStatusEditingOption(null);
+                              }}
+                              className={cn("flex-1 min-w-0 text-xs px-1.5 py-0.5 rounded border focus:outline-none focus:ring-1 focus:ring-primary/40",
+                                isLight ? "bg-white border-gray-300 text-gray-900" : "bg-black/30 border-white/20 text-foreground"
+                              )}
+                            />
+                            <button
+                              onClick={() => {
+                                statusOpts.renameOption(option, statusEditValue);
+                                if (statusFilter === option) setStatusFilter(statusEditValue.trim());
+                                setStatusEditingOption(null);
+                              }}
+                              className="shrink-0 text-xs font-bold text-primary hover:opacity-70"
+                            >✓</button>
+                          </div>
+                        ) : (
+                          <>
+                            <span className={cn("flex-1 text-xs capitalize", isLight ? "text-gray-700" : "text-foreground")}>
+                              {displayLabel(option)}
+                            </span>
+                            <button
+                              title="Rename"
+                              onClick={() => { setStatusEditingOption(option); setStatusEditValue(displayLabel(option)); }}
+                              className={cn("opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity shrink-0",
+                                isLight ? "text-gray-400 hover:text-gray-700" : "text-muted-foreground hover:text-foreground"
+                              )}
+                            ><Pencil className="w-3 h-3" /></button>
+                            <button
+                              title="Delete"
+                              onClick={() => {
+                                statusOpts.deleteOption(option);
+                                if (statusFilter === option) setStatusFilter("all");
+                              }}
+                              className={cn("opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity shrink-0",
+                                isLight ? "text-gray-400 hover:text-red-500" : "text-muted-foreground hover:text-red-400"
+                              )}
+                            ><Trash2 className="w-3 h-3" /></button>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className={cn("px-3 py-2 border-t", isLight ? "border-gray-100" : "border-white/10")}>
+                    <div className="flex items-center gap-2">
+                      <input
+                        value={statusNewValue}
+                        onChange={e => setStatusNewValue(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === "Enter" && statusNewValue.trim()) {
+                            statusOpts.addOption(statusNewValue.trim());
+                            setStatusNewValue("");
+                          }
+                        }}
+                        placeholder="New status…"
+                        className={cn("flex-1 min-w-0 text-xs px-2 py-1 rounded-lg border focus:outline-none focus:ring-1 focus:ring-primary/40",
+                          isLight ? "bg-gray-50 border-gray-200 text-gray-900 placeholder:text-gray-400" : "bg-black/20 border-white/10 text-foreground placeholder:text-muted-foreground"
+                        )}
+                      />
+                      <button
+                        onClick={() => { if (statusNewValue.trim()) { statusOpts.addOption(statusNewValue.trim()); setStatusNewValue(""); } }}
+                        disabled={!statusNewValue.trim()}
+                        className="shrink-0 text-xs px-2.5 py-1 rounded-lg bg-primary text-white font-medium hover:bg-primary/90 disabled:opacity-40 transition-colors"
+                      >Add</button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

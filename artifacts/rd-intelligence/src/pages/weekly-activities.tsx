@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronLeft, ChevronRight, Plus, Trash2, Bell, Check,
@@ -793,6 +794,7 @@ export default function WeeklyActivities() {
   const [ptDropdownOpen, setPtDropdownOpen] = useState<number | null>(null);
   const [ptEditingOption, setPtEditingOption] = useState<string | null>(null);
   const [ptEditValue, setPtEditValue] = useState("");
+  const [ptCellRect, setPtCellRect] = useState<{ bottom: number; left: number; width: number } | null>(null);
   const saveTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const { theme } = useTheme();
   const isLight = theme === "light";
@@ -809,8 +811,13 @@ export default function WeeklyActivities() {
         setPtEditingOption(null);
       }
     };
+    const scrollClose = () => { setPtDropdownOpen(null); setPtEditingOption(null); };
     document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    window.addEventListener("scroll", scrollClose, true);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      window.removeEventListener("scroll", scrollClose, true);
+    };
   }, [ptDropdownOpen]);
 
   const { data: usersData } = useQuery({
@@ -1171,12 +1178,16 @@ export default function WeeklyActivities() {
                         />
                       </td>
 
-                      <td className="px-2 py-2 relative" data-pt-cell="">
+                      <td className="px-2 py-2" data-pt-cell="">
                         <input
                           type="text"
                           value={row.productType ?? ""}
                           onChange={e => handleFieldChange(row.id, "productType", e.target.value || null)}
-                          onFocus={() => setPtDropdownOpen(row.id)}
+                          onFocus={e => {
+                            const r = e.currentTarget.getBoundingClientRect();
+                            setPtCellRect({ bottom: r.bottom, left: r.left, width: r.width });
+                            setPtDropdownOpen(row.id);
+                          }}
                           onBlur={e => {
                             if (saveTimers.current[row.id]) {
                               clearTimeout(saveTimers.current[row.id]);
@@ -1188,95 +1199,6 @@ export default function WeeklyActivities() {
                           className={cn("text-xs rounded-lg border px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary/40 w-full",
                             isLight ? "bg-slate-50 border-slate-200 text-slate-700" : "bg-black/20 border-white/10 text-foreground")}
                         />
-
-                        {ptDropdownOpen === row.id && (
-                          <div className={cn(
-                            "absolute z-50 top-full left-0 w-60 rounded-xl border shadow-xl mt-0.5 overflow-hidden",
-                            isLight ? "bg-white border-gray-200" : "bg-[#1a1a2e] border-white/10"
-                          )}>
-                            {/* Add to persistent list */}
-                            {(row.productType ?? "").trim() !== "" &&
-                              !typeOpts.options.some(o => o.toLowerCase() === (row.productType ?? "").toLowerCase().trim()) && (
-                              <div className={cn("px-3 py-2 border-b", isLight ? "border-gray-100 bg-gray-50" : "border-white/5 bg-white/5")}>
-                                <button
-                                  onMouseDown={e => e.preventDefault()}
-                                  onClick={() => typeOpts.addOption((row.productType ?? "").trim())}
-                                  className="w-full text-left text-xs flex items-center gap-1.5 text-primary font-medium hover:opacity-75"
-                                >
-                                  <Plus className="w-3 h-3 shrink-0" />
-                                  Add "{(row.productType ?? "").trim()}" to list
-                                </button>
-                              </div>
-                            )}
-
-                            {/* Options with rename / delete */}
-                            <div className="max-h-52 overflow-y-auto">
-                              {typeOpts.options
-                                .filter(o => !(row.productType ?? "") || o.toLowerCase().includes((row.productType ?? "").toLowerCase()))
-                                .map(option => (
-                                  <div key={option} className={cn(
-                                    "flex items-center px-3 py-1.5 gap-1 group",
-                                    isLight ? "hover:bg-gray-50" : "hover:bg-white/5"
-                                  )}>
-                                    {ptEditingOption === option ? (
-                                      <div className="flex flex-1 items-center gap-1.5">
-                                        <input
-                                          autoFocus
-                                          value={ptEditValue}
-                                          onChange={e => setPtEditValue(e.target.value)}
-                                          onKeyDown={e => {
-                                            if (e.key === "Enter") { typeOpts.renameOption(option, ptEditValue); setPtEditingOption(null); }
-                                            if (e.key === "Escape") setPtEditingOption(null);
-                                          }}
-                                          onBlur={() => { if (ptEditValue.trim()) typeOpts.renameOption(option, ptEditValue); setPtEditingOption(null); }}
-                                          className={cn(
-                                            "flex-1 min-w-0 text-xs px-1.5 py-0.5 rounded border focus:outline-none focus:ring-1 focus:ring-primary/40",
-                                            isLight ? "bg-white border-gray-300 text-gray-900" : "bg-black/30 border-white/20 text-foreground"
-                                          )}
-                                        />
-                                        <button
-                                          onMouseDown={e => e.preventDefault()}
-                                          onClick={() => { typeOpts.renameOption(option, ptEditValue); setPtEditingOption(null); }}
-                                          className="shrink-0 text-xs font-bold text-primary hover:opacity-70"
-                                        >✓</button>
-                                      </div>
-                                    ) : (
-                                      <>
-                                        <button
-                                          className={cn("flex-1 text-left text-xs truncate", isLight ? "text-gray-700" : "text-foreground")}
-                                          onMouseDown={e => e.preventDefault()}
-                                          onClick={() => {
-                                            handleFieldChange(row.id, "productType", option);
-                                            if (saveTimers.current[row.id]) clearTimeout(saveTimers.current[row.id]);
-                                            updateActivity(row.id, { productType: option });
-                                            setPtDropdownOpen(null);
-                                          }}
-                                        >{option}</button>
-                                        <button
-                                          title="Rename"
-                                          onMouseDown={e => e.preventDefault()}
-                                          onClick={() => { setPtEditingOption(option); setPtEditValue(option); }}
-                                          className={cn(
-                                            "opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity shrink-0",
-                                            isLight ? "text-gray-400 hover:text-gray-700" : "text-muted-foreground hover:text-foreground"
-                                          )}
-                                        ><Pencil className="w-3 h-3" /></button>
-                                        <button
-                                          title="Delete"
-                                          onMouseDown={e => e.preventDefault()}
-                                          onClick={() => typeOpts.deleteOption(option)}
-                                          className={cn(
-                                            "opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity shrink-0",
-                                            isLight ? "text-gray-400 hover:text-red-500" : "text-muted-foreground hover:text-red-400"
-                                          )}
-                                        ><Trash2 className="w-3 h-3" /></button>
-                                      </>
-                                    )}
-                                  </div>
-                                ))}
-                            </div>
-                          </div>
-                        )}
                       </td>
 
                       <td className="px-2 py-2">
@@ -1380,6 +1302,83 @@ export default function WeeklyActivities() {
 
       {showNotify && <NotifyModal onClose={() => setShowNotify(false)} users={users} />}
       {showPRModal && <NewRequestModal onClose={() => setShowPRModal(false)} isLight={isLight} />}
+
+      {/* Product-type dropdown rendered in a portal so it escapes table overflow clipping */}
+      {ptDropdownOpen !== null && ptCellRect && (() => {
+        const activeRow = rows.find(r => r.id === ptDropdownOpen);
+        if (!activeRow) return null;
+        const typed = (activeRow.productType ?? "").trim();
+        const filtered = typeOpts.options.filter(o => !typed || o.toLowerCase().includes(typed.toLowerCase()));
+        return createPortal(
+          <div
+            data-pt-cell=""
+            style={{ position: "fixed", top: ptCellRect.bottom + 2, left: ptCellRect.left, width: Math.max(ptCellRect.width, 240), zIndex: 9999 }}
+            className={cn("rounded-xl border shadow-xl overflow-hidden", isLight ? "bg-white border-gray-200" : "bg-[#1a1a2e] border-white/10")}
+          >
+            {typed !== "" && !typeOpts.options.some(o => o.toLowerCase() === typed.toLowerCase()) && (
+              <div className={cn("px-3 py-2 border-b", isLight ? "border-gray-100 bg-gray-50" : "border-white/5 bg-white/5")}>
+                <button
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => typeOpts.addOption(typed)}
+                  className="w-full text-left text-xs flex items-center gap-1.5 text-primary font-medium hover:opacity-75"
+                >
+                  <Plus className="w-3 h-3 shrink-0" />
+                  Add "{typed}" to list
+                </button>
+              </div>
+            )}
+            <div className="max-h-52 overflow-y-auto">
+              {filtered.map(option => (
+                <div key={option} className={cn("flex items-center px-3 py-1.5 gap-1 group", isLight ? "hover:bg-gray-50" : "hover:bg-white/5")}>
+                  {ptEditingOption === option ? (
+                    <div className="flex flex-1 items-center gap-1.5">
+                      <input
+                        autoFocus
+                        value={ptEditValue}
+                        onChange={e => setPtEditValue(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === "Enter") { typeOpts.renameOption(option, ptEditValue); setPtEditingOption(null); }
+                          if (e.key === "Escape") setPtEditingOption(null);
+                        }}
+                        onBlur={() => { if (ptEditValue.trim()) typeOpts.renameOption(option, ptEditValue); setPtEditingOption(null); }}
+                        className={cn("flex-1 min-w-0 text-xs px-1.5 py-0.5 rounded border focus:outline-none focus:ring-1 focus:ring-primary/40",
+                          isLight ? "bg-white border-gray-300 text-gray-900" : "bg-black/30 border-white/20 text-foreground")}
+                      />
+                      <button onMouseDown={e => e.preventDefault()}
+                        onClick={() => { typeOpts.renameOption(option, ptEditValue); setPtEditingOption(null); }}
+                        className="shrink-0 text-xs font-bold text-primary hover:opacity-70">✓</button>
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        className={cn("flex-1 text-left text-xs truncate", isLight ? "text-gray-700" : "text-foreground")}
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => {
+                          handleFieldChange(ptDropdownOpen, "productType", option);
+                          if (saveTimers.current[ptDropdownOpen]) clearTimeout(saveTimers.current[ptDropdownOpen]);
+                          updateActivity(ptDropdownOpen, { productType: option });
+                          setPtDropdownOpen(null);
+                        }}
+                      >{option}</button>
+                      <button title="Rename" onMouseDown={e => e.preventDefault()}
+                        onClick={() => { setPtEditingOption(option); setPtEditValue(option); }}
+                        className={cn("opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity shrink-0",
+                          isLight ? "text-gray-400 hover:text-gray-700" : "text-muted-foreground hover:text-foreground")}
+                      ><Pencil className="w-3 h-3" /></button>
+                      <button title="Delete" onMouseDown={e => e.preventDefault()}
+                        onClick={() => typeOpts.deleteOption(option)}
+                        className={cn("opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity shrink-0",
+                          isLight ? "text-gray-400 hover:text-red-500" : "text-muted-foreground hover:text-red-400")}
+                      ><Trash2 className="w-3 h-3" /></button>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>,
+          document.body
+        );
+      })()}
     </div>
   );
 }
