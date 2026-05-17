@@ -3,8 +3,9 @@ import { requireAuth, AuthRequest } from "../lib/auth";
 
 const router = Router();
 
+const NEWSDATA_API_KEY = process.env.NEWSDATA_API_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const CACHE_MS = 20 * 60 * 1000;
+const CACHE_MS = 10 * 60 * 1000;
 
 export interface NewsItem {
   id: string;
@@ -15,12 +16,34 @@ export interface NewsItem {
   publishedAt: string;
   sentiment: "positive" | "neutral" | "negative";
   imageKeyword: string;
-  imageUrl: string;
-  readMoreUrl: string;
+  imageUrl?: string;
+  readMoreUrl?: string;
   readTime: number;
 }
 
-function buildImageUrl(keyword: string): string {
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function parsePubDate(pubDate: string | null | undefined): string {
+  if (!pubDate) return new Date().toISOString();
+  try {
+    // NewsData.io format: "YYYY-MM-DD HH:MM:SS"
+    return new Date(pubDate.replace(" ", "T") + "Z").toISOString();
+  } catch {
+    return new Date().toISOString();
+  }
+}
+
+function mapSentiment(s: string | null | undefined): "positive" | "neutral" | "negative" {
+  if (s === "positive") return "positive";
+  if (s === "negative") return "negative";
+  return "neutral";
+}
+
+function toTitleCase(str: string): string {
+  return str.replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function buildGroqImageUrl(keyword: string): string {
   return `https://source.unsplash.com/640x360/?${encodeURIComponent(keyword + ",food,nigeria")}`;
 }
 
@@ -28,62 +51,112 @@ function buildReadMoreUrl(headline: string): string {
   return `https://news.google.com/search?q=${encodeURIComponent(headline)}&hl=en-NG&gl=NG`;
 }
 
+// ─── Mock data (Nigeria/Africa focus, used when no API key is set) ────────────
+
 const MOCK_ITEMS_RAW = [
-  { id: "1", headline: "Indomie Launches Bold New Pepper Soup Flavour Across Nigeria", summary: "De United Foods unveils a limited-edition Pepper Soup variant of the iconic Indomie brand, tapping into Nigeria's rich street food culture. Early consumer response from Lagos and Abuja markets has been overwhelmingly positive.", category: "Innovation", source: "BusinessDay Nigeria", publishedAt: new Date(Date.now() - 1 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "noodles spice nigeria", readTime: 2 },
-  { id: "2", headline: "Nigeria's Suya Spice Blend Goes Global as Export Demand Rises", summary: "Artisan spice producers in Kaduna and Abuja are scaling production of the iconic suya seasoning mix for European and North American markets. Export volumes doubled year-on-year.", category: "Market", source: "Nairametrics", publishedAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "suya spice grill", readTime: 3 },
-  { id: "3", headline: "NAFDAC Tightens Labelling Rules for Imported Flavour Additives", summary: "New regulations require all imported flavour compounds to carry detailed allergen declarations and country-of-origin codes by Q3. Industry bodies are urging a phased compliance window.", category: "Regulation", source: "Food Safety News NG", publishedAt: new Date(Date.now() - 3 * 3600 * 1000).toISOString(), sentiment: "neutral", imageKeyword: "food label regulation", readTime: 4 },
-  { id: "4", headline: "Locust Bean (Iru) Identified as High-Value Probiotic Ingredient", summary: "Researchers at University of Lagos confirm that fermented locust bean contains beneficial Bacillus strains with strong gut-health properties, opening doors to functional food formulations.", category: "Ingredients", source: "Journal of African Food Science", publishedAt: new Date(Date.now() - 4 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "fermented beans africa", readTime: 3 },
-  { id: "5", headline: "West Africa Cassava Processing Capacity Set to Double by 2026", summary: "A $200M investment across Nigeria, Ghana, and Côte d'Ivoire will modernise cassava starch and flour production, reducing post-harvest losses and boosting local food manufacturing.", category: "Food Tech", source: "AgriBusinessAfrica", publishedAt: new Date(Date.now() - 5 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "cassava processing africa", readTime: 3 },
-  { id: "6", headline: "Moringa Powder Demand Surges as Nigerian Wellness Brands Scale Up", summary: "Domestic consumption of moringa-enriched products grew 34% in the last fiscal year as health-conscious urban consumers seek affordable functional superfoods.", category: "Market", source: "Food Navigator Africa", publishedAt: new Date(Date.now() - 6 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "moringa powder green", readTime: 2 },
-  { id: "7", headline: "Palm Oil Sustainability Crisis Threatens Nigerian Export Revenues", summary: "Growing EU import restrictions on non-certified palm oil could cost Nigeria ₦180B in annual export revenue. Industry stakeholders call for urgent RSPO certification support.", category: "Sustainability", source: "Channels Business", publishedAt: new Date(Date.now() - 7 * 3600 * 1000).toISOString(), sentiment: "negative", imageKeyword: "palm oil plantation", readTime: 4 },
-  { id: "8", headline: "Kuli-Kuli Brand Expands into Plant-Based Protein Snack Line", summary: "A Lagos-based food startup reformulates the traditional groundnut cake into a high-protein snack bar targeting gym-goers and urban professionals across West Africa.", category: "Innovation", source: "TechCabal Food", publishedAt: new Date(Date.now() - 8 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "peanut snack bar", readTime: 2 },
-  { id: "9", headline: "Ogiri Fermentation Science Opens New Umami Flavour Pathways", summary: "Food scientists are isolating the dominant Bacillus species in ogiri (fermented castor seed) to develop standardised umami flavour concentrates for use in commercial seasonings.", category: "Food Tech", source: "Food Chemistry Africa", publishedAt: new Date(Date.now() - 9 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "fermentation science lab", readTime: 4 },
-  { id: "10", headline: "Nigerian Breadfruit Flour Gains Traction as Wheat Substitute", summary: "With wheat import costs at record highs, bakers across the south-west are adopting breadfruit flour blends that cut costs by up to 40% while maintaining texture and flavour.", category: "Ingredients", source: "BusinessDay Nigeria", publishedAt: new Date(Date.now() - 10 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "breadfruit flour baking", readTime: 3 },
-  { id: "11", headline: "E-Commerce Drives 60% Growth in Artisan Seasoning Brands", summary: "Small-batch seasoning producers from Aba and Onitsha are leveraging Jumia and social commerce to reach customers in the diaspora, with USA and UK recording the highest growth.", category: "Market", source: "Nairametrics", publishedAt: new Date(Date.now() - 11 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "spice market africa", readTime: 2 },
-  { id: "12", headline: "Afang and Egusi Soups Inspire New Instant Meal Range in West Africa", summary: "Nestlé West Africa announces a premium instant soup line inspired by traditional Nigerian dishes, targeting the growing segment of urban consumers seeking convenient home-cooked flavours.", category: "Innovation", source: "Food Navigator Africa", publishedAt: new Date(Date.now() - 12 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "nigerian soup ingredients", readTime: 3 },
+  { id: "1", headline: "Indomie Launches Bold New Pepper Soup Flavour Across Nigeria", summary: "De United Foods unveils a limited-edition Pepper Soup variant of the iconic Indomie brand, tapping into Nigeria's rich street food culture.", category: "Innovation", source: "BusinessDay Nigeria", publishedAt: new Date(Date.now() - 1 * 3600 * 1000).toISOString(), sentiment: "positive" as const, imageKeyword: "noodles spice nigeria", readTime: 2 },
+  { id: "2", headline: "Nigeria's Suya Spice Blend Goes Global as Export Demand Rises", summary: "Artisan spice producers in Kaduna and Abuja are scaling production of the iconic suya seasoning mix for European and North American markets.", category: "Market", source: "Nairametrics", publishedAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(), sentiment: "positive" as const, imageKeyword: "suya spice grill", readTime: 3 },
+  { id: "3", headline: "NAFDAC Tightens Labelling Rules for Imported Flavour Additives", summary: "New regulations require all imported flavour compounds to carry detailed allergen declarations and country-of-origin codes by Q3.", category: "Regulation", source: "Food Safety News NG", publishedAt: new Date(Date.now() - 3 * 3600 * 1000).toISOString(), sentiment: "neutral" as const, imageKeyword: "food label regulation", readTime: 4 },
+  { id: "4", headline: "Locust Bean (Iru) Identified as High-Value Probiotic Ingredient", summary: "Researchers at University of Lagos confirm that fermented locust bean contains beneficial Bacillus strains with strong gut-health properties.", category: "Ingredients", source: "Journal of African Food Science", publishedAt: new Date(Date.now() - 4 * 3600 * 1000).toISOString(), sentiment: "positive" as const, imageKeyword: "fermented beans africa", readTime: 3 },
+  { id: "5", headline: "West Africa Cassava Processing Capacity Set to Double by 2026", summary: "A $200M investment across Nigeria, Ghana, and Côte d'Ivoire will modernise cassava starch and flour production, reducing post-harvest losses.", category: "Food Tech", source: "AgriBusinessAfrica", publishedAt: new Date(Date.now() - 5 * 3600 * 1000).toISOString(), sentiment: "positive" as const, imageKeyword: "cassava processing africa", readTime: 3 },
+  { id: "6", headline: "Moringa Powder Demand Surges as Nigerian Wellness Brands Scale Up", summary: "Domestic consumption of moringa-enriched products grew 34% in the last fiscal year as health-conscious urban consumers seek functional superfoods.", category: "Market", source: "Food Navigator Africa", publishedAt: new Date(Date.now() - 6 * 3600 * 1000).toISOString(), sentiment: "positive" as const, imageKeyword: "moringa powder green", readTime: 2 },
+  { id: "7", headline: "Palm Oil Sustainability Crisis Threatens Nigerian Export Revenues", summary: "Growing EU import restrictions on non-certified palm oil could cost Nigeria ₦180B in annual export revenue.", category: "Sustainability", source: "Channels Business", publishedAt: new Date(Date.now() - 7 * 3600 * 1000).toISOString(), sentiment: "negative" as const, imageKeyword: "palm oil plantation", readTime: 4 },
+  { id: "8", headline: "Kuli-Kuli Brand Expands into Plant-Based Protein Snack Line", summary: "A Lagos-based food startup reformulates the traditional groundnut cake into a high-protein snack bar targeting gym-goers and urban professionals.", category: "Innovation", source: "TechCabal Food", publishedAt: new Date(Date.now() - 8 * 3600 * 1000).toISOString(), sentiment: "positive" as const, imageKeyword: "peanut snack bar", readTime: 2 },
+  { id: "9", headline: "Ogiri Fermentation Science Opens New Umami Flavour Pathways", summary: "Food scientists are isolating dominant Bacillus species in ogiri to develop standardised umami flavour concentrates for commercial seasonings.", category: "Food Tech", source: "Food Chemistry Africa", publishedAt: new Date(Date.now() - 9 * 3600 * 1000).toISOString(), sentiment: "positive" as const, imageKeyword: "fermentation science lab", readTime: 4 },
+  { id: "10", headline: "Nigerian Breadfruit Flour Gains Traction as Wheat Substitute", summary: "With wheat import costs at record highs, bakers across the south-west are adopting breadfruit flour blends that cut costs by up to 40%.", category: "Ingredients", source: "BusinessDay Nigeria", publishedAt: new Date(Date.now() - 10 * 3600 * 1000).toISOString(), sentiment: "positive" as const, imageKeyword: "breadfruit flour baking", readTime: 3 },
+  { id: "11", headline: "E-Commerce Drives 60% Growth in Artisan Seasoning Brands", summary: "Small-batch seasoning producers from Aba and Onitsha are leveraging social commerce to reach diaspora customers in the USA and UK.", category: "Market", source: "Nairametrics", publishedAt: new Date(Date.now() - 11 * 3600 * 1000).toISOString(), sentiment: "positive" as const, imageKeyword: "spice market africa", readTime: 2 },
+  { id: "12", headline: "Afang and Egusi Soups Inspire New Instant Meal Range in West Africa", summary: "Nestlé West Africa announces a premium instant soup line inspired by traditional Nigerian dishes, targeting urban consumers seeking convenient flavours.", category: "Innovation", source: "Food Navigator Africa", publishedAt: new Date(Date.now() - 12 * 3600 * 1000).toISOString(), sentiment: "positive" as const, imageKeyword: "nigerian soup ingredients", readTime: 3 },
 ];
 
 const MOCK_ITEMS: NewsItem[] = MOCK_ITEMS_RAW.map(item => ({
   ...item,
-  imageUrl: buildImageUrl(item.imageKeyword),
+  imageUrl: buildGroqImageUrl(item.imageKeyword),
   readMoreUrl: buildReadMoreUrl(item.headline),
 }));
 
+// ─── Cache ────────────────────────────────────────────────────────────────────
+
 let cache: { items: NewsItem[]; fetchedAt: number } | null = null;
+
+// ─── NewsData.io ──────────────────────────────────────────────────────────────
+
+interface NewsDataArticle {
+  article_id: string;
+  title: string;
+  description: string | null;
+  link: string;
+  source_id: string;
+  source_name?: string;
+  pubDate: string | null;
+  category: string[] | null;
+  sentiment: string | null;
+  image_url: string | null;
+}
+
+async function fetchFromNewsData(): Promise<NewsItem[]> {
+  const url =
+    `https://newsdata.io/api/1/news` +
+    `?apikey=${NEWSDATA_API_KEY}` +
+    `&q=${encodeURIComponent("food science OR food technology OR food innovation")}` +
+    `&language=en` +
+    `&category=science,technology`;
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    console.error(`NewsData.io error ${res.status}:`, JSON.stringify(errBody));
+    throw new Error(`NewsData.io error ${res.status}`);
+  }
+
+  const data = await res.json() as { status: string; results: NewsDataArticle[] };
+  if (data.status !== "success" || !Array.isArray(data.results)) {
+    throw new Error("Invalid NewsData.io response");
+  }
+
+  return data.results
+    .filter(a => a.title && a.link)
+    .map((article, idx): NewsItem => {
+      const description = article.description || "";
+      const summary = description.length > 120
+        ? description.slice(0, 120).trimEnd() + "…"
+        : description;
+      const categoryRaw = article.category?.[0] || "science";
+      const wordCount = description.split(/\s+/).filter(Boolean).length;
+
+      return {
+        id: article.article_id || String(idx + 1),
+        headline: article.title,
+        summary,
+        category: toTitleCase(categoryRaw),
+        source: article.source_name || article.source_id,
+        publishedAt: parsePubDate(article.pubDate),
+        sentiment: mapSentiment(article.sentiment),
+        imageKeyword: categoryRaw + " food",
+        imageUrl: article.image_url || undefined,
+        readMoreUrl: article.link,
+        readTime: Math.max(1, Math.min(5, Math.ceil(wordCount / 50))),
+      };
+    });
+}
+
+// ─── Groq (fallback when NEWSDATA_API_KEY not set) ────────────────────────────
 
 async function fetchFromGroq(): Promise<NewsItem[]> {
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
-    headers: {
-      "Authorization": `Bearer ${GROQ_API_KEY}`,
-      "Content-Type": "application/json",
-    },
+    headers: { "Authorization": `Bearer ${GROQ_API_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: "llama-3.3-70b-versatile",
       max_tokens: 3500,
       temperature: 0.75,
       messages: [
-        {
-          role: "system",
-          content: "You are a food industry news aggregator specialising in Nigeria and West Africa. You always return valid JSON arrays with no extra text.",
-        },
+        { role: "system", content: "You are a food industry news aggregator. Return valid JSON arrays only." },
         {
           role: "user",
-          content: `Generate 12 realistic, current news items focused on Nigeria and West Africa food industry. Today is ${new Date().toISOString()}.
+          content: `Generate 12 realistic news items for food science and R&D professionals focused on Nigeria and West Africa. Today is ${new Date().toISOString()}.
 
-Return ONLY a valid JSON array with exactly 12 objects. Each object must have:
-- "id": "1" through "12"
-- "headline": engaging string under 90 characters
-- "summary": 2-3 sentences under 220 characters total
-- "category": exactly one of: "Food Tech", "Market", "Regulation", "Sustainability", "Innovation", "Ingredients"
-- "source": realistic Nigerian or African food/business publication (e.g. "BusinessDay Nigeria", "Nairametrics", "Food Navigator Africa", "TechCabal Food", "AgriBusinessAfrica", "Channels Business")
-- "publishedAt": ISO 8601 datetime within the last 24 hours
-- "sentiment": exactly one of: "positive", "neutral", "negative"
-- "imageKeyword": 2-4 descriptive words for the visual (e.g. "jollof rice spice", "moringa powder", "palm oil mill")
-- "readTime": integer between 1 and 4
-
-Topics to cover (mix of these): new Nigerian flavour innovations, suya/jollof/egusi/peppersoup trends, local ingredient market prices, NAFDAC regulatory updates, African food export opportunities, cassava/yam/moringa R&D, West African plant-based food startups, fermentation of iru/ogiri/dawadawa, traditional recipe modernisation, food tech startups in Lagos/Accra, sustainability of palm oil and cocoa supply chains.
-Return ONLY the JSON array. No markdown fences, no explanation, no extra text.`,
+Return ONLY a JSON array with 12 objects each having: "id" (1-12), "headline" (<90 chars), "summary" (<220 chars), "category" (one of: Food Tech, Market, Regulation, Sustainability, Innovation, Ingredients), "source" (Nigerian/African publication), "publishedAt" (ISO, last 24h), "sentiment" (positive/neutral/negative), "imageKeyword" (2-4 words), "readTime" (1-4).
+Return ONLY the array.`,
         },
       ],
     }),
@@ -92,7 +165,7 @@ Return ONLY the JSON array. No markdown fences, no explanation, no extra text.`,
   if (!res.ok) {
     const errBody = await res.json().catch(() => ({}));
     console.error(`Groq API error ${res.status}:`, JSON.stringify(errBody));
-    throw new Error(`Groq API error ${res.status}: ${JSON.stringify(errBody)}`);
+    throw new Error(`Groq API error ${res.status}`);
   }
 
   const data = await res.json() as { choices: { message: { content: string } }[] };
@@ -100,14 +173,16 @@ Return ONLY the JSON array. No markdown fences, no explanation, no extra text.`,
     .replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```\s*$/i, "").trim();
 
   const items = JSON.parse(raw) as Omit<NewsItem, "imageUrl" | "readMoreUrl">[];
-  if (!Array.isArray(items) || items.length === 0) throw new Error("Invalid response format");
+  if (!Array.isArray(items) || items.length === 0) throw new Error("Invalid Groq response");
 
   return items.map(item => ({
     ...item,
-    imageUrl: buildImageUrl(item.imageKeyword),
+    imageUrl: buildGroqImageUrl(item.imageKeyword),
     readMoreUrl: buildReadMoreUrl(item.headline),
   }));
 }
+
+// ─── Route ────────────────────────────────────────────────────────────────────
 
 router.get("/", requireAuth, async (_req: AuthRequest, res) => {
   try {
@@ -116,14 +191,20 @@ router.get("/", requireAuth, async (_req: AuthRequest, res) => {
       return;
     }
 
-    if (!GROQ_API_KEY) {
-      console.log("[DEV] No GROQ_API_KEY — serving mock news feed");
+    let items: NewsItem[];
+
+    if (NEWSDATA_API_KEY) {
+      items = await fetchFromNewsData();
+    } else if (GROQ_API_KEY) {
+      console.log("[INFO] No NEWSDATA_API_KEY — falling back to Groq");
+      items = await fetchFromGroq();
+    } else {
+      console.log("[DEV] No API keys configured — serving mock news feed");
       if (!cache) cache = { items: MOCK_ITEMS, fetchedAt: Date.now() };
       res.json({ items: cache.items, fetchedAt: new Date(cache.fetchedAt).toISOString() });
       return;
     }
 
-    const items = await fetchFromGroq();
     cache = { items, fetchedAt: Date.now() };
     res.json({ items, fetchedAt: new Date(cache.fetchedAt).toISOString() });
   } catch (err) {
@@ -132,6 +213,7 @@ router.get("/", requireAuth, async (_req: AuthRequest, res) => {
       res.json({ items: cache.items, fetchedAt: new Date(cache.fetchedAt).toISOString(), stale: true });
       return;
     }
+    // Serve mock data so UI never breaks
     res.json({ items: MOCK_ITEMS, fetchedAt: new Date().toISOString(), stale: true });
   }
 });
