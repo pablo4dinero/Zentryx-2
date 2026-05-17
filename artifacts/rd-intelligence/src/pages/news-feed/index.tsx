@@ -838,7 +838,7 @@ export default function NewsFeed() {
   useEffect(() => { fetchNews(); }, [fetchNews]);
 
   useEffect(() => {
-    const id = setInterval(() => fetchNews(true), 10 * 60 * 1000);
+    const id = setInterval(() => fetchNews(true), 3 * 60 * 60 * 1000);
     return () => clearInterval(id);
   }, [fetchNews]);
 

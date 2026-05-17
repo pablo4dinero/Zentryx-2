@@ -7,7 +7,7 @@ const NEWS_API_KEY    = process.env.NEWS_API_KEY    || "e01cc0072e714204bb9eb876
 const GNEWS_API_KEY   = process.env.GNEWS_API_KEY   || "6d39b3dbbf98e01bc1b77b60231e1f2f";
 const GUARDIAN_API_KEY = process.env.GUARDIAN_API_KEY;
 
-const CACHE_MS = 10 * 60 * 1000; // 10 min
+const CACHE_MS = 3 * 60 * 60 * 1000; // 3 hours
 
 export interface NewsItem {
   id: string;
