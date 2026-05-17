@@ -47,6 +47,32 @@ function buildGroqImageUrl(keyword: string): string {
   return `https://source.unsplash.com/640x360/?${encodeURIComponent(keyword + ",food,nigeria")}`;
 }
 
+// Keywords that must appear in title or description for an article to be kept
+const FOOD_KEYWORDS = [
+  "food", "nutrition", "ingredient", "flavour", "flavor", "recipe",
+  "diet", "protein", "supplement", "ferment", "processing", "packaging",
+  "nafdac", "fda", "agriculture", "crop", "harvest", "beverage", "drink",
+  "spice", "seasoning", "additive", "preservative", "emulsifier", "enzyme",
+  "probiotic", "microbiome", "allergen", "gluten", "sugar", "fat", "carbohydrate",
+  "vitamin", "mineral", "antioxidant", "flavoring", "culinary", "gastronomy",
+  "agri-food", "agrifood", "food-grade", "snack", "cereal", "grain", "dairy",
+  "meat", "poultry", "seafood", "plant-based", "vegan", "fortif",
+];
+
+function isFoodRelated(title: string, description: string | null): boolean {
+  const text = `${title} ${description || ""}`.toLowerCase();
+  return FOOD_KEYWORDS.some(kw => text.includes(kw));
+}
+
+function mapToAppCategory(title: string, description: string | null): string {
+  const text = `${title} ${description || ""}`.toLowerCase();
+  if (/safety|regulation|nafdac|fda|standard|compliance|recall|ban|law|policy|permit|certif/.test(text)) return "Regulation";
+  if (/sustain|environment|climate|organic|eco|green|waste|emission|carbon|renewable/.test(text)) return "Sustainability";
+  if (/innovat|new product|launch|develop|creat|novel|breakthrough|patent|disrupt/.test(text)) return "Innovation";
+  if (/ingredient|flavour|flavor|extract|compound|vitamin|mineral|antioxidant|enzyme|protein|probiotic|additive/.test(text)) return "Ingredients";
+  if (/market|trend|export|import|trade|price|revenue|growth|demand|consumer|retail|sales/.test(text)) return "Market";
+  return "Food Tech";
+}
 
 // ─── Mock data (Nigeria/Africa focus, used when no API key is set) ────────────
 
@@ -90,12 +116,19 @@ interface NewsDataArticle {
 }
 
 async function fetchFromNewsData(): Promise<NewsItem[]> {
+  const query = [
+    "food science", "food safety", "food innovation",
+    "food research", "food development", "food technology",
+    "food ingredient", "food formulation", "food regulation",
+    "food sustainability", "food processing",
+  ].join(" OR ");
+
   const url =
     `https://newsdata.io/api/1/news` +
     `?apikey=${NEWSDATA_API_KEY}` +
-    `&q=${encodeURIComponent("food science OR food technology OR food innovation")}` +
+    `&q=${encodeURIComponent(query)}` +
     `&language=en` +
-    `&category=science,technology`;
+    `&category=science,technology,health,business`;
 
   const res = await fetch(url);
   if (!res.ok) {
@@ -110,24 +143,24 @@ async function fetchFromNewsData(): Promise<NewsItem[]> {
   }
 
   return data.results
-    .filter(a => a.title && a.link)
+    .filter(a => a.title && a.link && isFoodRelated(a.title, a.description))
     .map((article, idx): NewsItem => {
       const description = article.description || "";
       const summary = description.length > 120
         ? description.slice(0, 120).trimEnd() + "…"
         : description;
-      const categoryRaw = article.category?.[0] || "science";
+      const category = mapToAppCategory(article.title, article.description);
       const wordCount = description.split(/\s+/).filter(Boolean).length;
 
       return {
         id: article.article_id || String(idx + 1),
         headline: article.title,
         summary,
-        category: toTitleCase(categoryRaw),
+        category,
         source: article.source_name || article.source_id,
         publishedAt: parsePubDate(article.pubDate),
         sentiment: mapSentiment(article.sentiment),
-        imageKeyword: categoryRaw + " food",
+        imageKeyword: category.toLowerCase() + " food",
         imageUrl: article.image_url || undefined,
         readMoreUrl: article.link,
         readTime: Math.max(1, Math.min(5, Math.ceil(wordCount / 50))),
@@ -149,7 +182,9 @@ async function fetchFromGroq(): Promise<NewsItem[]> {
         { role: "system", content: "You are a food industry news aggregator. Return valid JSON arrays only." },
         {
           role: "user",
-          content: `Generate 12 realistic news items for food science and R&D professionals focused on Nigeria and West Africa. Today is ${new Date().toISOString()}.
+          content: `Generate 12 realistic news items strictly about food development, food innovation, food safety, food research and development, and food science — focused on Nigeria and West Africa. Today is ${new Date().toISOString()}.
+
+Topics must only cover: new food product launches, food ingredient breakthroughs, food safety regulations, food processing technology, R&D in food formulation, food sustainability, novel flavours or food science discoveries. Do NOT include unrelated news.
 
 Return ONLY a JSON array with 12 objects each having: "id" (1-12), "headline" (<90 chars), "summary" (<220 chars), "category" (one of: Food Tech, Market, Regulation, Sustainability, Innovation, Ingredients), "source" (Nigerian/African publication), "publishedAt" (ISO, last 24h), "sentiment" (positive/neutral/negative), "imageKeyword" (2-4 words), "readTime" (1-4).
 Return ONLY the array.`,
