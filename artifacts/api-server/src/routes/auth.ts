@@ -1,5 +1,6 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import bcrypt from "bcryptjs";
+import { randomUUID } from "crypto";
 import { db } from "@workspace/db";
 import { usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
@@ -182,6 +183,127 @@ router.post("/reset-password", async (req, res) => {
   } catch (err) {
     console.error("reset-password error:", err);
     res.status(500).json({ error: "InternalServerError", message: "Failed" });
+  }
+});
+
+// ─── OAuth helpers ───────────────────────────────────────────────────────────
+function getBaseUrl(req: Request): string {
+  return process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
+}
+
+async function upsertOAuthUser(email: string, name: string, avatar?: string | null) {
+  let [user] = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
+  if (!user) {
+    const placeholder = await bcrypt.hash(randomUUID(), 10);
+    [user] = await db.insert(usersTable).values({
+      email, name,
+      passwordHash: placeholder,
+      role: "viewer",
+      isActive: true,
+      avatar: avatar || null,
+    }).returning();
+  }
+  return user;
+}
+
+// ─── Google OAuth ─────────────────────────────────────────────────────────────
+router.get("/google", (req, res) => {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  if (!clientId) { res.status(503).json({ error: "Google OAuth not configured. Set GOOGLE_CLIENT_ID env var." }); return; }
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: `${getBaseUrl(req)}/api/auth/google/callback`,
+    response_type: "code",
+    scope: "openid email profile",
+    access_type: "offline",
+    prompt: "select_account",
+  });
+  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+});
+
+router.get("/google/callback", async (req, res) => {
+  const { code, error } = req.query as { code?: string; error?: string };
+  const base = getBaseUrl(req);
+  if (error || !code) { res.redirect(`${base}/login?oauth_error=cancelled`); return; }
+  try {
+    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: process.env.GOOGLE_CLIENT_ID!,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+        redirect_uri: `${base}/api/auth/google/callback`,
+        grant_type: "authorization_code",
+      }),
+    });
+    const tokenData = await tokenRes.json() as { access_token?: string };
+    if (!tokenData.access_token) throw new Error("No access token returned");
+
+    const profileRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+    const profile = await profileRes.json() as { email?: string; name?: string; picture?: string };
+    const email = profile.email?.toLowerCase();
+    if (!email) throw new Error("Google did not return an email");
+
+    const user = await upsertOAuthUser(email, profile.name || email, profile.picture);
+    const token = signToken({ userId: user.id, email: user.email, role: user.role });
+    res.redirect(`${base}/login?oauth_token=${token}`);
+  } catch (err) {
+    console.error("Google OAuth error:", err);
+    res.redirect(`${getBaseUrl(req)}/login?oauth_error=failed`);
+  }
+});
+
+// ─── Microsoft / Outlook OAuth ────────────────────────────────────────────────
+router.get("/microsoft", (req, res) => {
+  const clientId = process.env.MICROSOFT_CLIENT_ID;
+  if (!clientId) { res.status(503).json({ error: "Microsoft OAuth not configured. Set MICROSOFT_CLIENT_ID env var." }); return; }
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: `${getBaseUrl(req)}/api/auth/microsoft/callback`,
+    response_type: "code",
+    scope: "openid email profile User.Read",
+    response_mode: "query",
+    prompt: "select_account",
+  });
+  res.redirect(`https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params}`);
+});
+
+router.get("/microsoft/callback", async (req, res) => {
+  const { code, error } = req.query as { code?: string; error?: string };
+  const base = getBaseUrl(req);
+  if (error || !code) { res.redirect(`${base}/login?oauth_error=cancelled`); return; }
+  try {
+    const tokenRes = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: process.env.MICROSOFT_CLIENT_ID!,
+        client_secret: process.env.MICROSOFT_CLIENT_SECRET!,
+        redirect_uri: `${base}/api/auth/microsoft/callback`,
+        grant_type: "authorization_code",
+        scope: "openid email profile User.Read",
+      }),
+    });
+    const tokenData = await tokenRes.json() as { access_token?: string };
+    if (!tokenData.access_token) throw new Error("No access token returned");
+
+    const profileRes = await fetch("https://graph.microsoft.com/v1.0/me", {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+    const profile = await profileRes.json() as { displayName?: string; mail?: string; userPrincipalName?: string };
+    const email = (profile.mail || profile.userPrincipalName)?.toLowerCase();
+    if (!email) throw new Error("Microsoft did not return an email");
+
+    const user = await upsertOAuthUser(email, profile.displayName || email);
+    const token = signToken({ userId: user.id, email: user.email, role: user.role });
+    res.redirect(`${base}/login?oauth_token=${token}`);
+  } catch (err) {
+    console.error("Microsoft OAuth error:", err);
+    res.redirect(`${getBaseUrl(req)}/login?oauth_error=failed`);
   }
 });
 
