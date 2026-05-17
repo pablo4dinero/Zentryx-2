@@ -5,7 +5,8 @@ import {
   Search, LogOut, Menu, X, MessageSquare, Briefcase, Sun, Moon, Zap,
   ChevronDown, User, FlaskConical as Flask, CheckSquare, Building2,
   ArrowRight, Loader2, CalendarDays, UserCircle, TrendingUp, ClipboardList,
-  PanelLeftClose, PanelLeftOpen, Lock, Unlock, ShoppingCart, Package
+  PanelLeftClose, PanelLeftOpen, Lock, Unlock, ShoppingCart, Package,
+  ShieldCheck, ShieldX, Mail
 } from "lucide-react";
 import { useAuthStore } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
@@ -390,6 +391,50 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const unreadCount = notifications?.filter(n => !n.isRead).length || 0;
   const isLight = theme === "light";
 
+  // ─── Access request admin popup ──────────────────────────────────────────
+  const [accessRequests, setAccessRequests] = useState<{ id: string; name: string; email: string; requestedAt: string }[]>([]);
+  const [processingId, setProcessingId] = useState<string | null>(null);
+
+  const isPrivileged = user && (() => {
+    const r = (user.role || "").toLowerCase();
+    const jp = ((user as any).jobPosition || "").toLowerCase();
+    return ["admin", "manager", "ceo"].includes(r) || r.includes("head") ||
+      jp.includes("head") || jp.includes("ceo") || jp.includes("admin") || jp.includes("manager");
+  })();
+
+  useEffect(() => {
+    if (!isPrivileged) return;
+    const poll = async () => {
+      try {
+        const res = await fetch(`${BASE}api/access-requests`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (Array.isArray(data)) setAccessRequests(data);
+      } catch { /* silent */ }
+    };
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => clearInterval(interval);
+  }, [isPrivileged]);
+
+  const handleAllow = async (requestId: string) => {
+    setProcessingId(requestId);
+    try {
+      await fetch(`${BASE}api/access-requests/${requestId}/allow`, { method: "POST" });
+      setAccessRequests(prev => prev.filter(r => r.id !== requestId));
+    } catch { /* silent */ }
+    setProcessingId(null);
+  };
+
+  const handleDeny = async (requestId: string) => {
+    setProcessingId(requestId);
+    try {
+      await fetch(`${BASE}api/access-requests/${requestId}/deny`, { method: "POST" });
+      setAccessRequests(prev => prev.filter(r => r.id !== requestId));
+    } catch { /* silent */ }
+    setProcessingId(null);
+  };
+
   const blockedPaths = getBlockedPaths(user?.role || "viewer", (user as any)?.jobPosition || "");
   const navItems = ALL_NAV_ITEMS.filter(item => !blockedPaths.includes(item.href));
 
@@ -673,6 +718,65 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden"
           onClick={() => setIsMobileMenuOpen(false)}
         />
+      )}
+
+      {/* ─── Admin Access Request Popup ──────────────────────────── */}
+      {isPrivileged && accessRequests.length > 0 && (
+        <div className="fixed inset-0 z-[100] flex items-start justify-center pointer-events-none pt-6 px-4">
+          <div className={cn(
+            "pointer-events-auto w-full max-w-sm rounded-2xl shadow-2xl border overflow-hidden",
+            isLight ? "bg-white border-gray-200" : "bg-[#1a1a2e] border-white/10"
+          )}>
+            {/* Header */}
+            <div className={cn("px-4 py-3 flex items-center gap-2 border-b", isLight ? "border-gray-100 bg-gray-50" : "border-white/10 bg-white/5")}>
+              <ShieldCheck className="w-4 h-4 text-primary shrink-0" />
+              <span className="text-sm font-semibold text-foreground">Access Request</span>
+              {accessRequests.length > 1 && (
+                <span className="ml-auto text-xs text-muted-foreground">{accessRequests.length} pending</span>
+              )}
+            </div>
+
+            {/* Requests list */}
+            <div className="divide-y divide-border max-h-72 overflow-y-auto">
+              {accessRequests.map(req => (
+                <div key={req.id} className="px-4 py-3">
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className={cn("w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm font-semibold", isLight ? "bg-primary/10 text-primary" : "bg-primary/20 text-primary")}>
+                      {req.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{req.name}</p>
+                      <p className="text-xs text-muted-foreground truncate flex items-center gap-1 mt-0.5">
+                        <Mail className="w-3 h-3 shrink-0" />{req.email}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {new Date(req.requestedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleAllow(req.id)}
+                      disabled={processingId === req.id}
+                      className="flex-1 flex items-center justify-center gap-1.5 h-9 rounded-xl bg-green-500 hover:bg-green-600 text-white text-xs font-semibold transition-colors disabled:opacity-50"
+                    >
+                      {processingId === req.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                      Allow
+                    </button>
+                    <button
+                      onClick={() => handleDeny(req.id)}
+                      disabled={processingId === req.id}
+                      className="flex-1 flex items-center justify-center gap-1.5 h-9 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-semibold transition-colors disabled:opacity-50"
+                    >
+                      {processingId === req.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldX className="w-3.5 h-3.5" />}
+                      Deny
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

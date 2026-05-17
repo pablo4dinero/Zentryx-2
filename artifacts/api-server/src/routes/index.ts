@@ -21,6 +21,7 @@ import productionOrdersRouter from "./production_orders";
 import weeklyActivitiesRouter from "./weekly_activities";
 import procurementRouter from "./procurement";
 import mdpRouter from "./mdp";
+import accessRequestsRouter from "./access_requests";
 
 const router: IRouter = Router();
 
@@ -46,5 +47,6 @@ router.use("/forecasts", forecastsRouter);
 router.use("/weekly-activities", weeklyActivitiesRouter);
 router.use("/procurement", procurementRouter);
 router.use("/mdp", mdpRouter);
+router.use("/access-requests", accessRequestsRouter);
 
 export default router;

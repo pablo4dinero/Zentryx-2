@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { useAuthStore } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Zap, Lock, Mail, User, AlertCircle, Phone, Eye, EyeOff, ArrowLeft, KeyRound, CheckCircle, MessageSquare } from "lucide-react";
+import { Zap, Lock, Mail, User, AlertCircle, Phone, Eye, EyeOff, ArrowLeft, KeyRound, CheckCircle, MessageSquare, ShieldCheck, Clock, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -11,7 +11,7 @@ import { useTheme } from "@/lib/theme";
 
 const BASE = import.meta.env.BASE_URL;
 
-type Mode = "login" | "signup" | "signup-otp" | "forgot" | "forgot-otp" | "reset" | "sms-otp" | "add-phone";
+type Mode = "login" | "signup" | "signup-otp" | "forgot" | "forgot-otp" | "reset" | "sms-otp" | "add-phone" | "request-pending";
 
 async function apiFetch(path: string, body: object) {
   const r = await fetch(`${BASE}${path}`, {
@@ -87,6 +87,8 @@ export default function Login() {
   const [voiceMode, setVoiceMode] = useState(false);
   const [emailMode, setEmailMode] = useState(false);
   const [devEmailOtp, setDevEmailOtp] = useState("");
+  const [requestId, setRequestId] = useState("");
+  const [requestUserName, setRequestUserName] = useState("");
 
   const clearError = () => setError("");
   const goMode = (m: Mode) => { setMode(m); setError(""); };
@@ -417,6 +419,47 @@ export default function Login() {
     }
   };
 
+  // ─── Request admin access ─────────────────────────────────────────────────
+  const handleRequestAccess = async () => {
+    clearError();
+    setLoading(true);
+    try {
+      const data = await apiFetch("api/auth/request-access", { mfaToken });
+      setRequestId(data.requestId);
+      goMode("request-pending");
+      toast({ title: "Request sent", description: "An admin has been notified and will review your request." });
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Poll for access request approval
+  useEffect(() => {
+    if (mode !== "request-pending" || !requestId) return;
+    const poll = async () => {
+      try {
+        const r = await fetch(`${BASE}api/auth/access-request-status?requestId=${requestId}`);
+        const data = await r.json();
+        if (data.status === "approved" && data.token) {
+          setToken(data.token);
+          toast({ title: "Access granted!", description: `Welcome, ${data.user?.name ?? ""}` });
+          setLocation("/");
+        } else if (data.status === "denied") {
+          goMode("sms-otp");
+          setError("Your access request was denied by the administrator.");
+        } else if (data.status === "expired") {
+          goMode("sms-otp");
+          setError("Access request expired. Please try again.");
+        }
+      } catch { /* silent — keep polling */ }
+    };
+    poll();
+    const interval = setInterval(poll, 3000);
+    return () => clearInterval(interval);
+  }, [mode, requestId]);
+
   // ─── UI helpers ──────────────────────────────────────────────────────────
   const PwToggle = ({ show, onToggle }: { show: boolean; onToggle: () => void }) => (
     <button type="button" onClick={onToggle} className={cn("absolute right-3 top-1/2 -translate-y-1/2 transition-colors", isLight ? "text-gray-400 hover:text-gray-700" : "text-muted-foreground hover:text-foreground")}>
@@ -737,7 +780,7 @@ export default function Login() {
                   {loading ? "Verifying…" : "Verify & Enter Workspace"}
                 </Button>
 
-                {/* Resend / Call / Email — always visible so users are never locked out */}
+                {/* Resend / Email — always visible */}
                 <div className={cn("flex rounded-xl overflow-hidden border", isLight ? "border-gray-200" : "border-white/10")}>
                   <button
                     type="button" onClick={handleSmsResend} disabled={loading}
@@ -749,20 +792,9 @@ export default function Login() {
                   </button>
                   <div className={cn("w-px self-stretch", isLight ? "bg-gray-200" : "bg-white/10")} />
                   <button
-                    type="button" onClick={handleVoiceCall} disabled={loading}
-                    className={cn("flex-1 py-2.5 text-xs font-medium transition-colors disabled:opacity-50",
-                      smsFailed && !emailMode
-                        ? "text-primary font-semibold"
-                        : isLight ? "text-gray-600 hover:bg-gray-50 hover:text-gray-900" : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
-                    )}
-                  >
-                    Call me
-                  </button>
-                  <div className={cn("w-px self-stretch", isLight ? "bg-gray-200" : "bg-white/10")} />
-                  <button
                     type="button" onClick={handleEmailOtp} disabled={loading}
                     className={cn("flex-1 py-2.5 text-xs font-medium transition-colors disabled:opacity-50",
-                      smsFailed && !voiceMode
+                      smsFailed
                         ? "text-primary font-semibold"
                         : isLight ? "text-gray-600 hover:bg-gray-50 hover:text-gray-900" : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
                     )}
@@ -770,7 +802,56 @@ export default function Login() {
                     Email me
                   </button>
                 </div>
+
+                {/* Request Access fallback */}
+                <button
+                  type="button" onClick={handleRequestAccess} disabled={loading}
+                  className={cn("w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border text-xs font-medium transition-all disabled:opacity-50",
+                    isLight
+                      ? "border-gray-200 text-gray-600 hover:bg-gray-50 hover:text-gray-900 hover:border-gray-300"
+                      : "border-white/10 text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                  )}
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  Request access from an admin
+                </button>
               </form>
+            )}
+
+            {/* ── Request Pending ──────────────────────────────────── */}
+            {mode === "request-pending" && (
+              <div className="space-y-5 text-center">
+                <div className="flex flex-col items-center gap-3">
+                  <div className="relative">
+                    <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+                      <ShieldCheck className="w-8 h-8 text-primary" />
+                    </div>
+                    <span className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-amber-400 flex items-center justify-center">
+                      <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
+                    </span>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-foreground text-lg">Waiting for admin approval</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Your request has been sent. An administrator will review and approve or deny your access.
+                    </p>
+                  </div>
+                </div>
+
+                <div className={cn("rounded-xl px-4 py-3 text-sm flex items-center gap-3", isLight ? "bg-gray-50 border border-gray-200" : "bg-white/5 border border-white/10")}>
+                  <Clock className={cn("w-4 h-4 shrink-0", isLight ? "text-gray-400" : "text-muted-foreground")} />
+                  <span className={cn(isLight ? "text-gray-600" : "text-muted-foreground")}>
+                    This page checks for approval automatically. You'll be logged in the moment an admin allows it.
+                  </span>
+                </div>
+
+                <button
+                  type="button" onClick={() => { goMode("sms-otp"); setRequestId(""); }}
+                  className={cn("w-full text-xs transition-colors", isLight ? "text-gray-400 hover:text-gray-700" : "text-muted-foreground hover:text-foreground")}
+                >
+                  Cancel and go back
+                </button>
+              </div>
             )}
 
           </motion.div>

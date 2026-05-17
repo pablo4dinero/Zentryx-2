@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm";
 import { signToken, signMfaToken, verifyMfaToken, requireAuth, AuthRequest } from "../lib/auth";
 import { sendOtp, verifyOtp } from "../lib/otp";
 import { sendSmsOtp, sendVoiceOtp, verifySmsOtp, verifyVoiceOtp, maskPhone } from "../lib/sms";
+import { createAccessRequest, getRequest } from "../lib/access-requests";
 
 const router = Router();
 
@@ -168,6 +169,55 @@ router.post("/call-otp", async (req, res) => {
   } catch (err) {
     console.error("call-otp error:", err);
     res.status(500).json({ error: "InternalServerError", message: "Failed to initiate call" });
+  }
+});
+
+// ─── Request admin access ─────────────────────────────────────────────────────
+router.post("/request-access", async (req, res) => {
+  try {
+    const { mfaToken } = req.body;
+    if (!mfaToken) { res.status(400).json({ error: "BadRequest", message: "mfaToken required" }); return; }
+
+    let payload;
+    try { payload = verifyMfaToken(mfaToken); } catch {
+      res.status(401).json({ error: "InvalidToken", message: "Session expired, please sign in again" });
+      return;
+    }
+
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, payload.userId)).limit(1);
+    if (!user) { res.status(404).json({ error: "NotFound" }); return; }
+
+    const request = createAccessRequest(user.id, user.email, user.name);
+    res.json({ requestId: request.id });
+  } catch (err) {
+    console.error("request-access error:", err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+// ─── Poll access request status ───────────────────────────────────────────────
+router.get("/access-request-status", async (req, res) => {
+  try {
+    const { requestId } = req.query as { requestId?: string };
+    if (!requestId) { res.status(400).json({ error: "BadRequest" }); return; }
+
+    const request = getRequest(requestId);
+    if (!request) { res.json({ status: "expired" }); return; }
+
+    if (request.status === "approved" && request.approvedToken) {
+      const [user] = await db.select().from(usersTable).where(eq(usersTable.id, request.userId)).limit(1);
+      res.json({
+        status: "approved",
+        token: request.approvedToken,
+        user: user ? { id: user.id, email: user.email, name: user.name, role: user.role, department: user.department, avatar: user.avatar, isActive: user.isActive, createdAt: user.createdAt } : null,
+      });
+      return;
+    }
+
+    res.json({ status: request.status });
+  } catch (err) {
+    console.error("access-request-status error:", err);
+    res.status(500).json({ error: "InternalServerError" });
   }
 });
 
