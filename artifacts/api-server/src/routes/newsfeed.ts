@@ -4,7 +4,6 @@ import { requireAuth, AuthRequest } from "../lib/auth";
 const router = Router();
 
 const NEWSDATA_API_KEY = process.env.NEWSDATA_API_KEY;
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GUARDIAN_API_KEY = process.env.GUARDIAN_API_KEY;
 const CACHE_MS = 10 * 60 * 1000;
 
@@ -47,13 +46,8 @@ function mapSentiment(s: string | null | undefined): "positive" | "neutral" | "n
 }
 
 function buildFallbackImageUrl(keyword: string): string {
-  // Seed-based so the same keyword always returns the same image
   const seed = encodeURIComponent(keyword.replace(/\s+/g, "-").toLowerCase());
   return `https://picsum.photos/seed/${seed}/640/360`;
-}
-
-function buildReadMoreUrl(headline: string): string {
-  return `https://news.google.com/search?q=${encodeURIComponent(headline)}&hl=en-NG&gl=NG`;
 }
 
 const FOOD_KEYWORDS = [
@@ -85,7 +79,11 @@ function mapToAppCategory(title: string, description: string | null): string {
 // ─── RSS Parser (no external dependency) ─────────────────────────────────────
 
 function stripHtml(html: string): string {
-  return html.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, " ").trim();
+  return html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/\s+/g, " ").trim();
 }
 
 function extractTag(itemXml: string, tag: string): string {
@@ -98,7 +96,6 @@ interface RssItem {
   link: string;
   description: string;
   pubDate: string;
-  category?: string;
   imageUrl?: string;
 }
 
@@ -111,39 +108,15 @@ function parseRssItems(xml: string): RssItem[] {
     const descRaw = extractTag(x, "description");
     const description = stripHtml(descRaw).slice(0, 400);
     const pubDate = extractTag(x, "pubDate");
-    const category = extractTag(x, "category") || undefined;
     const imageUrl =
       x.match(/<enclosure[^>]+url="([^"]+)"[^>]+type="image[^"]*"/i)?.[1] ||
       x.match(/<media:content[^>]+url="([^"]+)"/i)?.[1] ||
       descRaw.match(/<img[^>]+src="([^"]+)"/i)?.[1] ||
       undefined;
-    if (title && link) results.push({ title, link, description, pubDate, category, imageUrl });
+    if (title && link) results.push({ title, link, description, pubDate, imageUrl });
   }
   return results;
 }
-
-// ─── Mock data (Nigeria/Africa focus, used when no API keys are set) ──────────
-
-const MOCK_ITEMS_RAW = [
-  { id: "1", headline: "Indomie Launches Bold New Pepper Soup Flavour Across Nigeria", summary: "De United Foods unveils a limited-edition Pepper Soup variant of the iconic Indomie brand, tapping into Nigeria's rich street food culture.", category: "Innovation", source: "BusinessDay Nigeria", publishedAt: new Date(Date.now() - 1 * 3600 * 1000).toISOString(), sentiment: "positive" as const, imageKeyword: "noodles spice nigeria", readTime: 2 },
-  { id: "2", headline: "Nigeria's Suya Spice Blend Goes Global as Export Demand Rises", summary: "Artisan spice producers in Kaduna and Abuja are scaling production of the iconic suya seasoning mix for European and North American markets.", category: "Market", source: "Nairametrics", publishedAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(), sentiment: "positive" as const, imageKeyword: "suya spice grill", readTime: 3 },
-  { id: "3", headline: "NAFDAC Tightens Labelling Rules for Imported Flavour Additives", summary: "New regulations require all imported flavour compounds to carry detailed allergen declarations and country-of-origin codes by Q3.", category: "Regulation", source: "Food Safety News NG", publishedAt: new Date(Date.now() - 3 * 3600 * 1000).toISOString(), sentiment: "neutral" as const, imageKeyword: "food label regulation", readTime: 4 },
-  { id: "4", headline: "Locust Bean (Iru) Identified as High-Value Probiotic Ingredient", summary: "Researchers at University of Lagos confirm that fermented locust bean contains beneficial Bacillus strains with strong gut-health properties.", category: "Ingredients", source: "Journal of African Food Science", publishedAt: new Date(Date.now() - 4 * 3600 * 1000).toISOString(), sentiment: "positive" as const, imageKeyword: "fermented beans africa", readTime: 3 },
-  { id: "5", headline: "West Africa Cassava Processing Capacity Set to Double by 2026", summary: "A $200M investment across Nigeria, Ghana, and Côte d'Ivoire will modernise cassava starch and flour production, reducing post-harvest losses.", category: "Food Tech", source: "AgriBusinessAfrica", publishedAt: new Date(Date.now() - 5 * 3600 * 1000).toISOString(), sentiment: "positive" as const, imageKeyword: "cassava processing africa", readTime: 3 },
-  { id: "6", headline: "Moringa Powder Demand Surges as Nigerian Wellness Brands Scale Up", summary: "Domestic consumption of moringa-enriched products grew 34% in the last fiscal year as health-conscious urban consumers seek functional superfoods.", category: "Market", source: "Food Navigator Africa", publishedAt: new Date(Date.now() - 6 * 3600 * 1000).toISOString(), sentiment: "positive" as const, imageKeyword: "moringa powder green", readTime: 2 },
-  { id: "7", headline: "Palm Oil Sustainability Crisis Threatens Nigerian Export Revenues", summary: "Growing EU import restrictions on non-certified palm oil could cost Nigeria ₦180B in annual export revenue.", category: "Sustainability", source: "Channels Business", publishedAt: new Date(Date.now() - 7 * 3600 * 1000).toISOString(), sentiment: "negative" as const, imageKeyword: "palm oil plantation", readTime: 4 },
-  { id: "8", headline: "Kuli-Kuli Brand Expands into Plant-Based Protein Snack Line", summary: "A Lagos-based food startup reformulates the traditional groundnut cake into a high-protein snack bar targeting gym-goers and urban professionals.", category: "Innovation", source: "TechCabal Food", publishedAt: new Date(Date.now() - 8 * 3600 * 1000).toISOString(), sentiment: "positive" as const, imageKeyword: "peanut snack bar", readTime: 2 },
-  { id: "9", headline: "Ogiri Fermentation Science Opens New Umami Flavour Pathways", summary: "Food scientists are isolating dominant Bacillus species in ogiri to develop standardised umami flavour concentrates for commercial seasonings.", category: "Food Tech", source: "Food Chemistry Africa", publishedAt: new Date(Date.now() - 9 * 3600 * 1000).toISOString(), sentiment: "positive" as const, imageKeyword: "fermentation science lab", readTime: 4 },
-  { id: "10", headline: "Nigerian Breadfruit Flour Gains Traction as Wheat Substitute", summary: "With wheat import costs at record highs, bakers across the south-west are adopting breadfruit flour blends that cut costs by up to 40%.", category: "Ingredients", source: "BusinessDay Nigeria", publishedAt: new Date(Date.now() - 10 * 3600 * 1000).toISOString(), sentiment: "positive" as const, imageKeyword: "breadfruit flour baking", readTime: 3 },
-  { id: "11", headline: "E-Commerce Drives 60% Growth in Artisan Seasoning Brands", summary: "Small-batch seasoning producers from Aba and Onitsha are leveraging social commerce to reach diaspora customers in the USA and UK.", category: "Market", source: "Nairametrics", publishedAt: new Date(Date.now() - 11 * 3600 * 1000).toISOString(), sentiment: "positive" as const, imageKeyword: "spice market africa", readTime: 2 },
-  { id: "12", headline: "Afang and Egusi Soups Inspire New Instant Meal Range in West Africa", summary: "Nestlé West Africa announces a premium instant soup line inspired by traditional Nigerian dishes, targeting urban consumers seeking convenient flavours.", category: "Innovation", source: "Food Navigator Africa", publishedAt: new Date(Date.now() - 12 * 3600 * 1000).toISOString(), sentiment: "positive" as const, imageKeyword: "nigerian soup ingredients", readTime: 3 },
-];
-
-const MOCK_ITEMS: NewsItem[] = MOCK_ITEMS_RAW.map(item => ({
-  ...item,
-  imageUrl: buildFallbackImageUrl(item.imageKeyword),
-  readMoreUrl: buildReadMoreUrl(item.headline),
-}));
 
 // ─── Per-source caches ────────────────────────────────────────────────────────
 
@@ -229,7 +202,7 @@ async function fetchFromGuardian(): Promise<NewsItem[]> {
         publishedAt: article.webPublicationDate,
         sentiment: "neutral",
         imageKeyword: category.toLowerCase() + " food",
-        imageUrl: article.fields?.thumbnail,
+        imageUrl: article.fields?.thumbnail || buildFallbackImageUrl(category.toLowerCase() + " food"),
         readMoreUrl: article.webUrl,
         readTime: Math.max(3, Math.min(10, Math.ceil(wordCount / 50))),
       };
@@ -303,58 +276,13 @@ async function fetchFromNewsData(): Promise<NewsItem[]> {
     });
 }
 
-// ─── Groq (fallback) ──────────────────────────────────────────────────────────
-
-async function fetchFromGroq(): Promise<NewsItem[]> {
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: { "Authorization": `Bearer ${GROQ_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "llama-3.3-70b-versatile",
-      max_tokens: 3500,
-      temperature: 0.75,
-      messages: [
-        { role: "system", content: "You are a food industry news aggregator. Return valid JSON arrays only." },
-        {
-          role: "user",
-          content: `Generate 12 realistic news items strictly about food development, food innovation, food safety, food research and development, and food science — focused on Nigeria and West Africa. Today is ${new Date().toISOString()}.
-
-Topics must only cover: new food product launches, food ingredient breakthroughs, food safety regulations, food processing technology, R&D in food formulation, food sustainability, novel flavours or food science discoveries. Do NOT include unrelated news.
-
-Return ONLY a JSON array with 12 objects each having: "id" (1-12), "headline" (<90 chars), "summary" (<220 chars), "category" (one of: Food Tech, Market, Regulation, Sustainability, Innovation, Ingredients), "source" (Nigerian/African publication), "publishedAt" (ISO, last 24h), "sentiment" (positive/neutral/negative), "imageKeyword" (2-4 words), "readTime" (1-4).
-Return ONLY the array.`,
-        },
-      ],
-    }),
-  });
-
-  if (!res.ok) {
-    const errBody = await res.json().catch(() => ({}));
-    console.error(`Groq API error ${res.status}:`, JSON.stringify(errBody));
-    throw new Error(`Groq API error ${res.status}`);
-  }
-
-  const data = await res.json() as { choices: { message: { content: string } }[] };
-  const raw = (data.choices?.[0]?.message?.content || "").trim()
-    .replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```\s*$/i, "").trim();
-
-  const items = JSON.parse(raw) as Omit<NewsItem, "imageUrl" | "readMoreUrl">[];
-  if (!Array.isArray(items) || items.length === 0) throw new Error("Invalid Groq response");
-
-  return items.map(item => ({
-    ...item,
-    imageUrl: buildFallbackImageUrl(item.imageKeyword),
-    readMoreUrl: buildReadMoreUrl(item.headline),
-  }));
-}
-
 // ─── Route ────────────────────────────────────────────────────────────────────
 
 router.get("/", requireAuth, async (_req: AuthRequest, res) => {
   const now = Date.now();
 
   const [iftResult, guardianResult, newsdataResult] = await Promise.allSettled([
-    // IFT — always try, no key needed
+    // IFT — always fetch, drives the carousel
     (async () => {
       if (iftCache && now - iftCache.fetchedAt < CACHE_MS) return iftCache.items;
       const items = await fetchFromIFT();
@@ -372,28 +300,22 @@ router.get("/", requireAuth, async (_req: AuthRequest, res) => {
         })()
       : Promise.reject(new Error("No GUARDIAN_API_KEY")),
 
-    // NewsData / Groq / Mock — always has a result
-    (async () => {
-      if (newsdataCache && now - newsdataCache.fetchedAt < CACHE_MS) return newsdataCache.items;
-      let items: NewsItem[];
-      if (NEWSDATA_API_KEY) {
-        items = await fetchFromNewsData();
-      } else if (GROQ_API_KEY) {
-        console.log("[INFO] No NEWSDATA_API_KEY — falling back to Groq");
-        items = await fetchFromGroq();
-      } else {
-        console.log("[DEV] No API keys — serving mock news feed");
-        items = MOCK_ITEMS;
-      }
-      newsdataCache = { items, fetchedAt: now };
-      return items;
-    })(),
+    // NewsData — only if key present, no mock/AI fallback
+    NEWSDATA_API_KEY
+      ? (async () => {
+          if (newsdataCache && now - newsdataCache.fetchedAt < CACHE_MS) return newsdataCache.items;
+          const items = await fetchFromNewsData();
+          newsdataCache = { items, fetchedAt: now };
+          return items;
+        })()
+      : Promise.reject(new Error("No NEWSDATA_API_KEY")),
   ]);
 
   const sections: NewsSection[] = [];
 
+  // IFT first — powers the top carousel
   if (iftResult.status === "fulfilled" && iftResult.value.length > 0) {
-    sections.push({ id: "ift", label: "Research Digest", subtitle: "IFT.org · Food Science & Technology", items: iftResult.value });
+    sections.push({ id: "ift", label: "Food Science Today", subtitle: "IFT.org · Institute of Food Technologists", items: iftResult.value });
   } else if (iftResult.status === "rejected") {
     console.error("IFT feed error:", iftResult.reason);
   }
@@ -404,22 +326,11 @@ router.get("/", requireAuth, async (_req: AuthRequest, res) => {
     console.error("Guardian feed error:", guardianResult.reason);
   }
 
-  const newsdataItems =
-    newsdataResult.status === "fulfilled"
-      ? newsdataResult.value
-      : newsdataCache?.items || MOCK_ITEMS;
-
-  if (newsdataResult.status === "rejected" && !newsdataCache) {
-    console.error("NewsData/Groq error:", newsdataResult.reason);
-    newsdataCache = { items: MOCK_ITEMS, fetchedAt: now };
+  if (newsdataResult.status === "fulfilled" && newsdataResult.value.length > 0) {
+    sections.push({ id: "newsdata", label: "Market Pulse", subtitle: "NewsData.io", items: newsdataResult.value });
+  } else if (newsdataResult.status === "rejected" && NEWSDATA_API_KEY) {
+    console.error("NewsData error:", newsdataResult.reason);
   }
-
-  sections.push({
-    id: "newsdata",
-    label: "Market Pulse",
-    subtitle: NEWSDATA_API_KEY ? "NewsData.io" : "Curated Feed",
-    items: newsdataItems,
-  });
 
   res.json({ sections, fetchedAt: new Date(now).toISOString() });
 });

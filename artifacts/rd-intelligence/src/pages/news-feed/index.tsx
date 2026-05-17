@@ -233,13 +233,14 @@ function IFTCard({ item, isLight }: { item: NewsItem; isLight: boolean }) {
 }
 
 function IFTSection({ section, isLight }: { section: NewsSection; isLight: boolean }) {
+  const style = CAROUSEL_STYLE[section.id] || CAROUSEL_STYLE.ift;
   return (
     <div>
       <SectionBanner
         label={section.label}
         subtitle={section.subtitle}
-        icon={FlaskConical}
-        gradientClass="bg-gradient-to-r from-indigo-700 to-violet-600"
+        icon={style.icon}
+        gradientClass={style.gradientClass}
         count={section.items.length}
         isLight={isLight}
       />
@@ -702,8 +703,15 @@ function ListView({ items, isLight }: { items: NewsItem[]; isLight: boolean }) {
 
 // ─── Market Pulse section (NewsData / Groq / Mock) ────────────────────────────
 
-function MarketPulseSection({ section, isLight }: { section: NewsSection; isLight: boolean }) {
+const CAROUSEL_STYLE: Record<string, { icon: React.ElementType; gradientClass: string }> = {
+  ift:      { icon: FlaskConical, gradientClass: "bg-gradient-to-r from-indigo-700 to-violet-600" },
+  newsdata: { icon: BarChart3,    gradientClass: "bg-gradient-to-r from-amber-600 to-orange-500" },
+  guardian: { icon: Newspaper,    gradientClass: "bg-gradient-to-r from-emerald-700 to-teal-600" },
+};
+
+function CarouselSection({ section, isLight }: { section: NewsSection; isLight: boolean }) {
   const [view, setView] = useState<ViewMode>("slider");
+  const style = CAROUSEL_STYLE[section.id] || CAROUSEL_STYLE.newsdata;
 
   const VIEW_OPTIONS: { key: ViewMode; icon: React.ElementType; label: string }[] = [
     { key: "slider", icon: Layers,     label: "Slider" },
@@ -716,8 +724,8 @@ function MarketPulseSection({ section, isLight }: { section: NewsSection; isLigh
       <SectionBanner
         label={section.label}
         subtitle={section.subtitle}
-        icon={BarChart3}
-        gradientClass="bg-gradient-to-r from-amber-600 to-orange-500"
+        icon={style.icon}
+        gradientClass={style.gradientClass}
         count={section.items.length}
         isLight={isLight}
       >
@@ -890,16 +898,16 @@ export default function NewsFeed() {
         </div>
       ) : (
         <div className="space-y-10">
-          {[...sections.filter(s => s.id === "newsdata"), ...sections.filter(s => s.id !== "newsdata")].map(section => (
+          {sections.map(section => (
             <motion.div
               key={section.id}
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.22 }}
             >
-              {section.id === "ift"      && <IFTSection      section={section} isLight={isLight} />}
-              {section.id === "guardian" && <GuardianSection section={section} isLight={isLight} />}
-              {section.id === "newsdata" && <MarketPulseSection section={section} isLight={isLight} />}
+              {section.id === "ift"      && <CarouselSection  section={section} isLight={isLight} />}
+              {section.id === "guardian" && <GuardianSection  section={section} isLight={isLight} />}
+              {section.id === "newsdata" && <IFTSection       section={section} isLight={isLight} />}
             </motion.div>
           ))}
         </div>
