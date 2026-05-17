@@ -336,11 +336,20 @@ function SliderView({ items, isLight }: { items: NewsItem[]; isLight: boolean })
   const [isPaused, setIsPaused] = useState(false);
   const n = items.length;
 
+  // Reset index when items change
+  useEffect(() => { setCurrentIdx(0); }, [n]);
+
   useEffect(() => {
     if (isPaused || n === 0) return;
     const id = setInterval(() => setCurrentIdx(i => (i + 1) % n), 5000);
     return () => clearInterval(id);
   }, [isPaused, n]);
+
+  if (n === 0) return (
+    <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">
+      No articles available
+    </div>
+  );
 
   const prev = () => setCurrentIdx(i => (i - 1 + n) % n);
   const next = () => setCurrentIdx(i => (i + 1) % n);
@@ -366,7 +375,7 @@ function SliderView({ items, isLight }: { items: NewsItem[]; isLight: boolean })
     };
   };
 
-  const slotItems = slots.map(d => ({ d, item: items[(currentIdx + d + n) % n] }));
+  const slotItems = slots.map(d => ({ d, item: items[((currentIdx + d) % n + n) % n] }));
 
   return (
     <div
