@@ -1744,7 +1744,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
               <DialogTrigger asChild>
                 <Button>Add Production Floor</Button>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-xl">
+              <DialogContent className={cn("sm:max-w-xl", isLight ? "bg-white border-gray-200 text-gray-900" : "")}>
                 <DialogHeader>
                   <DialogTitle>Add Production Floor</DialogTitle>
                   <DialogDescription>Define a new production floor with a blend category and daily capacity.</DialogDescription>
@@ -1757,6 +1757,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                       value={floorForm.floorName}
                       onChange={(event) => setFloorForm((prev) => ({ ...prev, floorName: event.target.value }))}
                       placeholder="e.g. Floor 1"
+                      className={isLight ? "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:bg-white" : ""}
                     />
                   </div>
                   <div className="grid gap-2">
@@ -1784,10 +1785,15 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                       value={floorForm.maxCapacityKg}
                       onChange={(event) => setFloorForm((prev) => ({ ...prev, maxCapacityKg: event.target.value }))}
                       placeholder="0"
+                      className={isLight ? "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:bg-white" : ""}
                     />
                   </div>
                 </div>
                 <DialogFooter className="space-x-2">
+                  <Button variant="outline" onClick={() => setFloorModalOpen(false)}
+                    className={isLight ? "bg-red-600 text-white border-red-600 hover:bg-red-700 hover:text-white" : ""}>
+                    Cancel
+                  </Button>
                   <Button onClick={handleAddFloor} disabled={!floorForm.floorName.trim() || Number(floorForm.maxCapacityKg) <= 0}>
                     Confirm
                   </Button>

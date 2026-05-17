@@ -85,6 +85,8 @@ function NotifyModal({ onClose, users }: { onClose: () => void; users: any[] }) 
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+  const { theme: _notifyTheme } = useTheme();
+  const isNotifyLight = _notifyTheme === "light";
 
   const filtered = users.filter(u => u.name.toLowerCase().includes(search.toLowerCase()));
   const toggle = (id: number) =>
@@ -113,12 +115,14 @@ function NotifyModal({ onClose, users }: { onClose: () => void; users: any[] }) 
       <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
         onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-        <div className="relative w-full max-w-md glass-panel rounded-2xl border border-white/10 p-6 shadow-2xl z-10">
+        <div className={cn("relative w-full max-w-md rounded-2xl border p-6 shadow-2xl z-10",
+          isNotifyLight ? "bg-white border-gray-200 text-gray-900" : "glass-panel border-white/10"
+        )}>
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+            <h3 className={cn("text-base font-semibold flex items-center gap-2", isNotifyLight ? "text-gray-900" : "text-foreground")}>
               <Bell className="w-4 h-4 text-primary" /> Notify Account Manager
             </h3>
-            <button onClick={onClose} className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/5">
+            <button onClick={onClose} className={cn("p-1 rounded-lg transition-colors", isNotifyLight ? "text-gray-400 hover:text-gray-700 hover:bg-gray-100" : "text-muted-foreground hover:text-foreground hover:bg-white/5")}>
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -126,18 +130,22 @@ function NotifyModal({ onClose, users }: { onClose: () => void; users: any[] }) 
           <div className="relative mb-3">
             <input type="text" placeholder="Search staff…" value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40" />
+              className={cn("w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40",
+                isNotifyLight ? "bg-white border-gray-200 text-gray-900 placeholder:text-gray-400" : "bg-black/20 border-white/10 text-foreground placeholder:text-muted-foreground"
+              )} />
           </div>
 
           <div className="space-y-1 max-h-52 overflow-y-auto custom-scrollbar mb-4">
             {filtered.map(u => (
               <button key={u.id} onClick={() => toggle(u.id)}
-                className={cn("w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-all",
-                  selected.includes(u.id) ? "bg-primary/15 border border-primary/30" : "hover:bg-white/5 border border-transparent"
+                className={cn("w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-all border",
+                  selected.includes(u.id)
+                    ? "bg-primary/15 border-primary/30"
+                    : isNotifyLight ? "border-transparent hover:bg-gray-50" : "border-transparent hover:bg-white/5"
                 )}>
                 <MiniAvatar name={u.name} />
                 <div className="flex-1 text-left">
-                  <p className="text-sm font-medium text-foreground">{u.name}</p>
+                  <p className={cn("text-sm font-medium", isNotifyLight ? "text-gray-900" : "text-foreground")}>{u.name}</p>
                   <p className="text-xs text-muted-foreground capitalize">{u.role?.replace(/_/g, " ")}</p>
                 </div>
                 {selected.includes(u.id) && <Check className="w-4 h-4 text-primary" />}
@@ -150,13 +158,17 @@ function NotifyModal({ onClose, users }: { onClose: () => void; users: any[] }) 
             rows={2}
             value={message}
             onChange={e => setMessage(e.target.value)}
-            className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none mb-4"
+            className={cn("w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none mb-4",
+              isNotifyLight ? "bg-white border-gray-200 text-gray-900 placeholder:text-gray-400" : "bg-black/20 border-white/10 text-foreground placeholder:text-muted-foreground"
+            )}
           />
 
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">{selected.length} selected</span>
             <div className="flex gap-2">
-              <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors">
+              <button onClick={onClose} className={cn("px-4 py-2 rounded-xl text-sm transition-colors",
+                isNotifyLight ? "bg-red-600 text-white hover:bg-red-700" : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+              )}>
                 Cancel
               </button>
               <button onClick={send} disabled={!selected.length || sending || sent}

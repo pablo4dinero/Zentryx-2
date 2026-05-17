@@ -253,20 +253,20 @@ export default function ProfilePage() {
           </FieldRow>
 
           <FieldRow label="Department" icon={<Building2 className="w-3.5 h-3.5" />}>
-            <select value={form.department} onChange={e => setF("department", e.target.value)} className={selectCls}>
+            <select value={form.department} onChange={e => setF("department", e.target.value)} className={selectCls} style={{ colorScheme: isLight ? "light" : "dark" }}>
               <option value="">Select department…</option>
-              {DEPARTMENTS.map(d => <option key={d} value={d} className="bg-card">{d}</option>)}
+              {DEPARTMENTS.map(d => <option key={d} value={d} className={isLight ? "bg-white text-gray-900" : "bg-card"}>{d}</option>)}
             </select>
           </FieldRow>
 
           <FieldRow label="Job Position / Title" icon={<Briefcase className="w-3.5 h-3.5" />}>
             {isPrivileged ? (
-              <select value={form.jobPosition} onChange={e => setF("jobPosition", e.target.value)} className={selectCls}>
+              <select value={form.jobPosition} onChange={e => setF("jobPosition", e.target.value)} className={selectCls} style={{ colorScheme: isLight ? "light" : "dark" }}>
                 <option value="">Select job title…</option>
                 {form.jobPosition && !jobTitles.includes(form.jobPosition) && (
                   <option value={form.jobPosition}>{form.jobPosition}</option>
                 )}
-                {jobTitles.map(t => <option key={t} value={t} className="bg-card">{t}</option>)}
+                {jobTitles.map(t => <option key={t} value={t} className={isLight ? "bg-white text-gray-900" : "bg-card"}>{t}</option>)}
               </select>
             ) : (
               <input value={form.jobPosition || "—"} readOnly className={inputCls + " opacity-60 cursor-not-allowed"} title="Only managers and above can change job position" />
@@ -274,9 +274,9 @@ export default function ProfilePage() {
           </FieldRow>
 
           <FieldRow label="Country" icon={<Globe className="w-3.5 h-3.5" />}>
-            <select value={form.country} onChange={e => setF("country", e.target.value)} className={selectCls}>
+            <select value={form.country} onChange={e => setF("country", e.target.value)} className={selectCls} style={{ colorScheme: isLight ? "light" : "dark" }}>
               <option value="">Select country…</option>
-              {COUNTRIES.map(c => <option key={c} value={c} className="bg-card">{c}</option>)}
+              {COUNTRIES.map(c => <option key={c} value={c} className={isLight ? "bg-white text-gray-900" : "bg-card"}>{c}</option>)}
             </select>
           </FieldRow>
 

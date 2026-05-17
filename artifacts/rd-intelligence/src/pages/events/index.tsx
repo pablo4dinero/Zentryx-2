@@ -11,6 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
+import { cn } from "@/lib/utils";
+import { useTheme } from "@/lib/theme";
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -242,6 +244,8 @@ function EventFormModal({ open, onClose, users, onSave, initial }: {
   const [form, setForm] = useState(EMPTY_FORM);
   const setF = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }));
   const toggleAttendee = (id: number) => setF("attendeeIds", form.attendeeIds.includes(id) ? form.attendeeIds.filter((x: number) => x !== id) : [...form.attendeeIds, id]);
+  const { theme: _evtTheme } = useTheme();
+  const isEvtLight = _evtTheme === "light";
 
   useEffect(() => {
     if (!open) return;
@@ -273,11 +277,16 @@ function EventFormModal({ open, onClose, users, onSave, initial }: {
     onSave({ title: form.title, description: form.description || null, startDate, endDate, location: form.location || null, attendeeIds: form.attendeeIds, eventType: form.eventType, color: form.color });
   };
 
-  const inputCls = "flex h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground";
+  const inputCls = cn(
+    "flex h-10 w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50",
+    isEvtLight
+      ? "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400"
+      : "border-white/10 bg-black/20 text-foreground placeholder:text-muted-foreground"
+  );
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[600px] glass-panel border-white/10 bg-card/95 max-h-[90vh] overflow-y-auto">
+      <DialogContent className={cn("sm:max-w-[600px] max-h-[90vh] overflow-y-auto", isEvtLight ? "bg-white border-gray-200 text-gray-900" : "glass-panel border-white/10 bg-card/95")}>
         <DialogHeader>
           <DialogTitle className="font-display text-lg">{initial ? "Edit Event" : "Create New Event"}</DialogTitle>
         </DialogHeader>
@@ -294,8 +303,8 @@ function EventFormModal({ open, onClose, users, onSave, initial }: {
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Event Type</label>
               <select value={form.eventType} onChange={e => { setF("eventType", e.target.value); setF("color", getEventType(e.target.value).color); }}
-                className={inputCls}>
-                {EVENT_TYPES.map(t => <option key={t.value} value={t.value} className="bg-card">{t.label}</option>)}
+                className={inputCls} style={{ colorScheme: isEvtLight ? "light" : "dark" }}>
+                {EVENT_TYPES.map(t => <option key={t.value} value={t.value} className={isEvtLight ? "bg-white text-gray-900" : "bg-card"}>{t.label}</option>)}
               </select>
             </div>
             <div className="space-y-1.5">
@@ -342,7 +351,9 @@ function EventFormModal({ open, onClose, users, onSave, initial }: {
             <label className="text-sm font-medium">Description</label>
             <textarea value={form.description} onChange={e => setF("description", e.target.value)}
               placeholder="What's this event about?" rows={3}
-              className="flex w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground resize-none" />
+              className={cn("flex w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none",
+                isEvtLight ? "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400" : "border-white/10 bg-black/20 text-foreground placeholder:text-muted-foreground"
+              )} />
           </div>
 
           {/* Attendees */}
@@ -351,16 +362,20 @@ function EventFormModal({ open, onClose, users, onSave, initial }: {
             <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto custom-scrollbar pr-1">
               {users.map(u => (
                 <button key={u.id} type="button" onClick={() => toggleAttendee(u.id)}
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs border transition-all ${form.attendeeIds.includes(u.id) ? "bg-primary text-white border-primary" : "border-white/10 text-muted-foreground hover:text-foreground hover:border-white/20"}`}>
-                  <span className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center font-bold text-[9px]">{u.name.charAt(0)}</span>
+                  className={cn("flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs border transition-all",
+                    form.attendeeIds.includes(u.id) ? "bg-primary text-white border-primary"
+                      : isEvtLight ? "border-gray-200 text-gray-600 hover:text-gray-900 hover:border-gray-300" : "border-white/10 text-muted-foreground hover:text-foreground hover:border-white/20"
+                  )}>
+                  <span className={cn("w-4 h-4 rounded-full flex items-center justify-center font-bold text-[9px]", isEvtLight ? "bg-gray-200 text-gray-700" : "bg-white/20 text-white")}>{u.name.charAt(0)}</span>
                   {u.name}
                 </button>
               ))}
             </div>
           </div>
 
-          <div className="flex justify-end gap-3 pt-2 border-t border-white/5">
-            <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+          <div className={cn("flex justify-end gap-3 pt-2 border-t", isEvtLight ? "border-gray-200" : "border-white/5")}>
+            <Button type="button" variant="outline" onClick={onClose}
+              className={isEvtLight ? "bg-red-600 text-white border-red-600 hover:bg-red-700 hover:text-white" : ""}>Cancel</Button>
             <Button type="submit" className="gap-2" disabled={!form.title.trim() || !form.startDate}>
               <CalendarDays className="w-4 h-4" />
               {initial ? "Save Changes" : "Create Event"}

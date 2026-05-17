@@ -495,9 +495,10 @@ function AddDepartmentModal({ onAdd }: { onAdd: (name: string) => void }) {
       <DialogContent className={cn("sm:max-w-[360px]", isDeptLight ? "bg-white border-gray-200" : "glass-panel border-white/10")}>
         <DialogHeader><DialogTitle>Create Department</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-          <Input required value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Quality Assurance" autoFocus className={isDeptLight ? "border-gray-200 bg-white" : ""} />
+          <Input required value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Quality Assurance" autoFocus className={isDeptLight ? "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:bg-white" : ""} />
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}
+              className={isDeptLight ? "bg-red-600 text-white border-red-600 hover:bg-red-700 hover:text-white" : ""}>Cancel</Button>
             <Button type="submit">Create</Button>
           </div>
         </form>
@@ -531,9 +532,10 @@ function AddRoleModal({ onAdd }: { onAdd: (label: string) => void }) {
       <DialogContent className={cn("sm:max-w-[360px]", isRoleLight ? "bg-white border-gray-200" : "glass-panel border-white/10")}>
         <DialogHeader><DialogTitle>Create New Role</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-          <Input required value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Data Scientist" autoFocus className={isRoleLight ? "border-gray-200 bg-white" : ""} />
+          <Input required value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Data Scientist" autoFocus className={isRoleLight ? "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:bg-white" : ""} />
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}
+              className={isRoleLight ? "bg-red-600 text-white border-red-600 hover:bg-red-700 hover:text-white" : ""}>Cancel</Button>
             <Button type="submit">Create Role</Button>
           </div>
         </form>
