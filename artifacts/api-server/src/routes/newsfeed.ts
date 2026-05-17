@@ -114,10 +114,12 @@ interface NewsApiArticle {
 }
 
 async function fetchFromNewsAPI(): Promise<NewsItem[]> {
+  const q = encodeURIComponent(
+    `(Nigeria OR "West Africa") AND ("food technology" OR seasonings OR flavours OR "new product development" OR snacks OR beverages OR dairy OR bakery)`
+  );
   const url =
     `https://newsapi.org/v2/everything` +
-    `?q=food+technology+OR+flavours+OR+ice+cream` +
-    `&sortBy=publishedAt&language=en` +
+    `?q=${q}&sortBy=publishedAt&language=en` +
     `&apiKey=${NEWS_API_KEY}`;
 
   const res = await fetch(url, {
