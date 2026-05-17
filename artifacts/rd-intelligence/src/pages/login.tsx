@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Zap, Lock, Mail, User, AlertCircle, Phone, Eye, EyeOff, ArrowLeft, KeyRound, CheckCircle, ChevronDown, ChevronUp } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
+import { useTheme } from "@/lib/theme";
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -30,6 +32,10 @@ export default function Login() {
   const { setToken } = useAuthStore();
   const { toast } = useToast();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { theme } = useTheme();
+  const isLight = theme === "light";
+  const inputLightCls = isLight ? "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:bg-white" : "";
+  const iconCls = isLight ? "text-gray-400" : "text-muted-foreground";
 
   const scrollBy = (amount: number) => {
     scrollRef.current?.scrollBy({ top: amount, behavior: "smooth" });
@@ -171,7 +177,7 @@ export default function Login() {
 
   // ─── UI helpers ──────────────────────────────────────────────────────────
   const PwToggle = ({ show, onToggle }: { show: boolean; onToggle: () => void }) => (
-    <button type="button" onClick={onToggle} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+    <button type="button" onClick={onToggle} className={cn("absolute right-3 top-1/2 -translate-y-1/2 transition-colors", isLight ? "text-gray-400 hover:text-gray-700" : "text-muted-foreground hover:text-foreground")}>
       {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
     </button>
   );
@@ -194,13 +200,13 @@ export default function Login() {
   ) : null;
 
   const BackBtn = ({ to }: { to: Mode }) => (
-    <button type="button" onClick={() => goMode(to)} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-4 transition-colors">
+    <button type="button" onClick={() => goMode(to)} className={cn("flex items-center gap-1.5 text-xs mb-4 transition-colors", isLight ? "text-gray-500 hover:text-gray-900" : "text-muted-foreground hover:text-foreground")}>
       <ArrowLeft className="w-3.5 h-3.5" /> Back
     </button>
   );
 
   const FieldLabel = ({ children }: { children: React.ReactNode }) => (
-    <label className="text-sm font-medium text-foreground ml-1">{children}</label>
+    <label className={cn("text-sm font-medium ml-1", isLight ? "text-gray-900" : "text-foreground")}>{children}</label>
   );
 
   return (
@@ -241,7 +247,7 @@ export default function Login() {
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.5 }}
-        className="relative w-full max-w-md p-6 sm:p-8 glass-panel rounded-3xl"
+        className={cn("relative w-full max-w-md p-6 sm:p-8 rounded-3xl", isLight ? "bg-white border border-gray-200 shadow-2xl" : "glass-panel")}
       >
         {/* Logo */}
         <div className="flex flex-col items-center mb-7">
@@ -254,11 +260,11 @@ export default function Login() {
 
         {/* Tab bar — only for login / signup modes */}
         {(mode === "login" || mode === "signup") && (
-          <div className="flex p-1 bg-white/5 rounded-xl mb-6">
-            <button onClick={() => goMode("login")} className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${mode === "login" ? "bg-primary text-white shadow-lg" : "text-muted-foreground hover:text-foreground"}`}>
+          <div className={cn("flex p-1 rounded-xl mb-6", isLight ? "bg-gray-100" : "bg-white/5")}>
+            <button onClick={() => goMode("login")} className={cn("flex-1 py-2 rounded-lg text-sm font-medium transition-all", mode === "login" ? "bg-primary text-white shadow-lg" : isLight ? "text-gray-500 hover:text-gray-900" : "text-muted-foreground hover:text-foreground")}>
               Sign In
             </button>
-            <button onClick={() => goMode("signup")} className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${mode === "signup" ? "bg-primary text-white shadow-lg" : "text-muted-foreground hover:text-foreground"}`}>
+            <button onClick={() => goMode("signup")} className={cn("flex-1 py-2 rounded-lg text-sm font-medium transition-all", mode === "signup" ? "bg-primary text-white shadow-lg" : isLight ? "text-gray-500 hover:text-gray-900" : "text-muted-foreground hover:text-foreground")}>
               Create Account
             </button>
           </div>
@@ -273,15 +279,15 @@ export default function Login() {
                 <div className="space-y-2">
                   <FieldLabel>Email Address</FieldLabel>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                    <Input type="email" value={email} onChange={e => setEmail(e.target.value)} required className="pl-10 h-12" placeholder="name@company.com" autoComplete="email" />
+                    <Mail className={cn("absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5", iconCls)} />
+                    <Input type="email" value={email} onChange={e => setEmail(e.target.value)} required className={cn("pl-10 h-12", inputLightCls)} placeholder="name@company.com" autoComplete="email" />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <FieldLabel>Password</FieldLabel>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                    <Input type={showPw ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} required className="pl-10 pr-10 h-12" placeholder="••••••••" autoComplete="current-password" />
+                    <Lock className={cn("absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5", iconCls)} />
+                    <Input type={showPw ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} required className={cn("pl-10 pr-10 h-12", inputLightCls)} placeholder="••••••••" autoComplete="current-password" />
                     <PwToggle show={showPw} onToggle={() => setShowPw(v => !v)} />
                   </div>
                 </div>
@@ -303,37 +309,37 @@ export default function Login() {
                 <div className="space-y-2">
                   <FieldLabel>Full Name</FieldLabel>
                   <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                    <Input value={name} onChange={e => setName(e.target.value)} required className="pl-10 h-12" placeholder="Jane Smith" />
+                    <User className={cn("absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5", iconCls)} />
+                    <Input value={name} onChange={e => setName(e.target.value)} required className={cn("pl-10 h-12", inputLightCls)} placeholder="Jane Smith" />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <FieldLabel>Email Address</FieldLabel>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                    <Input type="email" value={email} onChange={e => setEmail(e.target.value)} required className="pl-10 h-12" placeholder="name@company.com" />
+                    <Mail className={cn("absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5", iconCls)} />
+                    <Input type="email" value={email} onChange={e => setEmail(e.target.value)} required className={cn("pl-10 h-12", inputLightCls)} placeholder="name@company.com" />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <FieldLabel>Phone Number (optional)</FieldLabel>
                   <div className="relative">
-                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                    <Input type="tel" value={phone} onChange={e => setPhone(e.target.value)} className="pl-10 h-12" placeholder="+234 xxx xxxx xxxx" />
+                    <Phone className={cn("absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5", iconCls)} />
+                    <Input type="tel" value={phone} onChange={e => setPhone(e.target.value)} className={cn("pl-10 h-12", inputLightCls)} placeholder="+234 xxx xxxx xxxx" />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <FieldLabel>Password</FieldLabel>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                    <Input type={showPw ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} required className="pl-10 pr-10 h-12" placeholder="Min. 6 characters" />
+                    <Lock className={cn("absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5", iconCls)} />
+                    <Input type={showPw ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} required className={cn("pl-10 pr-10 h-12", inputLightCls)} placeholder="Min. 6 characters" />
                     <PwToggle show={showPw} onToggle={() => setShowPw(v => !v)} />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <FieldLabel>Confirm Password</FieldLabel>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                    <Input type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} required className={`pl-10 h-12 ${confirmPw && confirmPw !== password ? "border-destructive/50" : ""}`} placeholder="Repeat password" />
+                    <Lock className={cn("absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5", iconCls)} />
+                    <Input type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} required className={cn("pl-10 h-12", inputLightCls, confirmPw && confirmPw !== password ? "border-destructive/50" : "")} placeholder="Repeat password" />
                   </div>
                   {confirmPw && confirmPw !== password && <p className="text-[11px] text-destructive ml-1">Passwords do not match</p>}
                 </div>
@@ -358,7 +364,7 @@ export default function Login() {
                   <FieldLabel>Verification Code</FieldLabel>
                   <Input
                     value={signupOtp} onChange={e => setSignupOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                    required maxLength={6} className="h-12 text-center text-2xl font-mono tracking-[0.5em]"
+                    required maxLength={6} className={cn("h-12 text-center text-2xl font-mono tracking-[0.5em]", inputLightCls)}
                     placeholder="000000" autoFocus
                   />
                 </div>
@@ -384,8 +390,8 @@ export default function Login() {
                 <div className="space-y-2">
                   <FieldLabel>Registered Email</FieldLabel>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                    <Input type="email" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} required className="pl-10 h-12" placeholder="name@company.com" autoFocus />
+                    <Mail className={cn("absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5", iconCls)} />
+                    <Input type="email" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} required className={cn("pl-10 h-12", inputLightCls)} placeholder="name@company.com" autoFocus />
                   </div>
                 </div>
                 <ErrorBox />
@@ -409,7 +415,7 @@ export default function Login() {
                   <FieldLabel>Verification Code</FieldLabel>
                   <Input
                     value={forgotOtp} onChange={e => setForgotOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                    required maxLength={6} className="h-12 text-center text-2xl font-mono tracking-[0.5em]"
+                    required maxLength={6} className={cn("h-12 text-center text-2xl font-mono tracking-[0.5em]", inputLightCls)}
                     placeholder="000000" autoFocus
                   />
                 </div>
@@ -431,8 +437,8 @@ export default function Login() {
                 <div className="space-y-2">
                   <FieldLabel>New Password</FieldLabel>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                    <Input type={showNewPw ? "text" : "password"} value={newPw} onChange={e => setNewPw(e.target.value)} required className="pl-10 pr-10 h-12" placeholder="Min. 6 characters" autoFocus />
+                    <Lock className={cn("absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5", iconCls)} />
+                    <Input type={showNewPw ? "text" : "password"} value={newPw} onChange={e => setNewPw(e.target.value)} required className={cn("pl-10 pr-10 h-12", inputLightCls)} placeholder="Min. 6 characters" autoFocus />
                     <PwToggle show={showNewPw} onToggle={() => setShowNewPw(v => !v)} />
                   </div>
                 </div>
