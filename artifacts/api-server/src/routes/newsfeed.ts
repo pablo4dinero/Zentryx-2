@@ -3,7 +3,7 @@ import { requireAuth, AuthRequest } from "../lib/auth";
 
 const router = Router();
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const CACHE_MS = 20 * 60 * 1000;
 
 export interface NewsItem {
@@ -35,20 +35,25 @@ const MOCK_ITEMS: NewsItem[] = [
 
 let cache: { items: NewsItem[]; fetchedAt: number } | null = null;
 
-async function fetchFromAnthropic(): Promise<NewsItem[]> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+async function fetchFromGroq(): Promise<NewsItem[]> {
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
-      "x-api-key": ANTHROPIC_API_KEY!,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
+      "Authorization": `Bearer ${GROQ_API_KEY}`,
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "claude-3-5-haiku-20241022",
+      model: "llama-3.3-70b-versatile",
       max_tokens: 3000,
-      messages: [{
-        role: "user",
-        content: `Generate 12 realistic, current news items for food science and R&D professionals. Today is ${new Date().toISOString()}.
+      temperature: 0.7,
+      messages: [
+        {
+          role: "system",
+          content: "You are a news aggregator for food science and R&D professionals. You always return valid JSON arrays with no extra text.",
+        },
+        {
+          role: "user",
+          content: `Generate 12 realistic, current news items for food science and R&D professionals. Today is ${new Date().toISOString()}.
 
 Return ONLY a valid JSON array with exactly 12 objects. Each object must have:
 - "id": "1" through "12"
@@ -63,18 +68,19 @@ Return ONLY a valid JSON array with exactly 12 objects. Each object must have:
 
 Cover diverse topics: plant-based foods, food safety recalls, ingredient market shifts, sustainability targets, food biotech advances, packaging innovations, regulatory changes, supply chain issues, consumer trends.
 Return ONLY the JSON array. No markdown fences, no explanation, no extra text.`,
-      }],
+        },
+      ],
     }),
   });
 
   if (!res.ok) {
     const errBody = await res.json().catch(() => ({}));
-    console.error(`Anthropic API error ${res.status}:`, JSON.stringify(errBody));
-    throw new Error(`Anthropic API error ${res.status}: ${JSON.stringify(errBody)}`);
+    console.error(`Groq API error ${res.status}:`, JSON.stringify(errBody));
+    throw new Error(`Groq API error ${res.status}: ${JSON.stringify(errBody)}`);
   }
 
-  const data = await res.json() as { content: { type: string; text: string }[] };
-  const raw = (data.content?.[0]?.text || "").trim()
+  const data = await res.json() as { choices: { message: { content: string } }[] };
+  const raw = (data.choices?.[0]?.message?.content || "").trim()
     .replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```\s*$/i, "").trim();
 
   const items = JSON.parse(raw);
@@ -89,14 +95,14 @@ router.get("/", requireAuth, async (_req: AuthRequest, res) => {
       return;
     }
 
-    if (!ANTHROPIC_API_KEY) {
-      console.log("[DEV] No ANTHROPIC_API_KEY — serving mock news feed");
+    if (!GROQ_API_KEY) {
+      console.log("[DEV] No GROQ_API_KEY — serving mock news feed");
       if (!cache) cache = { items: MOCK_ITEMS, fetchedAt: Date.now() };
       res.json({ items: cache.items, fetchedAt: new Date(cache.fetchedAt).toISOString() });
       return;
     }
 
-    const items = await fetchFromAnthropic();
+    const items = await fetchFromGroq();
     cache = { items, fetchedAt: Date.now() };
     res.json({ items, fetchedAt: new Date(cache.fetchedAt).toISOString() });
   } catch (err) {
@@ -105,7 +111,7 @@ router.get("/", requireAuth, async (_req: AuthRequest, res) => {
       res.json({ items: cache.items, fetchedAt: new Date(cache.fetchedAt).toISOString(), stale: true });
       return;
     }
-    // API unavailable — serve mock data so the UI works
+    // API unavailable — serve mock data so the UI always works
     res.json({ items: MOCK_ITEMS, fetchedAt: new Date().toISOString(), stale: true });
   }
 });
