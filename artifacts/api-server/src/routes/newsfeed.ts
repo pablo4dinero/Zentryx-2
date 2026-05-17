@@ -5,6 +5,7 @@ const router = Router();
 
 const NEWSDATA_API_KEY = process.env.NEWSDATA_API_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const GUARDIAN_API_KEY = process.env.GUARDIAN_API_KEY;
 const CACHE_MS = 10 * 60 * 1000;
 
 export interface NewsItem {
@@ -21,12 +22,18 @@ export interface NewsItem {
   readTime: number;
 }
 
+export interface NewsSection {
+  id: "ift" | "guardian" | "newsdata";
+  label: string;
+  subtitle: string;
+  items: NewsItem[];
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function parsePubDate(pubDate: string | null | undefined): string {
   if (!pubDate) return new Date().toISOString();
   try {
-    // NewsData.io format: "YYYY-MM-DD HH:MM:SS"
     return new Date(pubDate.replace(" ", "T") + "Z").toISOString();
   } catch {
     return new Date().toISOString();
@@ -39,15 +46,10 @@ function mapSentiment(s: string | null | undefined): "positive" | "neutral" | "n
   return "neutral";
 }
 
-function toTitleCase(str: string): string {
-  return str.replace(/\b\w/g, c => c.toUpperCase());
-}
-
 function buildGroqImageUrl(keyword: string): string {
   return `https://source.unsplash.com/640x360/?${encodeURIComponent(keyword + ",food,nigeria")}`;
 }
 
-// Keywords that must appear in title or description for an article to be kept
 const FOOD_KEYWORDS = [
   "food", "nutrition", "ingredient", "flavour", "flavor", "recipe",
   "diet", "protein", "supplement", "ferment", "processing", "packaging",
@@ -74,7 +76,47 @@ function mapToAppCategory(title: string, description: string | null): string {
   return "Food Tech";
 }
 
-// ─── Mock data (Nigeria/Africa focus, used when no API key is set) ────────────
+// ─── RSS Parser (no external dependency) ─────────────────────────────────────
+
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, " ").trim();
+}
+
+function extractTag(itemXml: string, tag: string): string {
+  const m = itemXml.match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/${tag}>`, "i"));
+  return m ? m[1].trim() : "";
+}
+
+interface RssItem {
+  title: string;
+  link: string;
+  description: string;
+  pubDate: string;
+  category?: string;
+  imageUrl?: string;
+}
+
+function parseRssItems(xml: string): RssItem[] {
+  const results: RssItem[] = [];
+  for (const match of xml.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
+    const x = match[1];
+    const title = stripHtml(extractTag(x, "title"));
+    const link = extractTag(x, "link") || x.match(/<link\s*\/?>([^<]+)<\/link>/)?.[1]?.trim() || "";
+    const descRaw = extractTag(x, "description");
+    const description = stripHtml(descRaw).slice(0, 400);
+    const pubDate = extractTag(x, "pubDate");
+    const category = extractTag(x, "category") || undefined;
+    const imageUrl =
+      x.match(/<enclosure[^>]+url="([^"]+)"[^>]+type="image[^"]*"/i)?.[1] ||
+      x.match(/<media:content[^>]+url="([^"]+)"/i)?.[1] ||
+      descRaw.match(/<img[^>]+src="([^"]+)"/i)?.[1] ||
+      undefined;
+    if (title && link) results.push({ title, link, description, pubDate, category, imageUrl });
+  }
+  return results;
+}
+
+// ─── Mock data (Nigeria/Africa focus, used when no API keys are set) ──────────
 
 const MOCK_ITEMS_RAW = [
   { id: "1", headline: "Indomie Launches Bold New Pepper Soup Flavour Across Nigeria", summary: "De United Foods unveils a limited-edition Pepper Soup variant of the iconic Indomie brand, tapping into Nigeria's rich street food culture.", category: "Innovation", source: "BusinessDay Nigeria", publishedAt: new Date(Date.now() - 1 * 3600 * 1000).toISOString(), sentiment: "positive" as const, imageKeyword: "noodles spice nigeria", readTime: 2 },
@@ -96,9 +138,96 @@ const MOCK_ITEMS: NewsItem[] = MOCK_ITEMS_RAW.map(item => ({
   imageUrl: buildGroqImageUrl(item.imageKeyword),
 }));
 
-// ─── Cache ────────────────────────────────────────────────────────────────────
+// ─── Per-source caches ────────────────────────────────────────────────────────
 
-let cache: { items: NewsItem[]; fetchedAt: number } | null = null;
+let iftCache:      { items: NewsItem[]; fetchedAt: number } | null = null;
+let guardianCache: { items: NewsItem[]; fetchedAt: number } | null = null;
+let newsdataCache: { items: NewsItem[]; fetchedAt: number } | null = null;
+
+// ─── IFT.org RSS ──────────────────────────────────────────────────────────────
+
+async function fetchFromIFT(): Promise<NewsItem[]> {
+  const res = await fetch("https://www.ift.org/rss", {
+    headers: { "User-Agent": "Mozilla/5.0 (compatible; RDIntelligence/1.0)" },
+  });
+  if (!res.ok) throw new Error(`IFT RSS ${res.status}`);
+  const xml = await res.text();
+
+  return parseRssItems(xml)
+    .filter(a => isFoodRelated(a.title, a.description))
+    .slice(0, 12)
+    .map((article, idx): NewsItem => {
+      const category = mapToAppCategory(article.title, article.description);
+      const wordCount = article.description.split(/\s+/).filter(Boolean).length;
+      return {
+        id: `ift-${idx}`,
+        headline: article.title,
+        summary: article.description.length > 200
+          ? article.description.slice(0, 200).trimEnd() + "…"
+          : article.description,
+        category,
+        source: "IFT.org",
+        publishedAt: parsePubDate(article.pubDate),
+        sentiment: "neutral",
+        imageKeyword: category.toLowerCase() + " food science",
+        imageUrl: article.imageUrl,
+        readMoreUrl: article.link,
+        readTime: Math.max(2, Math.min(10, Math.ceil(wordCount / 50))),
+      };
+    });
+}
+
+// ─── The Guardian API ─────────────────────────────────────────────────────────
+
+interface GuardianArticle {
+  id: string;
+  webTitle: string;
+  webUrl: string;
+  webPublicationDate: string;
+  fields?: { trailText?: string; thumbnail?: string };
+}
+
+async function fetchFromGuardian(): Promise<NewsItem[]> {
+  const q = [
+    "food science", "food safety", "food innovation",
+    "food technology", "food ingredient", "food research",
+    "food formulation", "food development",
+  ].join(" OR ");
+
+  const url =
+    `https://content.guardianapis.com/search` +
+    `?q=${encodeURIComponent(q)}` +
+    `&show-fields=trailText,thumbnail` +
+    `&order-by=newest` +
+    `&page-size=12` +
+    `&api-key=${GUARDIAN_API_KEY}`;
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Guardian API ${res.status}`);
+  const data = await res.json() as { response: { status: string; results: GuardianArticle[] } };
+  if (data.response.status !== "ok") throw new Error("Invalid Guardian response");
+
+  return data.response.results
+    .filter(a => isFoodRelated(a.webTitle, a.fields?.trailText || null))
+    .map((article, idx): NewsItem => {
+      const description = article.fields?.trailText || "";
+      const category = mapToAppCategory(article.webTitle, description);
+      const wordCount = description.split(/\s+/).filter(Boolean).length;
+      return {
+        id: `guardian-${idx}`,
+        headline: article.webTitle,
+        summary: description.length > 220 ? description.slice(0, 220).trimEnd() + "…" : description,
+        category,
+        source: "The Guardian",
+        publishedAt: article.webPublicationDate,
+        sentiment: "neutral",
+        imageKeyword: category.toLowerCase() + " food",
+        imageUrl: article.fields?.thumbnail,
+        readMoreUrl: article.webUrl,
+        readTime: Math.max(3, Math.min(10, Math.ceil(wordCount / 50))),
+      };
+    });
+}
 
 // ─── NewsData.io ──────────────────────────────────────────────────────────────
 
@@ -151,7 +280,6 @@ async function fetchFromNewsData(): Promise<NewsItem[]> {
         : description;
       const category = mapToAppCategory(article.title, article.description);
       const wordCount = description.split(/\s+/).filter(Boolean).length;
-
       return {
         id: article.article_id || String(idx + 1),
         headline: article.title,
@@ -168,7 +296,7 @@ async function fetchFromNewsData(): Promise<NewsItem[]> {
     });
 }
 
-// ─── Groq (fallback when NEWSDATA_API_KEY not set) ────────────────────────────
+// ─── Groq (fallback) ──────────────────────────────────────────────────────────
 
 async function fetchFromGroq(): Promise<NewsItem[]> {
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -215,37 +343,77 @@ Return ONLY the array.`,
 // ─── Route ────────────────────────────────────────────────────────────────────
 
 router.get("/", requireAuth, async (_req: AuthRequest, res) => {
-  try {
-    if (cache && Date.now() - cache.fetchedAt < CACHE_MS) {
-      res.json({ items: cache.items, fetchedAt: new Date(cache.fetchedAt).toISOString() });
-      return;
-    }
+  const now = Date.now();
 
-    let items: NewsItem[];
+  const [iftResult, guardianResult, newsdataResult] = await Promise.allSettled([
+    // IFT — always try, no key needed
+    (async () => {
+      if (iftCache && now - iftCache.fetchedAt < CACHE_MS) return iftCache.items;
+      const items = await fetchFromIFT();
+      iftCache = { items, fetchedAt: now };
+      return items;
+    })(),
 
-    if (NEWSDATA_API_KEY) {
-      items = await fetchFromNewsData();
-    } else if (GROQ_API_KEY) {
-      console.log("[INFO] No NEWSDATA_API_KEY — falling back to Groq");
-      items = await fetchFromGroq();
-    } else {
-      console.log("[DEV] No API keys configured — serving mock news feed");
-      if (!cache) cache = { items: MOCK_ITEMS, fetchedAt: Date.now() };
-      res.json({ items: cache.items, fetchedAt: new Date(cache.fetchedAt).toISOString() });
-      return;
-    }
+    // Guardian — only if key present
+    GUARDIAN_API_KEY
+      ? (async () => {
+          if (guardianCache && now - guardianCache.fetchedAt < CACHE_MS) return guardianCache.items;
+          const items = await fetchFromGuardian();
+          guardianCache = { items, fetchedAt: now };
+          return items;
+        })()
+      : Promise.reject(new Error("No GUARDIAN_API_KEY")),
 
-    cache = { items, fetchedAt: Date.now() };
-    res.json({ items, fetchedAt: new Date(cache.fetchedAt).toISOString() });
-  } catch (err) {
-    console.error("Newsfeed error:", err);
-    if (cache) {
-      res.json({ items: cache.items, fetchedAt: new Date(cache.fetchedAt).toISOString(), stale: true });
-      return;
-    }
-    // Serve mock data so UI never breaks
-    res.json({ items: MOCK_ITEMS, fetchedAt: new Date().toISOString(), stale: true });
+    // NewsData / Groq / Mock — always has a result
+    (async () => {
+      if (newsdataCache && now - newsdataCache.fetchedAt < CACHE_MS) return newsdataCache.items;
+      let items: NewsItem[];
+      if (NEWSDATA_API_KEY) {
+        items = await fetchFromNewsData();
+      } else if (GROQ_API_KEY) {
+        console.log("[INFO] No NEWSDATA_API_KEY — falling back to Groq");
+        items = await fetchFromGroq();
+      } else {
+        console.log("[DEV] No API keys — serving mock news feed");
+        items = MOCK_ITEMS;
+      }
+      newsdataCache = { items, fetchedAt: now };
+      return items;
+    })(),
+  ]);
+
+  const sections: NewsSection[] = [];
+
+  if (iftResult.status === "fulfilled" && iftResult.value.length > 0) {
+    sections.push({ id: "ift", label: "Research Digest", subtitle: "IFT.org · Food Science & Technology", items: iftResult.value });
+  } else if (iftResult.status === "rejected") {
+    console.error("IFT feed error:", iftResult.reason);
   }
+
+  if (guardianResult.status === "fulfilled" && guardianResult.value.length > 0) {
+    sections.push({ id: "guardian", label: "Industry Spotlight", subtitle: "The Guardian", items: guardianResult.value });
+  } else if (guardianResult.status === "rejected" && GUARDIAN_API_KEY) {
+    console.error("Guardian feed error:", guardianResult.reason);
+  }
+
+  const newsdataItems =
+    newsdataResult.status === "fulfilled"
+      ? newsdataResult.value
+      : newsdataCache?.items || MOCK_ITEMS;
+
+  if (newsdataResult.status === "rejected" && !newsdataCache) {
+    console.error("NewsData/Groq error:", newsdataResult.reason);
+    newsdataCache = { items: MOCK_ITEMS, fetchedAt: now };
+  }
+
+  sections.push({
+    id: "newsdata",
+    label: "Market Pulse",
+    subtitle: NEWSDATA_API_KEY ? "NewsData.io" : "Curated Feed",
+    items: newsdataItems,
+  });
+
+  res.json({ sections, fetchedAt: new Date(now).toISOString() });
 });
 
 export default router;

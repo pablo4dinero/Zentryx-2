@@ -5,7 +5,7 @@ import { useTheme } from "@/lib/theme";
 import {
   Rss, LayoutGrid, List, ChevronLeft, ChevronRight,
   RefreshCw, Clock, TrendingUp, TrendingDown, Minus,
-  Layers, AlertCircle, ExternalLink,
+  Layers, AlertCircle, ExternalLink, FlaskConical, Newspaper, BarChart3,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -23,6 +23,13 @@ interface NewsItem {
   imageUrl?: string;
   readMoreUrl?: string;
   readTime: number;
+}
+
+interface NewsSection {
+  id: "ift" | "guardian" | "newsdata";
+  label: string;
+  subtitle: string;
+  items: NewsItem[];
 }
 
 type ViewMode = "slider" | "grid" | "list";
@@ -63,12 +70,11 @@ function useRelativeTime(isoStr: string | null): string {
   return label;
 }
 
-// ─── Card Image component with gradient fallback ─────────────────────────────
+// ─── Shared: Card Image with gradient fallback ────────────────────────────────
 
 function CardImage({ item, className }: { item: NewsItem; className?: string }) {
   const [imgFailed, setImgFailed] = useState(false);
   const cat = catColors(item.category);
-
   return (
     <div className={cn(`relative bg-gradient-to-br ${cat.gradient} overflow-hidden`, className)}>
       {item.imageUrl && !imgFailed && (
@@ -80,9 +86,7 @@ function CardImage({ item, className }: { item: NewsItem; className?: string }) 
           referrerPolicy="no-referrer"
         />
       )}
-      {/* Overlay for text contrast */}
       <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/10" />
-      {/* Watermark when no image */}
       {(!item.imageUrl || imgFailed) && (
         <span className="absolute inset-0 flex items-center justify-center text-white/10 font-black text-6xl uppercase tracking-widest select-none pointer-events-none">
           {item.category.split(" ")[0]}
@@ -92,7 +96,257 @@ function CardImage({ item, className }: { item: NewsItem; className?: string }) 
   );
 }
 
-// ─── Fan / CSS Slider ─────────────────────────────────────────────────────────
+// ─── Section Banner ───────────────────────────────────────────────────────────
+
+interface SectionBannerProps {
+  label: string;
+  subtitle: string;
+  icon: React.ElementType;
+  gradientClass: string;
+  count: number;
+  isLight: boolean;
+  children?: React.ReactNode;
+}
+
+function SectionBanner({ label, subtitle, icon: Icon, gradientClass, count, isLight, children }: SectionBannerProps) {
+  return (
+    <div className={cn(
+      "flex items-center justify-between px-4 py-3 rounded-xl mb-4",
+      gradientClass,
+    )}>
+      <div className="flex items-center gap-3">
+        <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
+          <Icon className="w-4 h-4 text-white" />
+        </div>
+        <div>
+          <p className="text-white font-bold text-sm leading-none">{label}</p>
+          <p className="text-white/70 text-[11px] mt-0.5">{subtitle}</p>
+        </div>
+        <span className="ml-1 text-[11px] font-semibold bg-white/20 text-white px-2 py-0.5 rounded-full">
+          {count} articles
+        </span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ─── Category pill (shared) ───────────────────────────────────────────────────
+
+function CategoryPill({ category, isLight }: { category: string; isLight: boolean }) {
+  const col = catColors(category);
+  return (
+    <span className={cn(
+      "text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0",
+      isLight ? col.light : col.dark,
+    )}>
+      {category}
+    </span>
+  );
+}
+
+// ─── IFT Research Digest ──────────────────────────────────────────────────────
+
+function IFTCard({ item, isLight }: { item: NewsItem; isLight: boolean }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const cat = catColors(item.category);
+  const timeAgo = formatDistanceToNow(new Date(item.publishedAt), { addSuffix: true });
+
+  return (
+    <div className={cn(
+      "rounded-xl overflow-hidden border-l-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg flex flex-col",
+      isLight
+        ? "bg-white shadow-sm border border-gray-100 border-l-indigo-500"
+        : "bg-[#0f0f1e] border border-white/8 border-l-indigo-400",
+    )}>
+      {/* Thumbnail (if available) */}
+      {item.imageUrl && !imgFailed && (
+        <div className="relative h-32 w-full flex-shrink-0 overflow-hidden">
+          <img
+            src={item.imageUrl}
+            alt={item.imageKeyword}
+            className="w-full h-full object-cover"
+            onError={() => setImgFailed(true)}
+            referrerPolicy="no-referrer"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+        </div>
+      )}
+
+      <div className="p-4 flex flex-col flex-1 gap-2">
+        <div className="flex items-start justify-between gap-2">
+          <CategoryPill category={item.category} isLight={isLight} />
+          <span className={cn("text-[10px] shrink-0", isLight ? "text-gray-400" : "text-gray-500")}>
+            {item.readTime} min read
+          </span>
+        </div>
+
+        <h3 className={cn(
+          "font-bold text-sm leading-snug line-clamp-3 flex-1",
+          isLight ? "text-gray-900" : "text-white",
+        )}>
+          {item.headline}
+        </h3>
+
+        <p className={cn("text-xs leading-relaxed line-clamp-2", isLight ? "text-gray-500" : "text-gray-400")}>
+          {item.summary}
+        </p>
+
+        <div className={cn(
+          "flex items-center justify-between text-[11px] pt-2 border-t mt-auto",
+          isLight ? "border-gray-100 text-gray-400" : "border-white/5 text-gray-500",
+        )}>
+          <div className="flex items-center gap-1 min-w-0">
+            <span className={cn("font-medium truncate", isLight ? "text-indigo-600" : "text-indigo-400")}>{item.source}</span>
+            <span className="shrink-0">· {timeAgo}</span>
+          </div>
+          {item.readMoreUrl && (
+            <a
+              href={item.readMoreUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shrink-0 flex items-center gap-1 text-indigo-500 hover:text-indigo-400 font-semibold ml-2 transition-colors"
+            >
+              Read <ExternalLink className="w-3 h-3" />
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function IFTSection({ section, isLight }: { section: NewsSection; isLight: boolean }) {
+  return (
+    <div>
+      <SectionBanner
+        label={section.label}
+        subtitle={section.subtitle}
+        icon={FlaskConical}
+        gradientClass="bg-gradient-to-r from-indigo-700 to-violet-600"
+        count={section.items.length}
+        isLight={isLight}
+      />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {section.items.map((item, i) => (
+          <motion.div
+            key={item.id}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.18, delay: i * 0.04 }}
+          >
+            <IFTCard item={item} isLight={isLight} />
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Guardian Industry Spotlight ──────────────────────────────────────────────
+
+function GuardianRow({ item, isLight }: { item: NewsItem; isLight: boolean }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const cat = catColors(item.category);
+  const timeAgo = formatDistanceToNow(new Date(item.publishedAt), { addSuffix: true });
+
+  return (
+    <div className={cn(
+      "flex gap-0 rounded-xl overflow-hidden transition-all duration-200 hover:shadow-md",
+      isLight ? "bg-white shadow-sm border border-gray-100" : "bg-[#0f0f1e] border border-white/8",
+    )}>
+      {/* Left image or gradient swatch */}
+      <div className={cn(
+        "relative flex-shrink-0 w-28 sm:w-40",
+        `bg-gradient-to-br ${cat.gradient}`,
+      )}>
+        {item.imageUrl && !imgFailed ? (
+          <img
+            src={item.imageUrl}
+            alt={item.imageKeyword}
+            className="absolute inset-0 w-full h-full object-cover"
+            onError={() => setImgFailed(true)}
+            referrerPolicy="no-referrer"
+          />
+        ) : (
+          <span className="absolute inset-0 flex items-center justify-center text-white/15 font-black text-4xl uppercase tracking-widest select-none">
+            {item.category[0]}
+          </span>
+        )}
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent to-black/20" />
+      </div>
+
+      {/* Content */}
+      <div className="flex flex-col flex-1 px-4 py-3 gap-1.5 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <CategoryPill category={item.category} isLight={isLight} />
+          <span className={cn("text-[10px]", isLight ? "text-gray-400" : "text-gray-500")}>{timeAgo}</span>
+        </div>
+
+        <h3 className={cn(
+          "font-bold text-sm sm:text-[15px] leading-snug line-clamp-2",
+          isLight ? "text-gray-900" : "text-white",
+        )}>
+          {item.headline}
+        </h3>
+
+        <p className={cn("text-xs leading-relaxed line-clamp-2 hidden sm:block", isLight ? "text-gray-500" : "text-gray-400")}>
+          {item.summary}
+        </p>
+
+        <div className={cn("flex items-center justify-between text-[11px] mt-auto", isLight ? "text-gray-400" : "text-gray-500")}>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className={cn("font-semibold truncate", isLight ? "text-emerald-700" : "text-emerald-400")}>
+              {item.source}
+            </span>
+            <span className="flex items-center gap-0.5 shrink-0">
+              <Clock className="w-3 h-3" />{item.readTime}m
+            </span>
+          </div>
+          {item.readMoreUrl && (
+            <a
+              href={item.readMoreUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shrink-0 flex items-center gap-1 text-emerald-600 hover:text-emerald-500 font-semibold ml-2 transition-colors"
+            >
+              Read more <ExternalLink className="w-3 h-3" />
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GuardianSection({ section, isLight }: { section: NewsSection; isLight: boolean }) {
+  return (
+    <div>
+      <SectionBanner
+        label={section.label}
+        subtitle={section.subtitle}
+        icon={Newspaper}
+        gradientClass="bg-gradient-to-r from-emerald-700 to-teal-600"
+        count={section.items.length}
+        isLight={isLight}
+      />
+      <div className="flex flex-col gap-3">
+        {section.items.map((item, i) => (
+          <motion.div
+            key={item.id}
+            initial={{ opacity: 0, x: -8 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.18, delay: i * 0.03 }}
+          >
+            <GuardianRow item={item} isLight={isLight} />
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Market Pulse — Fan / CSS Slider ─────────────────────────────────────────
 
 function SliderCard({ item, isActive, isLight }: { item: NewsItem; isActive: boolean; isLight: boolean }) {
   const cat = catColors(item.category);
@@ -108,10 +362,8 @@ function SliderCard({ item, isActive, isLight }: { item: NewsItem; isActive: boo
         ? isLight ? "shadow-2xl ring-2 ring-primary/30" : "shadow-2xl shadow-primary/10 border border-primary/20"
         : isLight ? "shadow-lg border border-gray-100" : "border border-white/10",
     )}>
-      {/* Image area */}
       <div className="relative flex-shrink-0" style={{ height: isActive ? 200 : 170 }}>
         <CardImage item={item} className="absolute inset-0 w-full h-full" />
-        {/* Category + sentiment badges */}
         <div className="absolute top-3 left-3 right-3 flex items-start justify-between z-10">
           <span className="text-[10px] font-bold text-white bg-black/40 backdrop-blur-sm px-2.5 py-1 rounded-full">
             {item.category}
@@ -128,7 +380,6 @@ function SliderCard({ item, isActive, isLight }: { item: NewsItem; isActive: boo
         </div>
       </div>
 
-      {/* Content */}
       <div className="flex flex-col flex-1 p-4 gap-2">
         <h3 className={cn(
           "font-bold leading-snug",
@@ -182,21 +433,17 @@ function SliderView({ items, isLight }: { items: NewsItem[]; isLight: boolean })
   const prev = () => setCurrentIdx(i => (i - 1 + n) % n);
   const next = () => setCurrentIdx(i => (i + 1) % n);
 
-  // Render 7 slots (-3 to +3); ±3 are invisible buffers for smooth entry/exit
   const slots = [-3, -2, -1, 0, 1, 2, 3];
 
   const slotStyle = (d: number): React.CSSProperties => {
     const abs = Math.abs(d);
-    const xOffsets   = [0,   200,  380,  530];
-    const scales     = [1,   0.84, 0.70, 0.58];
-    const opacities  = [1,   0.80, 0.55, 0];
-    const zIndexes   = [20,  12,   6,    1];
+    const xOffsets  = [0,   200,  380,  530];
+    const scales    = [1,   0.84, 0.70, 0.58];
+    const opacities = [1,   0.80, 0.55, 0];
+    const zIndexes  = [20,  12,   6,    1];
     const idx = Math.min(abs, 3);
-
     return {
-      position: "absolute",
-      left: "50%",
-      top: "50%",
+      position: "absolute", left: "50%", top: "50%",
       width: "272px",
       transform: `translate(calc(-50% + ${d < 0 ? -xOffsets[idx] : xOffsets[idx]}px), -50%) scale(${scales[idx]})`,
       opacity: opacities[idx],
@@ -207,10 +454,7 @@ function SliderView({ items, isLight }: { items: NewsItem[]; isLight: boolean })
     };
   };
 
-  const slotItems = slots.map(d => ({
-    d,
-    item: items[(currentIdx + d + n) % n],
-  }));
+  const slotItems = slots.map(d => ({ d, item: items[(currentIdx + d + n) % n] }));
 
   return (
     <div
@@ -230,7 +474,6 @@ function SliderView({ items, isLight }: { items: NewsItem[]; isLight: boolean })
         </div>
       ))}
 
-      {/* Prev / Next */}
       <button
         onClick={prev}
         className="absolute left-2 top-1/2 -translate-y-1/2 z-30 w-9 h-9 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm flex items-center justify-center text-white transition-all shadow-lg"
@@ -244,7 +487,6 @@ function SliderView({ items, isLight }: { items: NewsItem[]; isLight: boolean })
         <ChevronRight className="w-4 h-4" />
       </button>
 
-      {/* Dot indicators */}
       <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-30">
         {items.map((_, idx) => (
           <button
@@ -260,7 +502,6 @@ function SliderView({ items, isLight }: { items: NewsItem[]; isLight: boolean })
         ))}
       </div>
 
-      {/* Slide counter */}
       <p className={cn("absolute bottom-7 right-4 text-xs z-30", isLight ? "text-slate-400" : "text-gray-500")}>
         {currentIdx + 1} / {n}
       </p>
@@ -268,7 +509,7 @@ function SliderView({ items, isLight }: { items: NewsItem[]; isLight: boolean })
   );
 }
 
-// ─── Grid ──────────────────────────────────────────────────────────────────────
+// ─── Grid ─────────────────────────────────────────────────────────────────────
 
 function GridCard({ item, isLight }: { item: NewsItem; isLight: boolean }) {
   const sent = SENTIMENT[item.sentiment] || SENTIMENT.neutral;
@@ -280,7 +521,6 @@ function GridCard({ item, isLight }: { item: NewsItem; isLight: boolean }) {
       "rounded-2xl overflow-hidden flex flex-col transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl",
       isLight ? "bg-white shadow-md border border-gray-100" : "bg-[#151525] border border-white/10 hover:border-white/20",
     )}>
-      {/* Image */}
       <div className="relative h-40 flex-shrink-0">
         <CardImage item={item} className="absolute inset-0 w-full h-full" />
         <div className="absolute top-3 left-3 right-3 flex items-start justify-between z-10">
@@ -345,7 +585,7 @@ function GridView({ items, isLight }: { items: NewsItem[]; isLight: boolean }) {
   );
 }
 
-// ─── List ──────────────────────────────────────────────────────────────────────
+// ─── List ─────────────────────────────────────────────────────────────────────
 
 function ListRow({ item, isLight }: { item: NewsItem; isLight: boolean }) {
   const [imgFailed, setImgFailed] = useState(false);
@@ -359,7 +599,6 @@ function ListRow({ item, isLight }: { item: NewsItem; isLight: boolean }) {
       "flex items-stretch gap-0 rounded-2xl overflow-hidden transition-all duration-200 hover:-translate-x-0.5",
       isLight ? "bg-white shadow-sm border border-gray-100 hover:shadow-md" : "bg-[#151525] border border-white/10 hover:border-white/20",
     )}>
-      {/* Thumbnail */}
       <div className={`relative w-24 sm:w-32 flex-shrink-0 bg-gradient-to-br ${cat.gradient}`}>
         {item.imageUrl && !imgFailed && (
           <img
@@ -373,28 +612,28 @@ function ListRow({ item, isLight }: { item: NewsItem; isLight: boolean }) {
         <div className="absolute inset-0 bg-gradient-to-r from-transparent to-black/20" />
       </div>
 
-      {/* Content */}
-      <div className="flex-1 min-w-0 p-3 sm:p-4 flex flex-col gap-1.5">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className={cn("text-[10px] font-semibold px-2 py-0.5 rounded-full border", isLight ? cat.light : cat.dark)}>
+      <div className="flex-1 p-3 sm:p-4 min-w-0">
+        <div className="flex items-center gap-2 mb-1.5">
+          <span className={cn(
+            "text-[10px] font-bold px-2 py-0.5 rounded-full border",
+            isLight ? cat.light : cat.dark,
+          )}>
             {item.category}
           </span>
-          <span className={cn("flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border",
+          <span className={cn("flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full border",
             isLight ? sent.lightClass : sent.darkClass,
           )}>
             <SentIcon className="w-2.5 h-2.5" />
-            {sent.label}
           </span>
         </div>
         <h3 className={cn("font-semibold text-sm leading-snug line-clamp-2", isLight ? "text-gray-900" : "text-white")}>
           {item.headline}
         </h3>
-        <p className={cn("text-xs leading-relaxed line-clamp-1", isLight ? "text-gray-500" : "text-gray-400")}>
+        <p className={cn("text-xs leading-relaxed line-clamp-1 mt-0.5", isLight ? "text-gray-500" : "text-gray-400")}>
           {item.summary}
         </p>
       </div>
 
-      {/* Right meta */}
       <div className={cn("shrink-0 flex flex-col items-end justify-between p-3 sm:p-4 text-[11px]",
         isLight ? "text-gray-400" : "text-gray-500",
       )}>
@@ -435,77 +674,94 @@ function ListView({ items, isLight }: { items: NewsItem[]; isLight: boolean }) {
   );
 }
 
-// ─── Skeleton ─────────────────────────────────────────────────────────────────
+// ─── Market Pulse section (NewsData / Groq / Mock) ────────────────────────────
+
+function MarketPulseSection({ section, isLight }: { section: NewsSection; isLight: boolean }) {
+  const [view, setView] = useState<ViewMode>("slider");
+
+  const VIEW_OPTIONS: { key: ViewMode; icon: React.ElementType; label: string }[] = [
+    { key: "slider", icon: Layers,     label: "Slider" },
+    { key: "grid",   icon: LayoutGrid, label: "Grid" },
+    { key: "list",   icon: List,       label: "List" },
+  ];
+
+  return (
+    <div>
+      <SectionBanner
+        label={section.label}
+        subtitle={section.subtitle}
+        icon={BarChart3}
+        gradientClass="bg-gradient-to-r from-amber-600 to-orange-500"
+        count={section.items.length}
+        isLight={isLight}
+      >
+        {/* View toggle inside banner */}
+        <div className={cn(
+          "flex items-center rounded-lg p-0.5 gap-0.5",
+          "bg-white/15 backdrop-blur-sm",
+        )}>
+          {VIEW_OPTIONS.map(({ key, icon: Icon, label }) => (
+            <button
+              key={key}
+              onClick={() => setView(key)}
+              title={label}
+              className={cn(
+                "w-7 h-7 rounded-md flex items-center justify-center transition-all",
+                view === key ? "bg-white/30 text-white" : "text-white/60 hover:text-white/90",
+              )}
+            >
+              <Icon className="w-3.5 h-3.5" />
+            </button>
+          ))}
+        </div>
+      </SectionBanner>
+
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={view}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.18 }}
+        >
+          {view === "slider" && <SliderView items={section.items} isLight={isLight} />}
+          {view === "grid"   && <GridView   items={section.items} isLight={isLight} />}
+          {view === "list"   && <ListView   items={section.items} isLight={isLight} />}
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ─── Skeletons ────────────────────────────────────────────────────────────────
 
 function Skeleton({ className }: { className?: string }) {
   return <div className={cn("animate-pulse rounded-lg", className)} />;
 }
 
-function SkeletonView({ view, isLight }: { view: ViewMode; isLight: boolean }) {
+function FullPageSkeleton({ isLight }: { isLight: boolean }) {
   const base = isLight ? "bg-slate-200" : "bg-white/8";
-  const card = isLight ? "bg-white border border-gray-100 shadow-sm" : "bg-[#151525] border border-white/10";
-
-  if (view === "slider") {
-    return (
-      <div className="relative overflow-hidden" style={{ height: "460px" }}>
-        {/* Side cards */}
-        {[-1, 0, 1].map(d => (
-          <div
-            key={d}
-            style={{
-              position: "absolute", left: "50%", top: "50%",
-              width: "272px",
-              transform: `translate(calc(-50% + ${d * 200}px), -50%) scale(${d === 0 ? 1 : 0.84})`,
-              opacity: d === 0 ? 1 : 0.5, zIndex: d === 0 ? 10 : 5,
-            }}
-            className={cn("rounded-2xl overflow-hidden h-[400px]", card)}
-          >
-            <Skeleton className={cn("h-48 w-full rounded-none", base)} />
-            <div className="p-4 space-y-3">
-              <Skeleton className={cn("h-4 w-full", base)} />
-              <Skeleton className={cn("h-4 w-4/5", base)} />
-              <Skeleton className={cn("h-3 w-3/5", base)} />
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  if (view === "grid") {
-    return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-        {Array.from({ length: 12 }).map((_, i) => (
-          <div key={i} className={cn("rounded-2xl overflow-hidden", card)}>
-            <Skeleton className={cn("h-40", base)} />
-            <div className="p-4 space-y-2">
-              <Skeleton className={cn("h-4 w-full", base)} />
-              <Skeleton className={cn("h-4 w-4/5", base)} />
-              <Skeleton className={cn("h-3 w-full", base)} />
-              <div className="flex justify-between pt-2 border-t border-white/5">
-                <Skeleton className={cn("h-3 w-20", base)} />
-                <Skeleton className={cn("h-3 w-16", base)} />
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  }
+  const card = isLight ? "bg-white border border-gray-100 shadow-sm" : "bg-[#0f0f1e] border border-white/10";
+  const banner = isLight ? "bg-slate-200" : "bg-white/8";
 
   return (
-    <div className="flex flex-col gap-3">
-      {Array.from({ length: 12 }).map((_, i) => (
-        <div key={i} className={cn("flex rounded-2xl overflow-hidden", card)} style={{ height: 96 }}>
-          <Skeleton className={cn("w-24 sm:w-32 flex-shrink-0 rounded-none", base)} />
-          <div className="flex-1 p-3 sm:p-4 space-y-2">
-            <Skeleton className={cn("h-3 w-24 rounded-full", base)} />
-            <Skeleton className={cn("h-4 w-full", base)} />
-            <Skeleton className={cn("h-3 w-4/5", base)} />
-          </div>
-          <div className="p-3 sm:p-4 space-y-1.5 w-28 flex-shrink-0">
-            <Skeleton className={cn("h-3 w-full", base)} />
-            <Skeleton className={cn("h-3 w-3/4", base)} />
+    <div className="space-y-10">
+      {[6, 5, 6].map((count, si) => (
+        <div key={si}>
+          <Skeleton className={cn("h-14 rounded-xl mb-4", banner)} />
+          <div className={si === 2 ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" : "flex flex-col gap-3"}>
+            {Array.from({ length: Math.min(count, si === 2 ? 6 : count) }).map((_, i) => (
+              <div key={i} className={cn("rounded-xl overflow-hidden", card, si === 2 ? "h-48" : "flex h-20")}>
+                {si !== 2 && <Skeleton className={cn("w-24 sm:w-32 h-full rounded-none", base)} />}
+                {si === 2 && <Skeleton className={cn("h-full w-full", base)} />}
+                {si !== 2 && (
+                  <div className="flex-1 p-3 space-y-2">
+                    <Skeleton className={cn("h-3 w-24 rounded-full", base)} />
+                    <Skeleton className={cn("h-4 w-full", base)} />
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       ))}
@@ -519,8 +775,7 @@ export default function NewsFeed() {
   const { theme } = useTheme();
   const isLight = theme === "light";
 
-  const [view, setView] = useState<ViewMode>("slider");
-  const [items, setItems] = useState<NewsItem[]>([]);
+  const [sections, setSections] = useState<NewsSection[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
@@ -533,12 +788,10 @@ export default function NewsFeed() {
     else { setLoading(true); setError(null); }
 
     try {
-      const res = await fetch(`${BASE}api/newsfeed`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem("rd_token")}` },
-      });
+      const res = await fetch(`${BASE}api/newsfeed`);
       if (!res.ok) throw new Error("Failed to load news feed");
-      const data = await res.json() as { items: NewsItem[]; fetchedAt: string };
-      setItems(data.items || []);
+      const data = await res.json() as { sections: NewsSection[]; fetchedAt: string };
+      setSections(data.sections || []);
       setFetchedAt(data.fetchedAt);
     } catch {
       if (!isBackground) setError("Could not load news feed. Please try again.");
@@ -555,15 +808,9 @@ export default function NewsFeed() {
     return () => clearInterval(id);
   }, [fetchNews]);
 
-  const VIEW_OPTIONS: { key: ViewMode; icon: React.ElementType; label: string }[] = [
-    { key: "slider", icon: Layers,      label: "Slider" },
-    { key: "grid",   icon: LayoutGrid,  label: "Grid" },
-    { key: "list",   icon: List,        label: "List" },
-  ];
-
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Page header */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-4">
         <div className="flex items-center gap-3 flex-1 min-w-0">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/30 shrink-0">
@@ -572,7 +819,7 @@ export default function NewsFeed() {
           <div>
             <h1 className={cn("text-xl font-bold", isLight ? "text-gray-900" : "text-white")}>News Feed</h1>
             <p className={cn("text-xs mt-0.5", isLight ? "text-gray-500" : "text-gray-400")}>
-              Nigeria & Africa food industry intelligence
+              Food science, R&D, innovation & industry intelligence
             </p>
           </div>
         </div>
@@ -587,7 +834,6 @@ export default function NewsFeed() {
               {refreshing ? "Refreshing…" : updatedLabel}
             </div>
           )}
-
           <button
             onClick={() => fetchNews(true)}
             disabled={loading || refreshing}
@@ -599,30 +845,12 @@ export default function NewsFeed() {
           >
             <RefreshCw className={cn("w-3.5 h-3.5", refreshing && "animate-spin")} />
           </button>
-
-          <div className={cn("flex items-center rounded-xl p-1 gap-0.5 border", isLight ? "bg-slate-50 border-slate-200" : "bg-white/5 border-white/10")}>
-            {VIEW_OPTIONS.map(({ key, icon: Icon, label }) => (
-              <button
-                key={key}
-                onClick={() => setView(key)}
-                title={label}
-                className={cn(
-                  "w-8 h-8 rounded-lg flex items-center justify-center transition-all",
-                  view === key
-                    ? isLight ? "bg-white shadow-sm text-primary border border-slate-200" : "bg-primary/15 text-primary border border-primary/20"
-                    : isLight ? "text-slate-400 hover:text-slate-600" : "text-gray-500 hover:text-gray-300",
-                )}
-              >
-                <Icon className="w-4 h-4" />
-              </button>
-            ))}
-          </div>
         </div>
       </div>
 
       {/* Content */}
       {loading ? (
-        <SkeletonView view={view} isLight={isLight} />
+        <FullPageSkeleton isLight={isLight} />
       ) : error ? (
         <div className={cn(
           "flex flex-col items-center justify-center gap-3 py-20 rounded-2xl border",
@@ -635,19 +863,20 @@ export default function NewsFeed() {
           </button>
         </div>
       ) : (
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={view}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.18 }}
-          >
-            {view === "slider" && <SliderView items={items} isLight={isLight} />}
-            {view === "grid"   && <GridView   items={items} isLight={isLight} />}
-            {view === "list"   && <ListView   items={items} isLight={isLight} />}
-          </motion.div>
-        </AnimatePresence>
+        <div className="space-y-10">
+          {sections.map(section => (
+            <motion.div
+              key={section.id}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.22 }}
+            >
+              {section.id === "ift"      && <IFTSection      section={section} isLight={isLight} />}
+              {section.id === "guardian" && <GuardianSection section={section} isLight={isLight} />}
+              {section.id === "newsdata" && <MarketPulseSection section={section} isLight={isLight} />}
+            </motion.div>
+          ))}
+        </div>
       )}
     </div>
   );
