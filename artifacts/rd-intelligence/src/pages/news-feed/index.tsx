@@ -77,6 +77,7 @@ function CardImage({ item, className }: { item: NewsItem; className?: string }) 
           alt={item.imageKeyword}
           className="absolute inset-0 w-full h-full object-cover"
           onError={() => setImgFailed(true)}
+          referrerPolicy="no-referrer"
         />
       )}
       {/* Overlay for text contrast */}
@@ -366,6 +367,7 @@ function ListRow({ item, isLight }: { item: NewsItem; isLight: boolean }) {
             alt={item.imageKeyword}
             className="absolute inset-0 w-full h-full object-cover"
             onError={() => setImgFailed(true)}
+            referrerPolicy="no-referrer"
           />
         )}
         <div className="absolute inset-0 bg-gradient-to-r from-transparent to-black/20" />

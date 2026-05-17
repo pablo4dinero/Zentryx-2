@@ -47,9 +47,6 @@ function buildGroqImageUrl(keyword: string): string {
   return `https://source.unsplash.com/640x360/?${encodeURIComponent(keyword + ",food,nigeria")}`;
 }
 
-function buildReadMoreUrl(headline: string): string {
-  return `https://news.google.com/search?q=${encodeURIComponent(headline)}&hl=en-NG&gl=NG`;
-}
 
 // ─── Mock data (Nigeria/Africa focus, used when no API key is set) ────────────
 
@@ -71,7 +68,6 @@ const MOCK_ITEMS_RAW = [
 const MOCK_ITEMS: NewsItem[] = MOCK_ITEMS_RAW.map(item => ({
   ...item,
   imageUrl: buildGroqImageUrl(item.imageKeyword),
-  readMoreUrl: buildReadMoreUrl(item.headline),
 }));
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
@@ -178,7 +174,6 @@ Return ONLY the array.`,
   return items.map(item => ({
     ...item,
     imageUrl: buildGroqImageUrl(item.imageKeyword),
-    readMoreUrl: buildReadMoreUrl(item.headline),
   }));
 }
 
