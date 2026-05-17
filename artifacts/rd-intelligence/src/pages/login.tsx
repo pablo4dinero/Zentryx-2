@@ -246,8 +246,8 @@ export default function Login() {
         <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-accent/5 rounded-full blur-3xl" />
       </div>
 
-      {/* Sign in card section — natural height, no scroll */}
-      <div className="relative z-10 flex-shrink-0 flex justify-center px-4 pt-6 pb-4">
+      {/* Sign in card section — capped at 72vh so bounce area always has room */}
+      <div className="relative z-10 flex-shrink-0 flex justify-center px-4 pt-6 pb-4 overflow-y-auto" style={{ maxHeight: "calc(100vh - 200px)" }}>
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -462,7 +462,8 @@ export default function Login() {
       {/* Bounce area — fills remaining viewport height */}
       <div
         ref={canvasRef}
-        className="relative flex-1 overflow-hidden w-full z-10"
+        className="relative overflow-hidden w-full z-10"
+        style={{ flex: "1 1 0", minHeight: 200 }}
       >
         <img
           ref={logoRef}
