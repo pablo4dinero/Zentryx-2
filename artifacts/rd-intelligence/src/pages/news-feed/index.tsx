@@ -5,7 +5,7 @@ import { useTheme } from "@/lib/theme";
 import {
   Rss, LayoutGrid, List, ChevronLeft, ChevronRight,
   RefreshCw, Clock, TrendingUp, TrendingDown, Minus,
-  Layers, AlertCircle, ExternalLink, FlaskConical, Newspaper, Brain,
+  Layers, AlertCircle, ExternalLink, FlaskConical, Newspaper, Globe,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -26,7 +26,7 @@ interface NewsItem {
 }
 
 interface NewsSection {
-  id: "ai" | "ift" | "guardian";
+  id: "newsapi" | "ift" | "guardian" | "gnews";
   label: string;
   subtitle: string;
   items: NewsItem[];
@@ -248,6 +248,112 @@ function GuardianSection({ section, isLight }: { section: NewsSection; isLight: 
             <GuardianRow item={item} isLight={isLight} />
           </motion.div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── GNews Flavour Technology section ─────────────────────────────────────────
+
+function GNewsSection({ section, isLight }: { section: NewsSection; isLight: boolean }) {
+  return (
+    <div>
+      <SectionBanner
+        label={section.label}
+        subtitle={section.subtitle}
+        icon={Globe}
+        gradientClass="bg-gradient-to-r from-orange-600 to-amber-500"
+        count={section.items.length}
+        isLight={isLight}
+      />
+      <div className="flex flex-col gap-3">
+        {section.items.map((item, i) => (
+          <motion.div
+            key={item.id}
+            initial={{ opacity: 0, x: -8 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.18, delay: i * 0.03 }}
+          >
+            <GNewsRow item={item} isLight={isLight} />
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GNewsRow({ item, isLight }: { item: NewsItem; isLight: boolean }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const cat = catColors(item.category);
+  const timeAgo = formatDistanceToNow(new Date(item.publishedAt), { addSuffix: true });
+
+  return (
+    <div className={cn(
+      "flex gap-0 rounded-xl overflow-hidden transition-all duration-200 hover:shadow-md",
+      isLight ? "bg-white shadow-sm border border-gray-100" : "bg-[#0f0f1e] border border-white/8",
+    )}>
+      <div className={cn(
+        "relative flex-shrink-0 w-32 sm:w-48 min-h-[120px]",
+        `bg-gradient-to-br ${cat.gradient}`,
+      )}>
+        {item.imageUrl && !imgFailed ? (
+          <img
+            src={item.imageUrl}
+            alt={item.imageKeyword}
+            className="absolute inset-0 w-full h-full object-cover"
+            onError={() => setImgFailed(true)}
+            referrerPolicy="no-referrer"
+          />
+        ) : (
+          <span className="absolute inset-0 flex items-center justify-center text-white/15 font-black text-4xl uppercase tracking-widest select-none">
+            {item.category[0]}
+          </span>
+        )}
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent to-black/20" />
+      </div>
+
+      <div className="flex flex-col flex-1 px-4 py-3 gap-2 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <CategoryPill category={item.category} isLight={isLight} />
+          <span className={cn("text-[10px]", isLight ? "text-gray-400" : "text-gray-500")}>{timeAgo}</span>
+          <span className={cn("flex items-center gap-0.5 text-[10px] shrink-0", isLight ? "text-gray-400" : "text-gray-500")}>
+            <Clock className="w-3 h-3" />{item.readTime}m
+          </span>
+        </div>
+
+        <h3 className={cn(
+          "font-bold text-sm sm:text-[15px] leading-snug line-clamp-2",
+          isLight ? "text-gray-900" : "text-white",
+        )}>
+          {item.headline}
+        </h3>
+
+        <p className={cn("text-xs leading-relaxed line-clamp-2 hidden sm:block flex-1", isLight ? "text-gray-500" : "text-gray-400")}>
+          {item.summary}
+        </p>
+
+        <div className="flex items-center justify-between gap-3 mt-auto">
+          <span className={cn("text-[11px] font-semibold truncate", isLight ? "text-orange-700" : "text-orange-400")}>
+            {item.source}
+          </span>
+          {item.readMoreUrl ? (
+            <a
+              href={item.readMoreUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(
+                "shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border",
+                isLight
+                  ? "bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-200"
+                  : "bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border-orange-500/20",
+              )}
+            >
+              Read Article <ExternalLink className="w-3 h-3" />
+            </a>
+          ) : (
+            <span className={cn("text-[11px]", isLight ? "text-gray-400" : "text-gray-600")}>GNews</span>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -595,17 +701,17 @@ function ListView({ items, isLight }: { items: NewsItem[]; isLight: boolean }) {
   );
 }
 
-// ─── Market Pulse section (NewsData / Groq / Mock) ────────────────────────────
+// ─── Carousel section (NewsAPI / IFT fallback) ────────────────────────────────
 
 const CAROUSEL_STYLE: Record<string, { icon: React.ElementType; gradientClass: string }> = {
-  ai:       { icon: Brain,        gradientClass: "bg-gradient-to-r from-violet-700 to-orange-600" },
+  newsapi:  { icon: Newspaper,    gradientClass: "bg-gradient-to-r from-blue-700 to-cyan-600" },
   ift:      { icon: FlaskConical, gradientClass: "bg-gradient-to-r from-indigo-700 to-violet-600" },
   guardian: { icon: Newspaper,    gradientClass: "bg-gradient-to-r from-emerald-700 to-teal-600" },
 };
 
 function CarouselSection({ section, isLight }: { section: NewsSection; isLight: boolean }) {
   const [view, setView] = useState<ViewMode>("slider");
-  const style = CAROUSEL_STYLE[section.id] || CAROUSEL_STYLE.ai;
+  const style = CAROUSEL_STYLE[section.id] || CAROUSEL_STYLE.ift;
 
   const VIEW_OPTIONS: { key: ViewMode; icon: React.ElementType; label: string }[] = [
     { key: "slider", icon: Layers,     label: "Slider" },
@@ -799,8 +905,9 @@ export default function NewsFeed() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.22 }}
             >
-              {(section.id === "ai" || section.id === "ift") && <CarouselSection section={section} isLight={isLight} />}
+              {(section.id === "newsapi" || section.id === "ift") && <CarouselSection section={section} isLight={isLight} />}
               {section.id === "guardian" && <GuardianSection section={section} isLight={isLight} />}
+              {section.id === "gnews" && <GNewsSection section={section} isLight={isLight} />}
             </motion.div>
           ))}
         </div>
