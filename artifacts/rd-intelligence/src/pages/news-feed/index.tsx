@@ -890,7 +890,7 @@ export default function NewsFeed() {
         </div>
       ) : (
         <div className="space-y-10">
-          {sections.map(section => (
+          {[...sections.filter(s => s.id === "newsdata"), ...sections.filter(s => s.id !== "newsdata")].map(section => (
             <motion.div
               key={section.id}
               initial={{ opacity: 0, y: 12 }}
