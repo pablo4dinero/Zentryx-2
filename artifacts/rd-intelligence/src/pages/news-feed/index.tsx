@@ -1,12 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
-import useEmblaCarousel from "embla-carousel-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
 import {
   Rss, LayoutGrid, List, ChevronLeft, ChevronRight,
   RefreshCw, Clock, TrendingUp, TrendingDown, Minus,
-  GalleryHorizontal, AlertCircle,
+  Layers, AlertCircle, ExternalLink,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -21,18 +20,20 @@ interface NewsItem {
   publishedAt: string;
   sentiment: "positive" | "neutral" | "negative";
   imageKeyword: string;
+  imageUrl?: string;
+  readMoreUrl?: string;
   readTime: number;
 }
 
-type ViewMode = "carousel" | "grid" | "list";
+type ViewMode = "slider" | "grid" | "list";
 
-const CATEGORY_COLORS: Record<string, { gradient: string; dark: string; light: string; dot: string }> = {
-  "Food Tech":      { gradient: "from-blue-600 to-cyan-500",    dark: "bg-blue-500/20 text-blue-300 border-blue-500/30",    light: "bg-blue-100 text-blue-700 border-blue-200",    dot: "bg-blue-500" },
-  "Market":         { gradient: "from-amber-500 to-orange-500",  dark: "bg-amber-500/20 text-amber-300 border-amber-500/30", light: "bg-amber-100 text-amber-700 border-amber-200", dot: "bg-amber-500" },
-  "Regulation":     { gradient: "from-red-600 to-rose-500",      dark: "bg-red-500/20 text-red-300 border-red-500/30",       light: "bg-red-100 text-red-700 border-red-200",       dot: "bg-red-500" },
-  "Sustainability": { gradient: "from-emerald-600 to-green-500", dark: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30", light: "bg-emerald-100 text-emerald-700 border-emerald-200", dot: "bg-emerald-500" },
-  "Innovation":     { gradient: "from-purple-600 to-violet-500", dark: "bg-purple-500/20 text-purple-300 border-purple-500/30", light: "bg-purple-100 text-purple-700 border-purple-200", dot: "bg-purple-500" },
-  "Ingredients":    { gradient: "from-teal-600 to-cyan-500",     dark: "bg-teal-500/20 text-teal-300 border-teal-500/30",    light: "bg-teal-100 text-teal-700 border-teal-200",    dot: "bg-teal-500" },
+const CATEGORY_COLORS: Record<string, { gradient: string; dark: string; light: string }> = {
+  "Food Tech":      { gradient: "from-blue-600 to-cyan-500",    dark: "bg-blue-500/20 text-blue-300 border-blue-500/30",    light: "bg-blue-100 text-blue-700 border-blue-200" },
+  "Market":         { gradient: "from-amber-500 to-orange-500",  dark: "bg-amber-500/20 text-amber-300 border-amber-500/30", light: "bg-amber-100 text-amber-700 border-amber-200" },
+  "Regulation":     { gradient: "from-red-600 to-rose-500",      dark: "bg-red-500/20 text-red-300 border-red-500/30",       light: "bg-red-100 text-red-700 border-red-200" },
+  "Sustainability": { gradient: "from-emerald-600 to-green-500", dark: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30", light: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  "Innovation":     { gradient: "from-purple-600 to-violet-500", dark: "bg-purple-500/20 text-purple-300 border-purple-500/30", light: "bg-purple-100 text-purple-700 border-purple-200" },
+  "Ingredients":    { gradient: "from-teal-600 to-cyan-500",     dark: "bg-teal-500/20 text-teal-300 border-teal-500/30",    light: "bg-teal-100 text-teal-700 border-teal-200" },
 };
 
 const SENTIMENT = {
@@ -62,9 +63,37 @@ function useRelativeTime(isoStr: string | null): string {
   return label;
 }
 
-// ─── Carousel ─────────────────────────────────────────────────────────────────
+// ─── Card Image component with gradient fallback ─────────────────────────────
 
-function CarouselCard({ item, isLight }: { item: NewsItem; isLight: boolean }) {
+function CardImage({ item, className }: { item: NewsItem; className?: string }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const cat = catColors(item.category);
+
+  return (
+    <div className={cn(`relative bg-gradient-to-br ${cat.gradient} overflow-hidden`, className)}>
+      {item.imageUrl && !imgFailed && (
+        <img
+          src={item.imageUrl}
+          alt={item.imageKeyword}
+          className="absolute inset-0 w-full h-full object-cover"
+          onError={() => setImgFailed(true)}
+        />
+      )}
+      {/* Overlay for text contrast */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/10" />
+      {/* Watermark when no image */}
+      {(!item.imageUrl || imgFailed) && (
+        <span className="absolute inset-0 flex items-center justify-center text-white/10 font-black text-6xl uppercase tracking-widest select-none pointer-events-none">
+          {item.category.split(" ")[0]}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ─── Fan / CSS Slider ─────────────────────────────────────────────────────────
+
+function SliderCard({ item, isActive, isLight }: { item: NewsItem; isActive: boolean; isLight: boolean }) {
   const cat = catColors(item.category);
   const sent = SENTIMENT[item.sentiment] || SENTIMENT.neutral;
   const SentIcon = sent.icon;
@@ -72,120 +101,167 @@ function CarouselCard({ item, isLight }: { item: NewsItem; isLight: boolean }) {
 
   return (
     <div className={cn(
-      "rounded-2xl overflow-hidden select-none h-full",
-      isLight ? "bg-white shadow-xl border border-gray-100" : "bg-[#151525] border border-white/10",
+      "rounded-2xl overflow-hidden flex flex-col h-full select-none",
+      isLight ? "bg-white" : "bg-[#151525]",
+      isActive
+        ? isLight ? "shadow-2xl ring-2 ring-primary/30" : "shadow-2xl shadow-primary/10 border border-primary/20"
+        : isLight ? "shadow-lg border border-gray-100" : "border border-white/10",
     )}>
-      {/* Gradient header */}
-      <div className={`relative h-52 sm:h-60 bg-gradient-to-br ${cat.gradient} p-5 flex flex-col justify-between overflow-hidden`}>
-        {/* Watermark */}
-        <span className="absolute inset-0 flex items-center justify-center text-white/10 font-black text-7xl sm:text-[96px] uppercase tracking-widest pointer-events-none select-none">
-          {item.category.split(" ")[0]}
-        </span>
-        {/* Top row */}
-        <div className="relative flex items-center justify-between gap-2">
-          <span className="text-xs font-semibold text-white/95 bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full border border-white/30">
+      {/* Image area */}
+      <div className="relative flex-shrink-0" style={{ height: isActive ? 200 : 170 }}>
+        <CardImage item={item} className="absolute inset-0 w-full h-full" />
+        {/* Category + sentiment badges */}
+        <div className="absolute top-3 left-3 right-3 flex items-start justify-between z-10">
+          <span className="text-[10px] font-bold text-white bg-black/40 backdrop-blur-sm px-2.5 py-1 rounded-full">
             {item.category}
           </span>
           <span className={cn(
-            "flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full backdrop-blur-sm border",
-            item.sentiment === "positive" ? "bg-emerald-500/30 text-emerald-100 border-emerald-400/30" :
-            item.sentiment === "negative" ? "bg-red-500/30 text-red-100 border-red-400/30" :
-            "bg-white/20 text-white/80 border-white/20",
+            "flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-full backdrop-blur-sm",
+            item.sentiment === "positive" ? "bg-emerald-500/40 text-emerald-100" :
+            item.sentiment === "negative" ? "bg-red-500/40 text-red-100" :
+            "bg-white/20 text-white/80",
           )}>
-            <SentIcon className="w-3 h-3" />
+            <SentIcon className="w-2.5 h-2.5" />
             {sent.label}
           </span>
         </div>
-        {/* Bottom row */}
-        <div className="relative flex items-center gap-3 text-white/75 text-xs">
-          <span className="font-medium">{item.source}</span>
-          <span>·</span>
-          <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{item.readTime} min read</span>
-        </div>
       </div>
 
-      {/* Body */}
-      <div className="p-5 sm:p-6">
-        <h2 className={cn("text-lg sm:text-xl font-bold leading-snug mb-3 line-clamp-3", isLight ? "text-gray-900" : "text-white")}>
+      {/* Content */}
+      <div className="flex flex-col flex-1 p-4 gap-2">
+        <h3 className={cn(
+          "font-bold leading-snug",
+          isActive ? "text-[15px] line-clamp-3" : "text-[13px] line-clamp-2",
+          isLight ? "text-gray-900" : "text-white",
+        )}>
           {item.headline}
-        </h2>
-        <p className={cn("text-sm leading-relaxed line-clamp-3 mb-4", isLight ? "text-gray-600" : "text-gray-400")}>
-          {item.summary}
-        </p>
-        <p className={cn("text-xs", isLight ? "text-gray-400" : "text-gray-500")}>{timeAgo}</p>
+        </h3>
+
+        {isActive && (
+          <p className={cn("text-xs leading-relaxed line-clamp-2 flex-1", isLight ? "text-gray-500" : "text-gray-400")}>
+            {item.summary}
+          </p>
+        )}
+
+        <div className={cn("flex items-center justify-between mt-auto pt-2 border-t text-[11px]",
+          isLight ? "border-gray-100 text-gray-400" : "border-white/5 text-gray-500",
+        )}>
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="truncate font-medium">{item.source}</span>
+            <span className="flex items-center gap-0.5 shrink-0"><Clock className="w-3 h-3" />{item.readTime}m</span>
+          </div>
+          {isActive && item.readMoreUrl && (
+            <a
+              href={item.readMoreUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+              className="shrink-0 flex items-center gap-1 text-primary hover:underline font-semibold ml-2"
+            >
+              Read more <ExternalLink className="w-3 h-3" />
+            </a>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-function CarouselView({ items, isLight }: { items: NewsItem[]; isLight: boolean }) {
-  const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true, duration: 28 });
+function SliderView({ items, isLight }: { items: NewsItem[]; isLight: boolean }) {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  const n = items.length;
 
   useEffect(() => {
-    if (!emblaApi) return;
-    const onSelect = () => setCurrentIdx(emblaApi.selectedScrollSnap());
-    emblaApi.on("select", onSelect);
-    return () => { emblaApi.off("select", onSelect); };
-  }, [emblaApi]);
-
-  useEffect(() => {
-    if (!emblaApi || isPaused) return;
-    const id = setInterval(() => emblaApi.scrollNext(), 5000);
+    if (isPaused || n === 0) return;
+    const id = setInterval(() => setCurrentIdx(i => (i + 1) % n), 5000);
     return () => clearInterval(id);
-  }, [emblaApi, isPaused]);
+  }, [isPaused, n]);
+
+  const prev = () => setCurrentIdx(i => (i - 1 + n) % n);
+  const next = () => setCurrentIdx(i => (i + 1) % n);
+
+  // Render 7 slots (-3 to +3); ±3 are invisible buffers for smooth entry/exit
+  const slots = [-3, -2, -1, 0, 1, 2, 3];
+
+  const slotStyle = (d: number): React.CSSProperties => {
+    const abs = Math.abs(d);
+    const xOffsets   = [0,   200,  380,  530];
+    const scales     = [1,   0.84, 0.70, 0.58];
+    const opacities  = [1,   0.80, 0.55, 0];
+    const zIndexes   = [20,  12,   6,    1];
+    const idx = Math.min(abs, 3);
+
+    return {
+      position: "absolute",
+      left: "50%",
+      top: "50%",
+      width: "272px",
+      transform: `translate(calc(-50% + ${d < 0 ? -xOffsets[idx] : xOffsets[idx]}px), -50%) scale(${scales[idx]})`,
+      opacity: opacities[idx],
+      zIndex: zIndexes[idx],
+      transition: "all 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
+      pointerEvents: abs > 2 ? "none" : "auto",
+      height: d === 0 ? "420px" : "390px",
+    };
+  };
+
+  const slotItems = slots.map(d => ({
+    d,
+    item: items[(currentIdx + d + n) % n],
+  }));
 
   return (
     <div
-      className="relative"
+      className="relative w-full overflow-hidden"
+      style={{ height: "460px" }}
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
     >
-      {/* Embla viewport */}
-      <div ref={emblaRef} className="overflow-hidden rounded-2xl">
-        <div className="flex">
-          {items.map(item => (
-            <div key={item.id} className="flex-[0_0_100%] min-w-0">
-              <CarouselCard item={item} isLight={isLight} />
-            </div>
-          ))}
+      {slotItems.map(({ d, item }) => (
+        <div
+          key={item.id}
+          style={slotStyle(d)}
+          onClick={() => { if (d !== 0) setCurrentIdx((currentIdx + d + n) % n); }}
+          className={d !== 0 ? "cursor-pointer" : ""}
+        >
+          <SliderCard item={item} isActive={d === 0} isLight={isLight} />
         </div>
-      </div>
+      ))}
 
       {/* Prev / Next */}
       <button
-        onClick={() => emblaApi?.scrollPrev()}
-        className="absolute left-3 top-[calc(50%-1.5rem)] -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-sm flex items-center justify-center text-white transition-all shadow-lg"
+        onClick={prev}
+        className="absolute left-2 top-1/2 -translate-y-1/2 z-30 w-9 h-9 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm flex items-center justify-center text-white transition-all shadow-lg"
       >
-        <ChevronLeft className="w-5 h-5" />
+        <ChevronLeft className="w-4 h-4" />
       </button>
       <button
-        onClick={() => emblaApi?.scrollNext()}
-        className="absolute right-3 top-[calc(50%-1.5rem)] -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-sm flex items-center justify-center text-white transition-all shadow-lg"
+        onClick={next}
+        className="absolute right-2 top-1/2 -translate-y-1/2 z-30 w-9 h-9 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm flex items-center justify-center text-white transition-all shadow-lg"
       >
-        <ChevronRight className="w-5 h-5" />
+        <ChevronRight className="w-4 h-4" />
       </button>
 
       {/* Dot indicators */}
-      <div className="flex justify-center items-center gap-1.5 mt-4">
+      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-30">
         {items.map((_, idx) => (
           <button
             key={idx}
-            onClick={() => emblaApi?.scrollTo(idx)}
+            onClick={() => setCurrentIdx(idx)}
             className={cn(
               "h-1.5 rounded-full transition-all duration-300",
               idx === currentIdx
                 ? "w-5 bg-primary"
-                : isLight ? "w-1.5 bg-slate-300" : "w-1.5 bg-white/20",
+                : isLight ? "w-1.5 bg-slate-400/50" : "w-1.5 bg-white/25",
             )}
           />
         ))}
       </div>
 
       {/* Slide counter */}
-      <p className={cn("text-center text-xs mt-2", isLight ? "text-slate-400" : "text-gray-500")}>
-        {currentIdx + 1} of {items.length}
+      <p className={cn("absolute bottom-7 right-4 text-xs z-30", isLight ? "text-slate-400" : "text-gray-500")}>
+        {currentIdx + 1} / {n}
       </p>
     </div>
   );
@@ -194,7 +270,6 @@ function CarouselView({ items, isLight }: { items: NewsItem[]; isLight: boolean 
 // ─── Grid ──────────────────────────────────────────────────────────────────────
 
 function GridCard({ item, isLight }: { item: NewsItem; isLight: boolean }) {
-  const cat = catColors(item.category);
   const sent = SENTIMENT[item.sentiment] || SENTIMENT.neutral;
   const SentIcon = sent.icon;
   const timeAgo = formatDistanceToNow(new Date(item.publishedAt), { addSuffix: true });
@@ -204,38 +279,48 @@ function GridCard({ item, isLight }: { item: NewsItem; isLight: boolean }) {
       "rounded-2xl overflow-hidden flex flex-col transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl",
       isLight ? "bg-white shadow-md border border-gray-100" : "bg-[#151525] border border-white/10 hover:border-white/20",
     )}>
-      {/* Category colour strip */}
-      <div className={`h-1.5 w-full bg-gradient-to-r ${cat.gradient}`} />
-
-      <div className="p-4 sm:p-5 flex flex-col flex-1">
-        {/* Badges row */}
-        <div className="flex items-center justify-between gap-2 mb-3">
-          <span className={cn("text-[10px] font-semibold px-2.5 py-1 rounded-full border", isLight ? cat.light : cat.dark)}>
+      {/* Image */}
+      <div className="relative h-40 flex-shrink-0">
+        <CardImage item={item} className="absolute inset-0 w-full h-full" />
+        <div className="absolute top-3 left-3 right-3 flex items-start justify-between z-10">
+          <span className="text-[10px] font-bold text-white bg-black/40 backdrop-blur-sm px-2.5 py-1 rounded-full">
             {item.category}
           </span>
-          <span className={cn("flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-full border", isLight ? sent.lightClass : sent.darkClass)}>
+          <span className={cn("flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-full backdrop-blur-sm",
+            item.sentiment === "positive" ? "bg-emerald-500/40 text-emerald-100" :
+            item.sentiment === "negative" ? "bg-red-500/40 text-red-100" :
+            "bg-white/20 text-white/80",
+          )}>
             <SentIcon className="w-2.5 h-2.5" />
             {sent.label}
           </span>
         </div>
+      </div>
 
-        {/* Headline */}
+      <div className="p-4 flex flex-col flex-1">
         <h3 className={cn("font-semibold text-sm leading-snug line-clamp-3 mb-2 flex-1", isLight ? "text-gray-900" : "text-white")}>
           {item.headline}
         </h3>
-
-        {/* Summary */}
-        <p className={cn("text-xs leading-relaxed line-clamp-3 mb-4", isLight ? "text-gray-500" : "text-gray-400")}>
+        <p className={cn("text-xs leading-relaxed line-clamp-2 mb-3", isLight ? "text-gray-500" : "text-gray-400")}>
           {item.summary}
         </p>
-
-        {/* Footer */}
-        <div className={cn("flex items-center justify-between text-[11px] pt-3 border-t", isLight ? "border-gray-100 text-gray-400" : "border-white/5 text-gray-500")}>
-          <span className="font-medium truncate mr-2">{item.source}</span>
-          <div className="flex items-center gap-2 shrink-0">
-            <span>{timeAgo}</span>
-            <span className="flex items-center gap-0.5"><Clock className="w-3 h-3" />{item.readTime}m</span>
+        <div className={cn("flex items-center justify-between text-[11px] pt-3 border-t",
+          isLight ? "border-gray-100 text-gray-400" : "border-white/5 text-gray-500",
+        )}>
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="truncate font-medium">{item.source}</span>
+            <span className="flex items-center gap-0.5 shrink-0"><Clock className="w-3 h-3" />{item.readTime}m</span>
           </div>
+          {item.readMoreUrl && (
+            <a
+              href={item.readMoreUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shrink-0 flex items-center gap-1 text-primary hover:underline font-semibold ml-2"
+            >
+              Read more <ExternalLink className="w-3 h-3" />
+            </a>
+          )}
         </div>
       </div>
     </div>
@@ -262,6 +347,7 @@ function GridView({ items, isLight }: { items: NewsItem[]; isLight: boolean }) {
 // ─── List ──────────────────────────────────────────────────────────────────────
 
 function ListRow({ item, isLight }: { item: NewsItem; isLight: boolean }) {
+  const [imgFailed, setImgFailed] = useState(false);
   const cat = catColors(item.category);
   const sent = SENTIMENT[item.sentiment] || SENTIMENT.neutral;
   const SentIcon = sent.icon;
@@ -269,24 +355,36 @@ function ListRow({ item, isLight }: { item: NewsItem; isLight: boolean }) {
 
   return (
     <div className={cn(
-      "flex items-start gap-4 p-4 sm:p-5 rounded-2xl transition-all duration-200 hover:-translate-x-0.5",
+      "flex items-stretch gap-0 rounded-2xl overflow-hidden transition-all duration-200 hover:-translate-x-0.5",
       isLight ? "bg-white shadow-sm border border-gray-100 hover:shadow-md" : "bg-[#151525] border border-white/10 hover:border-white/20",
     )}>
-      {/* Left colour pill */}
-      <div className={`shrink-0 w-1 self-stretch rounded-full bg-gradient-to-b ${cat.gradient}`} />
+      {/* Thumbnail */}
+      <div className={`relative w-24 sm:w-32 flex-shrink-0 bg-gradient-to-br ${cat.gradient}`}>
+        {item.imageUrl && !imgFailed && (
+          <img
+            src={item.imageUrl}
+            alt={item.imageKeyword}
+            className="absolute inset-0 w-full h-full object-cover"
+            onError={() => setImgFailed(true)}
+          />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent to-black/20" />
+      </div>
 
       {/* Content */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+      <div className="flex-1 min-w-0 p-3 sm:p-4 flex flex-col gap-1.5">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className={cn("text-[10px] font-semibold px-2 py-0.5 rounded-full border", isLight ? cat.light : cat.dark)}>
             {item.category}
           </span>
-          <span className={cn("flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border", isLight ? sent.lightClass : sent.darkClass)}>
+          <span className={cn("flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border",
+            isLight ? sent.lightClass : sent.darkClass,
+          )}>
             <SentIcon className="w-2.5 h-2.5" />
             {sent.label}
           </span>
         </div>
-        <h3 className={cn("font-semibold text-sm leading-snug line-clamp-2 mb-1", isLight ? "text-gray-900" : "text-white")}>
+        <h3 className={cn("font-semibold text-sm leading-snug line-clamp-2", isLight ? "text-gray-900" : "text-white")}>
           {item.headline}
         </h3>
         <p className={cn("text-xs leading-relaxed line-clamp-1", isLight ? "text-gray-500" : "text-gray-400")}>
@@ -294,11 +392,25 @@ function ListRow({ item, isLight }: { item: NewsItem; isLight: boolean }) {
         </p>
       </div>
 
-      {/* Right metadata */}
-      <div className={cn("shrink-0 text-right text-[11px] flex flex-col items-end gap-1 min-w-[80px]", isLight ? "text-gray-400" : "text-gray-500")}>
-        <span className="font-medium">{item.source}</span>
-        <span>{timeAgo}</span>
-        <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{item.readTime}m</span>
+      {/* Right meta */}
+      <div className={cn("shrink-0 flex flex-col items-end justify-between p-3 sm:p-4 text-[11px]",
+        isLight ? "text-gray-400" : "text-gray-500",
+      )}>
+        <div className="text-right">
+          <p className="font-medium">{item.source}</p>
+          <p className="mt-0.5">{timeAgo}</p>
+          <p className="flex items-center gap-0.5 mt-0.5 justify-end"><Clock className="w-3 h-3" />{item.readTime}m</p>
+        </div>
+        {item.readMoreUrl && (
+          <a
+            href={item.readMoreUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 text-primary hover:underline font-semibold mt-2"
+          >
+            Read more <ExternalLink className="w-3 h-3" />
+          </a>
+        )}
       </div>
     </div>
   );
@@ -331,23 +443,29 @@ function SkeletonView({ view, isLight }: { view: ViewMode; isLight: boolean }) {
   const base = isLight ? "bg-slate-200" : "bg-white/8";
   const card = isLight ? "bg-white border border-gray-100 shadow-sm" : "bg-[#151525] border border-white/10";
 
-  if (view === "carousel") {
+  if (view === "slider") {
     return (
-      <div className="space-y-4">
-        <div className={cn("rounded-2xl overflow-hidden", card)}>
-          <Skeleton className={cn("h-52 sm:h-60", base)} />
-          <div className="p-5 sm:p-6 space-y-3">
-            <Skeleton className={cn("h-6 w-4/5", base)} />
-            <Skeleton className={cn("h-4 w-full", base)} />
-            <Skeleton className={cn("h-4 w-3/4", base)} />
-            <Skeleton className={cn("h-3 w-24 mt-2", base)} />
+      <div className="relative overflow-hidden" style={{ height: "460px" }}>
+        {/* Side cards */}
+        {[-1, 0, 1].map(d => (
+          <div
+            key={d}
+            style={{
+              position: "absolute", left: "50%", top: "50%",
+              width: "272px",
+              transform: `translate(calc(-50% + ${d * 200}px), -50%) scale(${d === 0 ? 1 : 0.84})`,
+              opacity: d === 0 ? 1 : 0.5, zIndex: d === 0 ? 10 : 5,
+            }}
+            className={cn("rounded-2xl overflow-hidden h-[400px]", card)}
+          >
+            <Skeleton className={cn("h-48 w-full rounded-none", base)} />
+            <div className="p-4 space-y-3">
+              <Skeleton className={cn("h-4 w-full", base)} />
+              <Skeleton className={cn("h-4 w-4/5", base)} />
+              <Skeleton className={cn("h-3 w-3/5", base)} />
+            </div>
           </div>
-        </div>
-        <div className="flex justify-center gap-1.5">
-          {Array.from({ length: 12 }).map((_, i) => (
-            <Skeleton key={i} className={cn("h-1.5 rounded-full", base, i === 0 ? "w-5" : "w-1.5")} />
-          ))}
-        </div>
+        ))}
       </div>
     );
   }
@@ -357,17 +475,12 @@ function SkeletonView({ view, isLight }: { view: ViewMode; isLight: boolean }) {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         {Array.from({ length: 12 }).map((_, i) => (
           <div key={i} className={cn("rounded-2xl overflow-hidden", card)}>
-            <Skeleton className={cn("h-1.5 w-full", base)} />
-            <div className="p-4 sm:p-5 space-y-3">
-              <div className="flex justify-between gap-2">
-                <Skeleton className={cn("h-5 w-24 rounded-full", base)} />
-                <Skeleton className={cn("h-5 w-20 rounded-full", base)} />
-              </div>
+            <Skeleton className={cn("h-40", base)} />
+            <div className="p-4 space-y-2">
               <Skeleton className={cn("h-4 w-full", base)} />
-              <Skeleton className={cn("h-4 w-5/6", base)} />
+              <Skeleton className={cn("h-4 w-4/5", base)} />
               <Skeleton className={cn("h-3 w-full", base)} />
-              <Skeleton className={cn("h-3 w-4/5", base)} />
-              <div className={cn("pt-3 border-t flex justify-between", isLight ? "border-gray-100" : "border-white/5")}>
+              <div className="flex justify-between pt-2 border-t border-white/5">
                 <Skeleton className={cn("h-3 w-20", base)} />
                 <Skeleton className={cn("h-3 w-16", base)} />
               </div>
@@ -381,19 +494,16 @@ function SkeletonView({ view, isLight }: { view: ViewMode; isLight: boolean }) {
   return (
     <div className="flex flex-col gap-3">
       {Array.from({ length: 12 }).map((_, i) => (
-        <div key={i} className={cn("flex items-start gap-4 p-4 sm:p-5 rounded-2xl", card)}>
-          <Skeleton className={cn("shrink-0 w-1 h-16 rounded-full", base)} />
-          <div className="flex-1 space-y-2">
-            <div className="flex gap-2">
-              <Skeleton className={cn("h-4 w-20 rounded-full", base)} />
-              <Skeleton className={cn("h-4 w-16 rounded-full", base)} />
-            </div>
+        <div key={i} className={cn("flex rounded-2xl overflow-hidden", card)} style={{ height: 96 }}>
+          <Skeleton className={cn("w-24 sm:w-32 flex-shrink-0 rounded-none", base)} />
+          <div className="flex-1 p-3 sm:p-4 space-y-2">
+            <Skeleton className={cn("h-3 w-24 rounded-full", base)} />
             <Skeleton className={cn("h-4 w-full", base)} />
             <Skeleton className={cn("h-3 w-4/5", base)} />
           </div>
-          <div className="shrink-0 space-y-1.5">
-            <Skeleton className={cn("h-3 w-20", base)} />
-            <Skeleton className={cn("h-3 w-14", base)} />
+          <div className="p-3 sm:p-4 space-y-1.5 w-28 flex-shrink-0">
+            <Skeleton className={cn("h-3 w-full", base)} />
+            <Skeleton className={cn("h-3 w-3/4", base)} />
           </div>
         </div>
       ))}
@@ -407,7 +517,7 @@ export default function NewsFeed() {
   const { theme } = useTheme();
   const isLight = theme === "light";
 
-  const [view, setView] = useState<ViewMode>("carousel");
+  const [view, setView] = useState<ViewMode>("slider");
   const [items, setItems] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -418,18 +528,17 @@ export default function NewsFeed() {
 
   const fetchNews = useCallback(async (isBackground = false) => {
     if (isBackground) setRefreshing(true);
-    else setLoading(true);
-    setError(null);
+    else { setLoading(true); setError(null); }
 
     try {
       const res = await fetch(`${BASE}api/newsfeed`, {
         headers: { Authorization: `Bearer ${localStorage.getItem("rd_token")}` },
       });
       if (!res.ok) throw new Error("Failed to load news feed");
-      const data = await res.json() as { items: NewsItem[]; fetchedAt: string; stale?: boolean };
+      const data = await res.json() as { items: NewsItem[]; fetchedAt: string };
       setItems(data.items || []);
       setFetchedAt(data.fetchedAt);
-    } catch (err) {
+    } catch {
       if (!isBackground) setError("Could not load news feed. Please try again.");
     } finally {
       setLoading(false);
@@ -437,19 +546,17 @@ export default function NewsFeed() {
     }
   }, []);
 
-  // Initial fetch
   useEffect(() => { fetchNews(); }, [fetchNews]);
 
-  // Background refresh every 20 minutes
   useEffect(() => {
     const id = setInterval(() => fetchNews(true), 20 * 60 * 1000);
     return () => clearInterval(id);
   }, [fetchNews]);
 
   const VIEW_OPTIONS: { key: ViewMode; icon: React.ElementType; label: string }[] = [
-    { key: "carousel", icon: GalleryHorizontal, label: "Carousel" },
-    { key: "grid",     icon: LayoutGrid,        label: "Grid" },
-    { key: "list",     icon: List,              label: "List" },
+    { key: "slider", icon: Layers,      label: "Slider" },
+    { key: "grid",   icon: LayoutGrid,  label: "Grid" },
+    { key: "list",   icon: List,        label: "List" },
   ];
 
   return (
@@ -463,16 +570,15 @@ export default function NewsFeed() {
           <div>
             <h1 className={cn("text-xl font-bold", isLight ? "text-gray-900" : "text-white")}>News Feed</h1>
             <p className={cn("text-xs mt-0.5", isLight ? "text-gray-500" : "text-gray-400")}>
-              AI-curated food science & R&D intelligence
+              Nigeria & Africa food industry intelligence
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Updated pill */}
           {fetchedAt && (
             <div className={cn(
-              "flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border transition-all",
+              "flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border",
               isLight ? "bg-slate-50 border-slate-200 text-slate-500" : "bg-white/5 border-white/10 text-gray-400",
             )}>
               <RefreshCw className={cn("w-3 h-3", refreshing && "animate-spin")} />
@@ -480,7 +586,6 @@ export default function NewsFeed() {
             </div>
           )}
 
-          {/* Manual refresh */}
           <button
             onClick={() => fetchNews(true)}
             disabled={loading || refreshing}
@@ -493,7 +598,6 @@ export default function NewsFeed() {
             <RefreshCw className={cn("w-3.5 h-3.5", refreshing && "animate-spin")} />
           </button>
 
-          {/* View toggle */}
           <div className={cn("flex items-center rounded-xl p-1 gap-0.5 border", isLight ? "bg-slate-50 border-slate-200" : "bg-white/5 border-white/10")}>
             {VIEW_OPTIONS.map(({ key, icon: Icon, label }) => (
               <button
@@ -522,12 +626,9 @@ export default function NewsFeed() {
           "flex flex-col items-center justify-center gap-3 py-20 rounded-2xl border",
           isLight ? "bg-white border-gray-100" : "bg-[#151525] border-white/10",
         )}>
-          <AlertCircle className={cn("w-10 h-10", isLight ? "text-red-400" : "text-red-400")} />
+          <AlertCircle className="w-10 h-10 text-red-400" />
           <p className={cn("font-medium", isLight ? "text-gray-700" : "text-gray-300")}>{error}</p>
-          <button
-            onClick={() => fetchNews()}
-            className="text-sm text-primary hover:underline"
-          >
+          <button onClick={() => fetchNews()} className="text-sm text-primary hover:underline">
             Try again
           </button>
         </div>
@@ -540,9 +641,9 @@ export default function NewsFeed() {
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.18 }}
           >
-            {view === "carousel" && <CarouselView items={items} isLight={isLight} />}
-            {view === "grid"     && <GridView     items={items} isLight={isLight} />}
-            {view === "list"     && <ListView     items={items} isLight={isLight} />}
+            {view === "slider" && <SliderView items={items} isLight={isLight} />}
+            {view === "grid"   && <GridView   items={items} isLight={isLight} />}
+            {view === "list"   && <ListView   items={items} isLight={isLight} />}
           </motion.div>
         </AnimatePresence>
       )}

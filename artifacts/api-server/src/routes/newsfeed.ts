@@ -15,23 +15,39 @@ export interface NewsItem {
   publishedAt: string;
   sentiment: "positive" | "neutral" | "negative";
   imageKeyword: string;
+  imageUrl: string;
+  readMoreUrl: string;
   readTime: number;
 }
 
-const MOCK_ITEMS: NewsItem[] = [
-  { id: "1", headline: "Plant-Based Protein Market to Hit $35B by 2027", summary: "Global demand for plant-based proteins surges as consumers shift toward sustainable diets. Major food manufacturers are accelerating R&D investment in pea and soy isolates.", category: "Market", source: "Food Navigator", publishedAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "protein", readTime: 3 },
-  { id: "2", headline: "FDA Updates Guidance on Novel Food Ingredient Labeling", summary: "New labeling requirements for bioengineered food ingredients take effect next quarter. Manufacturers must update packaging to remain compliant.", category: "Regulation", source: "Food Safety News", publishedAt: new Date(Date.now() - 4 * 3600 * 1000).toISOString(), sentiment: "neutral", imageKeyword: "label", readTime: 4 },
-  { id: "3", headline: "Cocoa Prices Stabilize After Year of Record Volatility", summary: "West African harvests recover from weather disruptions, bringing relief to confectionery and chocolate manufacturers globally.", category: "Ingredients", source: "Ingredient Insights", publishedAt: new Date(Date.now() - 1 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "cocoa", readTime: 2 },
-  { id: "4", headline: "AI-Driven Flavour Matching Cuts Reformulation Time by 60%", summary: "New machine learning tools analyse sensory data to predict flavour profiles with high accuracy, dramatically reducing product development cycles.", category: "Food Tech", source: "FoodTech Weekly", publishedAt: new Date(Date.now() - 6 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "technology", readTime: 3 },
-  { id: "5", headline: "EU Moves to Restrict Titanium Dioxide in Food Products", summary: "European Food Safety Authority recommends phasing out TiO2 as a food additive over concerns about potential genotoxicity in nanoscale particles.", category: "Regulation", source: "EurActiv Food", publishedAt: new Date(Date.now() - 8 * 3600 * 1000).toISOString(), sentiment: "negative", imageKeyword: "regulation", readTime: 4 },
-  { id: "6", headline: "Precision Fermentation Startup Raises $120M Series C", summary: "FermentIQ secures major funding to scale animal-free dairy protein production, with commercial launch planned for Q3 this year.", category: "Innovation", source: "AgFunder News", publishedAt: new Date(Date.now() - 3 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "fermentation", readTime: 2 },
-  { id: "7", headline: "Palm Oil Supply Chain Faces New Deforestation Scrutiny", summary: "European import regulations require suppliers to certify palm oil is deforestation-free by year-end, impacting over 40% of global trade routes.", category: "Sustainability", source: "Rabobank Food", publishedAt: new Date(Date.now() - 5 * 3600 * 1000).toISOString(), sentiment: "negative", imageKeyword: "forest", readTime: 3 },
-  { id: "8", headline: "Bioactive Peptides from Dairy Waste Show Promise as Functional Ingredients", summary: "Researchers demonstrate cheese whey by-products yield high-value bioactive compounds with antioxidant and antimicrobial properties.", category: "Ingredients", source: "Journal of Food Science", publishedAt: new Date(Date.now() - 7 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "dairy", readTime: 4 },
-  { id: "9", headline: "Snack Dusting Market Grows 18% as Flavour Complexity Drives Premium", summary: "Consumers willing to pay 25–40% more for multi-layered seasoning experiences, creating major opportunities for innovative dusting blends.", category: "Market", source: "Mintel", publishedAt: new Date(Date.now() - 9 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "snacks", readTime: 2 },
-  { id: "10", headline: "Vertical Farming Cuts Fresh Herb Supply Chain to 24 Hours", summary: "Urban agriculture startups partner with food manufacturers to deliver consistent, pesticide-free herb ingredients with dramatically reduced transit times.", category: "Sustainability", source: "AgTech Today", publishedAt: new Date(Date.now() - 10 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "farming", readTime: 3 },
-  { id: "11", headline: "Microplastic Contamination Found in 78% of Tested Salt Samples", summary: "Peer-reviewed study raises alarm over food safety implications of microplastic ingestion, calling for updated testing protocols across the industry.", category: "Food Tech", source: "Environmental Science", publishedAt: new Date(Date.now() - 11 * 3600 * 1000).toISOString(), sentiment: "negative", imageKeyword: "salt", readTime: 4 },
-  { id: "12", headline: "Clean Label Trend Reshapes Bread Premix Formulations", summary: "Bakery manufacturers are eliminating artificial emulsifiers from premix lines as retailers demand cleaner ingredient lists to meet growing consumer expectations.", category: "Innovation", source: "Baking Business", publishedAt: new Date(Date.now() - 12 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "bread", readTime: 2 },
+function buildImageUrl(keyword: string): string {
+  return `https://source.unsplash.com/640x360/?${encodeURIComponent(keyword + ",food,nigeria")}`;
+}
+
+function buildReadMoreUrl(headline: string): string {
+  return `https://news.google.com/search?q=${encodeURIComponent(headline)}&hl=en-NG&gl=NG`;
+}
+
+const MOCK_ITEMS_RAW = [
+  { id: "1", headline: "Indomie Launches Bold New Pepper Soup Flavour Across Nigeria", summary: "De United Foods unveils a limited-edition Pepper Soup variant of the iconic Indomie brand, tapping into Nigeria's rich street food culture. Early consumer response from Lagos and Abuja markets has been overwhelmingly positive.", category: "Innovation", source: "BusinessDay Nigeria", publishedAt: new Date(Date.now() - 1 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "noodles spice nigeria", readTime: 2 },
+  { id: "2", headline: "Nigeria's Suya Spice Blend Goes Global as Export Demand Rises", summary: "Artisan spice producers in Kaduna and Abuja are scaling production of the iconic suya seasoning mix for European and North American markets. Export volumes doubled year-on-year.", category: "Market", source: "Nairametrics", publishedAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "suya spice grill", readTime: 3 },
+  { id: "3", headline: "NAFDAC Tightens Labelling Rules for Imported Flavour Additives", summary: "New regulations require all imported flavour compounds to carry detailed allergen declarations and country-of-origin codes by Q3. Industry bodies are urging a phased compliance window.", category: "Regulation", source: "Food Safety News NG", publishedAt: new Date(Date.now() - 3 * 3600 * 1000).toISOString(), sentiment: "neutral", imageKeyword: "food label regulation", readTime: 4 },
+  { id: "4", headline: "Locust Bean (Iru) Identified as High-Value Probiotic Ingredient", summary: "Researchers at University of Lagos confirm that fermented locust bean contains beneficial Bacillus strains with strong gut-health properties, opening doors to functional food formulations.", category: "Ingredients", source: "Journal of African Food Science", publishedAt: new Date(Date.now() - 4 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "fermented beans africa", readTime: 3 },
+  { id: "5", headline: "West Africa Cassava Processing Capacity Set to Double by 2026", summary: "A $200M investment across Nigeria, Ghana, and Côte d'Ivoire will modernise cassava starch and flour production, reducing post-harvest losses and boosting local food manufacturing.", category: "Food Tech", source: "AgriBusinessAfrica", publishedAt: new Date(Date.now() - 5 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "cassava processing africa", readTime: 3 },
+  { id: "6", headline: "Moringa Powder Demand Surges as Nigerian Wellness Brands Scale Up", summary: "Domestic consumption of moringa-enriched products grew 34% in the last fiscal year as health-conscious urban consumers seek affordable functional superfoods.", category: "Market", source: "Food Navigator Africa", publishedAt: new Date(Date.now() - 6 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "moringa powder green", readTime: 2 },
+  { id: "7", headline: "Palm Oil Sustainability Crisis Threatens Nigerian Export Revenues", summary: "Growing EU import restrictions on non-certified palm oil could cost Nigeria ₦180B in annual export revenue. Industry stakeholders call for urgent RSPO certification support.", category: "Sustainability", source: "Channels Business", publishedAt: new Date(Date.now() - 7 * 3600 * 1000).toISOString(), sentiment: "negative", imageKeyword: "palm oil plantation", readTime: 4 },
+  { id: "8", headline: "Kuli-Kuli Brand Expands into Plant-Based Protein Snack Line", summary: "A Lagos-based food startup reformulates the traditional groundnut cake into a high-protein snack bar targeting gym-goers and urban professionals across West Africa.", category: "Innovation", source: "TechCabal Food", publishedAt: new Date(Date.now() - 8 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "peanut snack bar", readTime: 2 },
+  { id: "9", headline: "Ogiri Fermentation Science Opens New Umami Flavour Pathways", summary: "Food scientists are isolating the dominant Bacillus species in ogiri (fermented castor seed) to develop standardised umami flavour concentrates for use in commercial seasonings.", category: "Food Tech", source: "Food Chemistry Africa", publishedAt: new Date(Date.now() - 9 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "fermentation science lab", readTime: 4 },
+  { id: "10", headline: "Nigerian Breadfruit Flour Gains Traction as Wheat Substitute", summary: "With wheat import costs at record highs, bakers across the south-west are adopting breadfruit flour blends that cut costs by up to 40% while maintaining texture and flavour.", category: "Ingredients", source: "BusinessDay Nigeria", publishedAt: new Date(Date.now() - 10 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "breadfruit flour baking", readTime: 3 },
+  { id: "11", headline: "E-Commerce Drives 60% Growth in Artisan Seasoning Brands", summary: "Small-batch seasoning producers from Aba and Onitsha are leveraging Jumia and social commerce to reach customers in the diaspora, with USA and UK recording the highest growth.", category: "Market", source: "Nairametrics", publishedAt: new Date(Date.now() - 11 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "spice market africa", readTime: 2 },
+  { id: "12", headline: "Afang and Egusi Soups Inspire New Instant Meal Range in West Africa", summary: "Nestlé West Africa announces a premium instant soup line inspired by traditional Nigerian dishes, targeting the growing segment of urban consumers seeking convenient home-cooked flavours.", category: "Innovation", source: "Food Navigator Africa", publishedAt: new Date(Date.now() - 12 * 3600 * 1000).toISOString(), sentiment: "positive", imageKeyword: "nigerian soup ingredients", readTime: 3 },
 ];
+
+const MOCK_ITEMS: NewsItem[] = MOCK_ITEMS_RAW.map(item => ({
+  ...item,
+  imageUrl: buildImageUrl(item.imageKeyword),
+  readMoreUrl: buildReadMoreUrl(item.headline),
+}));
 
 let cache: { items: NewsItem[]; fetchedAt: number } | null = null;
 
@@ -44,29 +60,29 @@ async function fetchFromGroq(): Promise<NewsItem[]> {
     },
     body: JSON.stringify({
       model: "llama-3.3-70b-versatile",
-      max_tokens: 3000,
-      temperature: 0.7,
+      max_tokens: 3500,
+      temperature: 0.75,
       messages: [
         {
           role: "system",
-          content: "You are a news aggregator for food science and R&D professionals. You always return valid JSON arrays with no extra text.",
+          content: "You are a food industry news aggregator specialising in Nigeria and West Africa. You always return valid JSON arrays with no extra text.",
         },
         {
           role: "user",
-          content: `Generate 12 realistic, current news items for food science and R&D professionals. Today is ${new Date().toISOString()}.
+          content: `Generate 12 realistic, current news items focused on Nigeria and West Africa food industry. Today is ${new Date().toISOString()}.
 
 Return ONLY a valid JSON array with exactly 12 objects. Each object must have:
 - "id": "1" through "12"
 - "headline": engaging string under 90 characters
-- "summary": 2-3 sentences, under 220 characters total
+- "summary": 2-3 sentences under 220 characters total
 - "category": exactly one of: "Food Tech", "Market", "Regulation", "Sustainability", "Innovation", "Ingredients"
-- "source": realistic food industry publication name
+- "source": realistic Nigerian or African food/business publication (e.g. "BusinessDay Nigeria", "Nairametrics", "Food Navigator Africa", "TechCabal Food", "AgriBusinessAfrica", "Channels Business")
 - "publishedAt": ISO 8601 datetime within the last 24 hours
 - "sentiment": exactly one of: "positive", "neutral", "negative"
-- "imageKeyword": single descriptive word
+- "imageKeyword": 2-4 descriptive words for the visual (e.g. "jollof rice spice", "moringa powder", "palm oil mill")
 - "readTime": integer between 1 and 4
 
-Cover diverse topics: plant-based foods, food safety recalls, ingredient market shifts, sustainability targets, food biotech advances, packaging innovations, regulatory changes, supply chain issues, consumer trends.
+Topics to cover (mix of these): new Nigerian flavour innovations, suya/jollof/egusi/peppersoup trends, local ingredient market prices, NAFDAC regulatory updates, African food export opportunities, cassava/yam/moringa R&D, West African plant-based food startups, fermentation of iru/ogiri/dawadawa, traditional recipe modernisation, food tech startups in Lagos/Accra, sustainability of palm oil and cocoa supply chains.
 Return ONLY the JSON array. No markdown fences, no explanation, no extra text.`,
         },
       ],
@@ -83,9 +99,14 @@ Return ONLY the JSON array. No markdown fences, no explanation, no extra text.`,
   const raw = (data.choices?.[0]?.message?.content || "").trim()
     .replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```\s*$/i, "").trim();
 
-  const items = JSON.parse(raw);
+  const items = JSON.parse(raw) as Omit<NewsItem, "imageUrl" | "readMoreUrl">[];
   if (!Array.isArray(items) || items.length === 0) throw new Error("Invalid response format");
-  return items as NewsItem[];
+
+  return items.map(item => ({
+    ...item,
+    imageUrl: buildImageUrl(item.imageKeyword),
+    readMoreUrl: buildReadMoreUrl(item.headline),
+  }));
 }
 
 router.get("/", requireAuth, async (_req: AuthRequest, res) => {
@@ -111,7 +132,6 @@ router.get("/", requireAuth, async (_req: AuthRequest, res) => {
       res.json({ items: cache.items, fetchedAt: new Date(cache.fetchedAt).toISOString(), stale: true });
       return;
     }
-    // API unavailable — serve mock data so the UI always works
     res.json({ items: MOCK_ITEMS, fetchedAt: new Date().toISOString(), stale: true });
   }
 });
