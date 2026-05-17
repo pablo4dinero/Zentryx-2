@@ -395,12 +395,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [accessRequests, setAccessRequests] = useState<{ id: string; name: string; email: string; requestedAt: string }[]>([]);
   const [processingId, setProcessingId] = useState<string | null>(null);
 
-  const isPrivileged = user && (() => {
-    const r = (user.role || "").toLowerCase();
-    const jp = ((user as any).jobPosition || "").toLowerCase();
-    return ["admin", "manager", "ceo"].includes(r) || r.includes("head") ||
-      jp.includes("head") || jp.includes("ceo") || jp.includes("admin") || jp.includes("manager");
-  })();
+  const isPrivileged = user && (user.role || "").toLowerCase() === "admin";
 
   useEffect(() => {
     if (!isPrivileged) return;
