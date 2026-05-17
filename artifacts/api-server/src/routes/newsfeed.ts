@@ -44,7 +44,7 @@ async function fetchFromAnthropic(): Promise<NewsItem[]> {
       "content-type": "application/json",
     },
     body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
+      model: "claude-3-5-haiku-20241022",
       max_tokens: 3000,
       messages: [{
         role: "user",
@@ -67,7 +67,11 @@ Return ONLY the JSON array. No markdown fences, no explanation, no extra text.`,
     }),
   });
 
-  if (!res.ok) throw new Error(`Anthropic API error ${res.status}`);
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    console.error(`Anthropic API error ${res.status}:`, JSON.stringify(errBody));
+    throw new Error(`Anthropic API error ${res.status}: ${JSON.stringify(errBody)}`);
+  }
 
   const data = await res.json() as { content: { type: string; text: string }[] };
   const raw = (data.content?.[0]?.text || "").trim()
