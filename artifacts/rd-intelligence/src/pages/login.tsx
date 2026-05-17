@@ -238,7 +238,7 @@ export default function Login() {
   );
 
   return (
-    <div className="fixed inset-0 flex flex-col overflow-hidden bg-background">
+    <div className={cn("fixed inset-0 flex flex-col overflow-hidden", isLight ? "bg-gray-100" : "bg-background")}>
       {/* Background decoration */}
       <div className="fixed inset-0 z-0 pointer-events-none">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-accent/5 to-secondary/10" />
