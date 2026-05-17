@@ -23,6 +23,7 @@ import procurementRouter from "./procurement";
 import mdpRouter from "./mdp";
 import accessRequestsRouter from "./access_requests";
 import newsfeedRouter from "./newsfeed";
+import oracleRouter from "./oracle";
 
 const router: IRouter = Router();
 
@@ -50,5 +51,6 @@ router.use("/procurement", procurementRouter);
 router.use("/mdp", mdpRouter);
 router.use("/access-requests", accessRequestsRouter);
 router.use("/newsfeed", newsfeedRouter);
+router.use("/oracle", oracleRouter);
 
 export default router;

@@ -5,7 +5,7 @@ import { useTheme } from "@/lib/theme";
 import {
   Rss, LayoutGrid, List, ChevronLeft, ChevronRight,
   RefreshCw, Clock, TrendingUp, TrendingDown, Minus,
-  Layers, AlertCircle, ExternalLink, FlaskConical, Newspaper,
+  Layers, AlertCircle, ExternalLink, FlaskConical, Newspaper, Brain,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -26,7 +26,7 @@ interface NewsItem {
 }
 
 interface NewsSection {
-  id: "ift" | "guardian";
+  id: "ai" | "ift" | "guardian";
   label: string;
   subtitle: string;
   items: NewsItem[];
@@ -589,13 +589,14 @@ function ListView({ items, isLight }: { items: NewsItem[]; isLight: boolean }) {
 // ─── Market Pulse section (NewsData / Groq / Mock) ────────────────────────────
 
 const CAROUSEL_STYLE: Record<string, { icon: React.ElementType; gradientClass: string }> = {
+  ai:       { icon: Brain,        gradientClass: "bg-gradient-to-r from-violet-700 to-orange-600" },
   ift:      { icon: FlaskConical, gradientClass: "bg-gradient-to-r from-indigo-700 to-violet-600" },
   guardian: { icon: Newspaper,    gradientClass: "bg-gradient-to-r from-emerald-700 to-teal-600" },
 };
 
 function CarouselSection({ section, isLight }: { section: NewsSection; isLight: boolean }) {
   const [view, setView] = useState<ViewMode>("slider");
-  const style = CAROUSEL_STYLE[section.id] || CAROUSEL_STYLE.newsdata;
+  const style = CAROUSEL_STYLE[section.id] || CAROUSEL_STYLE.ai;
 
   const VIEW_OPTIONS: { key: ViewMode; icon: React.ElementType; label: string }[] = [
     { key: "slider", icon: Layers,     label: "Slider" },
@@ -789,7 +790,7 @@ export default function NewsFeed() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.22 }}
             >
-              {section.id === "ift"      && <CarouselSection section={section} isLight={isLight} />}
+              {(section.id === "ai" || section.id === "ift") && <CarouselSection section={section} isLight={isLight} />}
               {section.id === "guardian" && <GuardianSection section={section} isLight={isLight} />}
             </motion.div>
           ))}

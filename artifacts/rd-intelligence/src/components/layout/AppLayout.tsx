@@ -6,7 +6,7 @@ import {
   ChevronDown, User, FlaskConical as Flask, CheckSquare, Building2,
   ArrowRight, Loader2, CalendarDays, UserCircle, TrendingUp, ClipboardList,
   PanelLeftClose, PanelLeftOpen, Lock, Unlock, ShoppingCart, Package,
-  ShieldCheck, ShieldX, Mail, Rss
+  ShieldCheck, ShieldX, Mail, Rss, Brain
 } from "lucide-react";
 import { useAuthStore } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
@@ -24,6 +24,7 @@ const ALL_NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/projects", label: "Project Portfolio", icon: FlaskConical },
   { href: "/analytics", label: "Analytics", icon: LineChart },
+  { href: "/oracle", label: "Oracle", icon: Brain },
   { href: "/weekly-activities", label: "Weekly Activities", icon: ClipboardList },
   { href: "/business-dev", label: "Business Development", icon: Briefcase },
   { href: "/sales-force", label: "Sales Force", icon: TrendingUp },
