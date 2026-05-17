@@ -335,7 +335,7 @@ export default function Login() {
       setDevEmailOtp("");
       if (data.failed) {
         setSmsFailed(true);
-        setError("SMS delivery failed. Try the Call option below.");
+        setError("SMS delivery failed. Try Email me or Request access from an admin.");
       } else if (data.devMode && data.code) {
         setSmsFailed(false);
         setDevSmsOtp(data.code);
@@ -761,7 +761,7 @@ export default function Login() {
                 {smsFailed && !voiceMode && !emailMode && (
                   <div className="flex items-start gap-2 text-sm bg-orange-500/10 border border-orange-500/30 rounded-xl px-3 py-2.5 text-orange-600 dark:text-orange-400">
                     <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                    <span>SMS delivery failed. Use <strong>Call me</strong> or <strong>Email me</strong> below.</span>
+                    <span>SMS delivery failed. Use <strong>Email me</strong> or <strong>Request access from an admin</strong> below.</span>
                   </div>
                 )}
 
