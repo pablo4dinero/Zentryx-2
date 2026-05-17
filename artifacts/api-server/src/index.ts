@@ -152,6 +152,20 @@ async function createTablesIfNotExist() {
       END $$;
     `));
 
+    // Migrate weekly_activities table product_type from enum to text so custom values persist
+    await db.execute(sql.raw(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'weekly_activities' AND column_name = 'product_type' AND data_type = 'USER-DEFINED'
+        ) THEN
+          ALTER TABLE weekly_activities
+            ALTER COLUMN product_type TYPE text USING product_type::text;
+        END IF;
+      END $$;
+    `));
+
     logger.info("Database tables created or verified successfully");
   } catch (err) {
     logger.error({ err }, "Failed to create database tables");

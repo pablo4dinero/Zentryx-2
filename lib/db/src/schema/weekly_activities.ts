@@ -31,7 +31,7 @@ export const weeklyActivitiesTable = pgTable("weekly_activities", {
   weeklyReportId: integer("weekly_report_id").notNull(),
   assignedUserId: integer("assigned_user_id"),
   projectTitle: text("project_title").notNull().default(""),
-  productType: weeklyActivityProductTypeEnum("product_type"),
+  productType: text("product_type"),
   status: weeklyActivityStatusEnum("status").notNull().default("not_started"),
   priority: weeklyActivityPriorityEnum("priority").notNull().default("medium"),
   remarks: text("remarks").default(""),

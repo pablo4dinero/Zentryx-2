@@ -584,7 +584,7 @@ function AccountsPage() {
     .filter(a => {
       const searchMatch = a.company.toLowerCase().includes(search.toLowerCase()) ||
         a.productName.toLowerCase().includes(search.toLowerCase());
-      const ptMatch = filterPt === "all" || a.productType === filterPt;
+      const ptMatch = filterPt === "all" || (a.productType ?? "").toLowerCase() === filterPt.toLowerCase();
       const statusMatch = filterStatus === "all" || (a.status ?? "active") === filterStatus;
       return searchMatch && ptMatch && statusMatch;
     })

@@ -795,6 +795,7 @@ export default function WeeklyActivities() {
   const [ptEditingOption, setPtEditingOption] = useState<string | null>(null);
   const [ptEditValue, setPtEditValue] = useState("");
   const [ptCellRect, setPtCellRect] = useState<{ bottom: number; left: number; width: number } | null>(null);
+  const [ptSearch, setPtSearch] = useState("");
   const saveTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const { theme } = useTheme();
   const isLight = theme === "light";
@@ -811,7 +812,10 @@ export default function WeeklyActivities() {
         setPtEditingOption(null);
       }
     };
-    const scrollClose = () => { setPtDropdownOpen(null); setPtEditingOption(null); };
+    const scrollClose = (e: Event) => {
+      if (e.target instanceof HTMLElement && e.target.closest("[data-pt-cell]")) return;
+      setPtDropdownOpen(null); setPtEditingOption(null);
+    };
     document.addEventListener("mousedown", handler);
     window.addEventListener("scroll", scrollClose, true);
     return () => {
@@ -1179,26 +1183,26 @@ export default function WeeklyActivities() {
                       </td>
 
                       <td className="px-2 py-2" data-pt-cell="">
-                        <input
-                          type="text"
-                          value={row.productType ?? ""}
-                          onChange={e => handleFieldChange(row.id, "productType", e.target.value || null)}
-                          onFocus={e => {
+                        <button
+                          type="button"
+                          onClick={e => {
+                            if (ptDropdownOpen === row.id) { setPtDropdownOpen(null); return; }
                             const r = e.currentTarget.getBoundingClientRect();
                             setPtCellRect({ bottom: r.bottom, left: r.left, width: r.width });
+                            setPtSearch("");
                             setPtDropdownOpen(row.id);
                           }}
-                          onBlur={e => {
-                            if (saveTimers.current[row.id]) {
-                              clearTimeout(saveTimers.current[row.id]);
-                              delete saveTimers.current[row.id];
-                            }
-                            updateActivity(row.id, { productType: e.target.value || null });
-                          }}
-                          placeholder="Product type…"
-                          className={cn("text-xs rounded-lg border px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary/40 w-full",
-                            isLight ? "bg-slate-50 border-slate-200 text-slate-700" : "bg-black/20 border-white/10 text-foreground")}
-                        />
+                          className={cn(
+                            "text-xs rounded-lg border px-2 py-1 w-full flex items-center justify-between gap-1 focus:outline-none focus:ring-1 focus:ring-primary/40",
+                            isLight ? "bg-slate-50 border-slate-200 text-slate-700" : "bg-black/20 border-white/10 text-foreground",
+                            ptDropdownOpen === row.id ? "ring-1 ring-primary/40" : ""
+                          )}
+                        >
+                          <span className={cn("truncate text-left", !row.productType && (isLight ? "text-slate-400" : "text-muted-foreground/50"))}>
+                            {row.productType ?? "Product type…"}
+                          </span>
+                          <ChevronDown className={cn("w-3 h-3 shrink-0 text-muted-foreground transition-transform", ptDropdownOpen === row.id && "rotate-180")} />
+                        </button>
                       </td>
 
                       <td className="px-2 py-2">
@@ -1307,29 +1311,64 @@ export default function WeeklyActivities() {
       {ptDropdownOpen !== null && ptCellRect && (() => {
         const activeRow = rows.find(r => r.id === ptDropdownOpen);
         if (!activeRow) return null;
-        const typed = (activeRow.productType ?? "").trim();
-        const filtered = typeOpts.options.filter(o => !typed || o.toLowerCase().includes(typed.toLowerCase()));
+        const filtered = typeOpts.options.filter(o => !ptSearch || o.toLowerCase().includes(ptSearch.toLowerCase()));
+        const canAdd = ptSearch.trim() !== "" && !typeOpts.options.some(o => o.toLowerCase() === ptSearch.toLowerCase().trim());
         return createPortal(
           <div
             data-pt-cell=""
             style={{ position: "fixed", top: ptCellRect.bottom + 2, left: ptCellRect.left, width: Math.max(ptCellRect.width, 240), zIndex: 9999 }}
             className={cn("rounded-xl border shadow-xl overflow-hidden", isLight ? "bg-white border-gray-200" : "bg-[#1a1a2e] border-white/10")}
           >
-            {typed !== "" && !typeOpts.options.some(o => o.toLowerCase() === typed.toLowerCase()) && (
-              <div className={cn("px-3 py-2 border-b", isLight ? "border-gray-100 bg-gray-50" : "border-white/5 bg-white/5")}>
+            {/* Search / type new */}
+            <div className={cn("px-2 py-1.5 border-b", isLight ? "border-gray-100" : "border-white/10")}>
+              <input
+                autoFocus
+                value={ptSearch}
+                onChange={e => setPtSearch(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Escape") { setPtDropdownOpen(null); setPtSearch(""); }
+                  if (e.key === "Enter" && canAdd) { typeOpts.addOption(ptSearch.trim()); setPtSearch(""); }
+                }}
+                placeholder="Search or add new…"
+                className={cn("w-full text-xs px-2 py-1 rounded-lg border focus:outline-none focus:ring-1 focus:ring-primary/40",
+                  isLight ? "bg-gray-50 border-gray-200 text-gray-900 placeholder:text-gray-400" : "bg-black/20 border-white/10 text-foreground placeholder:text-muted-foreground")}
+              />
+            </div>
+
+            {/* Add to persistent list */}
+            {canAdd && (
+              <div className={cn("px-3 py-1.5 border-b", isLight ? "border-gray-100 bg-gray-50" : "border-white/5 bg-white/5")}>
                 <button
-                  onMouseDown={e => e.preventDefault()}
-                  onClick={() => typeOpts.addOption(typed)}
+                  onClick={() => { typeOpts.addOption(ptSearch.trim()); setPtSearch(""); }}
                   className="w-full text-left text-xs flex items-center gap-1.5 text-primary font-medium hover:opacity-75"
                 >
                   <Plus className="w-3 h-3 shrink-0" />
-                  Add "{typed}" to list
+                  Add "{ptSearch.trim()}" to list
                 </button>
               </div>
             )}
+
             <div className="max-h-52 overflow-y-auto">
+              {/* Clear selection */}
+              {activeRow.productType && (
+                <div className={cn("px-3 py-1.5 border-b", isLight ? "border-gray-50 hover:bg-gray-50" : "border-white/5 hover:bg-white/5")}>
+                  <button
+                    className="w-full text-left text-xs text-muted-foreground italic"
+                    onClick={() => {
+                      handleFieldChange(ptDropdownOpen, "productType", null);
+                      updateActivity(ptDropdownOpen, { productType: null });
+                      setPtDropdownOpen(null); setPtSearch("");
+                    }}
+                  >Clear selection</button>
+                </div>
+              )}
+
               {filtered.map(option => (
-                <div key={option} className={cn("flex items-center px-3 py-1.5 gap-1 group", isLight ? "hover:bg-gray-50" : "hover:bg-white/5")}>
+                <div key={option} className={cn(
+                  "flex items-center px-3 py-1.5 gap-1 group",
+                  isLight ? "hover:bg-gray-50" : "hover:bg-white/5",
+                  activeRow.productType === option ? isLight ? "bg-primary/5" : "bg-primary/10" : ""
+                )}>
                   {ptEditingOption === option ? (
                     <div className="flex flex-1 items-center gap-1.5">
                       <input
@@ -1344,28 +1383,31 @@ export default function WeeklyActivities() {
                         className={cn("flex-1 min-w-0 text-xs px-1.5 py-0.5 rounded border focus:outline-none focus:ring-1 focus:ring-primary/40",
                           isLight ? "bg-white border-gray-300 text-gray-900" : "bg-black/30 border-white/20 text-foreground")}
                       />
-                      <button onMouseDown={e => e.preventDefault()}
-                        onClick={() => { typeOpts.renameOption(option, ptEditValue); setPtEditingOption(null); }}
+                      <button onClick={() => { typeOpts.renameOption(option, ptEditValue); setPtEditingOption(null); }}
                         className="shrink-0 text-xs font-bold text-primary hover:opacity-70">✓</button>
                     </div>
                   ) : (
                     <>
                       <button
-                        className={cn("flex-1 text-left text-xs truncate", isLight ? "text-gray-700" : "text-foreground")}
-                        onMouseDown={e => e.preventDefault()}
+                        className={cn("flex-1 text-left text-xs", isLight ? "text-gray-700" : "text-foreground")}
                         onClick={() => {
                           handleFieldChange(ptDropdownOpen, "productType", option);
                           if (saveTimers.current[ptDropdownOpen]) clearTimeout(saveTimers.current[ptDropdownOpen]);
                           updateActivity(ptDropdownOpen, { productType: option });
-                          setPtDropdownOpen(null);
+                          setPtDropdownOpen(null); setPtSearch("");
                         }}
-                      >{option}</button>
-                      <button title="Rename" onMouseDown={e => e.preventDefault()}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          {activeRow.productType === option && <Check className="w-3 h-3 text-primary shrink-0" />}
+                          {option}
+                        </span>
+                      </button>
+                      <button title="Rename"
                         onClick={() => { setPtEditingOption(option); setPtEditValue(option); }}
                         className={cn("opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity shrink-0",
                           isLight ? "text-gray-400 hover:text-gray-700" : "text-muted-foreground hover:text-foreground")}
                       ><Pencil className="w-3 h-3" /></button>
-                      <button title="Delete" onMouseDown={e => e.preventDefault()}
+                      <button title="Delete"
                         onClick={() => typeOpts.deleteOption(option)}
                         className={cn("opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity shrink-0",
                           isLight ? "text-gray-400 hover:text-red-500" : "text-muted-foreground hover:text-red-400")}
@@ -1374,6 +1416,9 @@ export default function WeeklyActivities() {
                   )}
                 </div>
               ))}
+              {filtered.length === 0 && !canAdd && (
+                <p className="px-3 py-3 text-xs text-muted-foreground text-center">No options found</p>
+              )}
             </div>
           </div>,
           document.body
