@@ -12,6 +12,11 @@ const voicePinStore = new Map<string, string>(); // phone → Termii pinId
 function smsKey(phone: string) { return `sms:${phone}`; }
 
 // ─── Send SMS OTP ─────────────────────────────────────────────────────────────
+function normalizePhone(phone: string): string {
+  // Termii requires international format without + e.g. 2347012345678
+  return phone.replace(/^\+/, "").replace(/\s/g, "");
+}
+
 export async function sendSmsOtp(phone: string): Promise<{ devMode: boolean; code?: string; failed?: boolean }> {
   const code = String(randomInt(100000, 999999));
   smsStore.set(smsKey(phone), { code, expiresAt: Date.now() + 10 * 60 * 1000 });
@@ -21,12 +26,14 @@ export async function sendSmsOtp(phone: string): Promise<{ devMode: boolean; cod
     return { devMode: true, code };
   }
 
+  const normalized = normalizePhone(phone);
+
   try {
     const r = await fetch("https://api.ng.termii.com/api/sms/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        to: phone,
+        to: normalized,
         from: TERMII_SENDER_ID,
         sms: `Your Zentryx verification code is: ${code}. Valid for 10 minutes. Do not share.`,
         type: "plain",
@@ -34,12 +41,15 @@ export async function sendSmsOtp(phone: string): Promise<{ devMode: boolean; cod
         api_key: TERMII_API_KEY,
       }),
     });
-    const body = await r.json().catch(() => ({})) as { message?: string };
-    if (!r.ok) throw new Error(body.message || "Termii SMS failed");
+    const body = await r.json().catch(() => ({})) as { message?: string; code?: string };
+    if (!r.ok) {
+      console.error(`Termii SMS failed [${r.status}]:`, JSON.stringify(body));
+      throw new Error(body.message || `Termii error ${r.status}`);
+    }
+    console.log(`Termii SMS sent to ${normalized}:`, JSON.stringify(body));
     return { devMode: false };
   } catch (err) {
     console.error("Termii SMS send failed:", err);
-    // Code is still stored — user can still verify if they receive it, or try voice
     return { devMode: false, failed: true };
   }
 }
