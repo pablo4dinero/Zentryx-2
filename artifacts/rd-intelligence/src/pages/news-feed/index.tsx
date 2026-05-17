@@ -5,7 +5,7 @@ import { useTheme } from "@/lib/theme";
 import {
   Rss, LayoutGrid, List, ChevronLeft, ChevronRight,
   RefreshCw, Clock, TrendingUp, TrendingDown, Minus,
-  Layers, AlertCircle, ExternalLink, FlaskConical, Newspaper, BarChart3,
+  Layers, AlertCircle, ExternalLink, FlaskConical, Newspaper,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -26,7 +26,7 @@ interface NewsItem {
 }
 
 interface NewsSection {
-  id: "ift" | "guardian" | "newsdata";
+  id: "ift" | "guardian";
   label: string;
   subtitle: string;
   items: NewsItem[];
@@ -142,121 +142,6 @@ function CategoryPill({ category, isLight }: { category: string; isLight: boolea
     )}>
       {category}
     </span>
-  );
-}
-
-// ─── IFT Research Digest ──────────────────────────────────────────────────────
-
-function IFTCard({ item, isLight }: { item: NewsItem; isLight: boolean }) {
-  const [imgFailed, setImgFailed] = useState(false);
-  const cat = catColors(item.category);
-  const timeAgo = formatDistanceToNow(new Date(item.publishedAt), { addSuffix: true });
-
-  return (
-    <div className={cn(
-      "rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg flex flex-col",
-      isLight
-        ? "bg-white shadow-sm border border-gray-100"
-        : "bg-[#0f0f1e] border border-white/8",
-    )}>
-      {/* Image area — always visible; gradient fallback when no real image */}
-      <div className={`relative h-40 w-full flex-shrink-0 overflow-hidden bg-gradient-to-br ${cat.gradient}`}>
-        {item.imageUrl && !imgFailed && (
-          <img
-            src={item.imageUrl}
-            alt={item.imageKeyword}
-            className="absolute inset-0 w-full h-full object-cover"
-            onError={() => setImgFailed(true)}
-            referrerPolicy="no-referrer"
-          />
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/10" />
-        {(!item.imageUrl || imgFailed) && (
-          <span className="absolute inset-0 flex items-center justify-center text-white/10 font-black text-5xl uppercase tracking-widest select-none pointer-events-none">
-            {item.category.split(" ")[0]}
-          </span>
-        )}
-        <div className="absolute top-2.5 left-3 z-10">
-          <span className="text-[10px] font-bold text-white bg-black/40 backdrop-blur-sm px-2.5 py-1 rounded-full">
-            {item.category}
-          </span>
-        </div>
-        <div className="absolute bottom-2.5 right-3 z-10">
-          <span className={cn("text-[10px] bg-black/40 backdrop-blur-sm text-white px-2 py-0.5 rounded-full")}>
-            {item.readTime} min read
-          </span>
-        </div>
-      </div>
-
-      <div className="p-4 flex flex-col flex-1 gap-2">
-        <h3 className={cn(
-          "font-bold text-sm leading-snug line-clamp-3",
-          isLight ? "text-gray-900" : "text-white",
-        )}>
-          {item.headline}
-        </h3>
-
-        <p className={cn("text-xs leading-relaxed line-clamp-2 flex-1", isLight ? "text-gray-500" : "text-gray-400")}>
-          {item.summary}
-        </p>
-
-        <div className={cn("flex items-center gap-1 text-[11px] pb-2", isLight ? "text-gray-400" : "text-gray-500")}>
-          <span className={cn("font-medium truncate", isLight ? "text-indigo-600" : "text-indigo-400")}>{item.source}</span>
-          <span className="shrink-0">· {timeAgo}</span>
-        </div>
-
-        {item.readMoreUrl ? (
-          <a
-            href={item.readMoreUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={cn(
-              "flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-colors border",
-              isLight
-                ? "bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border-indigo-200"
-                : "bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border-indigo-500/20",
-            )}
-          >
-            Read Full Article <ExternalLink className="w-3.5 h-3.5" />
-          </a>
-        ) : (
-          <div className={cn(
-            "flex items-center justify-center py-2 rounded-lg text-xs border",
-            isLight ? "bg-slate-50 text-slate-400 border-slate-200" : "bg-white/5 text-gray-600 border-white/8",
-          )}>
-            IFT.org
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function IFTSection({ section, isLight }: { section: NewsSection; isLight: boolean }) {
-  const style = CAROUSEL_STYLE[section.id] || CAROUSEL_STYLE.ift;
-  return (
-    <div>
-      <SectionBanner
-        label={section.label}
-        subtitle={section.subtitle}
-        icon={style.icon}
-        gradientClass={style.gradientClass}
-        count={section.items.length}
-        isLight={isLight}
-      />
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {section.items.map((item, i) => (
-          <motion.div
-            key={item.id}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.18, delay: i * 0.04 }}
-          >
-            <IFTCard item={item} isLight={isLight} />
-          </motion.div>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -705,7 +590,6 @@ function ListView({ items, isLight }: { items: NewsItem[]; isLight: boolean }) {
 
 const CAROUSEL_STYLE: Record<string, { icon: React.ElementType; gradientClass: string }> = {
   ift:      { icon: FlaskConical, gradientClass: "bg-gradient-to-r from-indigo-700 to-violet-600" },
-  newsdata: { icon: BarChart3,    gradientClass: "bg-gradient-to-r from-amber-600 to-orange-500" },
   guardian: { icon: Newspaper,    gradientClass: "bg-gradient-to-r from-emerald-700 to-teal-600" },
 };
 
@@ -905,9 +789,8 @@ export default function NewsFeed() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.22 }}
             >
-              {section.id === "ift"      && <CarouselSection  section={section} isLight={isLight} />}
-              {section.id === "guardian" && <GuardianSection  section={section} isLight={isLight} />}
-              {section.id === "newsdata" && <IFTSection       section={section} isLight={isLight} />}
+              {section.id === "ift"      && <CarouselSection section={section} isLight={isLight} />}
+              {section.id === "guardian" && <GuardianSection section={section} isLight={isLight} />}
             </motion.div>
           ))}
         </div>
