@@ -335,7 +335,7 @@ export default function Login() {
       setDevEmailOtp("");
       if (data.failed) {
         setSmsFailed(true);
-        setError("SMS delivery failed. Try Email me or Request access from an admin.");
+        setError("SMS delivery failed. Try Call me, Email me, or Request access from an admin.");
       } else if (data.devMode && data.code) {
         setSmsFailed(false);
         setDevSmsOtp(data.code);
@@ -761,7 +761,7 @@ export default function Login() {
                 {smsFailed && !voiceMode && !emailMode && (
                   <div className="flex items-start gap-2 text-sm bg-orange-500/10 border border-orange-500/30 rounded-xl px-3 py-2.5 text-orange-600 dark:text-orange-400">
                     <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                    <span>SMS delivery failed. Use <strong>Email me</strong> or <strong>Request access from an admin</strong> below.</span>
+                    <span>SMS delivery failed. Use <strong>Call me</strong>, <strong>Email me</strong>, or <strong>Request access</strong> below.</span>
                   </div>
                 )}
 
@@ -780,7 +780,7 @@ export default function Login() {
                   {loading ? "Verifying…" : "Verify & Enter Workspace"}
                 </Button>
 
-                {/* Resend / Email — always visible */}
+                {/* Resend / Call / Email — always visible */}
                 <div className={cn("flex rounded-xl overflow-hidden border", isLight ? "border-gray-200" : "border-white/10")}>
                   <button
                     type="button" onClick={handleSmsResend} disabled={loading}
@@ -792,9 +792,20 @@ export default function Login() {
                   </button>
                   <div className={cn("w-px self-stretch", isLight ? "bg-gray-200" : "bg-white/10")} />
                   <button
+                    type="button" onClick={handleVoiceCall} disabled={loading}
+                    className={cn("flex-1 py-2.5 text-xs font-medium transition-colors disabled:opacity-50",
+                      smsFailed && !emailMode
+                        ? "text-primary font-semibold"
+                        : isLight ? "text-gray-600 hover:bg-gray-50 hover:text-gray-900" : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                    )}
+                  >
+                    Call me
+                  </button>
+                  <div className={cn("w-px self-stretch", isLight ? "bg-gray-200" : "bg-white/10")} />
+                  <button
                     type="button" onClick={handleEmailOtp} disabled={loading}
                     className={cn("flex-1 py-2.5 text-xs font-medium transition-colors disabled:opacity-50",
-                      smsFailed
+                      smsFailed && !voiceMode
                         ? "text-primary font-semibold"
                         : isLight ? "text-gray-600 hover:bg-gray-50 hover:text-gray-900" : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
                     )}
