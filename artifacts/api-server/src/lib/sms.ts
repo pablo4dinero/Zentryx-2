@@ -4,6 +4,11 @@ const TERMII_API_KEY = process.env.TERMII_API_KEY;
 const TERMII_SENDER_ID = process.env.TERMII_SENDER_ID || "Zentryx";
 const TERMII_CHANNEL = process.env.TERMII_CHANNEL || "dnd";
 
+// Africa's Talking (alternative provider — easier setup, no sender registration needed)
+const AT_API_KEY = process.env.AT_API_KEY;
+const AT_USERNAME = process.env.AT_USERNAME || "sandbox";
+const AT_SENDER = process.env.AT_SENDER_ID || "";
+
 // ─── OTP stores ──────────────────────────────────────────────────────────────
 interface OtpEntry { code: string; expiresAt: number; }
 const smsStore = new Map<string, OtpEntry>();
@@ -17,11 +22,58 @@ function normalizePhone(phone: string): string {
   return phone.replace(/^\+/, "").replace(/\s/g, "");
 }
 
+async function sendViaCorrectedTermii(phone: string, code: string): Promise<void> {
+  const r = await fetch("https://api.ng.termii.com/api/sms/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      to: phone,
+      from: TERMII_SENDER_ID,
+      sms: `Your Zentryx verification code is: ${code}. Valid for 10 minutes. Do not share.`,
+      type: "plain",
+      channel: TERMII_CHANNEL,
+      api_key: TERMII_API_KEY,
+    }),
+  });
+  const body = await r.json().catch(() => ({})) as { message?: string };
+  if (!r.ok) {
+    console.error(`Termii SMS failed [${r.status}]:`, JSON.stringify(body));
+    throw new Error(body.message || `Termii error ${r.status}`);
+  }
+  console.log(`Termii SMS sent to ${phone}:`, JSON.stringify(body));
+}
+
+async function sendViaAfricasTalking(phone: string, code: string): Promise<void> {
+  const message = `Your Zentryx verification code is: ${code}. Valid for 10 minutes. Do not share.`;
+  const params = new URLSearchParams({
+    username: AT_USERNAME,
+    to: `+${phone}`,
+    message,
+    ...(AT_SENDER ? { from: AT_SENDER } : {}),
+  });
+  const r = await fetch("https://api.africastalking.com/version1/messaging", {
+    method: "POST",
+    headers: {
+      apiKey: AT_API_KEY!,
+      Accept: "application/json",
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: params.toString(),
+  });
+  const body = await r.json().catch(() => ({})) as { SMSMessageData?: { Recipients?: { status: string }[] } };
+  const recipient = body.SMSMessageData?.Recipients?.[0];
+  if (!r.ok || (recipient && recipient.status !== "Success")) {
+    console.error(`Africa's Talking SMS failed [${r.status}]:`, JSON.stringify(body));
+    throw new Error("Africa's Talking delivery failed");
+  }
+  console.log(`Africa's Talking SMS sent to +${phone}:`, JSON.stringify(body));
+}
+
 export async function sendSmsOtp(phone: string): Promise<{ devMode: boolean; code?: string; failed?: boolean }> {
   const code = String(randomInt(100000, 999999));
   smsStore.set(smsKey(phone), { code, expiresAt: Date.now() + 10 * 60 * 1000 });
 
-  if (!TERMII_API_KEY) {
+  if (!TERMII_API_KEY && !AT_API_KEY) {
     console.log(`[DEV] SMS OTP for ${phone}: ${code}`);
     return { devMode: true, code };
   }
@@ -29,27 +81,14 @@ export async function sendSmsOtp(phone: string): Promise<{ devMode: boolean; cod
   const normalized = normalizePhone(phone);
 
   try {
-    const r = await fetch("https://api.ng.termii.com/api/sms/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        to: normalized,
-        from: TERMII_SENDER_ID,
-        sms: `Your Zentryx verification code is: ${code}. Valid for 10 minutes. Do not share.`,
-        type: "plain",
-        channel: TERMII_CHANNEL,
-        api_key: TERMII_API_KEY,
-      }),
-    });
-    const body = await r.json().catch(() => ({})) as { message?: string; code?: string };
-    if (!r.ok) {
-      console.error(`Termii SMS failed [${r.status}]:`, JSON.stringify(body));
-      throw new Error(body.message || `Termii error ${r.status}`);
+    if (AT_API_KEY) {
+      await sendViaAfricasTalking(normalized, code);
+    } else {
+      await sendViaCorrectedTermii(normalized, code);
     }
-    console.log(`Termii SMS sent to ${normalized}:`, JSON.stringify(body));
     return { devMode: false };
   } catch (err) {
-    console.error("Termii SMS send failed:", err);
+    console.error("SMS send failed:", err);
     return { devMode: false, failed: true };
   }
 }
