@@ -1,4 +1,3 @@
-import nodemailer from "nodemailer";
 import { logger } from "./logger";
 
 export interface ProductionOrderMailData {
@@ -26,30 +25,33 @@ export async function sendProductionOrderNotification(
 
   logger.info({ count: recipients.length }, "[Mail] Sending production order notification");
 
-  const transporter = nodemailer.createTransport({
-    host: "smtp.resend.com",
-    port: 465,
-    secure: true,
-    auth: { user: "resend", pass: resendApiKey },
-    connectionTimeout: 10_000,
-    socketTimeout: 15_000,
-  });
-
   const fromEmail = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
   const dateLine = new Date().toLocaleDateString("en-GB", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
   });
-
   const html = buildOrderEmail(order, dateLine);
   const subject = `New Production Order #${order.orderNumber} — ${order.account}`;
 
   const results = await Promise.allSettled(
     recipients.map(r =>
-      transporter.sendMail({
-        from: `Zentryx R&D <${fromEmail}>`,
-        to: r.email,
-        subject,
-        html,
+      fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${resendApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: `Zentryx R&D <${fromEmail}>`,
+          to: [r.email],
+          subject,
+          html,
+        }),
+      }).then(async res => {
+        if (!res.ok) {
+          const body = await res.text();
+          throw new Error(`Resend ${res.status}: ${body}`);
+        }
+        return res.json();
       })
     )
   );
