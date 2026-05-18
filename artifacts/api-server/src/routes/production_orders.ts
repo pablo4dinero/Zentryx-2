@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { accountsTable, accountProductionOrdersTable, todayProductionOrdersTable } from "@workspace/db";
+import { accountsTable, accountProductionOrdersTable, todayProductionOrdersTable, usersTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../lib/auth";
+import { sendProductionOrderNotification } from "../lib/mail";
 
 const router = Router();
 
@@ -122,6 +123,21 @@ router.post("/today", requireAuth, async (req: AuthRequest, res) => {
       expectedDeliveryDate: order.expectedDeliveryDate || null,
       dateDelivered: order.dateDelivered || null,
     });
+
+    db.select({ name: usersTable.name, email: usersTable.email })
+      .from(usersTable)
+      .where(eq(usersTable.isActive, true))
+      .then(users =>
+        sendProductionOrderNotification(users, {
+          orderNumber: order.id,
+          account: account.company ?? "",
+          product: account.productName ?? "",
+          volume: order.volume,
+          dateOrdered: order.dateOrdered,
+          expectedDeliveryDate: order.expectedDeliveryDate,
+        })
+      )
+      .catch(err => console.error("[Mail] Production order notification failed:", err));
 
     res.status(201).json(order);
   } catch (err) {
