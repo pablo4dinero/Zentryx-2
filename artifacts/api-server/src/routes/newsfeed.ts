@@ -113,10 +113,10 @@ interface NewsApiArticle {
   publishedAt: string;
 }
 
-async function fetchFromNewsAPI(): Promise<NewsItem[]> {
-  const q = encodeURIComponent(
-    `(Nigeria OR "West Africa") AND ("food technology" OR seasonings OR flavours OR "new product development" OR snacks OR beverages OR dairy OR bakery)`
-  );
+const NEWS_API_DEFAULT_Q = `(Nigeria OR "West Africa") AND ("food technology" OR seasonings OR flavours OR "new product development" OR snacks OR beverages OR dairy OR bakery)`;
+
+async function fetchFromNewsAPI(customQ?: string): Promise<NewsItem[]> {
+  const q = encodeURIComponent(customQ || NEWS_API_DEFAULT_Q);
   const url =
     `https://newsapi.org/v2/everything` +
     `?q=${q}&sortBy=publishedAt&language=en` +
@@ -216,11 +216,13 @@ interface GuardianArticle {
   fields?: { trailText?: string; thumbnail?: string };
 }
 
-async function fetchFromGuardian(): Promise<NewsItem[]> {
-  const q = [
-    "food science", "food safety", "food innovation", "food technology",
-    "food ingredient", "food research", "food formulation", "food development",
-  ].join(" OR ");
+const GUARDIAN_DEFAULT_Q = [
+  "food science", "food safety", "food innovation", "food technology",
+  "food ingredient", "food research", "food formulation", "food development",
+].join(" OR ");
+
+async function fetchFromGuardian(customQ?: string): Promise<NewsItem[]> {
+  const q = customQ || GUARDIAN_DEFAULT_Q;
 
   const url =
     `https://content.guardianapis.com/search` +
@@ -312,19 +314,21 @@ async function fetchFromGNews(): Promise<NewsItem[]> {
 
 // ─── Route ────────────────────────────────────────────────────────────────────
 
-router.get("/", requireAuth, async (_req: AuthRequest, res) => {
+router.get("/", requireAuth, async (req: AuthRequest, res) => {
   const now = Date.now();
   const sections: NewsSection[] = [];
+  const customQ = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  const useCache = !customQ; // bypass 3-hour cache for custom searches
 
   // 1. Carousel: NewsAPI (primary) → IFT RSS (fallback) ─────────────────────
   try {
-    if (newsApiCache && now - newsApiCache.fetchedAt < CACHE_MS) {
+    if (useCache && newsApiCache && now - newsApiCache.fetchedAt < CACHE_MS) {
       sections.push({ id: "newsapi", label: "Food Tech Newsfeed", subtitle: "NewsAPI · Food Technology & Flavours", items: newsApiCache.items });
     } else {
-      const items = await fetchFromNewsAPI();
-      newsApiCache = { items, fetchedAt: now };
+      const items = await fetchFromNewsAPI(customQ || undefined);
+      if (useCache) newsApiCache = { items, fetchedAt: now };
       sections.push({ id: "newsapi", label: "Food Tech Newsfeed", subtitle: "NewsAPI · Food Technology & Flavours", items });
-      console.log(`[NewsAPI] Fetched ${items.length} articles`);
+      console.log(`[NewsAPI] Fetched ${items.length} articles${customQ ? ` (query: "${customQ}")` : ""}`);
     }
   } catch (err) {
     console.error("[NewsAPI] Failed:", err);
@@ -333,11 +337,11 @@ router.get("/", requireAuth, async (_req: AuthRequest, res) => {
     } else {
       // IFT RSS fallback
       try {
-        if (iftCache && now - iftCache.fetchedAt < CACHE_MS) {
+        if (useCache && iftCache && now - iftCache.fetchedAt < CACHE_MS) {
           sections.push({ id: "ift", label: "Food Science Today", subtitle: "IFT.org · Institute of Food Technologists", items: iftCache.items });
         } else {
           const items = await fetchFromIFT();
-          iftCache = { items, fetchedAt: now };
+          if (useCache) iftCache = { items, fetchedAt: now };
           sections.push({ id: "ift", label: "Food Science Today", subtitle: "IFT.org · Institute of Food Technologists", items });
         }
       } catch (iftErr) {
@@ -352,11 +356,11 @@ router.get("/", requireAuth, async (_req: AuthRequest, res) => {
   // 2. Guardian (editorial — only if key configured) ────────────────────────
   if (GUARDIAN_API_KEY) {
     try {
-      if (guardianCache && now - guardianCache.fetchedAt < CACHE_MS) {
+      if (useCache && guardianCache && now - guardianCache.fetchedAt < CACHE_MS) {
         sections.push({ id: "guardian", label: "Industry Spotlight", subtitle: "The Guardian", items: guardianCache.items });
       } else {
-        const items = await fetchFromGuardian();
-        guardianCache = { items, fetchedAt: now };
+        const items = await fetchFromGuardian(customQ || undefined);
+        if (useCache) guardianCache = { items, fetchedAt: now };
         sections.push({ id: "guardian", label: "Industry Spotlight", subtitle: "The Guardian", items });
       }
     } catch (err) {

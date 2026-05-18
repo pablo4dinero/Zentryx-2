@@ -6,6 +6,7 @@ import {
   Rss, LayoutGrid, List, ChevronLeft, ChevronRight,
   RefreshCw, Clock, TrendingUp, TrendingDown, Minus,
   Layers, AlertCircle, ExternalLink, FlaskConical, Newspaper, Globe,
+  Search, Bookmark, BookmarkCheck, X,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -805,24 +806,42 @@ function FullPageSkeleton({ isLight }: { isLight: boolean }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+const STORAGE_KEY = "newsfeed_default_search";
+
 export default function NewsFeed() {
   const { theme } = useTheme();
   const isLight = theme === "light";
 
-  const [sections, setSections] = useState<NewsSection[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [sections, setSections]   = useState<NewsSection[]>([]);
+  const [loading, setLoading]     = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError]         = useState<string | null>(null);
+
+  // Search state
+  const [searchInput,   setSearchInput]   = useState("");
+  const [activeSearch,  setActiveSearch]  = useState("");   // currently applied query
+  const [defaultSearch, setDefaultSearch] = useState("");   // saved to localStorage
+  const [savedFlash,    setSavedFlash]    = useState(false);
+
+  // Load saved default on mount
+  useEffect(() => {
+    const saved = localStorage.getItem(STORAGE_KEY) || "";
+    setDefaultSearch(saved);
+    setActiveSearch(saved);
+    setSearchInput(saved);
+  }, []);
 
   const updatedLabel = useRelativeTime(fetchedAt);
 
-  const fetchNews = useCallback(async (isBackground = false) => {
+  const fetchNews = useCallback(async (isBackground = false, overrideQ?: string) => {
     if (isBackground) setRefreshing(true);
     else { setLoading(true); setError(null); }
 
     try {
-      const res = await fetch(`${BASE}api/newsfeed`);
+      const q = overrideQ !== undefined ? overrideQ : activeSearch;
+      const url = q ? `${BASE}api/newsfeed?q=${encodeURIComponent(q)}` : `${BASE}api/newsfeed`;
+      const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to load news feed");
       const data = await res.json() as { sections: NewsSection[]; fetchedAt: string };
       setSections(data.sections || []);
@@ -833,14 +852,36 @@ export default function NewsFeed() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [activeSearch]);
 
-  useEffect(() => { fetchNews(); }, [fetchNews]);
+  useEffect(() => { fetchNews(false, activeSearch); }, [activeSearch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const id = setInterval(() => fetchNews(true), 3 * 60 * 60 * 1000);
     return () => clearInterval(id);
   }, [fetchNews]);
+
+  const handleSearch = () => {
+    const q = searchInput.trim();
+    setActiveSearch(q);
+  };
+
+  const handleSetDefault = () => {
+    const q = searchInput.trim();
+    localStorage.setItem(STORAGE_KEY, q);
+    setDefaultSearch(q);
+    setActiveSearch(q);
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 2000);
+  };
+
+  const handleClear = () => {
+    setSearchInput("");
+    setActiveSearch("");
+  };
+
+  const isDefaultApplied = searchInput.trim() === defaultSearch && defaultSearch !== "";
+  const isSearchActive   = activeSearch !== "";
 
   return (
     <div className="space-y-6">
@@ -881,6 +922,99 @@ export default function NewsFeed() {
           </button>
         </div>
       </div>
+
+      {/* Search bar */}
+      <div className={cn(
+        "flex flex-col sm:flex-row gap-2 p-3 rounded-2xl border",
+        isLight ? "bg-slate-50 border-slate-200" : "bg-white/[0.03] border-white/8",
+      )}>
+        {/* Input */}
+        <div className={cn(
+          "flex items-center gap-2 flex-1 rounded-xl border px-3 py-2 transition-colors",
+          isLight
+            ? "bg-white border-slate-200 focus-within:border-blue-400"
+            : "bg-white/5 border-white/10 focus-within:border-white/25",
+        )}>
+          <Search className={cn("w-4 h-4 shrink-0", isLight ? "text-slate-400" : "text-gray-500")} />
+          <input
+            type="text"
+            value={searchInput}
+            onChange={e => setSearchInput(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") handleSearch(); }}
+            placeholder="Search NewsAPI & Guardian — e.g. Nigeria dairy, snack trends, NAFDAC…"
+            className={cn(
+              "flex-1 bg-transparent text-sm focus:outline-none min-w-0",
+              isLight ? "text-gray-800 placeholder:text-slate-400" : "text-foreground placeholder:text-gray-600",
+            )}
+          />
+          {searchInput && (
+            <button onClick={handleClear} className={cn("shrink-0 transition-colors", isLight ? "text-slate-400 hover:text-slate-600" : "text-gray-600 hover:text-gray-400")}>
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={handleSearch}
+            disabled={loading || refreshing}
+            className={cn(
+              "flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all disabled:opacity-40",
+              "bg-gradient-to-r from-blue-600 to-cyan-500 text-white hover:shadow-lg hover:shadow-blue-500/25 active:scale-95",
+            )}
+          >
+            <Search className="w-3.5 h-3.5" />
+            Search
+          </button>
+
+          <button
+            onClick={handleSetDefault}
+            title={defaultSearch ? `Current default: "${defaultSearch}"` : "Save this query as default"}
+            className={cn(
+              "flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold border transition-all active:scale-95",
+              savedFlash
+                ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                : isDefaultApplied
+                ? isLight ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                : isLight ? "border-slate-200 text-slate-600 hover:bg-slate-100" : "border-white/10 text-gray-400 hover:bg-white/5",
+            )}
+          >
+            {savedFlash || isDefaultApplied
+              ? <BookmarkCheck className="w-3.5 h-3.5" />
+              : <Bookmark className="w-3.5 h-3.5" />}
+            {savedFlash ? "Saved!" : isDefaultApplied ? "Default" : "Set Default"}
+          </button>
+        </div>
+
+        {/* Active search chip */}
+        {isSearchActive && !loading && (
+          <div className={cn(
+            "sm:hidden flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border",
+            isLight ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-blue-500/10 border-blue-500/20 text-blue-400",
+          )}>
+            <Search className="w-3 h-3 shrink-0" />
+            <span className="truncate">"{activeSearch}"</span>
+          </div>
+        )}
+      </div>
+
+      {/* Active search label (desktop) */}
+      {isSearchActive && !loading && (
+        <div className={cn(
+          "flex items-center gap-2 text-xs",
+          isLight ? "text-gray-500" : "text-gray-500",
+        )}>
+          <Search className="w-3 h-3 shrink-0" />
+          Showing results for <span className={cn("font-semibold", isLight ? "text-gray-700" : "text-gray-300")}>"{activeSearch}"</span>
+          {defaultSearch === activeSearch && (
+            <span className={cn("flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium", isLight ? "bg-emerald-100 text-emerald-700" : "bg-emerald-500/10 text-emerald-400")}>
+              <BookmarkCheck className="w-2.5 h-2.5" /> Default
+            </span>
+          )}
+          <button onClick={handleClear} className={cn("ml-1 hover:underline", isLight ? "text-red-500" : "text-red-400")}>Clear</button>
+        </div>
+      )}
 
       {/* Content */}
       {loading ? (
