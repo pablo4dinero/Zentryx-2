@@ -24,11 +24,15 @@ export async function sendProductionOrderNotification(
     return;
   }
 
+  logger.info({ count: recipients.length }, "[Mail] Sending production order notification");
+
   const transporter = nodemailer.createTransport({
     host: "smtp.resend.com",
     port: 465,
     secure: true,
     auth: { user: "resend", pass: resendApiKey },
+    connectionTimeout: 10_000,
+    socketTimeout: 15_000,
   });
 
   const fromEmail = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
