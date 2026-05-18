@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { logger } from "./logger";
 
 export interface ProductionOrderMailData {
   orderNumber: number;
@@ -15,11 +16,11 @@ export async function sendProductionOrderNotification(
 ): Promise<void> {
   const resendApiKey = process.env.RESEND_API_KEY;
   if (!resendApiKey) {
-    console.log("[Mail] Dev mode — RESEND_API_KEY not set, skipping production order emails");
+    logger.info("[Mail] Dev mode — RESEND_API_KEY not set, skipping production order emails");
     return;
   }
   if (recipients.length === 0) {
-    console.log("[Mail] No active recipients found, skipping");
+    logger.info("[Mail] No active recipients found, skipping");
     return;
   }
 
@@ -51,9 +52,9 @@ export async function sendProductionOrderNotification(
 
   const failed = results.filter(r => r.status === "rejected");
   if (failed.length > 0) {
-    console.error(`[Mail] ${failed.length}/${recipients.length} production order emails failed`);
+    logger.error(`[Mail] ${failed.length}/${recipients.length} production order emails failed`);
   } else {
-    console.log(`[Mail] Production order #${order.orderNumber} notification sent to ${recipients.length} recipient(s)`);
+    logger.info(`[Mail] Production order #${order.orderNumber} notification sent to ${recipients.length} recipient(s)`);
   }
 }
 
