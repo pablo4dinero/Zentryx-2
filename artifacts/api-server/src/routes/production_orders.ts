@@ -4,6 +4,7 @@ import { accountsTable, accountProductionOrdersTable, todayProductionOrdersTable
 import { eq, desc } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../lib/auth";
 import { sendProductionOrderNotification } from "../lib/mail";
+import { logger } from "../lib/logger";
 
 const router = Router();
 
@@ -124,6 +125,7 @@ router.post("/today", requireAuth, async (req: AuthRequest, res) => {
       dateDelivered: order.dateDelivered || null,
     });
 
+    logger.info({ orderId: order.id }, "[Mail] Queuing production order notification");
     db.select({ name: usersTable.name, email: usersTable.email })
       .from(usersTable)
       .where(eq(usersTable.isActive, true))
@@ -137,7 +139,7 @@ router.post("/today", requireAuth, async (req: AuthRequest, res) => {
           expectedDeliveryDate: order.expectedDeliveryDate,
         })
       )
-      .catch(err => console.error("[Mail] Production order notification failed:", err));
+      .catch(err => logger.error({ err }, "[Mail] Production order notification failed"));
 
     res.status(201).json(order);
   } catch (err) {
