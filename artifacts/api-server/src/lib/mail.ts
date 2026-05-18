@@ -54,9 +54,9 @@ export async function sendProductionOrderNotification(
     )
   );
 
-  const failed = results.filter(r => r.status === "rejected");
+  const failed = results.filter(r => r.status === "rejected") as PromiseRejectedResult[];
   if (failed.length > 0) {
-    logger.error(`[Mail] ${failed.length}/${recipients.length} production order emails failed`);
+    logger.error({ reasons: failed.map(f => String(f.reason)) }, `[Mail] ${failed.length}/${recipients.length} production order emails failed`);
   } else {
     logger.info(`[Mail] Production order #${order.orderNumber} notification sent to ${recipients.length} recipient(s)`);
   }
