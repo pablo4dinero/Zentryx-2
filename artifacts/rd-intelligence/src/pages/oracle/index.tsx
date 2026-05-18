@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Brain, FlaskConical, Star, ShieldCheck, TrendingUp, AlertTriangle,
   Zap, TestTube, Lightbulb, Send, ChevronDown, ChevronUp,
@@ -472,8 +474,34 @@ function OracleBubble({ msg, isLight }: { msg: OracleMessage; isLight: boolean }
             {isTyping ? (
               <TypingDots />
             ) : (
-              <div className="text-sm leading-relaxed whitespace-pre-wrap">
-                {msg.text}
+              <div className="prose-oracle text-sm leading-relaxed">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    p:    ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+                    strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+                    em:   ({ children }) => <em className="italic">{children}</em>,
+                    h2:   ({ children }) => <p className="font-bold text-foreground mt-3 mb-1">{children}</p>,
+                    h3:   ({ children }) => <p className="font-semibold text-foreground mt-2 mb-1">{children}</p>,
+                    ul:   ({ children }) => <ul className="list-disc list-inside space-y-0.5 mb-2">{children}</ul>,
+                    ol:   ({ children }) => <ol className="list-decimal list-inside space-y-0.5 mb-2">{children}</ol>,
+                    li:   ({ children }) => <li className="text-sm">{children}</li>,
+                    hr:   () => <hr className="border-white/10 my-2" />,
+                    code: ({ children }) => <code className="text-xs bg-white/10 px-1.5 py-0.5 rounded font-mono">{children}</code>,
+                    table: ({ children }) => (
+                      <div className="overflow-x-auto my-2 rounded-xl border border-white/10">
+                        <table className="w-full text-xs">{children}</table>
+                      </div>
+                    ),
+                    thead: ({ children }) => <thead className="bg-white/8">{children}</thead>,
+                    tbody: ({ children }) => <tbody>{children}</tbody>,
+                    tr:   ({ children }) => <tr className="border-t border-white/8 even:bg-white/[0.02]">{children}</tr>,
+                    th:   ({ children }) => <th className="px-3 py-2 text-left font-semibold text-foreground/80 whitespace-nowrap">{children}</th>,
+                    td:   ({ children }) => <td className="px-3 py-2 text-muted-foreground">{children}</td>,
+                  }}
+                >
+                  {msg.text}
+                </ReactMarkdown>
                 {msg.streaming && (
                   <motion.span
                     animate={{ opacity: [1, 0] }}
