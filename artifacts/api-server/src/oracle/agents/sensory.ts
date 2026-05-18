@@ -1,4 +1,4 @@
-import { callClaude, safeParseJSON } from "../claude";
+import { callModel, safeParseJSON, HAIKU_MODEL } from "../claude";
 
 export interface SensoryResult {
   profile: Array<{ attribute: string; score: number; benchmark: number; why: string }>;
@@ -23,6 +23,6 @@ const FALLBACK: SensoryResult = {
 };
 
 export async function runSensory(query: string): Promise<SensoryResult> {
-  const text = await callClaude(SYSTEM, query, 1000);
+  const text = await callModel(HAIKU_MODEL, SYSTEM, query, 500);
   return safeParseJSON<SensoryResult>(text, FALLBACK);
 }

@@ -1,4 +1,4 @@
-import { callClaude, safeParseJSON } from "../claude";
+import { callModel, safeParseJSON, HAIKU_MODEL } from "../claude";
 
 export interface TrendScoutResult {
   trends: Array<{ label: string; strength: number; direction: "up" | "down" | "stable"; why: string }>;
@@ -22,6 +22,6 @@ const FALLBACK: TrendScoutResult = {
 };
 
 export async function runTrendScout(query: string): Promise<TrendScoutResult> {
-  const text = await callClaude(SYSTEM, query, 1000);
+  const text = await callModel(HAIKU_MODEL, SYSTEM, query, 500);
   return safeParseJSON<TrendScoutResult>(text, FALLBACK);
 }

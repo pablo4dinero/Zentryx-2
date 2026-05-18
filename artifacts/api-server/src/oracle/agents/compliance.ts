@@ -1,4 +1,4 @@
-import { callClaude, safeParseJSON } from "../claude";
+import { callModel, safeParseJSON, HAIKU_MODEL } from "../claude";
 
 export interface ComplianceResult {
   flags: Array<{ rule: string; status: "pass" | "warn" | "fail"; description: string; why: string }>;
@@ -23,6 +23,6 @@ const FALLBACK: ComplianceResult = {
 };
 
 export async function runCompliance(query: string): Promise<ComplianceResult> {
-  const text = await callClaude(SYSTEM, query, 1000);
+  const text = await callModel(HAIKU_MODEL, SYSTEM, query, 600);
   return safeParseJSON<ComplianceResult>(text, FALLBACK);
 }

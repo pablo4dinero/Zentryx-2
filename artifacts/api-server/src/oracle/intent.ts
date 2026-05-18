@@ -1,34 +1,56 @@
+import { callModel, safeParseJSON, HAIKU_MODEL } from "./claude";
+
 export type AgentId =
   | "formulation" | "sensory" | "compliance" | "trendScout"
   | "risk" | "optimizer" | "experiment" | "insight";
 
-export interface Intent {
+export interface IntentResult {
+  kind: "conversational" | "agents";
   agents: AgentId[];
-  context: string;
 }
-
-const KEYWORDS: Record<AgentId, RegExp> = {
-  formulation: /formul|ingredient|recipe|ratio|blend|mix|composit|percent/i,
-  sensory:     /sensory|taste|flavou?r|texture|mouthfeel|colou?r|aroma|smell/i,
-  compliance:  /nafdac|fda|regulat|comply|compliance|certif|permit|law|standard|ban|recall/i,
-  trendScout:  /trend|market|consumer|competitor|demand|popular|growing/i,
-  risk:        /risk|hazard|stabil|shelf.?life|contamina|allergen|toxic/i,
-  optimizer:   /cost|sav|budget|cheap|substitu|alternati|reduc|optim/i,
-  experiment:  /trial|test|experiment|prototype|pilot|validat|hypothes|variable/i,
-  insight:     /insight|recommend|advis|suggest|summar|conclus|takeaway|next.?step/i,
-};
 
 const ALL_AGENTS: AgentId[] = [
   "formulation", "sensory", "compliance", "trendScout",
   "risk", "optimizer", "experiment", "insight",
 ];
 
-export function parseIntent(query: string): Intent {
-  const matched = (Object.entries(KEYWORDS) as [AgentId, RegExp][])
-    .filter(([, re]) => re.test(query))
-    .map(([id]) => id);
+const SYSTEM = `You are an intent classifier for Oracle, an AI food scientist tool.
+Given a user query, return ONLY a JSON object — no markdown, no explanation.
 
-  if (!matched.includes("insight")) matched.push("insight");
-  if (matched.length <= 1) return { agents: ALL_AGENTS, context: query };
-  return { agents: matched, context: query };
+Rules:
+1. If the query is conversational or educational ("What is X?", "Explain Y", "Tell me about Z", "How does X work?"), return:
+   {"kind":"conversational","agents":[]}
+
+2. Otherwise map to one or more agents from this list:
+   - "formulation": recipes, formulations, ingredients, ratios, blends, premixes
+   - "sensory": taste, flavour, texture, aroma, mouthfeel, sensory profile, how it tastes
+   - "compliance": NAFDAC, FDA, regulations, compliance, labelling, certifications, standards
+   - "trendScout": trends, market, consumer, demand, popular, competitor, growing, West Africa
+   - "risk": risk, hazard, shelf life, stability, allergens, contamination, failure
+   - "optimizer": cost, savings, substitutes, reduce, optimise, cheaper, budget
+   - "experiment": trial, test, experiment, prototype, pilot, DOE, hypothesis, variable
+   - "insight": insights, summary, recommendations, advice, next steps, analysis
+
+3. For "full analysis", "analyse everything", "deep dive", "complete assessment": return ALL agents:
+   {"kind":"agents","agents":["formulation","sensory","compliance","trendScout","risk","optimizer","experiment","insight"]}
+
+Return ONLY valid JSON.`;
+
+const FALLBACK: IntentResult = { kind: "conversational", agents: [] };
+
+export async function classifyIntent(query: string): Promise<IntentResult> {
+  try {
+    const text = await callModel(HAIKU_MODEL, SYSTEM, query, 100);
+    const result = safeParseJSON<IntentResult>(text, FALLBACK);
+    if (result.kind !== "conversational" && result.kind !== "agents") return FALLBACK;
+    if (result.kind === "agents") {
+      const valid = result.agents.filter(a => (ALL_AGENTS as string[]).includes(a));
+      if (valid.length === 0) return FALLBACK;
+      if (!valid.includes("insight") && valid.length > 1) valid.push("insight");
+      return { kind: "agents", agents: valid };
+    }
+    return result;
+  } catch {
+    return FALLBACK;
+  }
 }

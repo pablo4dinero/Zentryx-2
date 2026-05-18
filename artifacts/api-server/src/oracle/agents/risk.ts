@@ -1,4 +1,4 @@
-import { callClaude, safeParseJSON } from "../claude";
+import { callModel, safeParseJSON, HAIKU_MODEL } from "../claude";
 
 export interface RiskResult {
   risks: Array<{ factor: string; severity: "low" | "medium" | "high"; probability: number; mitigation: string; why: string }>;
@@ -20,6 +20,6 @@ const FALLBACK: RiskResult = {
 };
 
 export async function runRisk(query: string): Promise<RiskResult> {
-  const text = await callClaude(SYSTEM, query, 1000);
+  const text = await callModel(HAIKU_MODEL, SYSTEM, query, 500);
   return safeParseJSON<RiskResult>(text, FALLBACK);
 }

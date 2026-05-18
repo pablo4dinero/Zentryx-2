@@ -1,4 +1,4 @@
-import { callClaude, safeParseJSON } from "../claude";
+import { callModel, safeParseJSON, HAIKU_MODEL } from "../claude";
 
 export interface FormulationResult {
   ingredients: Array<{ name: string; pct: number; role: string; why: string }>;
@@ -25,6 +25,6 @@ const FALLBACK: FormulationResult = {
 };
 
 export async function runFormulation(query: string): Promise<FormulationResult> {
-  const text = await callClaude(SYSTEM, query, 1200);
+  const text = await callModel(HAIKU_MODEL, SYSTEM, query, 800);
   return safeParseJSON<FormulationResult>(text, FALLBACK);
 }

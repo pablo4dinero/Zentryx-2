@@ -1,4 +1,4 @@
-import { callClaude, safeParseJSON } from "../claude";
+import { callModel, safeParseJSON, SONNET_MODEL } from "../claude";
 
 export interface InsightResult {
   keyPoints: Array<{ title: string; body: string; importance: "high" | "medium" | "low"; why: string }>;
@@ -23,6 +23,6 @@ const FALLBACK: InsightResult = {
 };
 
 export async function runInsight(query: string): Promise<InsightResult> {
-  const text = await callClaude(SYSTEM, query, 1200);
+  const text = await callModel(SONNET_MODEL, SYSTEM, query, 1000);
   return safeParseJSON<InsightResult>(text, FALLBACK);
 }

@@ -1,4 +1,4 @@
-import { callClaude, safeParseJSON } from "../claude";
+import { callModel, safeParseJSON, HAIKU_MODEL } from "../claude";
 
 export interface OptimizerResult {
   suggestions: Array<{ action: string; category: string; impact: "low" | "medium" | "high"; saving: string; why: string }>;
@@ -22,6 +22,6 @@ const FALLBACK: OptimizerResult = {
 };
 
 export async function runOptimizer(query: string): Promise<OptimizerResult> {
-  const text = await callClaude(SYSTEM, query, 1000);
+  const text = await callModel(HAIKU_MODEL, SYSTEM, query, 600);
   return safeParseJSON<OptimizerResult>(text, FALLBACK);
 }
