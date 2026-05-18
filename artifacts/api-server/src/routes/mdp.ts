@@ -8,7 +8,7 @@ import {
   mdpProducedOrdersTable,
   accountProductionOrdersTable,
 } from "@workspace/db";
-import { eq, desc, inArray, gte } from "drizzle-orm";
+import { eq, desc, inArray, gte, lte, and } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "../lib/auth";
 
 const router = Router();
@@ -286,25 +286,42 @@ router.put("/floor-assignments/:id/produce", requireAuth, async (req: AuthReques
 router.get("/produced-orders", requireAuth, async (req: AuthRequest, res) => {
   try {
     const view = String(req.query.view || "daily");
+    const weekParam = req.query.week ? String(req.query.week) : null;
     const now = new Date();
-    const cutoff = new Date(now);
+    let cutoff = new Date(now);
+    let upperBound: Date | null = null;
 
-    switch (view) {
-      case "weekly":
-        cutoff.setDate(now.getDate() - 7);
-        break;
-      case "monthly":
-        cutoff.setMonth(now.getMonth() - 1);
-        break;
-      case "yearly":
-        cutoff.setFullYear(now.getFullYear() - 1);
-        break;
-      default:
-        cutoff.setDate(now.getDate() - 1);
-        break;
+    if (view === "weekly" && weekParam) {
+      const [yr, wk] = weekParam.split("-W").map(Number);
+      if (!isNaN(yr) && !isNaN(wk)) {
+        const jan1 = new Date(yr, 0, 1);
+        const dayOffset = (wk - 1) * 7 - jan1.getDay() + 1;
+        cutoff = new Date(yr, 0, 1 + dayOffset);
+        upperBound = new Date(cutoff);
+        upperBound.setDate(cutoff.getDate() + 7);
+      }
+    } else {
+      switch (view) {
+        case "weekly":
+          cutoff.setDate(now.getDate() - 7);
+          break;
+        case "monthly":
+          cutoff.setMonth(now.getMonth() - 1);
+          break;
+        case "yearly":
+          cutoff.setFullYear(now.getFullYear() - 1);
+          break;
+        default:
+          cutoff.setDate(now.getDate() - 1);
+          break;
+      }
     }
 
-    const producedOrders = await db.select().from(mdpProducedOrdersTable).where(gte(mdpProducedOrdersTable.producedAt, cutoff));
+    const condition = upperBound
+      ? and(gte(mdpProducedOrdersTable.producedAt, cutoff), lte(mdpProducedOrdersTable.producedAt, upperBound))
+      : gte(mdpProducedOrdersTable.producedAt, cutoff);
+
+    const producedOrders = await db.select().from(mdpProducedOrdersTable).where(condition);
     res.json(producedOrders);
   } catch (err) {
     console.error(err);
@@ -356,6 +373,16 @@ router.put("/produced-orders/:id/deliver", requireAuth, async (req: AuthRequest,
     }
 
     res.json(updated);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+router.delete("/produced-orders", requireAuth, async (_req: AuthRequest, res) => {
+  try {
+    await db.delete(mdpProducedOrdersTable);
+    res.status(204).send();
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "InternalServerError" });

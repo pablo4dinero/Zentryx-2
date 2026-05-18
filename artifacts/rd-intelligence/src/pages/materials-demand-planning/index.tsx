@@ -837,9 +837,6 @@ function ProductionOrdersTab() {
           <button onClick={() => downloadProductionOrdersXlsx(tableOrders)} className={cn("flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-medium border transition-all", isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:border-white/20")}>
             <Download className="w-4 h-4" /> Export XLSX
           </button>
-          <button onClick={() => setIsNewOrderOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20">
-            <Plus className="w-4 h-4" /> New Production Order
-          </button>
         </div>
       </div>
 
@@ -2612,6 +2609,13 @@ function ProductionHistoryTab() {
   const { theme } = useTheme();
   const isLight = theme === "light";
   const [view, setView] = React.useState<ProductionHistoryView>("weekly");
+  const [selectedWeek, setSelectedWeek] = React.useState<string>(getCurrentWeekLabel());
+  const [pendingSearch, setPendingSearch] = React.useState("");
+  const [historySearch, setHistorySearch] = React.useState("");
+  const [splitPct, setSplitPct] = React.useState(38);
+  const [clearConfirm, setClearConfirm] = React.useState<"pending" | "history" | null>(null);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const dragging = React.useRef(false);
 
   const allOrdersQuery = useQuery({
     queryKey: ["/api/mdp/production-orders"],
@@ -2643,9 +2647,11 @@ function ProductionHistoryTab() {
   }, [allOrdersQuery.data]);
 
   const producedHistoryQuery = useQuery({
-    queryKey: ["/api/mdp/produced-orders", view],
+    queryKey: ["/api/mdp/produced-orders", view, selectedWeek],
     queryFn: async () => {
-      const res = await fetch(`${BASE}api/mdp/produced-orders?view=${encodeURIComponent(view)}`, {
+      const params = new URLSearchParams({ view });
+      if (view === "weekly") params.set("week", selectedWeek);
+      const res = await fetch(`${BASE}api/mdp/produced-orders?${params}`, {
         headers: authHeaders(),
       });
       if (!res.ok) {
@@ -2656,6 +2662,19 @@ function ProductionHistoryTab() {
     },
     staleTime: 1000 * 60,
   }) as UseQueryResult<ProducedOrder[], Error>;
+
+  const clearHistoryMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`${BASE}api/mdp/produced-orders`, { method: "DELETE", headers: authHeaders() });
+      if (!res.ok) throw new Error("Failed to clear history");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/produced-orders"] });
+      setClearConfirm(null);
+      toast({ title: "History cleared", description: "All production history records have been removed." });
+    },
+    onError: () => toast({ title: "Error", description: "Could not clear history.", variant: "destructive" }),
+  });
 
   const deliverMutation = useMutation({
     mutationFn: async ({ id, status }: { id: number; status: string }) => {
@@ -2685,35 +2704,111 @@ function ProductionHistoryTab() {
     [producedHistoryQuery.data]
   );
 
-  const rangeLabel = React.useMemo(() => getHistoryRangeLabel(view), [view]);
+  const filteredPending = React.useMemo(() => {
+    const term = pendingSearch.trim().toLowerCase();
+    if (!term) return pendingOrders;
+    return pendingOrders.filter(o => {
+      const acc = historyAccountMap[o.accountId ?? 0];
+      return [acc?.company ?? o.accountName ?? "", acc?.productName ?? o.productName ?? "", o.productType ?? ""]
+        .join(" ").toLowerCase().includes(term);
+    });
+  }, [pendingOrders, pendingSearch, historyAccountMap]);
+
+  const filteredHistory = React.useMemo(() => {
+    const term = historySearch.trim().toLowerCase();
+    if (!term) return producedOrders;
+    return producedOrders.filter(o =>
+      [o.accountName, o.productName, o.productType, o.deliveryStatus].join(" ").toLowerCase().includes(term)
+    );
+  }, [producedOrders, historySearch]);
+
+  const rangeLabel = React.useMemo(() => {
+    if (view === "weekly") {
+      const [yr, wk] = selectedWeek.split("-W").map(Number);
+      const jan1 = new Date(yr, 0, 1);
+      const dayOffset = (wk - 1) * 7 - jan1.getDay() + 1;
+      const start = new Date(yr, 0, 1 + dayOffset);
+      const end = new Date(start); end.setDate(start.getDate() + 6);
+      return `${start.toLocaleDateString(undefined, { month: "short", day: "numeric" })} – ${end.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
+    }
+    return getHistoryRangeLabel(view);
+  }, [view, selectedWeek]);
+
+  const startDrag = React.useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    dragging.current = true;
+    const onMove = (ev: MouseEvent) => {
+      if (!dragging.current || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const pct = Math.min(70, Math.max(20, ((ev.clientX - rect.left) / rect.width) * 100));
+      setSplitPct(pct);
+    };
+    const onUp = () => { dragging.current = false; window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, []);
 
   if (producedHistoryQuery.isLoading) {
     return <PageLoader />;
   }
 
+  const inputCls = cn("h-8 pl-8 pr-3 rounded-lg border text-xs w-full focus:outline-none focus:ring-2 focus:ring-primary/50",
+    isLight ? "bg-white border-slate-200 text-slate-800 placeholder:text-slate-400" : "bg-black/20 border-white/10 text-foreground placeholder:text-muted-foreground");
+
   return (
     <div className="space-y-4">
+      {/* ── Confirm clear dialog ── */}
+      {clearConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className={cn("rounded-2xl border p-6 w-80 shadow-2xl", isLight ? "bg-white border-slate-200" : "bg-[#0f1117] border-white/10")}>
+            <h3 className="text-sm font-bold text-foreground mb-2">
+              {clearConfirm === "history" ? "Clear Production History?" : "Clear Pending Orders view?"}
+            </h3>
+            <p className="text-xs text-muted-foreground mb-5">
+              {clearConfirm === "history"
+                ? "This will permanently delete all production history records."
+                : "This will clear the search filter on pending orders."}
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setClearConfirm(null)} className={cn("px-4 py-2 rounded-xl text-xs font-medium border", isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}>Cancel</button>
+              <button onClick={() => {
+                if (clearConfirm === "history") clearHistoryMutation.mutate();
+                else { setPendingSearch(""); setClearConfirm(null); }
+              }} className="px-4 py-2 rounded-xl text-xs font-semibold bg-red-500 text-white hover:bg-red-600">
+                {clearHistoryMutation.isPending ? "Clearing…" : "Clear"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Split layout: Pending (left) | History (right) ── */}
-      <div className={cn("flex min-h-[640px] rounded-2xl border overflow-hidden", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5")}>
+      <div ref={containerRef} className={cn("flex min-h-[640px] rounded-2xl border overflow-hidden select-none", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5")}>
 
         {/* ── LEFT: Pending Orders ── */}
-        <div className={cn("w-[38%] shrink-0 flex flex-col border-r overflow-hidden", isLight ? "border-slate-200" : "border-white/10")}>
-          <div className={cn("px-5 py-4 border-b shrink-0", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5")}>
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold text-foreground">Pending Orders</h3>
-              <span className={cn("text-xs font-semibold px-2 py-0.5 rounded-full", pendingOrders.length > 0 ? "bg-amber-500/10 text-amber-400" : isLight ? "bg-slate-100 text-slate-500" : "bg-white/5 text-muted-foreground")}>
-                {pendingOrders.length}
-              </span>
+        <div className="shrink-0 flex flex-col overflow-hidden" style={{ width: `${splitPct}%` }}>
+          <div className={cn("px-4 py-3 border-b shrink-0", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5")}>
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-foreground">Pending Orders</h3>
+                <span className={cn("text-xs font-semibold px-2 py-0.5 rounded-full", pendingOrders.length > 0 ? "bg-amber-500/10 text-amber-400" : isLight ? "bg-slate-100 text-slate-500" : "bg-white/5 text-muted-foreground")}>
+                  {filteredPending.length}
+                </span>
+              </div>
+              <button onClick={() => setClearConfirm("pending")} className="text-[10px] text-red-400 hover:text-red-300 font-medium">Clear</button>
             </div>
-            <p className="text-xs text-muted-foreground mt-0.5">Orders not yet planned</p>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <input value={pendingSearch} onChange={e => setPendingSearch(e.target.value)} placeholder="Search pending orders…" className={inputCls} />
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto">
-            {pendingOrders.length === 0 ? (
+            {filteredPending.length === 0 ? (
               <div className="flex h-full items-center justify-center p-8 text-center">
                 <div>
-                  <p className="text-sm font-medium text-foreground">All orders planned</p>
-                  <p className="text-xs text-muted-foreground mt-1">No pending production orders.</p>
+                  <p className="text-sm font-medium text-foreground">{pendingOrders.length === 0 ? "All orders planned" : "No results"}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{pendingOrders.length === 0 ? "No pending production orders." : "Try a different search term."}</p>
                 </div>
               </div>
             ) : (
@@ -2727,12 +2822,11 @@ function ProductionHistoryTab() {
                   </tr>
                 </thead>
                 <tbody>
-                  {pendingOrders.map(order => {
+                  {filteredPending.map(order => {
                     const acc = historyAccountMap[order.accountId ?? 0];
                     const company = acc?.company ?? order.accountName ?? order.accountCompany ?? "—";
                     const productName = acc?.productName ?? order.productName ?? null;
                     const productTypeKey = acc?.productType ?? order.productType ?? null;
-                    const productTypeLabel = productTypeKey ?? "—";
                     const rawMat = order.rawMaterialStatus ?? "Pending";
                     return (
                       <tr key={order.id} className={cn("border-b last:border-0 transition-colors", isLight ? "border-slate-100 hover:bg-slate-50" : "border-white/5 hover:bg-white/[0.02]")}>
@@ -2740,7 +2834,7 @@ function ProductionHistoryTab() {
                           <p className="font-semibold text-foreground text-xs leading-tight truncate max-w-[130px]">{company}</p>
                           {productName && <p className="text-[10px] text-muted-foreground truncate max-w-[130px]">{productName}</p>}
                         </td>
-                        <td className="px-3 py-2.5 text-[10px] text-muted-foreground">{productTypeLabel}</td>
+                        <td className="px-3 py-2.5 text-[10px] text-muted-foreground">{productTypeKey ?? "—"}</td>
                         <td className="px-3 py-2.5 text-right text-xs font-semibold">{Number(order.volume ?? 0).toLocaleString()}</td>
                         <td className="px-3 py-2.5">
                           <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-full",
@@ -2758,47 +2852,69 @@ function ProductionHistoryTab() {
           </div>
         </div>
 
+        {/* ── DRAG HANDLE ── */}
+        <div onMouseDown={startDrag}
+          className={cn("w-1.5 shrink-0 cursor-col-resize flex items-center justify-center group transition-colors",
+            isLight ? "bg-slate-200 hover:bg-primary/30" : "bg-white/10 hover:bg-primary/40")}>
+          <div className={cn("w-0.5 h-8 rounded-full transition-colors", isLight ? "bg-slate-400 group-hover:bg-primary" : "bg-white/20 group-hover:bg-primary")} />
+        </div>
+
         {/* ── RIGHT: Production History ── */}
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-          <div className={cn("px-5 py-4 border-b shrink-0 flex items-center justify-between gap-3", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5")}>
-            <div>
-              <h3 className="text-sm font-bold text-foreground">Production History</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">Viewing: {rangeLabel}</p>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className={cn("flex gap-0.5 p-0.5 rounded-xl border", isLight ? "bg-slate-100 border-slate-200" : "bg-white/5 border-white/10")}>
-                {(["daily", "weekly", "monthly", "yearly"] as ProductionHistoryView[]).map((option) => (
-                  <button key={option} type="button" onClick={() => setView(option)}
-                    className={cn("rounded-lg px-2.5 py-1 text-[10px] font-semibold transition-all",
-                      view === option ? "bg-primary text-white shadow-sm" : isLight ? "text-slate-600 hover:text-slate-900" : "text-muted-foreground hover:text-foreground"
-                    )}>
-                    {option.charAt(0).toUpperCase() + option.slice(1)}
-                  </button>
-                ))}
+          <div className={cn("px-4 py-3 border-b shrink-0", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5")}>
+            <div className="flex items-start justify-between gap-2 mb-2">
+              <div>
+                <h3 className="text-sm font-bold text-foreground">Production History</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Viewing: {rangeLabel}</p>
               </div>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button className={cn("flex items-center gap-1 h-8 px-2.5 rounded-xl text-xs font-medium border transition-all",
-                    isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:border-white/20"
-                  )}>
-                    <Download className="w-3.5 h-3.5" /> Export
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-[160px]">
-                  <DropdownMenuItem onClick={() => downloadProductionHistoryCsv(producedOrders, view)}>Export CSV</DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => downloadProductionHistoryXlsx(producedOrders, view)}>Export XLSX</DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <div className={cn("flex gap-0.5 p-0.5 rounded-xl border", isLight ? "bg-slate-100 border-slate-200" : "bg-white/5 border-white/10")}>
+                  {(["daily", "weekly", "monthly", "yearly"] as ProductionHistoryView[]).map((option) => (
+                    <button key={option} type="button" onClick={() => setView(option)}
+                      className={cn("rounded-lg px-2.5 py-1 text-[10px] font-semibold transition-all",
+                        view === option ? "bg-primary text-white shadow-sm" : isLight ? "text-slate-600 hover:text-slate-900" : "text-muted-foreground hover:text-foreground"
+                      )}>
+                      {option.charAt(0).toUpperCase() + option.slice(1)}
+                    </button>
+                  ))}
+                </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className={cn("flex items-center gap-1 h-8 px-2.5 rounded-xl text-xs font-medium border transition-all",
+                      isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:border-white/20"
+                    )}>
+                      <Download className="w-3.5 h-3.5" /> Export
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-[160px]">
+                    <DropdownMenuItem onClick={() => downloadProductionHistoryCsv(producedOrders, view)}>Export CSV</DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => downloadProductionHistoryXlsx(producedOrders, view)}>Export XLSX</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <button onClick={() => setClearConfirm("history")} className="text-[10px] text-red-400 hover:text-red-300 font-medium h-8 px-2">Clear History</button>
+              </div>
+            </div>
+            {view === "weekly" && (
+              <div className="flex items-center gap-2 mb-2">
+                <label className="text-[10px] text-muted-foreground font-medium whitespace-nowrap">Week:</label>
+                <input type="week" value={selectedWeek} onChange={e => setSelectedWeek(e.target.value)}
+                  className={cn("h-7 px-2 rounded-lg border text-xs focus:outline-none focus:ring-2 focus:ring-primary/50",
+                    isLight ? "bg-white border-slate-200 text-slate-800" : "bg-black/20 border-white/10 text-foreground [color-scheme:dark]")} />
+              </div>
+            )}
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <input value={historySearch} onChange={e => setHistorySearch(e.target.value)} placeholder="Search history…" className={inputCls} />
             </div>
           </div>
 
           <div className="flex-1 overflow-y-auto">
-            {producedOrders.length === 0 ? (
+            {filteredHistory.length === 0 ? (
               <div className="flex h-full items-center justify-center p-10 text-center">
                 <div>
-                  <p className="text-base font-semibold text-foreground">No production history yet.</p>
-                  <p className="mt-2 text-sm text-muted-foreground">Click "Produced" on any floor assignment in Production Planning.</p>
+                  <p className="text-base font-semibold text-foreground">{producedOrders.length === 0 ? "No production history yet." : "No results"}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">{producedOrders.length === 0 ? "Click \"Produced\" on any floor assignment in Production Planning." : "Try a different search term."}</p>
                 </div>
               </div>
             ) : (
@@ -2814,26 +2930,21 @@ function ProductionHistoryTab() {
                   </tr>
                 </thead>
                 <tbody>
-                  {producedOrders.map((order) => (
+                  {filteredHistory.map((order) => (
                     <tr key={order.id} className={cn("border-b last:border-0 transition-colors", isLight ? "border-slate-100 hover:bg-slate-50" : "border-white/5 hover:bg-white/[0.02]")}>
                       <td className="px-4 py-3">
                         <p className="font-bold text-foreground text-sm leading-tight">{order.accountName}</p>
                         <p className="text-xs text-muted-foreground mt-0.5">{order.productName}</p>
                       </td>
-                      <td className="px-3 py-3 text-xs text-muted-foreground">
-                        {order.productType ?? "—"}
-                      </td>
+                      <td className="px-3 py-3 text-xs text-muted-foreground">{order.productType ?? "—"}</td>
                       <td className="px-3 py-3 text-right font-semibold text-sm">{Number(order.volume ?? 0).toLocaleString()}</td>
                       <td className="px-3 py-3 text-xs text-muted-foreground">{formatDateTime(order.producedAt)}</td>
                       <td className="px-3 py-3">
                         <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold border",
-                          order.deliveryStatus === "Delivered"
-                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                            : order.deliveryStatus === "Stored in Warehouse"
-                            ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
-                            : order.deliveryStatus === "In process"
-                            ? "bg-violet-500/10 text-violet-400 border-violet-500/20"
-                            : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                          order.deliveryStatus === "Delivered" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
+                          order.deliveryStatus === "Stored in Warehouse" ? "bg-blue-500/10 text-blue-400 border-blue-500/20" :
+                          order.deliveryStatus === "In process" ? "bg-violet-500/10 text-violet-400 border-violet-500/20" :
+                          "bg-amber-500/10 text-amber-400 border-amber-500/20"
                         )}>
                           {order.deliveryStatus}
                         </span>
@@ -2843,20 +2954,12 @@ function ProductionHistoryTab() {
                           <DropdownMenuTrigger asChild>
                             <button className={cn("px-3 py-1.5 text-xs font-semibold rounded-xl border transition-colors",
                               isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5"
-                            )}>
-                              Update Status ▾
-                            </button>
+                            )}>Update Status ▾</button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-[190px]">
-                            <DropdownMenuItem onClick={() => deliverMutation.mutate({ id: order.id, status: "Delivered" })}>
-                              Mark as Delivered
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => deliverMutation.mutate({ id: order.id, status: "Stored in Warehouse" })}>
-                              Stored in Warehouse
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => deliverMutation.mutate({ id: order.id, status: "In process" })}>
-                              In process
-                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => deliverMutation.mutate({ id: order.id, status: "Delivered" })}>Mark as Delivered</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => deliverMutation.mutate({ id: order.id, status: "Stored in Warehouse" })}>Stored in Warehouse</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => deliverMutation.mutate({ id: order.id, status: "In process" })}>In process</DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </td>
@@ -3008,16 +3111,15 @@ function MaterialsDemandPlanningPage() {
   const summary = React.useMemo(() => {
     const total = products.length;
     const urgentCount = products.filter((a) => a.urgencyLevel === "urgent").length;
-    const averageVolume = total
-      ? Math.round(products.reduce((sum, a) => sum + parseFloat(a.volume || "0"), 0) / total)
-      : 0;
+    const totalVolume = products.reduce((sum, a) => sum + parseFloat(a.volume || "0"), 0);
+    const averageVolume = total ? Math.round(totalVolume / total) : 0;
     const recentCount = products.filter((a) => {
       const date = new Date(a.createdAt);
       const threshold = new Date();
       threshold.setDate(threshold.getDate() - 30);
       return date >= threshold;
     }).length;
-    return { total, averageVolume, urgentCount, recentCount };
+    return { total, averageVolume, urgentCount, recentCount, totalVolume };
   }, [products]);
 
   const openEditForm = (account: Account) => {
@@ -3107,10 +3209,11 @@ function MaterialsDemandPlanningPage() {
 
           {activeTab === "customer-products" && (
             <div className="space-y-5">
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                 {[
                   { label: "Total accounts", value: summary.total },
                   { label: "Urgent", value: summary.urgentCount },
+                  { label: "Total volume", value: `${summary.totalVolume.toLocaleString()} kg` },
                   { label: "Avg. volume", value: `${summary.averageVolume.toLocaleString()} kg` },
                   { label: "Recent (30d)", value: summary.recentCount },
                 ].map(stat => (
