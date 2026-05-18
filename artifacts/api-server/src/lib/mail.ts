@@ -32,29 +32,36 @@ export async function sendProductionOrderNotification(
   const html = buildOrderEmail(order, dateLine);
   const subject = `New Production Order #${order.orderNumber} — ${order.account}`;
 
-  const results = await Promise.allSettled(
-    recipients.map(r =>
-      fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${resendApiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          from: `Zentryx R&D <${fromEmail}>`,
-          to: [r.email],
-          subject,
-          html,
-        }),
-      }).then(async res => {
-        if (!res.ok) {
-          const body = await res.text();
-          throw new Error(`Resend ${res.status}: ${body}`);
-        }
-        return res.json();
-      })
-    )
-  );
+  const sendOne = (email: string) =>
+    fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${resendApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: `Zentryx R&D <${fromEmail}>`,
+        to: [email],
+        subject,
+        html,
+      }),
+    }).then(async res => {
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`Resend ${res.status}: ${body}`);
+      }
+      return res.json();
+    });
+
+  // Resend allows 5 req/sec — send in batches of 5 with 250ms between batches
+  const settled: PromiseSettledResult<unknown>[] = [];
+  for (let i = 0; i < recipients.length; i += 5) {
+    const batch = recipients.slice(i, i + 5);
+    const batchResults = await Promise.allSettled(batch.map(r => sendOne(r.email)));
+    settled.push(...batchResults);
+    if (i + 5 < recipients.length) await new Promise(res => setTimeout(res, 250));
+  }
+  const results = settled;
 
   const failed = results.filter(r => r.status === "rejected") as PromiseRejectedResult[];
   if (failed.length > 0) {
