@@ -6,6 +6,7 @@ import {
   Brain, FlaskConical, Star, ShieldCheck, TrendingUp, AlertTriangle,
   Zap, TestTube, Lightbulb, Send, ChevronDown, ChevronUp,
   CheckCircle2, XCircle, AlertCircle, Info, MapPin, Loader2,
+  MessageSquare,
 } from "lucide-react";
 import {
   RadarChart, PolarGrid, PolarAngleAxis, Radar,
@@ -20,6 +21,7 @@ const BASE = import.meta.env.BASE_URL;
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type AgentId = "formulation" | "sensory" | "compliance" | "trendScout" | "risk" | "optimizer" | "experiment" | "insight";
+type AgentMode = "chat" | AgentId;
 type AgentStatus = "thinking" | "done" | "error";
 
 interface OracleMessage {
@@ -34,16 +36,181 @@ interface OracleMessage {
 
 // ─── Agent meta ───────────────────────────────────────────────────────────────
 
-const AGENT_META: Record<AgentId, { label: string; icon: React.ElementType; color: string; bg: string; accent: string }> = {
-  formulation: { label: "Formulation", icon: FlaskConical, color: "text-violet-400",  bg: "bg-violet-500/10",  accent: "#8b5cf6" },
-  sensory:     { label: "Sensory",     icon: Star,         color: "text-amber-400",   bg: "bg-amber-500/10",   accent: "#f59e0b" },
-  compliance:  { label: "Compliance",  icon: ShieldCheck,  color: "text-green-400",   bg: "bg-green-500/10",   accent: "#22c55e" },
-  trendScout:  { label: "Trends",      icon: TrendingUp,   color: "text-blue-400",    bg: "bg-blue-500/10",    accent: "#3b82f6" },
-  risk:        { label: "Risk",        icon: AlertTriangle, color: "text-red-400",    bg: "bg-red-500/10",     accent: "#ef4444" },
-  optimizer:   { label: "Optimizer",   icon: Zap,          color: "text-yellow-400",  bg: "bg-yellow-500/10",  accent: "#eab308" },
-  experiment:  { label: "Experiment",  icon: TestTube,     color: "text-cyan-400",    bg: "bg-cyan-500/10",    accent: "#06b6d4" },
-  insight:     { label: "Insights",    icon: Lightbulb,    color: "text-pink-400",    bg: "bg-pink-500/10",    accent: "#ec4899" },
+const AGENT_META: Record<AgentId, { label: string; icon: React.ElementType; color: string; bg: string; accent: string; desc: string }> = {
+  formulation: { label: "Formulation", icon: FlaskConical, color: "text-violet-400",  bg: "bg-violet-500/10",  accent: "#8b5cf6", desc: "Recipes, blends & ingredient ratios" },
+  sensory:     { label: "Sensory",     icon: Star,         color: "text-amber-400",   bg: "bg-amber-500/10",   accent: "#f59e0b", desc: "Taste, texture & flavour profiling" },
+  compliance:  { label: "Compliance",  icon: ShieldCheck,  color: "text-green-400",   bg: "bg-green-500/10",   accent: "#22c55e", desc: "NAFDAC, FDA & labelling rules" },
+  trendScout:  { label: "Trends",      icon: TrendingUp,   color: "text-blue-400",    bg: "bg-blue-500/10",    accent: "#3b82f6", desc: "Market signals & consumer demand" },
+  risk:        { label: "Risk",        icon: AlertTriangle, color: "text-red-400",    bg: "bg-red-500/10",     accent: "#ef4444", desc: "Shelf life, safety & hazards" },
+  optimizer:   { label: "Optimizer",   icon: Zap,          color: "text-yellow-400",  bg: "bg-yellow-500/10",  accent: "#eab308", desc: "Cost savings & substitutions" },
+  experiment:  { label: "Experiment",  icon: TestTube,     color: "text-cyan-400",    bg: "bg-cyan-500/10",    accent: "#06b6d4", desc: "Trial design & DOE methodology" },
+  insight:     { label: "Insights",    icon: Lightbulb,    color: "text-pink-400",    bg: "bg-pink-500/10",    accent: "#ec4899", desc: "Strategic analysis & recommendations" },
 };
+
+const CHAT_MODE_META = {
+  label: "Chat Mode",
+  icon: MessageSquare,
+  color: "text-violet-400",
+  bg: "bg-violet-500/10",
+  accent: "#8b5cf6",
+  desc: "General food science questions",
+};
+
+// ─── Mode-specific example prompts ───────────────────────────────────────────
+
+const EXAMPLES_BY_MODE: Record<AgentMode, string[]> = {
+  chat: [
+    "What is the difference between stevia and monk fruit as sweeteners?",
+    "How does water activity affect shelf life in seasonings?",
+    "Explain the Maillard reaction in food processing",
+    "What are clean-label preservative alternatives to sorbate?",
+    "How do hydrocolloids work in sauce formulations?",
+    "Full analysis of a new fermented locust bean (dawadawa) seasoning cube",
+  ],
+  formulation: [
+    "Formulate a jollof seasoning blend — 40% tomato, 30% onion powder, 15% salt",
+    "Design a snack dusting coating for plantain chips",
+    "Create a dairy premix formula for fortified UHT milk",
+    "Develop a low-sodium seasoning cube for health-conscious consumers",
+    "Formulate a suya spice blend with a 12-month shelf life",
+    "Build a clean-label instant soup base without MSG",
+  ],
+  sensory: [
+    "Evaluate the sensory profile of a new suya spice blend",
+    "How would dawadawa affect the umami profile of a seasoning?",
+    "Predict consumer acceptance of a reduced-salt egusi soup mix",
+    "Compare mouthfeel of cassava starch vs maize starch in sauces",
+    "Sensory benchmarking for a new jollof rice seasoning vs Maggi",
+    "What bitterness threshold should I stay below for KCl substitution?",
+  ],
+  compliance: [
+    "What are the compliance risks for launching a probiotic dairy premix in Nigeria?",
+    "NAFDAC requirements for fortified flour products",
+    "Allergen declaration requirements for a groundnut-containing seasoning",
+    "What additives are permitted for shelf-stable snack products in Nigeria?",
+    "Trans fat limits for a palm oil-based seasoning blend",
+    "What front-of-pack labelling is required for export to the EU?",
+  ],
+  trendScout: [
+    "Trending ingredients in West African savoury food products for 2025",
+    "What clean-label trends are driving Nigerian consumer choices?",
+    "Growth opportunities in the Nigerian functional food market",
+    "How are local brands competing with Maggi and Knorr in 2026?",
+    "Consumer demand for low-sodium products in Lagos urban market",
+    "Which snack formats are growing fastest in West Africa?",
+  ],
+  risk: [
+    "Risk assessment for a dawadawa seasoning cube with 12-month shelf life",
+    "Main stability risks for a palm oil-based seasoning at Lagos storage temps",
+    "Aflatoxin risk management for groundnut-containing products",
+    "Shelf life risks for a snack product in tropical warehouse storage",
+    "Microbial risk profile for a low-aw seasoning at 0.62 aw",
+    "Packaging failure risks for BOPP laminate in high-humidity environment",
+  ],
+  optimizer: [
+    "Suggest cost optimisation strategies for our snack dusting formulation",
+    "How can I reduce MSG content without losing umami intensity?",
+    "Replace imported maltodextrin with local cassava dextrin alternatives",
+    "Reduce packaging costs for a seasoning cube without losing barrier",
+    "Optimise ingredient costs for a jollof seasoning at scale",
+    "What hydrocolloid substitutions reduce cost while maintaining viscosity?",
+  ],
+  experiment: [
+    "Design trials to optimise the salt level in a jollof seasoning blend",
+    "What experiments should I run to extend shelf life to 18 months?",
+    "Plan a consumer sensory study for a new plantain chip flavour",
+    "Design a DOE for optimising extrusion parameters for puffed snacks",
+    "RSM trial design for optimising texture in a cassava-based cracker",
+    "Accelerated shelf-life study plan for a seasoning in tropical conditions",
+  ],
+  insight: [
+    "Full analysis of a new fermented locust bean (dawadawa) seasoning cube",
+    "Strategic insights for launching a premium West African spice range",
+    "What are the biggest R&D opportunities in Nigerian processed foods 2026?",
+    "Competitive landscape for new entrants in the Nigerian seasoning market",
+    "Key success factors for scaling a local snack brand against Pringles imports",
+    "Strategic risks of entering the Nigerian dairy analogue market",
+  ],
+};
+
+// ─── Agent mode selector ──────────────────────────────────────────────────────
+
+function AgentModeSelector({
+  selectedMode,
+  onChange,
+  size = "compact",
+  isLight,
+}: {
+  selectedMode: AgentMode;
+  onChange: (m: AgentMode) => void;
+  size?: "large" | "compact";
+  isLight: boolean;
+}) {
+  const allModes: { id: AgentMode; label: string; icon: React.ElementType; color: string; bg: string; desc: string }[] = [
+    { id: "chat", ...CHAT_MODE_META },
+    ...Object.entries(AGENT_META).map(([id, meta]) => ({ id: id as AgentId, ...meta })),
+  ];
+
+  if (size === "large") {
+    return (
+      <div className="flex flex-wrap justify-center gap-2 w-full max-w-2xl">
+        {allModes.map(m => {
+          const Icon = m.icon;
+          const isActive = selectedMode === m.id;
+          return (
+            <button
+              key={m.id}
+              onClick={() => onChange(m.id)}
+              className={cn(
+                "flex flex-col items-center gap-2 px-4 py-3.5 rounded-2xl border transition-all group w-[104px]",
+                isActive
+                  ? `${m.bg} ${m.color} border-current/25 shadow-sm scale-105`
+                  : isLight
+                    ? "border-slate-200 text-slate-500 hover:bg-slate-50 hover:border-slate-300 hover:scale-105"
+                    : "border-white/8 text-muted-foreground hover:bg-white/5 hover:border-white/15 hover:text-foreground hover:scale-105",
+              )}
+            >
+              <div className={cn(
+                "w-9 h-9 rounded-xl flex items-center justify-center transition-colors",
+                isActive ? m.bg : isLight ? "bg-slate-100" : "bg-white/5",
+              )}>
+                <Icon className={cn("w-4.5 h-4.5", isActive ? m.color : isLight ? "text-slate-400" : "text-muted-foreground")} style={{ width: 18, height: 18 }} />
+              </div>
+              <span className={cn("text-[11px] font-semibold leading-tight text-center", isActive ? m.color : "")}>{m.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // compact: scrollable pill row
+  return (
+    <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: "none" }}>
+      {allModes.map(m => {
+        const Icon = m.icon;
+        const isActive = selectedMode === m.id;
+        return (
+          <button
+            key={m.id}
+            onClick={() => onChange(m.id)}
+            className={cn(
+              "flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium transition-all whitespace-nowrap shrink-0",
+              isActive
+                ? `${m.bg} ${m.color} border-current/25`
+                : isLight
+                  ? "border-slate-200 text-slate-500 hover:bg-slate-50 hover:border-slate-300"
+                  : "border-white/8 text-muted-foreground hover:bg-white/5 hover:border-white/15",
+            )}
+          >
+            <Icon className="w-3 h-3 shrink-0" />
+            {m.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 // ─── Typing dots ──────────────────────────────────────────────────────────────
 
@@ -434,13 +601,10 @@ function AgentDataPanel({ agentId, data }: { agentId: AgentId; data: unknown }) 
 
 // ─── Chat bubbles ─────────────────────────────────────────────────────────────
 
-function UserBubble({ text, isLight }: { text: string; isLight: boolean }) {
+function UserBubble({ text }: { text: string }) {
   return (
     <div className="flex justify-end">
-      <div className={cn(
-        "max-w-[75%] px-4 py-3 rounded-2xl rounded-br-sm text-sm leading-relaxed",
-        "bg-gradient-to-br from-violet-600 to-pink-600 text-white",
-      )}>
+      <div className="max-w-[75%] px-4 py-3 rounded-2xl rounded-br-sm text-sm leading-relaxed bg-gradient-to-br from-violet-600 to-pink-600 text-white">
         {text}
       </div>
     </div>
@@ -457,16 +621,13 @@ function OracleBubble({ msg, isLight }: { msg: OracleMessage; isLight: boolean }
   return (
     <div className="flex justify-start">
       <div className="flex gap-3 max-w-[88%]">
-        {/* Avatar */}
         <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-violet-600 to-pink-600 flex items-center justify-center shrink-0 mt-1">
           <Brain className="w-3.5 h-3.5 text-white" />
         </div>
 
         <div className="flex-1 min-w-0 space-y-2">
-          {/* Agent status chips */}
           <AgentChips statuses={msg.agentStatuses} />
 
-          {/* Main bubble */}
           <div className={cn(
             "px-4 py-3 rounded-2xl rounded-bl-sm",
             isLight ? "bg-slate-100 text-slate-800" : "bg-white/8 text-foreground",
@@ -513,14 +674,12 @@ function OracleBubble({ msg, isLight }: { msg: OracleMessage; isLight: boolean }
             )}
           </div>
 
-          {/* Inline agent data — single agent: show directly */}
           {!msg.streaming && hasAgentData && agentEntries.length === 1 && (
             <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
               <AgentDataPanel agentId={agentEntries[0][0]} data={agentEntries[0][1]} />
             </motion.div>
           )}
 
-          {/* Multi-agent: stream in agent cards as they arrive during streaming */}
           {msg.streaming && hasAgentData && (
             <div className="space-y-2">
               {agentEntries.map(([id, data]) => (
@@ -531,7 +690,6 @@ function OracleBubble({ msg, isLight }: { msg: OracleMessage; isLight: boolean }
             </div>
           )}
 
-          {/* Expand full analysis — multi-agent after streaming done */}
           {showExpandButton && agentEntries.length > 1 && (
             <div>
               <button
@@ -570,30 +728,20 @@ function OracleBubble({ msg, isLight }: { msg: OracleMessage; isLight: boolean }
   );
 }
 
-// ─── Example queries ──────────────────────────────────────────────────────────
-
-const EXAMPLES = [
-  "Formulate a jollof seasoning blend — 40% tomato, 30% onion powder, 15% salt, 10% pepper, 5% spices",
-  "What are the compliance risks for launching a probiotic dairy premix in Nigeria?",
-  "Suggest cost optimisation strategies for our snack dusting formulation",
-  "What is the difference between stevia and monk fruit as sweeteners?",
-  "Trending ingredients in West African savoury food products for 2025",
-  "Full analysis of a new fermented locust bean (dawadawa) seasoning cube product",
-];
-
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function OraclePage() {
   const { theme } = useTheme();
   const isLight = theme === "light";
 
-  const [messages, setMessages] = useState<OracleMessage[]>([]);
-  const [query, setQuery]       = useState("");
-  const [busy, setBusy]         = useState(false);
+  const [messages, setMessages]       = useState<OracleMessage[]>([]);
+  const [query, setQuery]             = useState("");
+  const [busy, setBusy]               = useState(false);
+  const [selectedMode, setSelectedMode] = useState<AgentMode>("chat");
 
-  const bottomRef      = useRef<HTMLDivElement>(null);
-  const currentIdRef   = useRef<string>("");
-  const textareaRef    = useRef<HTMLTextAreaElement>(null);
+  const bottomRef    = useRef<HTMLDivElement>(null);
+  const currentIdRef = useRef<string>("");
+  const textareaRef  = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -623,10 +771,13 @@ export default function OraclePage() {
     ]);
 
     try {
+      const body: Record<string, unknown> = { query: q, history: historyForApi };
+      if (selectedMode !== "chat") body.forceAgents = [selectedMode];
+
       const res = await fetch(`${BASE}api/oracle/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: q, history: historyForApi }),
+        body: JSON.stringify(body),
       });
 
       if (!res.ok) {
@@ -698,13 +849,19 @@ export default function OraclePage() {
       setBusy(false);
       textareaRef.current?.focus();
     }
-  }, [query, busy, messages, updateCurrent]);
+  }, [query, busy, messages, selectedMode, updateCurrent]);
 
   const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
   };
 
   const isEmpty = messages.length === 0;
+
+  const activeMeta = selectedMode === "chat"
+    ? CHAT_MODE_META
+    : AGENT_META[selectedMode as AgentId];
+
+  const examples = EXAMPLES_BY_MODE[selectedMode];
 
   return (
     <div className="flex flex-col h-full gap-0" style={{ height: "calc(100vh - 80px)" }}>
@@ -716,7 +873,15 @@ export default function OraclePage() {
             <Brain className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-foreground leading-tight">Oracle</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg font-bold text-foreground leading-tight">Oracle</h1>
+              {selectedMode !== "chat" && (
+                <span className={cn("flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border", activeMeta.bg, activeMeta.color, "border-current/20")}>
+                  {(() => { const Icon = activeMeta.icon; return <Icon className="w-2.5 h-2.5" />; })()}
+                  {activeMeta.label}
+                </span>
+              )}
+            </div>
             <p className="text-xs text-muted-foreground">AI Food R&D Analyst · streams in real time</p>
           </div>
         </div>
@@ -730,18 +895,43 @@ export default function OraclePage() {
       {/* Chat thread */}
       <div className="flex-1 overflow-y-auto custom-scrollbar px-1 pb-2 space-y-4">
         {isEmpty && (
-          <div className="flex flex-col items-center justify-center h-full gap-6 py-8">
-            <div className="w-16 h-16 rounded-3xl bg-gradient-to-br from-violet-600/15 to-pink-600/15 border border-white/5 flex items-center justify-center">
-              <Brain className="w-8 h-8 text-violet-400 opacity-60" />
+          <div className="flex flex-col items-center justify-center h-full gap-6 py-4">
+            {/* Icon */}
+            <div className={cn(
+              "w-16 h-16 rounded-3xl flex items-center justify-center border transition-all",
+              selectedMode === "chat"
+                ? "bg-gradient-to-br from-violet-600/15 to-pink-600/15 border-white/5"
+                : `${activeMeta.bg} border-current/10`,
+            )}>
+              {(() => {
+                const Icon = activeMeta.icon;
+                return <Icon className={cn("w-8 h-8 opacity-70", activeMeta.color)} />;
+              })()}
             </div>
+
+            {/* Title + subtitle */}
             <div className="text-center space-y-1">
-              <p className="text-base font-semibold text-foreground">Ask Oracle anything</p>
+              <p className="text-base font-semibold text-foreground">
+                {selectedMode === "chat" ? "Ask Oracle anything" : `${activeMeta.label} Agent`}
+              </p>
               <p className="text-sm text-muted-foreground max-w-sm">
-                Food formulation, compliance, trends, sensory science, risk — or just a question.
+                {selectedMode === "chat"
+                  ? "Select a specialised agent below, or ask any food science question."
+                  : activeMeta.desc}
               </p>
             </div>
+
+            {/* Agent mode selector — large tiles */}
+            <AgentModeSelector
+              selectedMode={selectedMode}
+              onChange={setSelectedMode}
+              size="large"
+              isLight={isLight}
+            />
+
+            {/* Example prompts — filtered by mode */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-2xl">
-              {EXAMPLES.map((ex, i) => (
+              {examples.map((ex, i) => (
                 <button
                   key={i}
                   onClick={() => setQuery(ex)}
@@ -762,7 +952,7 @@ export default function OraclePage() {
         {messages.map((msg, i) => (
           <motion.div key={msg.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18, delay: i === messages.length - 1 ? 0 : 0 }}>
             {msg.role === "user"
-              ? <UserBubble text={msg.text} isLight={isLight} />
+              ? <UserBubble text={msg.text} />
               : <OracleBubble msg={msg} isLight={isLight} />
             }
           </motion.div>
@@ -775,6 +965,16 @@ export default function OraclePage() {
         "shrink-0 pt-3 border-t",
         isLight ? "border-slate-200" : "border-white/8",
       )}>
+        {/* Compact mode selector — always visible above input */}
+        <div className="mb-2 px-0.5">
+          <AgentModeSelector
+            selectedMode={selectedMode}
+            onChange={setSelectedMode}
+            size="compact"
+            isLight={isLight}
+          />
+        </div>
+
         <div className={cn(
           "flex gap-2 items-end rounded-2xl border p-3",
           isLight
@@ -786,7 +986,11 @@ export default function OraclePage() {
             ref={textareaRef}
             rows={2}
             className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none leading-relaxed"
-            placeholder="Ask about formulations, compliance, trends, costs, sensory science…"
+            placeholder={
+              selectedMode === "chat"
+                ? "Ask about formulations, compliance, trends, costs, sensory science…"
+                : `Ask the ${activeMeta.label} agent anything…`
+            }
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={handleKey}

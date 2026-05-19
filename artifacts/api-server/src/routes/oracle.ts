@@ -54,9 +54,10 @@ Rules:
 - The conversation history may contain earlier product details or formulations — reference them if relevant`;
 
 router.post("/analyze", requireAuth, async (req: AuthRequest, res) => {
-  const { query, history = [] } = req.body as {
+  const { query, history = [], forceAgents } = req.body as {
     query?: string;
     history?: { role: string; content: string }[];
+    forceAgents?: string[];
   };
 
   if (!query?.trim()) { res.status(400).json({ error: "Query required" }); return; }
@@ -73,8 +74,17 @@ router.post("/analyze", requireAuth, async (req: AuthRequest, res) => {
   const send = (data: object) => res.write(`data: ${JSON.stringify(data)}\n\n`);
 
   try {
-    // ── 1. Classify intent (Haiku, 100 tokens) ──────────────────────────────
-    const intent = await classifyIntent(query.trim());
+    // ── 1. Classify intent (or use forced agents) ───────────────────────────
+    const ALL_AGENT_IDS = ["formulation","sensory","compliance","trendScout","risk","optimizer","experiment","insight"];
+    let intent: { kind: "conversational" | "agents"; agents: AgentId[] };
+    if (forceAgents && forceAgents.length > 0) {
+      const valid = forceAgents.filter(a => ALL_AGENT_IDS.includes(a)) as AgentId[];
+      intent = valid.length > 0
+        ? { kind: "agents", agents: valid }
+        : { kind: "conversational", agents: [] };
+    } else {
+      intent = await classifyIntent(query.trim());
+    }
     send({ type: "intent", kind: intent.kind, agents: intent.agents });
 
     // ── 2a. Conversational — stream Sonnet directly ──────────────────────────
