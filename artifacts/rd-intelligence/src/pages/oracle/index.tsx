@@ -949,8 +949,40 @@ export default function OraclePage() {
     ]);
 
     try {
+      // Determine forceAgents: explicit mode > visualization follow-up > none
+      let resolvedForceAgents: string[] | undefined;
+
+      if (selectedMode !== "chat") {
+        resolvedForceAgents = [selectedMode];
+      } else {
+        // Detect "show me chart/graph" follow-ups and re-run the agent that produced data
+        const CHART_PHRASES = [
+          "show me graph", "show graph", "show me the graph", "show the graph",
+          "show me chart", "show chart", "show me the chart", "show the chart",
+          "show me a chart", "show me a graph", "give me a chart", "give me the chart",
+          "i need a chart", "i need a graph", "need a chart", "need a graph",
+          "visible chart", "actual chart", "real chart", "render the chart",
+          "display the chart", "display the graph", "chart for this", "graph for this",
+          "show the sensory", "show sensory chart", "show the radar", "show radar",
+          "show the formula", "show me the formula", "show the formulation",
+          "show ingredient", "show me the ingredient",
+        ];
+        const ql = q.toLowerCase();
+        const isVisualizationRequest = CHART_PHRASES.some(p => ql.includes(p));
+
+        if (isVisualizationRequest) {
+          // Find the most recent oracle message that has agent data
+          const recentWithData = [...messages].reverse().find(
+            m => m.role === "oracle" && Object.keys(m.agentData).length > 0,
+          );
+          if (recentWithData) {
+            resolvedForceAgents = Object.keys(recentWithData.agentData) as AgentId[];
+          }
+        }
+      }
+
       const body: Record<string, unknown> = { query: q, history: historyForApi };
-      if (selectedMode !== "chat") body.forceAgents = [selectedMode];
+      if (resolvedForceAgents) body.forceAgents = resolvedForceAgents;
 
       const res = await fetch(`${BASE}api/oracle/analyze`, {
         method: "POST",
