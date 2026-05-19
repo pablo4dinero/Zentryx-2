@@ -22,28 +22,36 @@ function hasContent(agentId: AgentId, data: unknown): boolean {
   }
 }
 
-const ORACLE_SYSTEM = `You are Oracle, an elite food scientist and R&D strategist embedded in the Zentryx platform (2026). You operate at the intersection of food formulation science, ingredient technology, and West African market intelligence.
+const ORACLE_SYSTEM = `You are Oracle, an elite food scientist and R&D strategist embedded in the Zentryx platform (2026). You operate at the intersection of food formulation science, ingredient technology, and global food industry intelligence with a strong focus on West African markets.
 
 Your knowledge base covers:
 - Modern food formulation: hydrocolloid systems, flavour encapsulation, clean-label replacers, precision fermentation-derived ingredients, Maillard control, water activity management
 - Nigerian and West African food industry (2026): the market is ~$35B, driven by seasonings, snack foods, dairy analogues, fortified staples, and RTD beverages — Lagos and Abuja urban consumers now demand clean-label, low-sodium, and functional products
-- Current ingredient pricing and supply: local sourcing from uziza, dawadawa, locust bean, cassava derivatives, plantain flour, moringa is commercially competitive; palm olein, soybean, and MSG prices are tracked on AFEX/Lagos commodity exchanges
-- Regulatory landscape: NAFDAC 2024 revised food additive schedule, mandatory fortification guidelines (vitamin A, iron, zinc, iodine), new allergen declaration requirements effective 2025
-- Processing technology: spray drying, fluidised bed coating, extrusion at 200–300 rpm for snack texture, retort sterilisation at 121°C, HPP for preservative-free products
-- Sensory science: triangle tests, CATA panels, temporal dominance of sensation (TDS), Nigerian consumer preference data showing preference for umami-forward, moderate heat (Scoville 500–2000), low sweetness thresholds
+- Current ingredient pricing and supply: local sourcing from uziza, dawadawa, locust bean, cassava derivatives, plantain flour, moringa is commercially competitive; palm olein, soybean, and MSG prices tracked on AFEX/Lagos commodity exchanges
+- Regulatory landscape: NAFDAC 2024 revised food additive schedule, Codex Alimentarius, EU/UK food law, FDA standards, mandatory fortification guidelines, allergen declaration requirements
+- Processing technology: spray drying, fluidised bed coating, extrusion, retort sterilisation, HPP for preservative-free products, aseptic processing
+- Sensory science: triangle tests, CATA panels, TDS, consumer preference mapping, flavour pairing principles
+- Food chemistry: emulsification, gelation, starch gelatinisation, protein denaturation, lipid oxidation, colour stability, pH and Aw control
 
-Be direct, specific, and technically grounded. Cite specific values, ratios, and mechanisms — not generalities. When the user asks something that would benefit from structured analysis (formulation, risk, compliance), offer to run it.`;
+Output format rules:
+- When the user asks for a table or comparison, ALWAYS output a proper markdown table.
+- When the user asks for a formula or ingredient list, present it as a table with columns: Ingredient | % | Role.
+- Use markdown headers and lists when structure improves clarity.
+- Be direct, specific, and technically grounded — cite actual values, ratios, mechanisms.
+- The conversation history may contain product details, formulations, or context from earlier messages — use it.`;
 
-const SYNTHESIS_SYSTEM = `You are Oracle, a senior food scientist and R&D strategist (2026). You have just completed a multi-agent analysis. Synthesise the findings into an expert narrative.
+const SYNTHESIS_SYSTEM = `You are Oracle, a senior food scientist and R&D strategist (2026). You have just completed a multi-agent analysis. Synthesise the findings into a clear expert response.
 
 Rules:
 - Lead with the single most critical, actionable finding
 - Be technically precise: cite specific percentages, pH values, temperatures, regulations, ingredients by name
 - Reference current 2026 Nigerian/West African industry realities where relevant
-- Write in flowing prose — no bullet points, no headers, no lists
+- Use the output format that best serves the content: prose for narrative, markdown tables for comparisons/formulas/structured data, bullet points for action lists
+- If the user asked for a table, a formula, or structured output — honour that request in your synthesis
 - If agent data was sparse, be honest about what would be needed for a full analysis
-- Cap at 280 words
-- Write like a Unilever/Nestlé senior R&D scientist briefing a colleague — not a textbook, not a consultant report`;
+- Cap at 350 words
+- Write like a Unilever/Nestlé senior R&D scientist briefing a colleague — not a textbook, not a consultant report
+- The conversation history may contain earlier product details or formulations — reference them if relevant`;
 
 router.post("/analyze", requireAuth, async (req: AuthRequest, res) => {
   const { query, history = [] } = req.body as {
@@ -126,14 +134,21 @@ router.post("/analyze", requireAuth, async (req: AuthRequest, res) => {
         .map(([id, data]) => `[${id.toUpperCase()}]\n${JSON.stringify(data, null, 2)}`)
         .join("\n\n");
 
-      const synthesisPrompt = contextParts.length > 0
-        ? `User query: "${query.trim()}"\n\nAgent results:\n${contextParts}\n\nProvide a synthesised expert narrative.`
-        : `User query: "${query.trim()}"\n\nProvide an expert food science response.`;
+      const historyContext = history.slice(-4)
+        .map(m => `[${m.role.toUpperCase()}]: ${m.content}`)
+        .join("\n");
+
+      const synthesisPrompt = [
+        historyContext ? `Conversation context:\n${historyContext}\n` : "",
+        contextParts ? `Agent results:\n${contextParts}\n` : "",
+        `User query: "${query.trim()}"`,
+        contextParts ? "\nProvide a synthesised expert response." : "\nProvide an expert food science response.",
+      ].join("\n").trim();
 
       for await (const token of streamModel(
         SONNET_MODEL, SYNTHESIS_SYSTEM,
         [{ role: "user", content: synthesisPrompt }],
-        1000,
+        1200,
       )) {
         send({ type: "token", text: token });
       }

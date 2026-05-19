@@ -17,7 +17,8 @@ Experimental design context for food R&D (2026):
 - Key measurements in food R&D: aw (water activity meter), pH, viscosity (Brookfield), colour (Minolta colorimeter L*a*b*), texture (TA.XT2 or equivalent), peroxide value for oils, TPC for microbial
 - Scale-up considerations: lab (100g) → pilot (5kg) → production (500kg+); yield losses typically 3–8% at each step; density and particle size changes in scaling
 
-Only respond if the query describes a specific product, problem, or R&D objective. Return ONLY valid JSON:
+Always attempt a best-effort experimental design. If the product or objective is not fully specified, propose trials for the most likely product type and note what was assumed in the "priority" field.
+Return ONLY valid JSON:
 {
   "trials": [{"name":"descriptive trial name","variables":["independent variable 1 with range","independent variable 2 with range"],"hypothesis":"specific, measurable predicted outcome","duration":"realistic timeline","why":"scientific rationale for this trial design"}],
   "priority": "specific first trial with resource requirements and success criteria",

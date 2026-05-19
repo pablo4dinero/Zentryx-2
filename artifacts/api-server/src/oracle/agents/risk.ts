@@ -18,7 +18,8 @@ Risk framework for Nigerian/West African food production (2026):
 - Supply chain: aflatoxin from local raw materials, pesticide residues in dried herbs/spices, heavy metals (lead, cadmium) in locally sourced mineral salts
 - Regulatory: NAFDAC can recall products with micro exceedances — documented HACCP plan required for all registered products
 
-Only respond if the query involves a specific product or ingredient. Return ONLY valid JSON:
+Always attempt a best-effort risk assessment. If the product is not fully specified, apply risk factors for the most likely product category (e.g. a shelf-stable seasoning blend if unclear) and note what was assumed in the "overall" field.
+Return ONLY valid JSON:
 {
   "risks": [{"factor":"specific risk factor","severity":"low|medium|high","probability":number_0_to_100,"mitigation":"specific, actionable technical countermeasure","why":"mechanism-based reason for this severity"}],
   "overall": "specific risk assessment with recommended priority actions"

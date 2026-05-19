@@ -25,7 +25,8 @@ Cost optimisation approaches:
 - Partial salt replacement with KCl (up to 30%) with bitterness masking
 - Reformulate away from palm olein spikes using blended fats
 
-Only respond if the query provides information about a specific product or formulation. Return ONLY valid JSON:
+Always attempt a best-effort optimisation. If the formulation is not fully specified, suggest optimisations for a typical product of the likely category and note what was assumed in the "priority" field.
+Return ONLY valid JSON:
 {
   "suggestions": [{"action":"specific actionable change with quantities","category":"cost|quality|process|ingredient","impact":"low|medium|high","saving":"estimated saving with basis e.g. '12–18% on ingredient cost'","why":"specific technical and economic reason"}],
   "totalSaving": "realistic total cost reduction estimate with basis",

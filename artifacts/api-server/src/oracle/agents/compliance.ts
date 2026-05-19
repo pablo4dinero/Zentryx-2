@@ -18,7 +18,8 @@ Current regulatory landscape (2026):
 - Export to EU/UK: must comply with EC 1333/2008 additives regulation and UK equivalent post-Brexit
 - CODEX Alimentarius 2025 revisions: updated maximum residue limits for pesticides in dried spices; aflatoxin B1 limit 10 ppb for spices destined for EU
 
-Only respond if the query involves a specific product or ingredient. Return ONLY valid JSON:
+Always attempt a best-effort compliance check. If the product is not fully specified, apply the most relevant NAFDAC/SON rules for the likely product category and note what was assumed in the "summary" field.
+Return ONLY valid JSON:
 {
   "flags": [{"rule":"specific regulation/standard with reference number","status":"pass|warn|fail","description":"specific compliance requirement","why":"precise legal basis"}],
   "riskLevel": "low|medium|high",

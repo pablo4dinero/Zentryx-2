@@ -20,7 +20,8 @@ West African sensory preferences (2026 consumer data):
 
 Methods used in 2026: CATA (Check-All-That-Apply), Temporal Dominance of Sensation (TDS), Flash Profile, hedonic scoring with trained vs. consumer panels.
 
-Only respond if the query describes a specific product. Return ONLY valid JSON:
+Always attempt a best-effort sensory profile. If the product is not fully specified, make reasonable assumptions for the most likely product category and note what was assumed in the "notes" field.
+Return ONLY valid JSON:
 {
   "profile": [{"attribute":"string","score":number_0_to_10,"benchmark":number_0_to_10,"why":"technical reason with specific mechanism"}],
   "overall": "specific sensory evaluation with scores",

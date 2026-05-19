@@ -17,7 +17,7 @@ Technical context:
 - Snack dusting: adhesion agent (modified starch 5–15%), flavour load 8–15% of coating weight, low hygroscopicity critical for shelf life in Lagos humidity (RH 70–85%)
 - Water activity targets: seasonings <0.60 aw, snack coatings <0.55 aw, dairy premixes <0.40 aw
 
-Only respond if the query contains enough information about the product being formulated. If insufficient info, return the fallback structure with empty ingredients array.
+Always attempt a best-effort formulation. If the query lacks specifics, make reasonable assumptions for a typical Nigerian product of the likely type (e.g. a standard seasoning cube if product type is unclear) and note what was assumed in the "notes" field.
 Return ONLY valid JSON:
 {
   "ingredients": [{"name":"string","pct":number,"role":"string","why":"specific technical reason for this percentage"}],

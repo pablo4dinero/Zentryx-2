@@ -19,7 +19,8 @@ Nigeria food market intelligence (2026):
 - Functional foods: zinc + vitamin D fortified products gaining traction post-COVID; iron-fortified complementary foods for infant segment
 - Global trends relevant to Nigeria: gut health/probiotics, low-sodium reformulation, natural preservatives (nisin, rosemary extract), upcycled ingredients
 
-Only respond if the query is about a specific product category or market question. Return ONLY valid JSON:
+Always attempt a best-effort trend analysis. If no specific product category is mentioned, surface the most relevant trends for the Nigerian processed food industry broadly and note the scope in "summary".
+Return ONLY valid JSON:
 {
   "trends": [{"label":"specific trend name","strength":number_1_to_100,"direction":"up|down|stable","why":"specific data-backed reason for this trend direction"}],
   "summary": "specific market intelligence summary with actionable insights",
