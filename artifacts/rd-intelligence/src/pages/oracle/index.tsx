@@ -229,6 +229,66 @@ function NeuralBackground({ isLight }: { isLight: boolean }) {
   );
 }
 
+// ─── Ticker tape ─────────────────────────────────────────────────────────────
+
+function TickerTape({ items, onSelect, isLight }: {
+  items: string[];
+  onSelect: (s: string) => void;
+  isLight: boolean;
+}) {
+  const repeated = [...items, ...items];
+  return (
+    <div className="w-full max-w-2xl">
+      <style>{`
+        @keyframes oracle-ticker {
+          0%   { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
+        }
+        .oracle-ticker-track { animation: oracle-ticker 32s linear infinite; width: max-content; }
+        .oracle-ticker-wrap:hover .oracle-ticker-track { animation-play-state: paused; }
+      `}</style>
+
+      <div className={cn(
+        "flex items-stretch rounded-xl border overflow-hidden",
+        isLight ? "bg-violet-50/80 border-violet-200" : "bg-violet-950/25 border-violet-500/15",
+      )}>
+        {/* Label badge */}
+        <div className={cn(
+          "shrink-0 flex items-center gap-1.5 px-3 border-r",
+          isLight ? "bg-violet-100 border-violet-200" : "bg-violet-500/15 border-violet-500/20",
+        )}>
+          <span className={cn("text-[9px] font-black uppercase tracking-[0.15em] whitespace-nowrap", isLight ? "text-violet-600" : "text-violet-400")}>
+            Try asking
+          </span>
+          <span className={cn("text-[9px]", isLight ? "text-violet-400" : "text-violet-500")}>▶</span>
+        </div>
+
+        {/* Scrolling track */}
+        <div className="oracle-ticker-wrap flex-1 overflow-hidden">
+          <div className="oracle-ticker-track flex items-center">
+            {repeated.map((item, i) => (
+              <span key={i} className="flex items-center shrink-0">
+                <button
+                  onClick={() => onSelect(item)}
+                  className={cn(
+                    "text-[11px] px-3 py-2.5 whitespace-nowrap transition-colors cursor-pointer",
+                    isLight
+                      ? "text-violet-700/80 hover:text-violet-900 hover:bg-violet-100"
+                      : "text-violet-300/75 hover:text-violet-100 hover:bg-violet-500/10",
+                  )}
+                >
+                  {item}
+                </button>
+                <span className={cn("select-none text-xs px-0.5", isLight ? "text-violet-300" : "text-violet-700/60")}>·</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Agent mode selector ──────────────────────────────────────────────────────
 
 function AgentModeSelector({
@@ -270,12 +330,17 @@ function AgentModeSelector({
               <div className={cn(
                 "w-11 h-11 rounded-2xl flex items-center justify-center transition-all shrink-0",
                 isActive
-                  ? "bg-current/10"
-                  : isLight ? "bg-slate-100" : "bg-white/10",
+                  ? "bg-white/15 shadow-inner"
+                  : isLight ? "bg-slate-100" : "bg-white/[0.09]",
               )}>
                 <Icon
                   style={{ width: 22, height: 22 }}
-                  className={isActive ? m.color : isLight ? "text-slate-500" : "text-slate-400"}
+                  className={cn(
+                    "transition-colors",
+                    isActive
+                      ? m.color
+                      : isLight ? "text-slate-500" : "text-slate-300",
+                  )}
                 />
               </div>
               <span className={cn(
@@ -1140,23 +1205,12 @@ export default function OraclePage() {
               isLight={isLight}
             />
 
-            {/* Example prompts — filtered by mode */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-2xl">
-              {examples.map((ex, i) => (
-                <button
-                  key={i}
-                  onClick={() => setQuery(ex)}
-                  className={cn(
-                    "text-left text-xs px-3.5 py-3 rounded-xl border transition-all leading-relaxed hover:-translate-y-px",
-                    isLight
-                      ? "border-slate-200 hover:bg-slate-50 hover:border-slate-300 text-slate-600"
-                      : "border-white/8 hover:bg-white/5 hover:border-white/15 text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {ex}
-                </button>
-              ))}
-            </div>
+            {/* Ticker tape — replaces static grid */}
+            <TickerTape
+              items={examples}
+              onSelect={q => setQuery(q)}
+              isLight={isLight}
+            />
           </div>
         )}
 
