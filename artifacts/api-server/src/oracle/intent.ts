@@ -46,7 +46,6 @@ export async function classifyIntent(query: string): Promise<IntentResult> {
     if (result.kind === "agents") {
       const valid = result.agents.filter(a => (ALL_AGENTS as string[]).includes(a));
       if (valid.length === 0) return FALLBACK;
-      if (!valid.includes("insight") && valid.length > 1) valid.push("insight");
       return { kind: "agents", agents: valid };
     }
     return result;

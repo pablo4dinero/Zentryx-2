@@ -666,6 +666,13 @@ export default function OraclePage() {
                 agentData: { ...m.agentData, [ev.agentId]: ev.data },
               }));
 
+            } else if (ev.type === "agent_skip") {
+              updateCurrent(m => {
+                const next = { ...m.agentStatuses };
+                delete next[ev.agentId as AgentId];
+                return { ...m, agentStatuses: next };
+              });
+
             } else if (ev.type === "agent_error") {
               updateCurrent(m => ({
                 ...m,
