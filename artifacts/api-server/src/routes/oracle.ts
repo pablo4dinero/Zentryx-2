@@ -85,7 +85,10 @@ router.post("/analyze", requireAuth, async (req: AuthRequest, res) => {
         ? { kind: "agents", agents: valid }
         : { kind: "conversational", agents: [] };
     } else {
-      intent = await classifyIntent(query.trim());
+      const historyHint = history.slice(-4)
+        .map(m => `${m.role === "assistant" ? "Oracle" : "User"}: ${m.content.slice(0, 120)}`)
+        .join("\n");
+      intent = await classifyIntent(query.trim(), historyHint || undefined);
     }
     send({ type: "intent", kind: intent.kind, agents: intent.agents });
 

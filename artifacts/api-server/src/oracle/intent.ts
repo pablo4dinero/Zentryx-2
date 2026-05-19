@@ -22,14 +22,17 @@ Rules:
    {"kind":"conversational","agents":[]}
 
 2. Otherwise map to one or more agents. When the query names or describes a specific product, ingredient, or scenario — even if phrased as a question — route to the relevant agent(s):
-   - "formulation": recipes, formulations, ingredients, ratios, blends, premixes, "what would the formula be", "how do I make X", "build me a"
-   - "sensory": taste, flavour, texture, aroma, mouthfeel, sensory profile, spider chart, radar chart, sensory scores, "how does X taste", "rate the flavour", "score the", "profile of", "evaluate the taste/flavour/texture of", umami, bitterness, saltiness, sweetness, heat profile
+   - "formulation": recipes, formulations, ingredients, ratios, blends, premixes, "what would the formula be", "how do I make X", "build me a", "show me the formula", "show me the ingredients"
+   - "sensory": taste, flavour, texture, aroma, mouthfeel, sensory profile, spider chart, radar chart, sensory scores, "how does X taste", "rate the flavour", "score the", "profile of", "evaluate the taste/flavour/texture of", umami, bitterness, saltiness, sweetness, heat profile, "show me the chart", "show the chart", "show me a chart", "show the sensory", "show graph", "I need a chart", "give me a chart", "visible chart", "render the chart", "display the chart"
    - "compliance": NAFDAC, FDA, regulations, compliance, labelling, certifications, standards, permitted, allowed
    - "trendScout": trends, market, consumer, demand, popular, competitor, growing, West Africa, what's trending
    - "risk": risk, hazard, shelf life, stability, allergens, contamination, failure, safe to use
    - "optimizer": cost, savings, substitutes, reduce, optimise, cheaper, budget, save money
    - "experiment": trial, test, experiment, prototype, pilot, DOE, hypothesis, variable, how do I test
    - "insight": insights, summary, recommendations, advice, next steps, analysis, strategic, what should I do
+
+3a. If the current query is a follow-up requesting a chart, graph, or visualisation ("show the chart", "I need a graph", "display the profile"), and the conversation context mentions sensory data — return {"kind":"agents","agents":["sensory"]}.
+3b. If the current query is a follow-up requesting to see an ingredient breakdown or formula — return {"kind":"agents","agents":["formulation"]}.
 
 3. For "full analysis", "analyse everything", "deep dive", "complete assessment": return ALL agents:
    {"kind":"agents","agents":["formulation","sensory","compliance","trendScout","risk","optimizer","experiment","insight"]}
@@ -45,9 +48,12 @@ Return ONLY valid JSON.`;
 
 const FALLBACK: IntentResult = { kind: "conversational", agents: [] };
 
-export async function classifyIntent(query: string): Promise<IntentResult> {
+export async function classifyIntent(query: string, historyHint?: string): Promise<IntentResult> {
   try {
-    const text = await callModel(HAIKU_MODEL, SYSTEM, query, 100);
+    const input = historyHint
+      ? `Conversation context (last 2 turns):\n${historyHint}\n\nCurrent query: ${query}`
+      : query;
+    const text = await callModel(HAIKU_MODEL, SYSTEM, input, 150);
     const result = safeParseJSON<IntentResult>(text, FALLBACK);
     if (result.kind !== "conversational" && result.kind !== "agents") return FALLBACK;
     if (result.kind === "agents") {
