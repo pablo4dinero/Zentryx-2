@@ -133,6 +133,102 @@ const EXAMPLES_BY_MODE: Record<AgentMode, string[]> = {
   ],
 };
 
+// ─── Neural background animation ─────────────────────────────────────────────
+
+function NeuralBackground({ isLight }: { isLight: boolean }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const resize = () => {
+      canvas.width  = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+    };
+    resize();
+
+    const ro = new ResizeObserver(resize);
+    ro.observe(canvas);
+
+    const COUNT   = 42;
+    const DIST    = 130;
+    const nodes   = Array.from({ length: COUNT }, () => ({
+      x:     Math.random() * canvas.width,
+      y:     Math.random() * canvas.height,
+      vx:    (Math.random() - 0.5) * 0.35,
+      vy:    (Math.random() - 0.5) * 0.35,
+      r:     Math.random() * 1.8 + 0.8,
+      phase: Math.random() * Math.PI * 2,
+    }));
+
+    let raf: number;
+
+    const tick = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const nodeFill = isLight ? "rgba(109,40,217,"  : "rgba(167,139,250,";
+      const lineFill = isLight ? "rgba(109,40,217,"  : "rgba(139,92,246,";
+
+      for (let i = 0; i < nodes.length; i++) {
+        const a = nodes[i];
+        a.x += a.vx;
+        a.y += a.vy;
+        a.phase += 0.018;
+
+        // wrap edges with a soft fade zone
+        if (a.x < 0)              a.x = canvas.width;
+        if (a.x > canvas.width)   a.x = 0;
+        if (a.y < 0)              a.y = canvas.height;
+        if (a.y > canvas.height)  a.y = 0;
+
+        for (let j = i + 1; j < nodes.length; j++) {
+          const b   = nodes[j];
+          const dx  = a.x - b.x;
+          const dy  = a.y - b.y;
+          const d   = Math.hypot(dx, dy);
+          if (d < DIST) {
+            const alpha = (1 - d / DIST) * (isLight ? 0.22 : 0.18);
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.strokeStyle = `${lineFill}${alpha})`;
+            ctx.lineWidth   = 0.75;
+            ctx.stroke();
+          }
+        }
+
+        // pulsing node
+        const pulse = a.r + Math.sin(a.phase) * 0.6;
+        ctx.beginPath();
+        ctx.arc(a.x, a.y, pulse, 0, Math.PI * 2);
+        ctx.fillStyle = `${nodeFill}${isLight ? 0.55 : 0.5})`;
+        ctx.fill();
+      }
+
+      raf = requestAnimationFrame(tick);
+    };
+
+    tick();
+
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, [isLight]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      aria-hidden
+      className="absolute inset-0 w-full h-full pointer-events-none"
+      style={{ opacity: isLight ? 0.45 : 0.28 }}
+    />
+  );
+}
+
 // ─── Agent mode selector ──────────────────────────────────────────────────────
 
 function AgentModeSelector({
@@ -153,7 +249,7 @@ function AgentModeSelector({
 
   if (size === "large") {
     return (
-      <div className="flex flex-wrap justify-center gap-2 w-full max-w-2xl">
+      <div className="flex flex-wrap justify-center gap-3 w-full max-w-2xl">
         {allModes.map(m => {
           const Icon = m.icon;
           const isActive = selectedMode === m.id;
@@ -162,21 +258,32 @@ function AgentModeSelector({
               key={m.id}
               onClick={() => onChange(m.id)}
               className={cn(
-                "flex flex-col items-center gap-2 px-4 py-3.5 rounded-2xl border transition-all group w-[104px]",
+                "flex flex-col items-center gap-2.5 pt-4 pb-3 px-3 rounded-2xl border transition-all w-[100px]",
                 isActive
-                  ? `${m.bg} ${m.color} border-current/25 shadow-sm scale-105`
+                  ? `${m.bg} ${m.color} border-current/30 shadow-md scale-105`
                   : isLight
-                    ? "border-slate-200 text-slate-500 hover:bg-slate-50 hover:border-slate-300 hover:scale-105"
-                    : "border-white/8 text-muted-foreground hover:bg-white/5 hover:border-white/15 hover:text-foreground hover:scale-105",
+                    ? "border-slate-200 text-slate-500 bg-white hover:bg-slate-50 hover:border-slate-300 hover:scale-102"
+                    : "border-white/10 text-muted-foreground bg-white/[0.03] hover:bg-white/8 hover:border-white/20 hover:text-foreground",
               )}
             >
+              {/* Icon circle */}
               <div className={cn(
-                "w-9 h-9 rounded-xl flex items-center justify-center transition-colors",
-                isActive ? m.bg : isLight ? "bg-slate-100" : "bg-white/5",
+                "w-11 h-11 rounded-2xl flex items-center justify-center transition-all shrink-0",
+                isActive
+                  ? "bg-current/10"
+                  : isLight ? "bg-slate-100" : "bg-white/10",
               )}>
-                <Icon className={cn("w-4.5 h-4.5", isActive ? m.color : isLight ? "text-slate-400" : "text-muted-foreground")} style={{ width: 18, height: 18 }} />
+                <Icon
+                  style={{ width: 22, height: 22 }}
+                  className={isActive ? m.color : isLight ? "text-slate-500" : "text-slate-400"}
+                />
               </div>
-              <span className={cn("text-[11px] font-semibold leading-tight text-center", isActive ? m.color : "")}>{m.label}</span>
+              <span className={cn(
+                "text-[11px] font-semibold leading-tight text-center w-full",
+                isActive ? m.color : "",
+              )}>
+                {m.label}
+              </span>
             </button>
           );
         })}
@@ -864,7 +971,8 @@ export default function OraclePage() {
   const examples = EXAMPLES_BY_MODE[selectedMode];
 
   return (
-    <div className="flex flex-col h-full gap-0" style={{ height: "calc(100vh - 80px)" }}>
+    <div className="relative flex flex-col h-full gap-0 overflow-hidden" style={{ height: "calc(100vh - 80px)" }}>
+      <NeuralBackground isLight={isLight} />
 
       {/* Header */}
       <div className="flex items-center justify-between px-1 pb-4 shrink-0">
