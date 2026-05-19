@@ -353,7 +353,24 @@ router.get("/", requireAuth, async (req: AuthRequest, res) => {
     }
   }
 
-  // 2. Guardian (editorial — only if key configured) ────────────────────────
+  // 2. GNews (flavour technology — always fetched) ─────────────────────────
+  try {
+    if (gnewsCache && now - gnewsCache.fetchedAt < CACHE_MS) {
+      sections.push({ id: "gnews", label: "Flavour Technology", subtitle: "GNews · Global Flavour & Food Innovation", items: gnewsCache.items });
+    } else {
+      const items = await fetchFromGNews();
+      gnewsCache = { items, fetchedAt: now };
+      sections.push({ id: "gnews", label: "Flavour Technology", subtitle: "GNews · Global Flavour & Food Innovation", items });
+      console.log(`[GNews] Fetched ${items.length} articles`);
+    }
+  } catch (err) {
+    console.error("[GNews] Failed:", err);
+    if (gnewsCache && gnewsCache.items.length > 0) {
+      sections.push({ id: "gnews", label: "Flavour Technology", subtitle: "GNews · Global Flavour & Food Innovation", items: gnewsCache.items });
+    }
+  }
+
+  // 3. Guardian (editorial — only if key configured) ────────────────────────
   if (GUARDIAN_API_KEY) {
     try {
       if (useCache && guardianCache && now - guardianCache.fetchedAt < CACHE_MS) {
@@ -368,23 +385,6 @@ router.get("/", requireAuth, async (req: AuthRequest, res) => {
       if (guardianCache && guardianCache.items.length > 0) {
         sections.push({ id: "guardian", label: "Industry Spotlight", subtitle: "The Guardian", items: guardianCache.items });
       }
-    }
-  }
-
-  // 3. GNews (flavour technology — always fetched) ───────────────────────────
-  try {
-    if (gnewsCache && now - gnewsCache.fetchedAt < CACHE_MS) {
-      sections.push({ id: "gnews", label: "Flavour Technology", subtitle: "GNews · Global Flavour & Food Innovation", items: gnewsCache.items });
-    } else {
-      const items = await fetchFromGNews();
-      gnewsCache = { items, fetchedAt: now };
-      sections.push({ id: "gnews", label: "Flavour Technology", subtitle: "GNews · Global Flavour & Food Innovation", items });
-      console.log(`[GNews] Fetched ${items.length} articles`);
-    }
-  } catch (err) {
-    console.error("[GNews] Failed:", err);
-    if (gnewsCache && gnewsCache.items.length > 0) {
-      sections.push({ id: "gnews", label: "Flavour Technology", subtitle: "GNews · Global Flavour & Food Innovation", items: gnewsCache.items });
     }
   }
 
