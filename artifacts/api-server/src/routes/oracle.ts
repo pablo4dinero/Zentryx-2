@@ -38,7 +38,8 @@ Output format rules:
 - When the user asks for a formula or ingredient list, present it as a table with columns: Ingredient | % | Role.
 - Use markdown headers and lists when structure improves clarity.
 - Be direct, specific, and technically grounded — cite actual values, ratios, mechanisms.
-- The conversation history may contain product details, formulations, or context from earlier messages — use it.`;
+- The conversation history may contain product details, formulations, or context from earlier messages — use it.
+- NEVER generate ASCII, text-based, or pseudo-graphical charts, spider diagrams, radar profiles, or any visual representation made of characters (|, -, +, dashes). The platform renders real interactive charts automatically when agents run. If the user asks for a sensory profile, spider/radar chart, or visualised scores for a specific product, direct them to use the Sensory agent for a proper interactive radar chart.`;
 
 const SYNTHESIS_SYSTEM = `You are Oracle, a senior food scientist and R&D strategist (2026). You have just completed a multi-agent analysis. Synthesise the findings into a clear expert response.
 
@@ -51,7 +52,8 @@ Rules:
 - If agent data was sparse, be honest about what would be needed for a full analysis
 - Cap at 350 words
 - Write like a Unilever/Nestlé senior R&D scientist briefing a colleague — not a textbook, not a consultant report
-- The conversation history may contain earlier product details or formulations — reference them if relevant`;
+- The conversation history may contain earlier product details or formulations — reference them if relevant
+- NEVER generate ASCII, text-based, or pseudo-graphical charts, spider diagrams, radar profiles, or bar graphs made of characters. Sensory profile data from the Sensory agent is already rendered as an interactive radar chart above — reference its scores by name and number in your prose instead of redrawing them.`;
 
 router.post("/analyze", requireAuth, async (req: AuthRequest, res) => {
   const { query, history = [], forceAgents } = req.body as {

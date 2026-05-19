@@ -437,28 +437,99 @@ function InlineFormulation({ data }: { data: any }) {
 }
 
 function InlineSensory({ data }: { data: any }) {
-  const profile = data.profile || [];
+  const profile: Array<{ attribute: string; score: number; benchmark: number; why: string }> = data.profile || [];
+  const actionPoints: Array<{ label: string; detail: string; priority: string }> = data.actionPoints || [];
+
+  const PRIO_STYLE: Record<string, { cls: string; dot: string }> = {
+    critical: { cls: "bg-red-500/15 text-red-400 border-red-500/20",     dot: "bg-red-400" },
+    high:     { cls: "bg-amber-500/15 text-amber-400 border-amber-500/20", dot: "bg-amber-400" },
+    medium:   { cls: "bg-blue-500/15 text-blue-400 border-blue-500/20",   dot: "bg-blue-400" },
+  };
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+      {/* Radar chart */}
       {profile.length > 0 && (
         <div>
-          <SectionLabel>Sensory Radar</SectionLabel>
-          <ResponsiveContainer width="100%" height={200}>
-            <RadarChart data={profile.map((p:any)=>({ subject: p.attribute, score: p.score, benchmark: p.benchmark }))} outerRadius="70%">
+          <SectionLabel>Sensory Profile — Score vs Benchmark</SectionLabel>
+          <ResponsiveContainer width="100%" height={220}>
+            <RadarChart data={profile.map(p => ({ subject: p.attribute, score: p.score, benchmark: p.benchmark }))} outerRadius="72%">
               <PolarGrid stroke="rgba(255,255,255,0.07)" />
               <PolarAngleAxis dataKey="subject" tick={{ fontSize: 9, fill: "#64748b" }} />
-              <Radar name="Score" dataKey="score" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.25} strokeWidth={2} />
-              <Radar name="Benchmark" dataKey="benchmark" stroke="#6366f1" fill="#6366f1" fillOpacity={0.08} strokeWidth={1.5} strokeDasharray="5 3" />
-              <Tooltip contentStyle={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, fontSize: 11 }} />
+              <Radar name="Product" dataKey="score"     stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.28} strokeWidth={2} />
+              <Radar name="Benchmark" dataKey="benchmark" stroke="#6366f1" fill="#6366f1" fillOpacity={0.08} strokeWidth={1.5} strokeDasharray="4 3" />
+              <Tooltip
+                contentStyle={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 11 }}
+                formatter={(v: any, name: string) => [`${v}/10`, name]}
+              />
             </RadarChart>
           </ResponsiveContainer>
+
+          {/* Score table */}
+          <div className="rounded-xl overflow-hidden border border-white/8 mt-2">
+            <div className="grid grid-cols-4 px-3 py-1.5 bg-white/[0.04] border-b border-white/8">
+              {["Attribute", "Score", "Benchmark", "Gap"].map(h => (
+                <span key={h} className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">{h}</span>
+              ))}
+            </div>
+            {profile.map((p, i) => {
+              const gap  = +(p.score - p.benchmark).toFixed(1);
+              const gapCls = gap > 0.4 ? "text-emerald-400" : gap < -0.4 ? "text-red-400" : "text-muted-foreground";
+              return (
+                <div key={i} className={cn(
+                  "grid grid-cols-4 px-3 py-2 items-center",
+                  i % 2 === 0 ? "bg-white/[0.02]" : "",
+                  i < profile.length - 1 ? "border-b border-white/5" : "",
+                )}>
+                  <span className="text-xs text-foreground font-medium">{p.attribute}</span>
+                  <span className="text-xs font-bold text-amber-400">{p.score}/10</span>
+                  <span className="text-xs text-muted-foreground">{p.benchmark}/10</span>
+                  <span className={cn("text-xs font-bold tabular-nums", gapCls)}>
+                    {gap > 0 ? `+${gap}` : gap}
+                    <WhyTooltip why={p.why} />
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
+
+      {/* Overall verdict */}
       {data.overall && (
         <div className="flex gap-2 p-3 rounded-xl bg-amber-500/8 border border-amber-500/15">
           <Star className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
           <p className="text-xs text-muted-foreground leading-relaxed">{data.overall}</p>
         </div>
+      )}
+
+      {/* Action points */}
+      {actionPoints.length > 0 && (
+        <div>
+          <SectionLabel>Action Points</SectionLabel>
+          <div className="space-y-1.5">
+            {actionPoints.map((ap, i) => {
+              const s = PRIO_STYLE[ap.priority] ?? PRIO_STYLE.medium;
+              return (
+                <div key={i} className="flex items-start gap-2.5 p-2.5 rounded-lg bg-white/[0.03] border border-white/8">
+                  <div className={cn("w-1.5 h-1.5 rounded-full mt-1.5 shrink-0", s.dot)} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <span className="text-xs font-semibold text-foreground">{ap.label}</span>
+                      <span className={cn("text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full border", s.cls)}>{ap.priority}</span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">{ap.detail}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Assumptions note */}
+      {data.notes && (
+        <p className="text-[10px] text-muted-foreground/60 italic px-1">{data.notes}</p>
       )}
     </div>
   );

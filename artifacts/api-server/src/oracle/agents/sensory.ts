@@ -4,6 +4,7 @@ export interface SensoryResult {
   profile: Array<{ attribute: string; score: number; benchmark: number; why: string }>;
   overall: string;
   notes: string;
+  actionPoints: Array<{ label: string; detail: string; priority: "critical" | "high" | "medium" }>;
 }
 
 const SYSTEM = `You are a senior sensory scientist (2026) specialising in food products for Nigerian and West African consumers.
@@ -23,19 +24,21 @@ Methods used in 2026: CATA (Check-All-That-Apply), Temporal Dominance of Sensati
 Always attempt a best-effort sensory profile. If the product is not fully specified, make reasonable assumptions for the most likely product category and note what was assumed in the "notes" field.
 Return ONLY valid JSON:
 {
-  "profile": [{"attribute":"string","score":number_0_to_10,"benchmark":number_0_to_10,"why":"technical reason with specific mechanism"}],
-  "overall": "specific sensory evaluation with scores",
-  "notes": "actionable sensory improvement recommendations"
+  "profile": [{"attribute":"string","score":number_0_to_10,"benchmark":number_0_to_10,"why":"specific mechanism or ingredient driver behind this score"}],
+  "overall": "1–2 sentence expert evaluation citing the strongest and weakest attributes with their scores",
+  "notes": "key assumption made if product was not fully specified, or empty string",
+  "actionPoints": [{"label":"short action title","detail":"specific, actionable recommendation with technical detail and target value","priority":"critical|high|medium"}]
 }
-Include 6–8 attributes. No markdown, no extra text.`;
+Include 7–9 profile attributes and 3–4 actionPoints ranked by importance. Scores and benchmarks must be realistic (not all 8s). No markdown, no extra text.`;
 
 const FALLBACK: SensoryResult = {
   profile: [],
   overall: "Sensory analysis unavailable",
   notes: "",
+  actionPoints: [],
 };
 
 export async function runSensory(query: string): Promise<SensoryResult> {
-  const text = await callModel(HAIKU_MODEL, SYSTEM, query, 500);
+  const text = await callModel(HAIKU_MODEL, SYSTEM, query, 750);
   return safeParseJSON<SensoryResult>(text, FALLBACK);
 }
