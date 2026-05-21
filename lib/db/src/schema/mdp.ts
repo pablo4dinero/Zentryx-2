@@ -67,6 +67,7 @@ export const mdpFloorAssignmentsTable = pgTable("mdp_floor_assignments", {
   weekLabel: text("week_label").notNull(),
   assignedDay: text("assigned_day").notNull(),
   planStatus: text("plan_status").default("Planned"),
+  assignedVolume: numeric("assigned_volume"),
   assignedAt: timestamp("assigned_at").notNull().defaultNow(),
   producedAt: timestamp("produced_at"),
 });

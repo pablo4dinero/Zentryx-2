@@ -464,6 +464,7 @@ type FloorAssignmentRow = {
     weekLabel: string;
     assignedDay: string;
     planStatus: string;
+    assignedVolume?: string | null;
   };
   floor: ProductionFloor;
   order: ProductionOrder;
@@ -647,6 +648,13 @@ function blendSpeedColor(id: string) {
   if (id === "medium") return "bg-amber-500/10 border-amber-500/20 text-amber-400";
   if (id === "slow")   return "bg-blue-500/10 border-blue-500/20 text-blue-400";
   return "bg-slate-500/10 border-slate-500/20 text-slate-400";
+}
+
+function blendSpeedFactor(speedId: string): number {
+  if (speedId === "fast")   return 1.0;
+  if (speedId === "medium") return 0.7;
+  if (speedId === "slow")   return 0.5;
+  return 1.0;
 }
 
 function ConfigurationDialog({
@@ -1301,6 +1309,100 @@ body{margin:0;padding:0;font-family:ui-sans-serif,system-ui,-apple-system,sans-s
 .border-indigo-500\\/15{border-color:rgba(99,102,241,.15)}.border-indigo-500\\/20{border-color:rgba(99,102,241,.2)}.border-indigo-500\\/60{border-color:rgba(99,102,241,.6)}
 `;
 
+function PartialAssignModal({
+  open, onClose, floor, order, suggestedVolume, remainingVolume,
+  blendSpeedLabel, blendSpeedTimeTaken, volume, onVolumeChange, onConfirm, isLight, isPending,
+}: {
+  open: boolean;
+  onClose: () => void;
+  floor: ProductionFloor | null;
+  order: ProductionOrder | null;
+  suggestedVolume: number;
+  remainingVolume: number;
+  blendSpeedLabel: string;
+  blendSpeedTimeTaken: string;
+  volume: string;
+  onVolumeChange: (v: string) => void;
+  onConfirm: () => void;
+  isLight: boolean;
+  isPending: boolean;
+}) {
+  const numVol = Number(volume);
+  const invalid = isNaN(numVol) || numVol <= 0;
+  const exceeds = !isNaN(numVol) && numVol > remainingVolume;
+  const panelCls = cn("border rounded-2xl shadow-2xl w-full max-w-md flex flex-col",
+    isLight ? "bg-white border-gray-200" : "glass-panel border-white/10");
+  const inputCls = cn("h-10 rounded-xl border px-3 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground",
+    isLight ? "border-gray-200 bg-white" : "border-white/10 bg-black/30");
+
+  if (!open || !floor || !order) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <motion.div initial={{ opacity: 0, scale: 0.95, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 16 }} className={panelCls}>
+        <div className={cn("flex items-center justify-between px-6 py-4 border-b", isLight ? "border-gray-100" : "border-white/5")}>
+          <div>
+            <h2 className="text-base font-bold text-foreground">Assign Partial Run</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">{floor.floorName} · {floor.blendCategory} · {floor.maxCapacityKg.toLocaleString()} KG max</p>
+          </div>
+          <button onClick={onClose} className={cn("p-1.5 rounded-lg", isLight ? "hover:bg-gray-100 text-gray-500" : "hover:bg-white/10 text-muted-foreground")}>
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div className={cn("rounded-xl border p-3 space-y-1", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/[0.03]")}>
+            <p className="text-xs font-semibold text-foreground truncate">{order.accountCompany ?? order.accountName ?? "Order"}</p>
+            {order.productName && <p className="text-[11px] text-muted-foreground">{order.productName}</p>}
+            <div className="flex items-center gap-3 mt-1">
+              <span className="text-[11px] text-muted-foreground">Total: <span className="font-semibold text-foreground">{Number(order.volume ?? 0).toLocaleString()} KG</span></span>
+              <span className="text-[11px] text-muted-foreground">Remaining: <span className={cn("font-semibold", remainingVolume < Number(order.volume ?? 0) ? "text-amber-400" : "text-foreground")}>{remainingVolume.toLocaleString()} KG</span></span>
+            </div>
+          </div>
+
+          {blendSpeedLabel && (
+            <div className={cn("flex items-center gap-2 rounded-xl border px-3 py-2", blendSpeedColor(blendSpeedLabel.toLowerCase()))}>
+              <span className="text-xs font-semibold">{blendSpeedLabel}</span>
+              {blendSpeedTimeTaken && <span className="text-[10px] opacity-80">· {blendSpeedTimeTaken}</span>}
+              <span className="text-[10px] opacity-70 ml-auto">Blend speed</span>
+            </div>
+          )}
+
+          <div>
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5 block">
+              Volume to assign (KG)
+              <span className="normal-case ml-2 text-muted-foreground/60">Suggested: {suggestedVolume.toLocaleString()}</span>
+            </label>
+            <input
+              type="number" min="1" step="0.1"
+              value={volume}
+              onChange={e => onVolumeChange(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && !invalid && !exceeds && onConfirm()}
+              className={cn(inputCls, exceeds ? "border-amber-500/50 focus:ring-amber-500/30" : "")}
+              autoFocus
+            />
+            {exceeds && (
+              <p className="text-xs text-amber-400 mt-1">Exceeds remaining quantity ({remainingVolume.toLocaleString()} KG). You can enter this but it will over-assign.</p>
+            )}
+          </div>
+        </div>
+
+        <div className={cn("flex justify-end gap-2 px-6 py-4 border-t", isLight ? "border-gray-100" : "border-white/5")}>
+          <button onClick={onClose}
+            className={cn("px-4 py-2 rounded-xl text-sm font-medium border transition-all", isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}>
+            Cancel
+          </button>
+          <button onClick={onConfirm} disabled={invalid || isPending}
+            className="px-4 py-2 rounded-xl text-sm font-medium bg-primary text-white hover:bg-primary/90 transition-all disabled:opacity-50 flex items-center gap-2">
+            {isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            Assign {!isNaN(numVol) && numVol > 0 ? `${numVol.toLocaleString()} KG` : ""}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 function ProductionPlanningTab() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -1325,6 +1427,24 @@ function ProductionPlanningTab() {
   const [assistedState, setAssistedState] = React.useState<"idle" | "optimizing" | "done">("idle");
   const [printOpen, setPrintOpen] = React.useState(false);
   const [isPdfGenerating, setIsPdfGenerating] = React.useState(false);
+
+  // Partial assignment modal state
+  const [partialAssignPending, setPartialAssignPending] = React.useState<{
+    floor: ProductionFloor; order: ProductionOrder; day: string;
+  } | null>(null);
+  const [partialVolume, setPartialVolume] = React.useState("");
+  const [editingVolumeId, setEditingVolumeId] = React.useState<number | null>(null);
+  const [editingVolumeStr, setEditingVolumeStr] = React.useState("");
+
+  // Blend speeds from localStorage (same store as Production Orders tab)
+  const blendSpeeds: BlendSpeed[] = React.useMemo(() => {
+    try { return JSON.parse(localStorage.getItem(LS_BLEND_SPEEDS) || "null") ?? DEFAULT_BLEND_SPEEDS; }
+    catch { return DEFAULT_BLEND_SPEEDS; }
+  }, []);
+  const blendSpeedByOrderId: Record<number, string> = React.useMemo(() => {
+    try { return JSON.parse(localStorage.getItem(LS_ORDER_BLENDSPEED) || "null") ?? {}; }
+    catch { return {}; }
+  }, []);
 
   const handlePrint = React.useCallback(() => {
     window.print();
@@ -1455,17 +1575,35 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
   const floors = floorsQuery.data ?? [];
   const assignments = assignmentsQuery.data ?? [];
 
-  // Set of productionOrderIds that have been assigned to a floor in any week
-  const globallyAssignedOrderIds = React.useMemo(() => {
-    const set = new Set<number>();
-    (allAssignmentsQuery.data ?? []).forEach(row => set.add(row.assignment.productionOrderId));
-    return set;
+  // Sum of assignedVolume across ALL weeks per order (null assignedVolume = legacy full assignment)
+  const assignedVolumeByOrderId = React.useMemo(() => {
+    const map: Record<number, number> = {};
+    (allAssignmentsQuery.data ?? []).forEach(row => {
+      const orderId = row.assignment.productionOrderId;
+      const orderVol = Number(row.order?.volume ?? 0);
+      const av = row.assignment.assignedVolume != null
+        ? Number(row.assignment.assignedVolume)
+        : orderVol; // legacy: treat as fully assigned
+      map[orderId] = (map[orderId] ?? 0) + av;
+    });
+    return map;
   }, [allAssignmentsQuery.data]);
 
   const plannedOrders = React.useMemo(
     () => (productionOrdersQuery.data ?? []).filter((order) => order.isPlanned),
     [productionOrdersQuery.data]
   );
+
+  // Remaining volume per order = total volume - total assigned across all weeks
+  const remainingVolumeByOrderId = React.useMemo(() => {
+    const map: Record<number, number> = {};
+    plannedOrders.forEach(order => {
+      const total = Number(order.volume ?? 0);
+      const assigned = assignedVolumeByOrderId[order.id] ?? 0;
+      map[order.id] = Math.max(0, total - assigned);
+    });
+    return map;
+  }, [plannedOrders, assignedVolumeByOrderId]);
 
   const assignmentsByFloor = React.useMemo(() => {
     const map = new Map<number, FloorAssignmentRow[]>();
@@ -1590,6 +1728,19 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     },
   });
 
+  const updateAssignedVolumeMutation = useMutation({
+    mutationFn: async ({ assignmentId, assignedVolume }: { assignmentId: number; assignedVolume: number }) => {
+      const res = await fetch(`${BASE}api/mdp/floor-assignments/${assignmentId}`, {
+        method: "PATCH", headers: authHeaders(), body: JSON.stringify({ assignedVolume }),
+      });
+      if (!res.ok) { const error = await res.json().catch(() => ({})); throw new Error(error.error || "Failed to update volume"); }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments"] });
+    },
+  });
+
   const produceAssignmentMutation = useMutation({
     mutationFn: async ({ assignmentId, orderId, accountName, productName, productType, volume, floorId: fId }: {
       assignmentId: number; orderId: number;
@@ -1671,17 +1822,36 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     return days.find((day) => usage[day] + volume <= floor.maxCapacityKg) ?? days[0];
   };
 
-  const onCreateAssignment = async (floor: ProductionFloor, order: ProductionOrder) => {
-    const rows = assignmentsByFloor.get(floor.id) ?? [];
-    const assignedDay = getAvailableDay(floor, rows, Number(order.volume ?? 0));
-    await createAssignmentMutation.mutateAsync({
-      floorId: floor.id,
-      productionOrderId: order.id,
-      weekLabel: selectedWeekLabel,
-      assignedDay,
-      planStatus: "Planned",
-    });
-    toast({ title: "Order assigned", description: `${order.productType ?? "Order"} assigned to ${floor.floorName}.` });
+  const openPartialAssignModal = (floor: ProductionFloor, order: ProductionOrder, day?: string) => {
+    const remaining = remainingVolumeByOrderId[order.id] ?? Number(order.volume ?? 0);
+    const speedId = blendSpeedByOrderId[order.id] ?? "";
+    const factor = blendSpeedFactor(speedId);
+    const suggested = Math.min(remaining, Math.round(floor.maxCapacityKg * factor * 10) / 10);
+    const resolvedDay = day ?? getAvailableDay(floor, assignmentsByFloor.get(floor.id) ?? [], suggested);
+    setPartialAssignPending({ floor, order, day: resolvedDay });
+    setPartialVolume(String(suggested > 0 ? suggested : remaining));
+  };
+
+  const handleConfirmPartialAssign = async () => {
+    if (!partialAssignPending) return;
+    const vol = Number(partialVolume);
+    if (isNaN(vol) || vol <= 0) return;
+    try {
+      await createAssignmentMutation.mutateAsync({
+        floorId: partialAssignPending.floor.id,
+        productionOrderId: partialAssignPending.order.id,
+        weekLabel: selectedWeekLabel,
+        assignedDay: partialAssignPending.day,
+        planStatus: "Planned",
+        assignedVolume: vol,
+      });
+      toast({ title: "Partial run assigned", description: `${vol.toLocaleString()} KG → ${partialAssignPending.floor.floorName}` });
+    } catch (err: any) {
+      toast({ title: "Could not assign", description: err?.message, variant: "destructive" });
+    }
+    setPartialAssignPending(null);
+    setPartialVolume("");
+    setDragged(null);
   };
 
   const handleAddFloor = () => {
@@ -1700,19 +1870,20 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     if (!plannedOrder) return;
 
     if (dragged.type === "planned") {
-      await onCreateAssignment(floor, plannedOrder);
+      openPartialAssignModal(floor, plannedOrder);
+      return; // wait for modal confirm
     }
 
     if (dragged.type === "assigned" && dragged.assignmentId && dragged.floorId !== undefined) {
       if (dragged.floorId !== floor.id) {
+        const originalRow = assignments.find(r => r.assignment.id === dragged.assignmentId);
+        const originalVol = originalRow?.assignment.assignedVolume;
         await deleteAssignmentMutation.mutateAsync(dragged.assignmentId);
-        const newDay = getAvailableDay(floor, assignmentsByFloor.get(floor.id) ?? [], Number(plannedOrder.volume ?? 0));
+        const newDay = getAvailableDay(floor, assignmentsByFloor.get(floor.id) ?? [], Number(originalVol ?? plannedOrder.volume ?? 0));
         await createAssignmentMutation.mutateAsync({
-          floorId: floor.id,
-          productionOrderId: plannedOrder.id,
-          weekLabel: selectedWeekLabel,
-          assignedDay: newDay,
-          planStatus: "Planned",
+          floorId: floor.id, productionOrderId: plannedOrder.id,
+          weekLabel: selectedWeekLabel, assignedDay: newDay, planStatus: "Planned",
+          ...(originalVol != null ? { assignedVolume: Number(originalVol) } : {}),
         });
       }
     }
@@ -1763,17 +1934,17 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     if (!plannedOrder) return;
 
     if (dragged.type === "planned") {
-      await createAssignmentMutation.mutateAsync({
-        floorId: floor.id, productionOrderId: plannedOrder.id,
-        weekLabel: selectedWeekLabel, assignedDay: day, planStatus: "Planned",
-      });
-      toast({ title: "Order assigned", description: `Assigned to ${floor.floorName} — ${day}.` });
+      openPartialAssignModal(floor, plannedOrder, day);
+      return; // wait for modal confirm
     }
     if (dragged.type === "assigned" && dragged.assignmentId && dragged.floorId !== undefined) {
+      const originalRow = assignments.find(r => r.assignment.id === dragged.assignmentId);
+      const originalVol = originalRow?.assignment.assignedVolume;
       await deleteAssignmentMutation.mutateAsync(dragged.assignmentId);
       await createAssignmentMutation.mutateAsync({
         floorId: floor.id, productionOrderId: plannedOrder.id,
         weekLabel: selectedWeekLabel, assignedDay: day, planStatus: "Planned",
+        ...(originalVol != null ? { assignedVolume: Number(originalVol) } : {}),
       });
     }
     setDragged(null);
@@ -1809,12 +1980,12 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
 
   const assignedRightOrders = React.useMemo(
     () => plannedOrders
-      .filter((order) => !globallyAssignedOrderIds.has(order.id))
+      .filter((order) => (remainingVolumeByOrderId[order.id] ?? Number(order.volume ?? 0)) > 0)
       .map((order) => ({
         order,
-        assigned: false,
+        remainingVolume: remainingVolumeByOrderId[order.id] ?? Number(order.volume ?? 0),
       })),
-    [plannedOrders, globallyAssignedOrderIds]
+    [plannedOrders, remainingVolumeByOrderId]
   );
 
   const mdpOrderByMdpId = React.useMemo(() => {
@@ -1994,10 +2165,11 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
               const acc = planningAccountMap[fullOrder?.accountId ?? 0];
               const company = acc?.company ?? row.order.accountName ?? "Unknown";
               const productName = acc?.productName ?? row.order.productName ?? null;
-              const productTypeKey = acc?.productType ?? row.order.productType ?? null;
-              const productTypeLabel = productTypeKey ?? "—";
-              const volume = Number(fullOrder?.volume ?? row.order.volume ?? 0);
+              const productTypeLabel = acc?.productType ?? row.order.productType ?? "—";
+              const totalVol = Number(fullOrder?.volume ?? row.order.volume ?? 0);
+              const assignedVol = row.assignment.assignedVolume != null ? Number(row.assignment.assignedVolume) : totalVol;
               const expected = fullOrder?.expectedDeliveryDate ?? null;
+              const isEditingThis = editingVolumeId === row.assignment.id;
               return (
                 <div
                   key={row.assignment.id}
@@ -2009,14 +2181,47 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                     isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5"
                   )}
                 >
-                  <div className="flex items-start justify-between gap-2 mb-2">
+                  <div className="flex items-start justify-between gap-2 mb-1.5">
                     <div className="min-w-0 flex-1">
                       <div className="font-bold text-foreground text-xs truncate">{company}</div>
                       {productName && <div className="text-[10px] text-muted-foreground truncate">{productName}</div>}
                       <div className="text-[10px] text-muted-foreground">{productTypeLabel}</div>
                       {expected && <div className="text-[10px] text-muted-foreground">Due: {expected}</div>}
                     </div>
-                    <div className="text-xs font-bold text-foreground shrink-0">{volume.toLocaleString()} KG</div>
+                    <div className="shrink-0 text-right">
+                      {isEditingThis ? (
+                        <input
+                          autoFocus
+                          type="number" min="0.1" step="0.1"
+                          value={editingVolumeStr}
+                          onChange={e => setEditingVolumeStr(e.target.value)}
+                          onBlur={async () => {
+                            const v = Number(editingVolumeStr);
+                            if (!isNaN(v) && v > 0) {
+                              await updateAssignedVolumeMutation.mutateAsync({ assignmentId: row.assignment.id, assignedVolume: v });
+                            }
+                            setEditingVolumeId(null);
+                          }}
+                          onKeyDown={async e => {
+                            if (e.key === "Enter") { (e.target as HTMLInputElement).blur(); }
+                            if (e.key === "Escape") setEditingVolumeId(null);
+                          }}
+                          className={cn("w-20 h-6 rounded-md border px-1.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-primary/50",
+                            isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/30")}
+                          onClick={e => e.stopPropagation()}
+                        />
+                      ) : (
+                        <button
+                          onClick={e => { e.stopPropagation(); setEditingVolumeId(row.assignment.id); setEditingVolumeStr(String(assignedVol)); }}
+                          title="Edit assigned volume"
+                          className="flex items-center gap-0.5 text-xs font-bold text-foreground hover:text-primary transition-colors group"
+                        >
+                          {assignedVol.toLocaleString()} KG
+                          <Edit3 className="w-2.5 h-2.5 opacity-0 group-hover:opacity-60 ml-0.5" />
+                        </button>
+                      )}
+                      {totalVol > 0 && <div className="text-[9px] text-muted-foreground/60 mt-0.5">of {totalVol.toLocaleString()} total</div>}
+                    </div>
                   </div>
                   <div className="flex gap-1.5">
                     <button onClick={() => handleUnassign(row.assignment.id)} className={cn("flex-1 py-1 rounded-lg text-[10px] font-semibold border transition-colors", isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}>Unplan</button>
@@ -2275,7 +2480,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <div className={cn("rounded-xl border p-4", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5")}>
                 <p className="text-xs uppercase tracking-[0.15em] text-muted-foreground">Planned orders</p>
-                <p className="mt-2 text-2xl font-bold text-foreground">{assignedRightOrders.length + assignedMap.size}</p>
+                <p className="mt-2 text-2xl font-bold text-foreground">{plannedOrders.filter(o => (remainingVolumeByOrderId[o.id] ?? Number(o.volume ?? 0)) > 0).length}</p>
               </div>
               <div className={cn("rounded-xl border p-4", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5")}>
                 <p className="text-xs uppercase tracking-[0.15em] text-muted-foreground">Assigned</p>
@@ -2330,12 +2535,14 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {assignedRightOrders.map(({ order }) => {
+                    {assignedRightOrders.map(({ order, remainingVolume }) => {
                       const acc = planningAccountMap[order.accountId ?? 0];
                       const company = acc?.company ?? order.accountName ?? "Unknown account";
                       const productName = acc?.productName ?? order.productName ?? null;
                       const productType = acc?.productType ?? order.productType ?? null;
                       const productTypeLabel = productType ?? "—";
+                      const totalVol = Number(order.volume ?? 0);
+                      const isPartial = remainingVolume < totalVol;
                       return (
                         <div
                           key={order.id}
@@ -2363,8 +2570,9 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                               </div>
                             </div>
                             <div className="shrink-0 text-right">
-                              <p className="text-sm font-bold text-foreground">{Number(order.volume ?? 0).toLocaleString()} KG</p>
-                              <VolumeTag volume={String(order.volume ?? 0)} />
+                              <p className="text-sm font-bold text-foreground">{remainingVolume.toLocaleString()} KG</p>
+                              {isPartial && <p className="text-[10px] text-amber-400 font-medium">{((remainingVolume / totalVol) * 100).toFixed(0)}% remaining</p>}
+                              {!isPartial && <VolumeTag volume={String(totalVol)} />}
                             </div>
                           </div>
                         </div>
@@ -2418,6 +2626,36 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
             </motion.div>
           </div>
         )}
+      </AnimatePresence>
+
+      {/* ── Partial Assignment Modal ── */}
+      <AnimatePresence>
+        {partialAssignPending && (() => {
+          const order = partialAssignPending.order;
+          const speedId = blendSpeedByOrderId[order.id] ?? "";
+          const speed = blendSpeeds.find(s => s.id === speedId);
+          const remaining = remainingVolumeByOrderId[order.id] ?? Number(order.volume ?? 0);
+          const totalVol = Number(order.volume ?? 0);
+          const factor = blendSpeedFactor(speedId);
+          const suggested = Math.min(remaining, Math.round(partialAssignPending.floor.maxCapacityKg * factor * 10) / 10);
+          return (
+            <PartialAssignModal
+              open={true}
+              onClose={() => { setPartialAssignPending(null); setPartialVolume(""); setDragged(null); }}
+              floor={partialAssignPending.floor}
+              order={{ ...order, volume: totalVol }}
+              suggestedVolume={suggested}
+              remainingVolume={remaining}
+              blendSpeedLabel={speed?.label ?? ""}
+              blendSpeedTimeTaken={speed?.timeTaken ?? ""}
+              volume={partialVolume}
+              onVolumeChange={setPartialVolume}
+              onConfirm={handleConfirmPartialAssign}
+              isLight={isLight}
+              isPending={createAssignmentMutation.isPending}
+            />
+          );
+        })()}
       </AnimatePresence>
 
       <Dialog open={printOpen} onOpenChange={setPrintOpen}>

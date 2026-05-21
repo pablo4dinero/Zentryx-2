@@ -242,10 +242,28 @@ router.post("/floor-assignments", requireAuth, async (req: AuthRequest, res) => 
       weekLabel: body.weekLabel,
       assignedDay: body.assignedDay,
       planStatus: body.planStatus ?? "Planned",
+      assignedVolume: body.assignedVolume != null ? String(body.assignedVolume) : null,
       assignedAt: new Date(),
       producedAt: body.producedAt ? new Date(body.producedAt) : null,
     }).returning();
     res.status(201).json(created);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+router.patch("/floor-assignments/:id", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const id = Number(req.params.id);
+    const body = req.body as { assignedVolume?: number };
+    if (body.assignedVolume == null) { res.status(400).json({ error: "assignedVolume required" }); return; }
+    const [updated] = await db.update(mdpFloorAssignmentsTable)
+      .set({ assignedVolume: String(body.assignedVolume) })
+      .where(eq(mdpFloorAssignmentsTable.id, id))
+      .returning();
+    if (!updated) { res.status(404).json({ error: "NotFound" }); return; }
+    res.json(updated);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "InternalServerError" });
