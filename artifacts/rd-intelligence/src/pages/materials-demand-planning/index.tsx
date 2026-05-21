@@ -657,6 +657,52 @@ function blendSpeedFactor(speedId: string): number {
   return 1.0;
 }
 
+function calcPriorityScore(
+  rawMaterial: string,
+  microbial: string,
+  blendSpeedId: string,
+  volume: number,
+  expectedDeliveryDate: string | null | undefined,
+): number {
+  let score = 0;
+
+  // Raw Material
+  if (rawMaterial === "Available") score += 3;
+  else if (rawMaterial === "Pending") score -= 5;
+
+  // Due date urgency
+  if (expectedDeliveryDate) {
+    const due = new Date(expectedDeliveryDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const diffDays = Math.ceil((due.getTime() - today.getTime()) / 86400000);
+    if (diffDays < 5) score += 4;
+    else if (diffDays <= 10) score += 2;
+    // >10 days = +0
+  }
+
+  // Microbial
+  if (microbial === "Critical") score += 3;
+  else if (microbial === "Important") score += 1;
+
+  // Volume
+  if (volume > 10000) score += 2;
+
+  // Blend Speed
+  if (blendSpeedId === "slow") score += 3;
+  else if (blendSpeedId === "medium") score += 1;
+
+  return score;
+}
+
+function priorityScoreStyle(score: number): string {
+  if (score < 0)  return "bg-red-500/10 border-red-500/20 text-red-400";
+  if (score >= 8) return "bg-red-500/10 border-red-500/20 text-red-400";
+  if (score >= 5) return "bg-amber-500/10 border-amber-500/20 text-amber-400";
+  if (score >= 2) return "bg-yellow-500/10 border-yellow-500/20 text-yellow-400";
+  return "bg-slate-500/10 border-slate-500/20 text-slate-400";
+}
+
 function ConfigurationDialog({
   open, onClose, blendSpeeds, onSave,
 }: {
@@ -1028,12 +1074,13 @@ function ProductionOrdersTab() {
               <th className="px-4 py-3 text-left font-medium">Raw Material</th>
               <th className="px-4 py-3 text-left font-medium">Microbial Analysis</th>
               <th className="px-4 py-3 text-left font-medium">Blend Speed</th>
+              <th className="px-4 py-3 text-left font-medium">Priority Score</th>
               <th className="px-4 py-3 text-left font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
             {tableOrders.length === 0 ? (
-              <tr><td colSpan={9} className="py-8 text-center text-muted-foreground">No production orders found.</td></tr>
+              <tr><td colSpan={10} className="py-8 text-center text-muted-foreground">No production orders found.</td></tr>
             ) : (
               tableOrders.map((order) => {
                 const microbial = microbialById[order.id] ?? order.microbialAnalysis ?? "Normal";
@@ -1085,6 +1132,22 @@ function ProductionOrdersTab() {
                         <option value="" className="bg-black text-white">— Select —</option>
                         {blendSpeeds.map(s => <option key={s.id} value={s.id} className="bg-black text-white">{s.label}</option>)}
                       </select>
+                    </td>
+                    <td className="px-4 py-3">
+                      {(() => {
+                        const ps = calcPriorityScore(
+                          rawMaterial,
+                          microbial,
+                          blendSpeedId,
+                          Number(order.volume ?? 0),
+                          order.expectedDeliveryDate,
+                        );
+                        return (
+                          <span className={cn("inline-flex items-center px-2.5 py-1 rounded-lg border text-xs font-bold tabular-nums", priorityScoreStyle(ps))}>
+                            {ps > 0 ? `+${ps}` : ps}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-4 py-3">
                       <button onClick={() => planned ? handleUnplan(order.id) : handlePlanNow(order.id)}
