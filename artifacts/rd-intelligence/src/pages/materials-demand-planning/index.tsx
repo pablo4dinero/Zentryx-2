@@ -15,6 +15,7 @@ import {
   X,
   Maximize2,
   Moon,
+  Settings,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 
@@ -624,6 +625,143 @@ function buildOptimizedAssignments(
   return assignments;
 }
 
+// ── Blend Speed ─────────────────────────────────────────────────────────────
+
+interface BlendSpeed {
+  id: string;
+  label: string;
+  timeTaken: string;
+}
+
+const DEFAULT_BLEND_SPEEDS: BlendSpeed[] = [
+  { id: "fast",   label: "Fast",   timeTaken: "" },
+  { id: "medium", label: "Medium", timeTaken: "" },
+  { id: "slow",   label: "Slow",   timeTaken: "" },
+];
+
+const LS_BLEND_SPEEDS     = "zentryx-blend-speeds";
+const LS_ORDER_BLENDSPEED = "zentryx-order-blendspeed";
+
+function blendSpeedColor(id: string) {
+  if (id === "fast")   return "bg-emerald-500/10 border-emerald-500/20 text-emerald-400";
+  if (id === "medium") return "bg-amber-500/10 border-amber-500/20 text-amber-400";
+  if (id === "slow")   return "bg-blue-500/10 border-blue-500/20 text-blue-400";
+  return "bg-slate-500/10 border-slate-500/20 text-slate-400";
+}
+
+function ConfigurationDialog({
+  open, onClose, blendSpeeds, onSave,
+}: {
+  open: boolean;
+  onClose: () => void;
+  blendSpeeds: BlendSpeed[];
+  onSave: (speeds: BlendSpeed[]) => void;
+}) {
+  const { theme } = useTheme();
+  const isLight = theme === "light";
+  const [draft, setDraft]         = React.useState<BlendSpeed[]>([]);
+  const [editingId, setEditingId] = React.useState<string | null>(null);
+  const [editLabel, setEditLabel] = React.useState("");
+  const [newLabel, setNewLabel]   = React.useState("");
+
+  React.useEffect(() => {
+    if (open) { setDraft(blendSpeeds.map(s => ({ ...s }))); setEditingId(null); setNewLabel(""); }
+  }, [open, blendSpeeds]);
+
+  const commitRename = (id: string) => {
+    if (editLabel.trim()) setDraft(d => d.map(s => s.id === id ? { ...s, label: editLabel.trim() } : s));
+    setEditingId(null);
+  };
+
+  const startRename = (s: BlendSpeed) => { setEditingId(s.id); setEditLabel(s.label); };
+
+  const addNew = () => {
+    if (!newLabel.trim()) return;
+    setDraft(d => [...d, { id: `custom_${Date.now()}`, label: newLabel.trim(), timeTaken: "" }]);
+    setNewLabel("");
+  };
+
+  if (!open) return null;
+
+  const panelCls = cn("border rounded-2xl shadow-2xl w-full max-w-md flex flex-col",
+    isLight ? "bg-white border-gray-200" : "glass-panel border-white/10");
+  const rowCls = cn("rounded-xl border p-3 space-y-2",
+    isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/[0.02]");
+  const inputCls = cn("h-8 rounded-lg border px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground",
+    isLight ? "border-gray-200 bg-white" : "border-white/10 bg-black/30");
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} className={panelCls}>
+        <div className={cn("flex items-center justify-between px-6 py-4 border-b", isLight ? "border-gray-100" : "border-white/5")}>
+          <div>
+            <h2 className="text-lg font-bold text-foreground">Configuration</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Manage blend speed definitions and time metadata</p>
+          </div>
+          <button onClick={onClose} className={cn("p-1.5 rounded-lg transition-colors", isLight ? "hover:bg-gray-100 text-gray-500" : "hover:bg-white/10 text-muted-foreground")}>
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4 overflow-y-auto max-h-[60vh]">
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Blend Speed</h3>
+          <div className="space-y-2">
+            {draft.map(speed => (
+              <div key={speed.id} className={rowCls}>
+                <div className="flex items-center gap-2">
+                  {editingId === speed.id ? (
+                    <input autoFocus value={editLabel} onChange={e => setEditLabel(e.target.value)}
+                      onBlur={() => commitRename(speed.id)} onKeyDown={e => e.key === "Enter" && commitRename(speed.id)}
+                      className={cn(inputCls, "flex-1 h-7 text-sm")} />
+                  ) : (
+                    <span className="flex-1 text-sm font-medium text-foreground">{speed.label}</span>
+                  )}
+                  <button onClick={() => startRename(speed)} title="Rename"
+                    className="p-1 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors">
+                    <Edit3 className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => setDraft(d => d.filter(s => s.id !== speed.id))} title="Remove"
+                    className="p-1 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div>
+                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1 block">Time Taken</label>
+                  <input value={speed.timeTaken} onChange={e => setDraft(d => d.map(s => s.id === speed.id ? { ...s, timeTaken: e.target.value } : s))}
+                    placeholder="e.g. 2 hours, 45 minutes" className={cn(inputCls, "w-full text-xs")} />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className={cn("rounded-xl border p-3", isLight ? "border-slate-200" : "border-white/10")}>
+            <p className="text-xs text-muted-foreground mb-2">Add new blend speed</p>
+            <div className="flex gap-2">
+              <input value={newLabel} onChange={e => setNewLabel(e.target.value)} onKeyDown={e => e.key === "Enter" && addNew()}
+                placeholder="Label (e.g. Extra Fast)" className={cn(inputCls, "flex-1")} />
+              <button onClick={addNew} disabled={!newLabel.trim()}
+                className="flex items-center gap-1 px-3 rounded-lg bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors disabled:opacity-40">
+                <Plus className="w-3.5 h-3.5" /> Add
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className={cn("flex justify-end gap-2 px-6 py-4 border-t", isLight ? "border-gray-100" : "border-white/5")}>
+          <button onClick={onClose}
+            className={cn("px-4 py-2 rounded-xl text-sm font-medium border transition-all", isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}>
+            Cancel
+          </button>
+          <button onClick={() => { onSave(draft); onClose(); }}
+            className="px-4 py-2 rounded-xl text-sm font-medium bg-primary text-white hover:bg-primary/90 transition-all">
+            Save
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 function ProductionOrdersTab() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -634,6 +772,15 @@ function ProductionOrdersTab() {
   const [ordersViewMode, setOrdersViewMode] = React.useState<"daily" | "weekly" | "monthly">("weekly");
   const [microbialById, setMicrobialById] = React.useState<Record<number, string>>({});
   const [rawMaterialById, setRawMaterialById] = React.useState<Record<number, string>>({});
+  const [blendSpeeds, setBlendSpeeds] = React.useState<BlendSpeed[]>(() => {
+    try { return JSON.parse(localStorage.getItem(LS_BLEND_SPEEDS) || "null") ?? DEFAULT_BLEND_SPEEDS; }
+    catch { return DEFAULT_BLEND_SPEEDS; }
+  });
+  const [blendSpeedById, setBlendSpeedById] = React.useState<Record<number, string>>(() => {
+    try { return JSON.parse(localStorage.getItem(LS_ORDER_BLENDSPEED) || "null") ?? {}; }
+    catch { return {}; }
+  });
+  const [isConfigOpen, setIsConfigOpen] = React.useState(false);
   const [isNewOrderOpen, setIsNewOrderOpen] = React.useState(false);
   const [newOrderForm, setNewOrderForm] = React.useState({
     accountId: "", volume: "", price: "", expectedDeliveryDate: "",
@@ -780,6 +927,19 @@ function ProductionOrdersTab() {
     catch { toast({ title: "Could not save", variant: "destructive" }); }
   };
 
+  const handleChangeBlendSpeed = (orderId: number, value: string) => {
+    setBlendSpeedById(c => {
+      const next = { ...c, [orderId]: value };
+      localStorage.setItem(LS_ORDER_BLENDSPEED, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const handleSaveBlendSpeeds = (speeds: BlendSpeed[]) => {
+    setBlendSpeeds(speeds);
+    localStorage.setItem(LS_BLEND_SPEEDS, JSON.stringify(speeds));
+  };
+
   const handlePlanNow = async (orderId: number) => {
     try {
       await productionUpdate.mutateAsync({ orderId, changes: { orderStatus: "Planned", isPlanned: true } });
@@ -831,6 +991,9 @@ function ProductionOrdersTab() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button onClick={() => setIsConfigOpen(true)} className={cn("flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-medium border transition-all", isLight ? "border-slate-200 text-slate-700 hover:bg-slate-50" : "border-white/10 text-foreground hover:border-white/20 hover:bg-white/5")}>
+            <Settings className="w-4 h-4" /> Configuration
+          </button>
           <button onClick={() => downloadProductionOrdersCsv(tableOrders)} className={cn("flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-medium border transition-all", isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:border-white/20")}>
             <Download className="w-4 h-4" /> Export CSV
           </button>
@@ -856,17 +1019,19 @@ function ProductionOrdersTab() {
               <th className="px-4 py-3 text-left font-medium">Expected</th>
               <th className="px-4 py-3 text-left font-medium">Raw Material</th>
               <th className="px-4 py-3 text-left font-medium">Microbial Analysis</th>
+              <th className="px-4 py-3 text-left font-medium">Blend Speed</th>
               <th className="px-4 py-3 text-left font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
             {tableOrders.length === 0 ? (
-              <tr><td colSpan={8} className="py-8 text-center text-muted-foreground">No production orders found.</td></tr>
+              <tr><td colSpan={9} className="py-8 text-center text-muted-foreground">No production orders found.</td></tr>
             ) : (
               tableOrders.map((order) => {
                 const microbial = microbialById[order.id] ?? order.microbialAnalysis ?? "Normal";
                 const rawMaterial = rawMaterialById[order.id] ?? order.rawMaterialStatus ?? "Pending";
                 const planned = order.isPlanned || isPlanningOrder(order.id);
+                const blendSpeedId = blendSpeedById[order.id] ?? "";
                 return (
                   <tr key={order.sfId ?? order.id} className={cn("border-b last:border-0 transition-colors", isLight ? "border-slate-100 hover:bg-slate-50/70" : "border-white/5 hover:bg-white/[0.03]")}>
                     <td className="px-4 py-3">
@@ -905,6 +1070,15 @@ function ProductionOrdersTab() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
+                      <select value={blendSpeedId} onChange={e => handleChangeBlendSpeed(order.id, e.target.value)}
+                        className={cn("rounded-lg border px-2 py-1.5 text-xs font-semibold cursor-pointer focus:outline-none",
+                          blendSpeedId ? blendSpeedColor(blendSpeedId) : isLight ? "border-slate-200 bg-white text-slate-500" : "border-white/10 bg-black/20 text-muted-foreground"
+                        )}>
+                        <option value="" className="bg-black text-white">— Select —</option>
+                        {blendSpeeds.map(s => <option key={s.id} value={s.id} className="bg-black text-white">{s.label}</option>)}
+                      </select>
+                    </td>
+                    <td className="px-4 py-3">
                       <button onClick={() => planned ? handleUnplan(order.id) : handlePlanNow(order.id)}
                         className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all whitespace-nowrap",
                           planned
@@ -925,6 +1099,18 @@ function ProductionOrdersTab() {
           Showing {tableOrders.length} of {mergedOrders.length} production orders
         </div>
       </div>
+
+      {/* ── Configuration Dialog ── */}
+      <AnimatePresence>
+        {isConfigOpen && (
+          <ConfigurationDialog
+            open={isConfigOpen}
+            onClose={() => setIsConfigOpen(false)}
+            blendSpeeds={blendSpeeds}
+            onSave={handleSaveBlendSpeeds}
+          />
+        )}
+      </AnimatePresence>
 
       {/* ── New Production Order Modal ── */}
       <AnimatePresence>
