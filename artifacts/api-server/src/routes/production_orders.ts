@@ -59,12 +59,10 @@ router.get("/", requireAuth, async (req: AuthRequest, res) => {
       .orderBy(desc(accountProductionOrdersTable.createdAt));
 
     const filtered = orders.filter(order => {
-      if (period === "weekly") {
-        return isWithinLastDays(order.dateOrdered, 7);
-      }
-      if (period === "monthly") {
-        return isWithinLastDays(order.dateOrdered, 30);
-      }
+      if (period === "all") return true;
+      if (period === "yearly") return isWithinLastDays(order.dateOrdered, 365);
+      if (period === "weekly") return isWithinLastDays(order.dateOrdered, 7);
+      if (period === "monthly") return isWithinLastDays(order.dateOrdered, 30);
       return isTodayDate(order.dateOrdered);
     });
 
