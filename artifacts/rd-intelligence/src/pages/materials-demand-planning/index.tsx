@@ -2271,14 +2271,15 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
           {/* Planning Summary — pinned at top */}
           <div className={cn("rounded-2xl border p-4 shrink-0", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5")}>
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Planning summary</h3>
+            <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{selectedWeekLabel}</p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <div className={cn("rounded-xl border p-4", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5")}>
                 <p className="text-xs uppercase tracking-[0.15em] text-muted-foreground">Planned orders</p>
-                <p className="mt-2 text-2xl font-bold text-foreground">{plannedOrders.length}</p>
+                <p className="mt-2 text-2xl font-bold text-foreground">{assignedRightOrders.length + assignedMap.size}</p>
               </div>
               <div className={cn("rounded-xl border p-4", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5")}>
                 <p className="text-xs uppercase tracking-[0.15em] text-muted-foreground">Assigned</p>
-                <p className="mt-2 text-2xl font-bold text-foreground">{Array.from(assignedMap.keys()).length}</p>
+                <p className="mt-2 text-2xl font-bold text-foreground">{assignedMap.size}</p>
               </div>
             </div>
           </div>
