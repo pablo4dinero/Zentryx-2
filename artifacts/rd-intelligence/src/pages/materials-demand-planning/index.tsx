@@ -1815,7 +1815,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
 
     currentAssignments.forEach((row) => {
       if (row.assignment.assignedDay && typeof usage[row.assignment.assignedDay] === "number") {
-        usage[row.assignment.assignedDay] += Number(row.order.volume ?? 0);
+        const vol = row.assignment.assignedVolume != null ? Number(row.assignment.assignedVolume) : Number(row.order.volume ?? 0);
+        usage[row.assignment.assignedDay] += vol;
       }
     });
 
@@ -2267,7 +2268,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                 <div className="space-y-4">
                   {floors.map(floor => {
                     const assignedRows = floorOrder(floor.id);
-                    const totalKg = assignedRows.reduce((s, r) => s + Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0), 0);
+                    const totalKg = assignedRows.reduce((s, r) => s + (r.assignment.assignedVolume != null ? Number(r.assignment.assignedVolume) : Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0)), 0);
                     const weekTotalCapacity = floor.maxCapacityKg * weekDays.length;
                     const progress = Math.min(100, Math.round((totalKg / (weekTotalCapacity || 1)) * 100));
                     const barClass = progress > 90 ? "bg-red-500" : progress > 70 ? "bg-amber-500" : "bg-emerald-500";
@@ -2324,7 +2325,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                   const totalDayKg = floors.reduce((sum, floor) => {
                     return sum + floorOrder(floor.id)
                       .filter(r => r.assignment.assignedDay === day)
-                      .reduce((s, r) => s + Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0), 0);
+                      .reduce((s, r) => s + (r.assignment.assignedVolume != null ? Number(r.assignment.assignedVolume) : Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0)), 0);
                   }, 0);
 
                   return (
@@ -2351,7 +2352,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                       <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${floors.length}, minmax(0, 1fr))` }}>
                         {floors.map(floor => {
                           const dayRows = floorOrder(floor.id).filter(r => r.assignment.assignedDay === day);
-                          const dayKg = dayRows.reduce((s, r) => s + Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0), 0);
+                          const dayKg = dayRows.reduce((s, r) => s + (r.assignment.assignedVolume != null ? Number(r.assignment.assignedVolume) : Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0)), 0);
                           const dayUtil = Math.min(100, Math.round((dayKg / (floor.maxCapacityKg || 1)) * 100));
                           const utilBar = dayUtil > 90 ? "bg-red-500" : dayUtil > 70 ? "bg-amber-500" : "bg-emerald-500";
                           const isDragTarget = dragOverFloorId === floor.id;
@@ -2414,7 +2415,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                             {floors.map(floor => {
                               const nightDay = `${day}-NS`;
                               const nightRows = floorOrder(floor.id).filter(r => r.assignment.assignedDay === nightDay);
-                              const nightKg = nightRows.reduce((s, r) => s + Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0), 0);
+                              const nightKg = nightRows.reduce((s, r) => s + (r.assignment.assignedVolume != null ? Number(r.assignment.assignedVolume) : Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0)), 0);
                               const nightUtil = Math.min(100, Math.round((nightKg / (floor.maxCapacityKg || 1)) * 100));
                               const nightUtilBar = nightUtil > 90 ? "bg-red-500" : nightUtil > 70 ? "bg-amber-500" : "bg-indigo-500";
                               const isNightTarget = dragOverNightFloorId === floor.id;
@@ -2684,7 +2685,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
             {/* Summary Bar */}
             {(() => {
               const totalPlanned = assignments.length;
-              const totalVolume = assignments.reduce((s, r) => s + Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0), 0);
+              const totalVolume = assignments.reduce((s, r) => s + (r.assignment.assignedVolume != null ? Number(r.assignment.assignedVolume) : Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0)), 0);
               const totalCapacity = floors.reduce((s, f) => s + f.maxCapacityKg, 0);
               const weekDaysPrint = ["Mon", "Tue", "Wed", "Thu", "Fri", ...(includeSaturday ? ["Sat"] : [])];
               return (
@@ -2713,7 +2714,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                       const totalDayKgPrint = floors.reduce((sum, floor) => {
                         return sum + floorOrder(floor.id)
                           .filter(r => r.assignment.assignedDay === day)
-                          .reduce((s, r) => s + Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0), 0);
+                          .reduce((s, r) => s + (r.assignment.assignedVolume != null ? Number(r.assignment.assignedVolume) : Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0)), 0);
                       }, 0);
                       return (
                         <div key={day} className="print-no-break">
@@ -2734,7 +2735,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                             style={{ gridTemplateColumns: `repeat(${floors.length || 1}, 1fr)` }}>
                             {floors.map((floor, floorIdx) => {
                               const dayRows = floorOrder(floor.id).filter(r => r.assignment.assignedDay === day);
-                              const dayKg = dayRows.reduce((s, r) => s + Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0), 0);
+                              const dayKg = dayRows.reduce((s, r) => s + (r.assignment.assignedVolume != null ? Number(r.assignment.assignedVolume) : Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0)), 0);
                               const dayUtil = Math.min(100, Math.round((dayKg / (floor.maxCapacityKg || 1)) * 100));
                               return (
                                 <div key={floor.id} className={cn("border-r border-slate-200 last:border-r-0 flex flex-col", floorIdx % 2 === 0 ? "bg-white" : "bg-slate-50/50")}>
@@ -2794,7 +2795,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                 {floors.map((floor, floorIdx) => {
                                   const nightDay = `${day}-NS`;
                                   const nightRows = floorOrder(floor.id).filter(r => r.assignment.assignedDay === nightDay);
-                                  const nightKg = nightRows.reduce((s, r) => s + Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0), 0);
+                                  const nightKg = nightRows.reduce((s, r) => s + (r.assignment.assignedVolume != null ? Number(r.assignment.assignedVolume) : Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0)), 0);
                                   const nightUtil = Math.min(100, Math.round((nightKg / (floor.maxCapacityKg || 1)) * 100));
                                   return (
                                     <div key={`${floor.id}-NS`} className={cn("border-r border-indigo-100 last:border-r-0 flex flex-col", floorIdx % 2 === 0 ? "bg-indigo-50/30" : "bg-white")}>
@@ -2879,7 +2880,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
           const totalDayKgEx = floors.reduce((sum, floor) => {
             return sum + floorOrder(floor.id)
               .filter(r => r.assignment.assignedDay === expandedDay)
-              .reduce((s, r) => s + Number(r.order.volume ?? 0), 0);
+              .reduce((s, r) => s + (r.assignment.assignedVolume != null ? Number(r.assignment.assignedVolume) : Number(r.order.volume ?? 0)), 0);
           }, 0);
           return (
             <div className="fixed inset-0 z-50 flex flex-col bg-black/90 backdrop-blur-sm">
@@ -2907,7 +2908,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                         <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${floors.length}, minmax(0, 1fr))` }}>
                           {floors.map(floor => {
                             const dayRows = floorOrder(floor.id).filter(r => r.assignment.assignedDay === expandedDay);
-                            const dayKg = dayRows.reduce((s, r) => s + Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0), 0);
+                            const dayKg = dayRows.reduce((s, r) => s + (r.assignment.assignedVolume != null ? Number(r.assignment.assignedVolume) : Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0)), 0);
                             const dayUtil = Math.min(100, Math.round((dayKg / (floor.maxCapacityKg || 1)) * 100));
                             const dayBar = dayUtil > 90 ? "bg-red-500" : dayUtil > 70 ? "bg-amber-500" : "bg-emerald-500";
                             return (
@@ -2967,7 +2968,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                             {floors.map(floor => {
                               const nightDay = `${expandedDay}-NS`;
                               const nightRows = floorOrder(floor.id).filter(r => r.assignment.assignedDay === nightDay);
-                              const nightKg = nightRows.reduce((s, r) => s + Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0), 0);
+                              const nightKg = nightRows.reduce((s, r) => s + (r.assignment.assignedVolume != null ? Number(r.assignment.assignedVolume) : Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0)), 0);
                               const nightUtil = Math.min(100, Math.round((nightKg / (floor.maxCapacityKg || 1)) * 100));
                               const nightBar = nightUtil > 90 ? "bg-red-500" : nightUtil > 70 ? "bg-amber-500" : "bg-indigo-500";
                               return (
