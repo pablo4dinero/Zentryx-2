@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Search, Download, Trash2, Maximize2, Minimize2 } from "lucide-react";
+import { Plus, Search, Download, Trash2, Maximize2, Minimize2, Edit3, X } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { cn } from "@/lib/utils";
 import * as XLSX from "xlsx";
@@ -316,7 +316,9 @@ export default function NewProductionOrdersPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`${BASE}api/production-orders/today/${id}`, {
+      // Delete by account_production_orders.id — the GET returns this as
+      // order.id, so the previous /today/:id endpoint always 404'd here.
+      const res = await fetch(`${BASE}api/production-orders/${id}`, {
         method: "DELETE",
         headers: authHeaders(),
       });
@@ -330,6 +332,61 @@ export default function NewProductionOrdersPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/production-orders"] });
     },
   });
+
+  const [editingOrder, setEditingOrder] = useState<TodayOrder | null>(null);
+  const [editForm, setEditForm] = useState({
+    accountId: "",
+    price: "",
+    volume: "",
+    expectedDeliveryDate: "",
+    dateDelivered: "",
+  });
+
+  const openEdit = (order: TodayOrder) => {
+    setEditingOrder(order);
+    setEditForm({
+      accountId: String(order.accountId ?? ""),
+      price: order.price ?? "",
+      volume: order.volume ?? "",
+      expectedDeliveryDate: order.expectedDeliveryDate ?? "",
+      dateDelivered: order.dateDelivered ?? "",
+    });
+  };
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, body }: { id: number; body: Record<string, unknown> }) => {
+      const res = await fetch(`${BASE}api/production-orders/${id}`, {
+        method: "PUT",
+        headers: authHeaders(),
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const errorBody = await res.text();
+        throw new Error(errorBody || "Failed to update production order");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/production-orders"] });
+      setEditingOrder(null);
+    },
+  });
+
+  const updating = updateMutation.status === "pending";
+
+  const saveEdit = () => {
+    if (!editingOrder) return;
+    const body: Record<string, unknown> = {
+      price: editForm.price,
+      volume: editForm.volume,
+      expectedDeliveryDate: editForm.expectedDeliveryDate || null,
+      dateDelivered: editForm.dateDelivered || null,
+    };
+    if (editForm.accountId && Number(editForm.accountId) !== editingOrder.accountId) {
+      body.accountId = Number(editForm.accountId);
+    }
+    updateMutation.mutate({ id: editingOrder.id, body });
+  };
 
   const accountTypeMap = useMemo(() => {
     const map: Record<number, string | null> = {};
@@ -620,12 +677,26 @@ export default function NewProductionOrdersPage() {
                       ${(Number(order.price || 0) * Number(order.volume || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => deleteMutation.mutate(order.id)}
-                        className="inline-flex items-center justify-center h-9 w-9 rounded-xl text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          onClick={() => openEdit(order)}
+                          title="Edit order"
+                          className="inline-flex items-center justify-center h-9 w-9 rounded-xl text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`Delete order for ${order.accountCompany || "this account"}? This removes related production-planning data too.`)) {
+                              deleteMutation.mutate(order.id);
+                            }
+                          }}
+                          title="Delete order"
+                          className="inline-flex items-center justify-center h-9 w-9 rounded-xl text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -634,6 +705,106 @@ export default function NewProductionOrdersPage() {
           </div>
         )}
       </div>
+
+      {editingOrder && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+          onClick={e => { if (e.target === e.currentTarget && !updating) setEditingOrder(null); }}
+        >
+          <div className="glass-card rounded-2xl border border-white/10 w-full max-w-lg p-6">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Sales Force</p>
+                <h2 className="text-lg font-bold text-foreground">Edit Production Order</h2>
+              </div>
+              <button
+                onClick={() => setEditingOrder(null)}
+                disabled={updating}
+                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors disabled:opacity-50"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-2 block">Account</label>
+                <select
+                  value={editForm.accountId}
+                  onChange={e => setEditForm(f => ({ ...f, accountId: e.target.value }))}
+                  className={inputClass}
+                  disabled={accountsLoading}
+                >
+                  <option value="">Select account</option>
+                  {accounts.map(a => (
+                    <option key={a.id} value={a.id}>{a.company} — {a.productName}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-2 block">Price ($/kg)</label>
+                  <input
+                    value={editForm.price}
+                    onChange={e => setEditForm(f => ({ ...f, price: e.target.value }))}
+                    type="number" step="0.01" min="0"
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-2 block">Volume (kg)</label>
+                  <input
+                    value={editForm.volume}
+                    onChange={e => setEditForm(f => ({ ...f, volume: e.target.value }))}
+                    type="number" step="0.01" min="0"
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-2 block">Expected Delivery</label>
+                  <input
+                    value={editForm.expectedDeliveryDate}
+                    onChange={e => setEditForm(f => ({ ...f, expectedDeliveryDate: e.target.value }))}
+                    type="text" placeholder="dd/mm/yyyy"
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-2 block">Date Delivered</label>
+                  <input
+                    value={editForm.dateDelivered}
+                    onChange={e => setEditForm(f => ({ ...f, dateDelivered: e.target.value }))}
+                    type="text" placeholder="dd/mm/yyyy"
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+              {updateMutation.isError && (
+                <p className="text-sm text-red-400">{(updateMutation.error as Error)?.message || "Failed to save."}</p>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setEditingOrder(null)}
+                disabled={updating}
+                className="px-4 py-2 rounded-xl border border-white/10 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveEdit}
+                disabled={updating || !editForm.price || !editForm.volume}
+                className="px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50"
+              >
+                {updating ? "Saving…" : "Save Changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

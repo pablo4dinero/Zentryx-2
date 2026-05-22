@@ -1,7 +1,10 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { accountsTable, accountProductionOrdersTable, todayProductionOrdersTable, usersTable } from "@workspace/db";
-import { eq, desc } from "drizzle-orm";
+import {
+  accountsTable, accountProductionOrdersTable, todayProductionOrdersTable, usersTable,
+  mdpProductionOrdersTable, mdpFloorAssignmentsTable, mdpProductSwitchDowntimesTable, mdpProducedOrdersTable,
+} from "@workspace/db";
+import { eq, desc, inArray } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../lib/auth";
 import { sendProductionOrderNotification } from "../lib/mail";
 import { logger } from "../lib/logger";
@@ -157,6 +160,89 @@ router.delete("/today/:id", requireAuth, async (req: AuthRequest, res) => {
 
     await db.delete(accountProductionOrdersTable).where(eq(accountProductionOrdersTable.id, row.productionOrderId));
     await db.delete(todayProductionOrdersTable).where(eq(todayProductionOrdersTable.id, id));
+    res.status(204).send();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+router.put("/:id", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
+    const body = req.body as Record<string, unknown>;
+
+    const updates: Record<string, unknown> = {};
+    if (body.accountId !== undefined) updates.accountId = Number(body.accountId);
+    if (body.price !== undefined) updates.price = body.price === "" ? null : String(body.price);
+    if (body.volume !== undefined) updates.volume = body.volume === "" ? null : String(body.volume);
+    if (body.expectedDeliveryDate !== undefined) updates.expectedDeliveryDate = body.expectedDeliveryDate || null;
+    if (body.dateDelivered !== undefined) updates.dateDelivered = body.dateDelivered || null;
+
+    if (Object.keys(updates).length === 0) {
+      res.status(400).json({ error: "NoFieldsToUpdate" });
+      return;
+    }
+
+    const [updated] = await db.update(accountProductionOrdersTable)
+      .set(updates)
+      .where(eq(accountProductionOrdersTable.id, id))
+      .returning();
+
+    if (!updated) {
+      res.status(404).json({ error: "NotFound" });
+      return;
+    }
+
+    // Mirror price/volume/dates onto the today_production_orders cache row so
+    // the daily list and any joined views stay in sync.
+    await db.update(todayProductionOrdersTable).set({
+      price: updated.price,
+      volume: updated.volume,
+      dateOrdered: updated.dateOrdered,
+      expectedDeliveryDate: updated.expectedDeliveryDate,
+      dateDelivered: updated.dateDelivered,
+    }).where(eq(todayProductionOrdersTable.productionOrderId, id));
+
+    res.json(updated);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+router.delete("/:id", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
+    const [existing] = await db.select().from(accountProductionOrdersTable).where(eq(accountProductionOrdersTable.id, id)).limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "NotFound" });
+      return;
+    }
+
+    // Cascade clean-up of any MDP rows that reference this sales-side order so
+    // the Sales Force delete doesn't leave orphan production-planning data.
+    const mdpRows = await db.select({ id: mdpProductionOrdersTable.id }).from(mdpProductionOrdersTable)
+      .where(eq(mdpProductionOrdersTable.salesOrderId, id));
+    const mdpIds = mdpRows.map(r => r.id);
+    if (mdpIds.length > 0) {
+      const assignments = await db.select({ id: mdpFloorAssignmentsTable.id }).from(mdpFloorAssignmentsTable)
+        .where(inArray(mdpFloorAssignmentsTable.productionOrderId, mdpIds));
+      const assignmentIds = assignments.map(a => a.id);
+      if (assignmentIds.length > 0) {
+        await db.delete(mdpProductSwitchDowntimesTable)
+          .where(inArray(mdpProductSwitchDowntimesTable.afterAssignmentId, assignmentIds));
+        await db.delete(mdpFloorAssignmentsTable)
+          .where(inArray(mdpFloorAssignmentsTable.id, assignmentIds));
+      }
+      await db.delete(mdpProducedOrdersTable)
+        .where(inArray(mdpProducedOrdersTable.productionOrderId, mdpIds));
+      await db.delete(mdpProductionOrdersTable)
+        .where(inArray(mdpProductionOrdersTable.id, mdpIds));
+    }
+
+    await db.delete(todayProductionOrdersTable).where(eq(todayProductionOrdersTable.productionOrderId, id));
+    await db.delete(accountProductionOrdersTable).where(eq(accountProductionOrdersTable.id, id));
     res.status(204).send();
   } catch (err) {
     console.error(err);
