@@ -2242,12 +2242,35 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     });
   };
 
+  const warnIfProductTypeMismatch = (floor: ProductionFloor, order: ProductionOrder) => {
+    const allowed = Array.isArray(floor.allowedProductTypes) ? floor.allowedProductTypes : [];
+    if (allowed.length === 0) return;
+    const acc = planningAccountMap[order.accountId ?? 0];
+    const rawType = String(acc?.productType ?? order.productType ?? "").trim();
+    const norm = rawType.toLowerCase().replace(/[\s&]+/g, "_");
+    const ok = allowed.some(a => String(a).trim().toLowerCase() === norm);
+    if (ok) return;
+    const productLabel = PRODUCT_TYPE_OPTIONS.find(o => o.value === norm)?.label ?? rawType ?? "this product";
+    const allowedLabels = allowed
+      .map(v => PRODUCT_TYPE_OPTIONS.find(o => o.value === v)?.label ?? v)
+      .join(", ");
+    toast({
+      title: `${floor.floorName} isn't configured for ${productLabel}`,
+      description: allowedLabels
+        ? `This floor is set up for: ${allowedLabels}. Drop will proceed — update the floor settings if this is intentional.`
+        : "Drop will proceed, but the floor has no allowed product types configured.",
+      variant: "destructive",
+    });
+  };
+
   const handleDropOnFloor = async (floor: ProductionFloor, event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setDragOverFloorId(null);
     if (!dragged) return;
     const plannedOrder = plannedOrders.find((order) => order.id === dragged.productionOrderId);
     if (!plannedOrder) return;
+
+    warnIfProductTypeMismatch(floor, plannedOrder);
 
     if (dragged.type === "planned") {
       openPartialAssignModal(floor, plannedOrder);
@@ -2312,6 +2335,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     if (!dragged) return;
     const plannedOrder = plannedOrders.find((order) => order.id === dragged.productionOrderId);
     if (!plannedOrder) return;
+
+    warnIfProductTypeMismatch(floor, plannedOrder);
 
     if (dragged.type === "planned") {
       openPartialAssignModal(floor, plannedOrder, day);
