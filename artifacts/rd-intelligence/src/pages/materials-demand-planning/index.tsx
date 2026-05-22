@@ -2242,25 +2242,51 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     });
   };
 
-  const warnIfProductTypeMismatch = (floor: ProductionFloor, order: ProductionOrder) => {
+  const getProductTypeMismatch = (floor: ProductionFloor, order: ProductionOrder): { productLabel: string; allowedLabels: string } | null => {
     const allowed = Array.isArray(floor.allowedProductTypes) ? floor.allowedProductTypes : [];
-    if (allowed.length === 0) return;
+    if (allowed.length === 0) return null;
     const acc = planningAccountMap[order.accountId ?? 0];
     const rawType = String(acc?.productType ?? order.productType ?? "").trim();
     const norm = rawType.toLowerCase().replace(/[\s&]+/g, "_");
     const ok = allowed.some(a => String(a).trim().toLowerCase() === norm);
-    if (ok) return;
-    const productLabel = PRODUCT_TYPE_OPTIONS.find(o => o.value === norm)?.label ?? rawType ?? "this product";
+    if (ok) return null;
+    const productLabel = PRODUCT_TYPE_OPTIONS.find(o => o.value === norm)?.label ?? (rawType || "this product");
     const allowedLabels = allowed
       .map(v => PRODUCT_TYPE_OPTIONS.find(o => o.value === v)?.label ?? v)
       .join(", ");
-    toast({
-      title: `${floor.floorName} isn't configured for ${productLabel}`,
-      description: allowedLabels
-        ? `This floor is set up for: ${allowedLabels}. Drop will proceed — update the floor settings if this is intentional.`
-        : "Drop will proceed, but the floor has no allowed product types configured.",
-      variant: "destructive",
-    });
+    return { productLabel, allowedLabels };
+  };
+
+  type DragSnapshot = { type: "planned" | "assigned"; productionOrderId: number; assignmentId?: number; floorId?: number };
+  const [confirmDrop, setConfirmDrop] = React.useState<{
+    floor: ProductionFloor;
+    order: ProductionOrder;
+    day?: string;
+    draggedSnapshot: DragSnapshot;
+    productLabel: string;
+    allowedLabels: string;
+  } | null>(null);
+
+  const proceedWithDrop = async (floor: ProductionFloor, order: ProductionOrder, day: string | undefined, draggedSnap: DragSnapshot) => {
+    setConfirmDrop(null);
+    if (draggedSnap.type === "planned") {
+      openPartialAssignModal(floor, order, day);
+      return;
+    }
+    if (draggedSnap.type === "assigned" && draggedSnap.assignmentId && draggedSnap.floorId !== undefined) {
+      if (draggedSnap.floorId !== floor.id) {
+        const originalRow = assignments.find(r => r.assignment.id === draggedSnap.assignmentId);
+        const originalVol = originalRow?.assignment.assignedVolume;
+        await deleteAssignmentMutation.mutateAsync(draggedSnap.assignmentId);
+        const targetDay = day ?? getAvailableDay(floor, assignmentsByFloor.get(floor.id) ?? [], Number(originalVol ?? order.volume ?? 0));
+        await createAssignmentMutation.mutateAsync({
+          floorId: floor.id, productionOrderId: order.id,
+          weekLabel: selectedWeekLabel, assignedDay: targetDay, planStatus: "Planned",
+          ...(originalVol != null ? { assignedVolume: Number(originalVol) } : {}),
+        });
+      }
+    }
+    setDragged(null);
   };
 
   const handleDropOnFloor = async (floor: ProductionFloor, event: React.DragEvent<HTMLDivElement>) => {
@@ -2270,27 +2296,17 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     const plannedOrder = plannedOrders.find((order) => order.id === dragged.productionOrderId);
     if (!plannedOrder) return;
 
-    warnIfProductTypeMismatch(floor, plannedOrder);
-
-    if (dragged.type === "planned") {
-      openPartialAssignModal(floor, plannedOrder);
-      return; // wait for modal confirm
+    const mismatch = getProductTypeMismatch(floor, plannedOrder);
+    if (mismatch) {
+      setConfirmDrop({
+        floor, order: plannedOrder, day: undefined,
+        draggedSnapshot: { ...dragged },
+        productLabel: mismatch.productLabel,
+        allowedLabels: mismatch.allowedLabels,
+      });
+      return;
     }
-
-    if (dragged.type === "assigned" && dragged.assignmentId && dragged.floorId !== undefined) {
-      if (dragged.floorId !== floor.id) {
-        const originalRow = assignments.find(r => r.assignment.id === dragged.assignmentId);
-        const originalVol = originalRow?.assignment.assignedVolume;
-        await deleteAssignmentMutation.mutateAsync(dragged.assignmentId);
-        const newDay = getAvailableDay(floor, assignmentsByFloor.get(floor.id) ?? [], Number(originalVol ?? plannedOrder.volume ?? 0));
-        await createAssignmentMutation.mutateAsync({
-          floorId: floor.id, productionOrderId: plannedOrder.id,
-          weekLabel: selectedWeekLabel, assignedDay: newDay, planStatus: "Planned",
-          ...(originalVol != null ? { assignedVolume: Number(originalVol) } : {}),
-        });
-      }
-    }
-    setDragged(null);
+    await proceedWithDrop(floor, plannedOrder, undefined, dragged);
   };
 
   const handleUnassign = async (assignmentId: number) => {
@@ -2336,23 +2352,17 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     const plannedOrder = plannedOrders.find((order) => order.id === dragged.productionOrderId);
     if (!plannedOrder) return;
 
-    warnIfProductTypeMismatch(floor, plannedOrder);
-
-    if (dragged.type === "planned") {
-      openPartialAssignModal(floor, plannedOrder, day);
-      return; // wait for modal confirm
-    }
-    if (dragged.type === "assigned" && dragged.assignmentId && dragged.floorId !== undefined) {
-      const originalRow = assignments.find(r => r.assignment.id === dragged.assignmentId);
-      const originalVol = originalRow?.assignment.assignedVolume;
-      await deleteAssignmentMutation.mutateAsync(dragged.assignmentId);
-      await createAssignmentMutation.mutateAsync({
-        floorId: floor.id, productionOrderId: plannedOrder.id,
-        weekLabel: selectedWeekLabel, assignedDay: day, planStatus: "Planned",
-        ...(originalVol != null ? { assignedVolume: Number(originalVol) } : {}),
+    const mismatch = getProductTypeMismatch(floor, plannedOrder);
+    if (mismatch) {
+      setConfirmDrop({
+        floor, order: plannedOrder, day,
+        draggedSnapshot: { ...dragged },
+        productLabel: mismatch.productLabel,
+        allowedLabels: mismatch.allowedLabels,
       });
+      return;
     }
-    setDragged(null);
+    await proceedWithDrop(floor, plannedOrder, day, dragged);
   };
 
   const handleAssistedPlanning = async () => {
@@ -3144,6 +3154,56 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
             />
           );
         })()}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {confirmDrop && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 12 }}
+              className={cn(
+                "border rounded-2xl shadow-2xl w-full max-w-md",
+                isLight ? "bg-white border-gray-200" : "glass-panel border-white/10",
+              )}
+            >
+              <div className="p-6">
+                <div className="flex items-start gap-3">
+                  <div className="shrink-0 mt-0.5">
+                    <AlertTriangle className="w-5 h-5 text-amber-500" />
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="text-base font-bold text-foreground">
+                      {confirmDrop.floor.floorName} isn't configured for {confirmDrop.productLabel}
+                    </h2>
+                    <p className="text-sm text-muted-foreground mt-2">
+                      This floor is set up for: <span className="font-medium text-foreground">{confirmDrop.allowedLabels}</span>.
+                    </p>
+                    <p className="text-sm text-muted-foreground mt-2">Continue with the drop anyway?</p>
+                  </div>
+                </div>
+              </div>
+              <div className={cn("px-6 py-4 border-t flex gap-3 justify-end", isLight ? "border-gray-100" : "border-white/5")}>
+                <button
+                  onClick={() => { setConfirmDrop(null); setDragged(null); }}
+                  className={cn(
+                    "px-4 py-2 border rounded-xl text-sm font-medium transition-colors",
+                    isLight ? "border-gray-200 text-gray-700 hover:bg-gray-50" : "border-white/10 text-muted-foreground hover:bg-white/5",
+                  )}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => proceedWithDrop(confirmDrop.floor, confirmDrop.order, confirmDrop.day, confirmDrop.draggedSnapshot)}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-sm font-semibold transition-colors"
+                >
+                  Continue anyway
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
       </AnimatePresence>
 
       <Dialog open={printOpen} onOpenChange={setPrintOpen}>
