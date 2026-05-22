@@ -97,6 +97,8 @@ type ProductionOrder = {
   remarks?: string | null;
   orderStatus?: string | null;
   isPlanned?: boolean;
+  isProduced?: boolean;
+  isDelivered?: boolean;
   expectedDeliveryDate?: string | null;
 };
 
@@ -1702,8 +1704,21 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     return map;
   }, [allAssignmentsQuery.data]);
 
+  // Planned-orders filter must exclude anything already past the planning
+  // stage. Orders that have been produced or delivered (either via the
+  // is_produced / is_delivered flags or via order_status moving past
+  // "Planned") still flow back through this query, so we strip them here
+  // to prevent them from re-appearing in the planning list alongside their
+  // Production History entry.
   const plannedOrders = React.useMemo(
-    () => (productionOrdersQuery.data ?? []).filter((order) => order.isPlanned),
+    () => (productionOrdersQuery.data ?? []).filter((order) => {
+      if (!order.isPlanned) return false;
+      if (order.isProduced) return false;
+      if (order.isDelivered) return false;
+      const status = String(order.orderStatus ?? "");
+      if (status === "Produced" || status === "Delivered" || status === "Cancelled") return false;
+      return true;
+    }),
     [productionOrdersQuery.data]
   );
 
@@ -2122,6 +2137,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       assignmentId: number; orderId: number;
       accountName: string; productName: string; productType: string; volume: number; floorId?: number;
     }) => {
+      // Mark this floor assignment as produced
       const res = await fetch(`${BASE}api/mdp/floor-assignments/${assignmentId}/produce`, {
         method: "PUT",
         headers: authHeaders(),
@@ -2130,6 +2146,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
         const error = await res.json().catch(() => ({}));
         throw new Error(error.error || "Failed to mark assignment produced");
       }
+      // Record the production in history
       await fetch(`${BASE}api/mdp/produced-orders`, {
         method: "POST",
         headers: authHeaders(),
@@ -2143,11 +2160,23 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
           producedAt: new Date().toISOString(),
         }),
       });
-      await fetch(`${BASE}api/mdp/production-orders/${orderId}`, {
-        method: "PUT",
-        headers: authHeaders(),
-        body: JSON.stringify({ isProduced: true, orderStatus: "Produced" }),
-      });
+      // Only roll the mother order to a "Produced" terminal state when the
+      // entire order is done — every assignment is produced AND no volume is
+      // left unassigned. Otherwise it would disappear from the planning list
+      // while partial volume is still pending.
+      const allAssignments = allAssignmentsQuery.data ?? [];
+      const siblings = allAssignments.filter(r => r.assignment.productionOrderId === orderId);
+      const unproducedRemaining = siblings.filter(r =>
+        r.assignment.id !== assignmentId && r.assignment.planStatus !== "Produced"
+      ).length;
+      const remainingVol = remainingVolumeByOrderId[orderId] ?? 0;
+      if (unproducedRemaining === 0 && remainingVol <= 0) {
+        await fetch(`${BASE}api/mdp/production-orders/${orderId}`, {
+          method: "PUT",
+          headers: authHeaders(),
+          body: JSON.stringify({ isProduced: true, isPlanned: false, orderStatus: "Produced" }),
+        });
+      }
       return res.json();
     },
     onSuccess: () => {
