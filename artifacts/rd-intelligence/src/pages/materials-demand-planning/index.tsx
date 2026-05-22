@@ -3123,13 +3123,19 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                         const acc = planningAccountMap[fullOrder?.accountId ?? 0];
                                         const company = acc?.company ?? fullOrder?.accountCompany ?? fullOrder?.accountName ?? "—";
                                         const productName = acc?.productName ?? fullOrder?.productName ?? null;
-                                        const volume = Number(fullOrder?.volume ?? row.order.volume ?? 0);
+                                        const totalVol = Number(fullOrder?.volume ?? row.order.volume ?? 0);
+                                        const assignedVol = row.assignment.assignedVolume != null ? Number(row.assignment.assignedVolume) : totalVol;
                                         return (
                                           <div key={row.assignment.id} className="border border-slate-200 rounded-lg p-2 bg-white">
                                             <p className="text-[11px] font-bold text-slate-800 leading-tight truncate">{company}</p>
                                             {productName && <p className="text-[10px] text-slate-500 truncate">{productName}</p>}
                                             <div className="flex items-center justify-between mt-1.5 gap-1">
-                                              <span className="text-[10px] font-semibold text-slate-700">{volume.toLocaleString()} KG</span>
+                                              <span className="text-[10px] font-semibold text-slate-700">
+                                                {assignedVol.toLocaleString()} KG
+                                                {totalVol > 0 && totalVol !== assignedVol && (
+                                                  <span className="text-[9px] font-normal text-slate-400"> / of {totalVol.toLocaleString()}</span>
+                                                )}
+                                              </span>
                                               <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded", row.order.microbialAnalysis === "Critical" ? "bg-red-100 text-red-700" : row.order.microbialAnalysis === "Important" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700")}>{row.order.microbialAnalysis ?? "Normal"}</span>
                                             </div>
                                           </div>
@@ -3178,13 +3184,19 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                             const acc = planningAccountMap[fullOrder?.accountId ?? 0];
                                             const company = acc?.company ?? fullOrder?.accountCompany ?? fullOrder?.accountName ?? "—";
                                             const productName = acc?.productName ?? fullOrder?.productName ?? null;
-                                            const volume = Number(fullOrder?.volume ?? row.order.volume ?? 0);
+                                            const totalVol = Number(fullOrder?.volume ?? row.order.volume ?? 0);
+                                            const assignedVol = row.assignment.assignedVolume != null ? Number(row.assignment.assignedVolume) : totalVol;
                                             return (
                                               <div key={row.assignment.id} className="border border-indigo-200 rounded-lg p-2 bg-white">
                                                 <p className="text-[11px] font-bold text-slate-800 leading-tight truncate">{company}</p>
                                                 {productName && <p className="text-[10px] text-slate-500 truncate">{productName}</p>}
                                                 <div className="flex items-center justify-between mt-1.5 gap-1">
-                                                  <span className="text-[10px] font-semibold text-slate-700">{volume.toLocaleString()} KG</span>
+                                                  <span className="text-[10px] font-semibold text-slate-700">
+                                                    {assignedVol.toLocaleString()} KG
+                                                    {totalVol > 0 && totalVol !== assignedVol && (
+                                                      <span className="text-[9px] font-normal text-slate-400"> / of {totalVol.toLocaleString()}</span>
+                                                    )}
+                                                  </span>
                                                   <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded", row.order.microbialAnalysis === "Critical" ? "bg-red-100 text-red-700" : row.order.microbialAnalysis === "Important" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700")}>{row.order.microbialAnalysis ?? "Normal"}</span>
                                                 </div>
                                               </div>
@@ -3304,7 +3316,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                       const acc = planningAccountMap[fullOrder?.accountId ?? 0];
                                       const company = acc?.company ?? fullOrder?.accountCompany ?? fullOrder?.accountName ?? "Unknown";
                                       const productName = acc?.productName ?? fullOrder?.productName ?? null;
-                                      const volume = Number(fullOrder?.volume ?? row.order.volume ?? 0);
+                                      const totalVol = Number(fullOrder?.volume ?? row.order.volume ?? 0);
+                                      const assignedVol = row.assignment.assignedVolume != null ? Number(row.assignment.assignedVolume) : totalVol;
                                       return (
                                         <div className={cn("rounded-xl border p-3", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5")}>
                                           <div className="flex items-start justify-between gap-2 mb-2">
@@ -3312,7 +3325,12 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                               <p className="font-bold text-foreground text-sm truncate">{company}</p>
                                               {productName && <p className="text-xs text-muted-foreground truncate">{productName}</p>}
                                             </div>
-                                            <span className="text-sm font-bold text-foreground shrink-0">{volume.toLocaleString()} KG</span>
+                                            <div className="text-right shrink-0">
+                                              <span className="text-sm font-bold text-foreground">{assignedVol.toLocaleString()} KG</span>
+                                              {totalVol > 0 && totalVol !== assignedVol && (
+                                                <div className="text-[10px] text-muted-foreground/70 mt-0.5">of {totalVol.toLocaleString()} total</div>
+                                              )}
+                                            </div>
                                           </div>
                                           <div className="flex items-center gap-2">
                                             <span className={cn("h-2 w-2 rounded-full shrink-0", getMicrobialColor(row.order.microbialAnalysis ?? "Normal"))} />
@@ -3370,7 +3388,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                         const acc = planningAccountMap[fullOrder?.accountId ?? 0];
                                         const company = acc?.company ?? fullOrder?.accountCompany ?? fullOrder?.accountName ?? "Unknown";
                                         const productName = acc?.productName ?? fullOrder?.productName ?? null;
-                                        const volume = Number(fullOrder?.volume ?? row.order.volume ?? 0);
+                                        const totalVol = Number(fullOrder?.volume ?? row.order.volume ?? 0);
+                                        const assignedVol = row.assignment.assignedVolume != null ? Number(row.assignment.assignedVolume) : totalVol;
                                         return (
                                           <div className={cn("rounded-xl border p-3", isLight ? "border-indigo-100 bg-white" : "border-indigo-500/20 bg-indigo-500/5")}>
                                             <div className="flex items-start justify-between gap-2 mb-2">
@@ -3378,7 +3397,12 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                                 <p className="font-bold text-foreground text-sm truncate">{company}</p>
                                                 {productName && <p className="text-xs text-muted-foreground truncate">{productName}</p>}
                                               </div>
-                                              <span className="text-sm font-bold text-foreground shrink-0">{volume.toLocaleString()} KG</span>
+                                              <div className="text-right shrink-0">
+                                                <span className="text-sm font-bold text-foreground">{assignedVol.toLocaleString()} KG</span>
+                                                {totalVol > 0 && totalVol !== assignedVol && (
+                                                  <div className="text-[10px] text-muted-foreground/70 mt-0.5">of {totalVol.toLocaleString()} total</div>
+                                                )}
+                                              </div>
                                             </div>
                                             <div className="flex items-center gap-2">
                                               <span className={cn("h-2 w-2 rounded-full shrink-0", getMicrobialColor(row.order.microbialAnalysis ?? "Normal"))} />
