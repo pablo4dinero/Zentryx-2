@@ -463,14 +463,6 @@ type ProductionFloor = {
   allowedProductTypes?: string[] | null;
 };
 
-const PRODUCT_TYPE_OPTIONS: { value: string; label: string }[] = [
-  { value: "seasoning",            label: "Seasoning" },
-  { value: "snacks_dusting",       label: "Snacks Dusting" },
-  { value: "dairy_premix",         label: "Dairy Premix" },
-  { value: "bakery_dough_premix",  label: "Bakery & Dough Premix" },
-  { value: "sweet_flavours",       label: "Sweet Flavours" },
-  { value: "savoury_flavour",      label: "Savoury Flavour" },
-];
 
 function formatSwitchDuration(m: number): string {
   if (!Number.isFinite(m) || m <= 0) return "0mins";
@@ -1520,6 +1512,12 @@ function PartialAssignModal({
 function ProductionPlanningTab() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  // Shared dynamic product type list (same store as Sales Force "Add Account"
+  // and MDP "Add Product"). Add/rename/delete happens via those forms — this
+  // hook just reads the current set for the floor allow-list chips.
+  const typeOpts = useCustomOptions("productType", DEFAULT_PRODUCT_TYPES);
+  const normalizeType = (s: string | null | undefined): string =>
+    String(s ?? "").trim().toLowerCase().replace(/[\s&_\-/]+/g, "_").replace(/_+/g, "_");
   const { theme } = useTheme();
   const isLight = theme === "light";
   const [selectedWeekLabel, setSelectedWeekLabel] = React.useState("");
@@ -2247,13 +2245,12 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     if (allowed.length === 0) return null;
     const acc = planningAccountMap[order.accountId ?? 0];
     const rawType = String(acc?.productType ?? order.productType ?? "").trim();
-    const norm = rawType.toLowerCase().replace(/[\s&]+/g, "_");
-    const ok = allowed.some(a => String(a).trim().toLowerCase() === norm);
+    if (!rawType) return null;
+    const orderNorm = normalizeType(rawType);
+    const ok = allowed.some(a => normalizeType(a) === orderNorm);
     if (ok) return null;
-    const productLabel = PRODUCT_TYPE_OPTIONS.find(o => o.value === norm)?.label ?? (rawType || "this product");
-    const allowedLabels = allowed
-      .map(v => PRODUCT_TYPE_OPTIONS.find(o => o.value === v)?.label ?? v)
-      .join(", ");
+    const productLabel = displayLabel(rawType);
+    const allowedLabels = allowed.map(displayLabel).join(", ");
     return { productLabel, allowedLabels };
   };
 
@@ -2590,19 +2587,23 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                   </div>
                   <div className="grid gap-2">
                     <Label>Product Types This Floor Can Blend</Label>
-                    <p className="text-xs text-muted-foreground -mt-1">Pick one or more — you can change this later.</p>
+                    <p className="text-xs text-muted-foreground -mt-1">
+                      Pick one or more from the shared product type list. Add new types via Sales Force or MDP Add Product.
+                    </p>
                     <div className="flex flex-wrap gap-2 mt-1">
-                      {PRODUCT_TYPE_OPTIONS.map(opt => {
-                        const selected = floorForm.allowedProductTypes.includes(opt.value);
+                      {typeOpts.options.length === 0 ? (
+                        <p className="text-xs text-muted-foreground italic">No product types defined yet.</p>
+                      ) : typeOpts.options.map(opt => {
+                        const selected = floorForm.allowedProductTypes.includes(opt);
                         return (
                           <button
-                            key={opt.value}
+                            key={opt}
                             type="button"
                             onClick={() => setFloorForm(prev => ({
                               ...prev,
                               allowedProductTypes: selected
-                                ? prev.allowedProductTypes.filter(t => t !== opt.value)
-                                : [...prev.allowedProductTypes, opt.value],
+                                ? prev.allowedProductTypes.filter(t => t !== opt)
+                                : [...prev.allowedProductTypes, opt],
                             }))}
                             className={cn("inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
                               selected
@@ -2613,7 +2614,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                             )}
                           >
                             <span className={cn("w-1.5 h-1.5 rounded-full", selected ? "bg-primary" : "bg-muted-foreground/40")} />
-                            {opt.label}
+                            {displayLabel(opt)}
                           </button>
                         );
                       })}
@@ -3083,17 +3084,19 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                     <div>
                       <label className={lCls}>Product Types This Floor Can Blend</label>
                       <div className="flex flex-wrap gap-2">
-                        {PRODUCT_TYPE_OPTIONS.map(opt => {
-                          const selected = editFloorForm.allowedProductTypes.includes(opt.value);
+                        {typeOpts.options.length === 0 ? (
+                          <p className="text-xs text-muted-foreground italic">No product types defined yet.</p>
+                        ) : typeOpts.options.map(opt => {
+                          const selected = editFloorForm.allowedProductTypes.includes(opt);
                           return (
                             <button
-                              key={opt.value}
+                              key={opt}
                               type="button"
                               onClick={() => setEditFloorForm(prev => ({
                                 ...prev,
                                 allowedProductTypes: selected
-                                  ? prev.allowedProductTypes.filter(t => t !== opt.value)
-                                  : [...prev.allowedProductTypes, opt.value],
+                                  ? prev.allowedProductTypes.filter(t => t !== opt)
+                                  : [...prev.allowedProductTypes, opt],
                               }))}
                               className={cn("inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
                                 selected
@@ -3104,7 +3107,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                               )}
                             >
                               <span className={cn("w-1.5 h-1.5 rounded-full", selected ? "bg-primary" : "bg-muted-foreground/40")} />
-                              {opt.label}
+                              {displayLabel(opt)}
                             </button>
                           );
                         })}
