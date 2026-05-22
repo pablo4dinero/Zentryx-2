@@ -402,7 +402,7 @@ export default function NewProductionOrdersPage() {
   return (
     <div className="space-y-6">
       {/* Top row: header + chart */}
-      <div className="grid grid-cols-1 xl:grid-cols-[1.6fr_1fr] gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-[1.6fr_1fr] gap-6 items-start">
         <div className="glass-card rounded-2xl p-6 border border-white/5">
           <div className="flex items-start justify-between gap-4 mb-5">
             <div>
