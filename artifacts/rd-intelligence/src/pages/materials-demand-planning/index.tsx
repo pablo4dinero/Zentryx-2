@@ -16,6 +16,8 @@ import {
   Maximize2,
   Moon,
   Settings,
+  AlertTriangle,
+  ChevronDown,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 
@@ -449,12 +451,35 @@ type WorkingWeek = {
   endDate: Date;
 };
 
+type FloorStatus = "Running" | "Under Maintenance" | "On Hold";
+const FLOOR_STATUSES: FloorStatus[] = ["Running", "Under Maintenance", "On Hold"];
+
 type ProductionFloor = {
   id: number;
   floorName: string;
   blendCategory: "Sweet" | "Savory" | "Sweet/Savory" | "Savory/Sweet";
   maxCapacityKg: number;
+  status?: FloorStatus | string | null;
 };
+
+function floorStatusColor(status: FloorStatus | string | null | undefined): { dot: string; chip: string; ring: string } {
+  const s = (status ?? "Running") as FloorStatus;
+  if (s === "Under Maintenance") return {
+    dot: "bg-amber-500",
+    chip: "bg-amber-500/10 border-amber-500/30 text-amber-500",
+    ring: "ring-amber-500/40",
+  };
+  if (s === "On Hold") return {
+    dot: "bg-red-500",
+    chip: "bg-red-500/10 border-red-500/30 text-red-500",
+    ring: "ring-red-500/40",
+  };
+  return {
+    dot: "bg-emerald-500",
+    chip: "bg-emerald-500/10 border-emerald-500/30 text-emerald-500",
+    ring: "ring-emerald-500/40",
+  };
+}
 
 type FloorAssignmentRow = {
   assignment: {
@@ -1754,6 +1779,31 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     onError: (error: any) => toast({ title: "Could not delete floor", description: error?.message, variant: "destructive" }),
   });
 
+  const [statusMenuFloorId, setStatusMenuFloorId] = React.useState<number | null>(null);
+  const [dismissedOverlays, setDismissedOverlays] = React.useState<Record<number, string>>({});
+
+  const updateFloorStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: FloorStatus }) => {
+      const res = await fetch(`${BASE}api/mdp/production-floors/${id}/status`, {
+        method: "PATCH", headers: authHeaders(), body: JSON.stringify({ status }),
+      });
+      if (!res.ok) { const error = await res.json().catch(() => ({})); throw new Error(error.error || "Failed to update floor status"); }
+      return res.json() as Promise<ProductionFloor>;
+    },
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-floors"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      setStatusMenuFloorId(null);
+      setDismissedOverlays(prev => {
+        const next = { ...prev };
+        delete next[updated.id];
+        return next;
+      });
+      toast({ title: `Floor status: ${updated.status}`, description: `${updated.floorName} → ${updated.status}` });
+    },
+    onError: (error: any) => toast({ title: "Could not update status", description: error?.message, variant: "destructive" }),
+  });
+
   const createAssignmentMutation = useMutation({
     mutationFn: async (payload: Record<string, unknown>) => {
       const res = await fetch(`${BASE}api/mdp/floor-assignments`, {
@@ -2295,8 +2345,55 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
               );
             };
 
+            const floorStatusButton = (floor: ProductionFloor) => {
+              const current = (floor.status ?? "Running") as FloorStatus;
+              const colors = floorStatusColor(current);
+              const open = statusMenuFloorId === floor.id;
+              return (
+                <div className="relative">
+                  <button
+                    onClick={() => setStatusMenuFloorId(open ? null : floor.id)}
+                    className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold transition-colors", colors.chip)}
+                    title="Change floor status"
+                  >
+                    <span className={cn("w-1.5 h-1.5 rounded-full", colors.dot)} />
+                    {current}
+                    <ChevronDown className="w-3 h-3 opacity-70" />
+                  </button>
+                  {open && (
+                    <>
+                      <div className="fixed inset-0 z-30" onClick={() => setStatusMenuFloorId(null)} />
+                      <div className={cn("absolute z-40 right-0 mt-1 min-w-[160px] rounded-xl border shadow-xl py-1",
+                        isLight ? "bg-white border-slate-200" : "bg-zinc-900 border-white/10"
+                      )}>
+                        {FLOOR_STATUSES.map(s => {
+                          const c = floorStatusColor(s);
+                          const isCurrent = s === current;
+                          return (
+                            <button
+                              key={s}
+                              onClick={() => updateFloorStatusMutation.mutate({ id: floor.id, status: s })}
+                              disabled={isCurrent || updateFloorStatusMutation.isPending}
+                              className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors",
+                                isCurrent ? "opacity-50 cursor-not-allowed" : isLight ? "hover:bg-slate-50" : "hover:bg-white/5"
+                              )}
+                            >
+                              <span className={cn("w-2 h-2 rounded-full", c.dot)} />
+                              <span className="font-medium text-foreground">{s}</span>
+                              {isCurrent && <span className="ml-auto text-[9px] text-muted-foreground">current</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            };
+
             const floorActionButtons = (floor: ProductionFloor) => (
               <div className="flex items-center gap-1 shrink-0">
+                {floorStatusButton(floor)}
                 <button onClick={() => { setEditingFloor(floor); setEditFloorForm({ floorName: floor.floorName, blendCategory: floor.blendCategory, maxCapacityKg: String(floor.maxCapacityKg) }); setEditFloorOpen(true); }}
                   className={cn("p-1 rounded-md transition-colors text-muted-foreground hover:text-foreground", isLight ? "hover:bg-slate-100" : "hover:bg-white/10")} title="Edit">
                   <Edit3 className="w-3 h-3" />
@@ -2314,6 +2411,41 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                 )}
               </div>
             );
+
+            const floorCautionOverlay = (floor: ProductionFloor) => {
+              const status = (floor.status ?? "Running") as FloorStatus;
+              if (status === "Running") return null;
+              if (dismissedOverlays[floor.id] === status) return null;
+              const colors = floorStatusColor(status);
+              return (
+                <div className={cn(
+                  "pointer-events-none absolute inset-0 z-20 rounded-2xl ring-2",
+                  colors.ring,
+                )}>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className={cn(
+                      "pointer-events-auto flex items-center gap-2 px-3 py-2 rounded-xl border shadow-lg backdrop-blur-sm animate-pulse",
+                      status === "Under Maintenance"
+                        ? "bg-amber-500/20 border-amber-500/40 text-amber-300"
+                        : "bg-red-500/20 border-red-500/40 text-red-300",
+                    )}>
+                      <AlertTriangle className="w-4 h-4" />
+                      <span className="text-xs font-bold uppercase tracking-wide">{status}</span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDismissedOverlays(prev => ({ ...prev, [floor.id]: status }));
+                        }}
+                        className="ml-1 p-0.5 rounded hover:bg-white/10 transition-colors"
+                        title="Dismiss"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            };
 
             if (floors.length === 0) {
               return (
@@ -2337,7 +2469,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                     const barClass = progress > 90 ? "bg-red-500" : progress > 70 ? "bg-amber-500" : "bg-emerald-500";
                     return (
                       <div key={floor.id}
-                        className={cn("rounded-2xl border p-4 transition-colors",
+                        className={cn("relative rounded-2xl border p-4 transition-colors",
                           dragOverFloorId === floor.id ? "border-primary/50 bg-primary/5"
                             : isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5"
                         )}
@@ -2345,6 +2477,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                         onDragLeave={() => setDragOverFloorId(c => c === floor.id ? null : c)}
                         onDrop={e => handleDropOnFloor(floor, e)}
                       >
+                        {floorCautionOverlay(floor)}
                         <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
                           <div>
                             <h3 className="text-sm font-semibold text-foreground">{floor.floorName}</h3>
@@ -2425,11 +2558,12 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                               onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOverFloorId(floor.id); }}
                               onDragLeave={() => setDragOverFloorId(c => c === floor.id ? null : c)}
                               onDrop={e => { e.stopPropagation(); handleDropOnFloorDay(floor, day, e); }}
-                              className={cn("rounded-2xl border flex flex-col transition-colors",
+                              className={cn("relative rounded-2xl border flex flex-col transition-colors",
                                 isDragTarget ? "border-primary/60 bg-primary/5"
                                   : isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5"
                               )}
                             >
+                              {floorCautionOverlay(floor)}
                               {/* Floor card header */}
                               <div className={cn("px-3 py-2.5 border-b rounded-t-2xl flex items-start justify-between gap-1",
                                 isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5"
@@ -2487,11 +2621,12 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                   onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOverNightFloorId(floor.id); }}
                                   onDragLeave={() => setDragOverNightFloorId(c => c === floor.id ? null : c)}
                                   onDrop={e => { e.stopPropagation(); setDragOverNightFloorId(null); handleDropOnFloorDay(floor, nightDay, e); }}
-                                  className={cn("rounded-2xl border flex flex-col transition-colors",
+                                  className={cn("relative rounded-2xl border flex flex-col transition-colors",
                                     isNightTarget ? "border-indigo-500/60 bg-indigo-500/5"
                                       : isLight ? "border-indigo-100 bg-indigo-50/40" : "border-indigo-500/15 bg-indigo-500/5"
                                   )}
                                 >
+                                  {floorCautionOverlay(floor)}
                                   <div className={cn("px-3 py-2.5 border-b rounded-t-2xl flex items-start gap-1",
                                     isLight ? "border-indigo-100 bg-indigo-50" : "border-indigo-500/15 bg-indigo-500/10"
                                   )}>

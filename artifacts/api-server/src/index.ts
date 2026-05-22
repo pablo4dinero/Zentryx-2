@@ -105,6 +105,7 @@ async function createTablesIfNotExist() {
     await db.execute(sql.raw(`ALTER TABLE today_production_orders ADD COLUMN IF NOT EXISTS date_delivered TEXT;`));
     await db.execute(sql.raw(`ALTER TABLE mdp_production_orders ADD COLUMN IF NOT EXISTS raw_material_status TEXT DEFAULT 'Pending';`));
     await db.execute(sql.raw(`ALTER TABLE mdp_floor_assignments ADD COLUMN IF NOT EXISTS assigned_volume NUMERIC(12,2);`));
+    await db.execute(sql.raw(`ALTER TABLE mdp_production_floors ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Running';`));
 
     // Migrate projects table enum columns to text so custom values are accepted
     await db.execute(sql.raw(`

@@ -7,11 +7,17 @@ import {
   mdpFloorAssignmentsTable,
   mdpProducedOrdersTable,
   accountProductionOrdersTable,
+  notificationsTable,
+  usersTable,
 } from "@workspace/db";
 import { eq, desc, inArray, gte, lte, and } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "../lib/auth";
+import { logActivity } from "../lib/activity";
 
 const router = Router();
+
+const FLOOR_STATUSES = ["Running", "Under Maintenance", "On Hold"] as const;
+type FloorStatus = (typeof FLOOR_STATUSES)[number];
 
 router.get("/customer-products", requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -189,6 +195,63 @@ router.put("/production-floors/:id", requireAuth, async (req: AuthRequest, res) 
     if (!updated) {
       res.status(404).json({ error: "NotFound" });
       return;
+    }
+
+    res.json(updated);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+router.patch("/production-floors/:id/status", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const id = Number(req.params.id);
+    const incoming = String((req.body as any)?.status ?? "");
+    if (!FLOOR_STATUSES.includes(incoming as FloorStatus)) {
+      res.status(400).json({ error: "InvalidStatus", allowed: FLOOR_STATUSES });
+      return;
+    }
+    const status = incoming as FloorStatus;
+
+    const [updated] = await db.update(mdpProductionFloorsTable)
+      .set({ status })
+      .where(eq(mdpProductionFloorsTable.id, id))
+      .returning();
+
+    if (!updated) {
+      res.status(404).json({ error: "NotFound" });
+      return;
+    }
+
+    let actorName = req.user?.email ?? "A user";
+    if (req.user?.userId) {
+      const [actor] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, req.user.userId)).limit(1);
+      if (actor?.name) actorName = actor.name;
+    }
+    const title = `Floor status: ${updated.floorName} → ${status}`;
+    const message = `${actorName} set ${updated.floorName} to "${status}".`;
+    const notifType: "system" | "update" = status === "Running" ? "update" : "system";
+
+    const users = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.isActive, true));
+    if (users.length > 0) {
+      await db.insert(notificationsTable).values(users.map(u => ({
+        userId: u.id,
+        type: notifType,
+        title,
+        message,
+        isRead: false,
+      })));
+    }
+
+    if (req.user?.userId) {
+      await logActivity(
+        req.user.userId,
+        `set floor status to ${status}`,
+        "production_floor",
+        id,
+        `${updated.floorName} → ${status}`,
+      );
     }
 
     res.json(updated);
