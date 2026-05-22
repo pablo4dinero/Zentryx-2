@@ -17,7 +17,7 @@ import { useExchangeRate, fmtNGN } from "@/hooks/useExchangeRate";
 
 import {
   useCustomOptions, DEFAULT_STAGES, DEFAULT_STATUSES, DEFAULT_PRODUCT_TYPES, DEFAULT_PRIORITIES,
-  useServerProductTypes,
+  useServerProductTypes, useServerOptionList,
 } from "@/lib/project-options";
 
 const BASE = import.meta.env.BASE_URL;
@@ -369,9 +369,9 @@ export default function ProjectDetail() {
     }
   }, [project]);
 
-  const stageOpts    = useCustomOptions("stage",       DEFAULT_STAGES);
-  const statusOpts   = useCustomOptions("status",      DEFAULT_STATUSES);
-  const priorityOpts = useCustomOptions("priority",    DEFAULT_PRIORITIES);
+  const stageOpts    = useServerOptionList("stage");
+  const statusOpts   = useServerOptionList("status");
+  const priorityOpts = useServerOptionList("priority");
   const typeOpts     = useServerProductTypes();
 
   if (loadingProj || loadingTasks) return <PageLoader />;

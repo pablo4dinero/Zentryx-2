@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { useExchangeRate } from "@/hooks/useExchangeRate";
 import {
   useCustomOptions, DEFAULT_STAGES, DEFAULT_STATUSES, DEFAULT_PRODUCT_TYPES, DEFAULT_PRIORITIES,
-  useServerProductTypes,
+  useServerProductTypes, useServerOptionList,
   type CustomOptionsHandle,
 } from "@/lib/project-options";
 import { CustomOptionsSelect } from "@/components/ui/CustomOptionsSelect";
@@ -117,9 +117,9 @@ export default function BusinessDev() {
   const isLight = theme === "light";
   const { fmtNGN } = useExchangeRate();
 
-  const stageOpts    = useCustomOptions("stage",       DEFAULT_STAGES);
-  const statusOpts   = useCustomOptions("status",      DEFAULT_STATUSES);
-  const priorityOpts = useCustomOptions("priority",    DEFAULT_PRIORITIES);
+  const stageOpts    = useServerOptionList("stage");
+  const statusOpts   = useServerOptionList("status");
+  const priorityOpts = useServerOptionList("priority");
   const typeOpts     = useServerProductTypes();
 
   const filtered = items.filter(item => {

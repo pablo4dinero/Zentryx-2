@@ -74,6 +74,88 @@ export type CustomOptionsHandle = ReturnType<typeof useCustomOptions>;
 
 export const displayLabel = (v: string) => v.replace(/_/g, " ");
 
+// Generic server-synced picklist (stages, statuses, priorities, etc.). Same
+// shape as useCustomOptions so it can be swapped in at call sites that
+// previously used localStorage. Backed by /api/option-lists/:listKey.
+export function useServerOptionList(listKey: string): CustomOptionsHandle {
+  const queryClient = useQueryClient();
+  const queryKey = ["/api/option-lists", listKey] as const;
+
+  const { data: rows = [] } = useQuery({
+    queryKey,
+    queryFn: async () => {
+      const res = await fetch(`${BASE}api/option-lists/${encodeURIComponent(listKey)}`, { headers: authHeaders() });
+      if (!res.ok) return [] as Array<{ id: number; name: string }>;
+      return res.json() as Promise<Array<{ id: number; name: string }>>;
+    },
+    staleTime: 1000 * 30,
+  });
+
+  const options = rows.map(r => r.name);
+  const idByName = new Map(rows.map(r => [r.name, r.id]));
+  const invalidate = () => queryClient.invalidateQueries({ queryKey });
+
+  const addMut = useMutation({
+    mutationFn: async (name: string) => {
+      const res = await fetch(`${BASE}api/option-lists/${encodeURIComponent(listKey)}`, {
+        method: "POST", headers: authHeaders(), body: JSON.stringify({ name }),
+      });
+      if (!res.ok) throw new Error("Failed to add option");
+      return res.json();
+    },
+    onSuccess: invalidate,
+  });
+
+  const renameMut = useMutation({
+    mutationFn: async ({ id, name }: { id: number; name: string }) => {
+      const res = await fetch(`${BASE}api/option-lists/${encodeURIComponent(listKey)}/${id}`, {
+        method: "PUT", headers: authHeaders(), body: JSON.stringify({ name }),
+      });
+      if (!res.ok) throw new Error("Failed to rename option");
+      return res.json();
+    },
+    onSuccess: invalidate,
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`${BASE}api/option-lists/${encodeURIComponent(listKey)}/${id}`, {
+        method: "DELETE", headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error("Failed to delete option");
+      return res.json();
+    },
+    onSuccess: invalidate,
+  });
+
+  const addOption = useCallback((value: string) => {
+    const v = value.trim();
+    if (!v || idByName.has(v)) return;
+    addMut.mutate(v);
+  }, [addMut, idByName]);
+
+  const deleteOption = useCallback((value: string) => {
+    const id = idByName.get(value);
+    if (!id) return;
+    deleteMut.mutate(id);
+  }, [deleteMut, idByName]);
+
+  const renameOption = useCallback((oldValue: string, newValue: string) => {
+    const v = newValue.trim();
+    if (!v) return;
+    const id = idByName.get(oldValue);
+    if (!id) return;
+    if (v !== oldValue && idByName.has(v)) return;
+    renameMut.mutate({ id, name: v });
+  }, [renameMut, idByName]);
+
+  const save = useCallback((_next: string[]) => {
+    // Server-backed list — use add/delete/rename instead.
+  }, []);
+
+  return { options, save, addOption, deleteOption, renameOption };
+}
+
 // Server-synced product type list. Same shape as useCustomOptions so it can be
 // swapped in at call sites that previously used localStorage. Backed by the
 // /api/product-types endpoints — all clients see the same list and edits

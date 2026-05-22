@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
 import { NewRequestModal } from "@/pages/procurement/RequestsTab";
 import * as XLSX from "xlsx";
-import { useCustomOptions, DEFAULT_PRODUCT_TYPES, DEFAULT_PRIORITIES, displayLabel, useServerProductTypes } from "@/lib/project-options";
+import { useCustomOptions, DEFAULT_PRODUCT_TYPES, DEFAULT_PRIORITIES, displayLabel, useServerProductTypes, useServerOptionList } from "@/lib/project-options";
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -813,7 +813,7 @@ export default function WeeklyActivities() {
   const isLight = theme === "light";
   const qc = useQueryClient();
   const typeOpts = useServerProductTypes();
-  const priorityOpts = useCustomOptions("priority", DEFAULT_PRIORITIES);
+  const priorityOpts = useServerOptionList("priority");
   const actStatusOpts = useCustomOptions("activity-status", ["not_started", "ongoing", "completed"]);
 
   useEffect(() => {

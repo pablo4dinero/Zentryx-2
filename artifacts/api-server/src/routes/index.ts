@@ -25,6 +25,7 @@ import accessRequestsRouter from "./access_requests";
 import newsfeedRouter from "./newsfeed";
 import oracleRouter from "./oracle";
 import productTypesRouter from "./product_types";
+import optionListsRouter from "./option_lists";
 
 const router: IRouter = Router();
 
@@ -54,5 +55,6 @@ router.use("/access-requests", accessRequestsRouter);
 router.use("/newsfeed", newsfeedRouter);
 router.use("/oracle", oracleRouter);
 router.use("/product-types", productTypesRouter);
+router.use("/option-lists", optionListsRouter);
 
 export default router;

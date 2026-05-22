@@ -124,6 +124,42 @@ async function createTablesIfNotExist() {
       WHERE NOT EXISTS (SELECT 1 FROM product_types LIMIT 1);
     `));
     await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS option_lists (
+        id SERIAL PRIMARY KEY,
+        list_key TEXT NOT NULL,
+        name TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `));
+    await db.execute(sql.raw(`
+      CREATE UNIQUE INDEX IF NOT EXISTS option_lists_list_key_name_unique
+        ON option_lists (list_key, name);
+    `));
+    await db.execute(sql.raw(`
+      INSERT INTO option_lists (list_key, name)
+      SELECT 'stage', v FROM (VALUES
+        ('testing'), ('reformulation'), ('innovation'), ('cost_optimization'), ('modification'),
+        ('ideation'), ('research'), ('formulation'), ('validation'), ('scale_up'), ('commercialization')
+      ) AS t(v)
+      WHERE NOT EXISTS (SELECT 1 FROM option_lists WHERE list_key = 'stage' LIMIT 1);
+    `));
+    await db.execute(sql.raw(`
+      INSERT INTO option_lists (list_key, name)
+      SELECT 'status', v FROM (VALUES
+        ('approved'), ('awaiting_feedback'), ('on_hold'), ('in_progress'), ('new_inventory'),
+        ('cancelled'), ('pushed_to_live'), ('active'), ('completed')
+      ) AS t(v)
+      WHERE NOT EXISTS (SELECT 1 FROM option_lists WHERE list_key = 'status' LIMIT 1);
+    `));
+    await db.execute(sql.raw(`
+      INSERT INTO option_lists (list_key, name)
+      SELECT 'priority', v FROM (VALUES
+        ('low'), ('medium'), ('high'), ('critical')
+      ) AS t(v)
+      WHERE NOT EXISTS (SELECT 1 FROM option_lists WHERE list_key = 'priority' LIMIT 1);
+    `));
+    await db.execute(sql.raw(`
       CREATE TABLE IF NOT EXISTS mdp_floor_day_statuses (
         id SERIAL PRIMARY KEY,
         floor_id INTEGER NOT NULL,
