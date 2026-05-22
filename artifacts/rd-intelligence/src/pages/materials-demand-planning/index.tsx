@@ -722,8 +722,12 @@ function calcPriorityScore(
   if (microbial === "Critical") score += 3;
   else if (microbial === "Important") score += 1;
 
-  // Volume
-  if (volume > 10000) score += 2;
+  // Volume tiers
+  if (volume > 100000) score += 6;
+  else if (volume >= 50000) score += 5;
+  else if (volume >= 20000) score += 4;
+  else if (volume >= 10000) score += 3;
+  else if (volume >= 1000) score += 2;
 
   // Blend Speed
   if (blendSpeedId === "slow") score += 3;
