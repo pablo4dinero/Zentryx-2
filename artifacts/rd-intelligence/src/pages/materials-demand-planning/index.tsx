@@ -257,6 +257,10 @@ type ProductionHistoryView = "daily" | "weekly" | "monthly" | "yearly";
 type ProducedOrder = {
   id: number;
   productionOrderId?: number | null;
+  floorAssignmentId?: number | null;
+  floorId?: number | null;
+  weekLabel?: string | null;
+  assignedDay?: string | null;
   accountName: string;
   productName: string;
   productType: string;
@@ -2133,9 +2137,10 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
   });
 
   const produceAssignmentMutation = useMutation({
-    mutationFn: async ({ assignmentId, orderId, accountName, productName, productType, volume, floorId: fId }: {
+    mutationFn: async ({ assignmentId, orderId, accountName, productName, productType, volume, floorId: fId, weekLabel, assignedDay }: {
       assignmentId: number; orderId: number;
       accountName: string; productName: string; productType: string; volume: number; floorId?: number;
+      weekLabel?: string | null; assignedDay?: string | null;
     }) => {
       // Mark this floor assignment as produced
       const res = await fetch(`${BASE}api/mdp/floor-assignments/${assignmentId}/produce`, {
@@ -2152,6 +2157,9 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
         headers: authHeaders(),
         body: JSON.stringify({
           productionOrderId: orderId,
+          floorAssignmentId: assignmentId,
+          weekLabel: weekLabel ?? null,
+          assignedDay: assignedDay ?? null,
           accountName,
           productName,
           productType,
@@ -2344,14 +2352,18 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     try {
       const fullOrder = mdpOrderByMdpId.get(orderId);
       const acc = planningAccountMap[fullOrder?.accountId ?? 0];
+      const row = (allAssignmentsQuery.data ?? []).find(r => r.assignment.id === assignmentId);
+      const assignedVol = row?.assignment.assignedVolume != null ? Number(row.assignment.assignedVolume) : Number(fullOrder?.volume ?? 0);
       await produceAssignmentMutation.mutateAsync({
         assignmentId,
         orderId,
         accountName: acc?.company ?? fullOrder?.accountName ?? "Unknown",
         productName: acc?.productName ?? fullOrder?.productName ?? "Unknown",
         productType: acc?.productType ?? fullOrder?.productType ?? "Unknown",
-        volume: Number(fullOrder?.volume ?? 0),
+        volume: assignedVol,
         floorId,
+        weekLabel: row?.assignment.weekLabel ?? null,
+        assignedDay: row?.assignment.assignedDay ?? null,
       });
       toast({ title: "Produced", description: "The order has been moved to production history." });
     } catch (error: any) {
@@ -3744,6 +3756,55 @@ function ProductionHistoryTab() {
     },
   });
 
+  const deletePendingMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`${BASE}api/mdp/production-orders/${id}`, {
+        method: "DELETE", headers: authHeaders(),
+      });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || "Failed to delete order"); }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/produced-orders"] });
+      toast({ title: "Order deleted", description: "Pending order removed from the system." });
+    },
+    onError: (error: any) => toast({ title: "Could not delete order", description: error?.message || "Try again.", variant: "destructive" }),
+  });
+
+  const deleteHistoryMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`${BASE}api/mdp/produced-orders/${id}`, {
+        method: "DELETE", headers: authHeaders(),
+      });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || "Failed to delete record"); }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/produced-orders"] });
+      toast({ title: "Record deleted", description: "History entry removed." });
+    },
+    onError: (error: any) => toast({ title: "Could not delete record", description: error?.message || "Try again.", variant: "destructive" }),
+  });
+
+  const returnToPlanningMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`${BASE}api/mdp/produced-orders/${id}/return-to-planning`, {
+        method: "POST", headers: authHeaders(),
+      });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || "Failed to return to planning"); }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/produced-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
+      toast({ title: "Returned to Floor Planning", description: "The order is back on the original floor and day." });
+    },
+    onError: (error: any) => toast({ title: "Could not return to planning", description: error?.message || "Try again.", variant: "destructive" }),
+  });
+
   const producedOrders = React.useMemo(
     () => (producedHistoryQuery.data ?? []).slice().sort((a, b) => new Date(b.producedAt).getTime() - new Date(a.producedAt).getTime()),
     [producedHistoryQuery.data]
@@ -3828,7 +3889,9 @@ function ProductionHistoryTab() {
       )}
 
       {/* ── Split layout: Pending (left) | History (right) ── */}
-      <div ref={containerRef} className={cn("flex min-h-[640px] rounded-2xl border overflow-hidden select-none", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5")}>
+      {/* Definite height so each inner panel's overflow-y-auto clamps and
+          scrolls independently instead of bubbling to the page. */}
+      <div ref={containerRef} className={cn("flex h-[calc(100vh-280px)] min-h-[480px] rounded-2xl border overflow-hidden select-none", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5")}>
 
         {/* ── LEFT: Pending Orders ── */}
         <div className="shrink-0 flex flex-col overflow-hidden" style={{ width: `${splitPct}%` }}>
@@ -3864,6 +3927,7 @@ function ProductionHistoryTab() {
                     <th className="px-3 py-2.5 text-left font-medium">Type</th>
                     <th className="px-3 py-2.5 text-right font-medium">Vol.</th>
                     <th className="px-3 py-2.5 text-left font-medium">Material</th>
+                    <th className="w-9" />
                   </tr>
                 </thead>
                 <tbody>
@@ -3874,7 +3938,7 @@ function ProductionHistoryTab() {
                     const productTypeKey = acc?.productType ?? order.productType ?? null;
                     const rawMat = order.rawMaterialStatus ?? "Pending";
                     return (
-                      <tr key={order.id} className={cn("border-b last:border-0 transition-colors", isLight ? "border-slate-100 hover:bg-slate-50" : "border-white/5 hover:bg-white/[0.02]")}>
+                      <tr key={order.id} className={cn("group border-b last:border-0 transition-colors", isLight ? "border-slate-100 hover:bg-slate-50" : "border-white/5 hover:bg-white/[0.02]")}>
                         <td className="px-4 py-2.5">
                           <p className="font-semibold text-foreground text-xs leading-tight truncate max-w-[130px]">{company}</p>
                           {productName && <p className="text-[10px] text-muted-foreground truncate max-w-[130px]">{productName}</p>}
@@ -3887,6 +3951,19 @@ function ProductionHistoryTab() {
                             rawMat === "Not Available" ? "bg-red-500/10 text-red-400" :
                             "bg-amber-500/10 text-amber-400"
                           )}>{rawMat}</span>
+                        </td>
+                        <td className="px-2 py-2.5 text-right">
+                          <button
+                            onClick={() => {
+                              if (window.confirm(`Delete pending order "${company}"? This removes it from the system.`)) {
+                                deletePendingMutation.mutate(order.id);
+                              }
+                            }}
+                            title="Delete pending order"
+                            className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-all"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </td>
                       </tr>
                     );
@@ -3972,11 +4049,12 @@ function ProductionHistoryTab() {
                     <th className="px-3 py-2.5 text-left font-medium">Produced At</th>
                     <th className="px-3 py-2.5 text-left font-medium">Status</th>
                     <th className="px-3 py-2.5 text-right font-medium">Action</th>
+                    <th className="w-9" />
                   </tr>
                 </thead>
                 <tbody>
                   {filteredHistory.map((order) => (
-                    <tr key={order.id} className={cn("border-b last:border-0 transition-colors", isLight ? "border-slate-100 hover:bg-slate-50" : "border-white/5 hover:bg-white/[0.02]")}>
+                    <tr key={order.id} className={cn("group border-b last:border-0 transition-colors", isLight ? "border-slate-100 hover:bg-slate-50" : "border-white/5 hover:bg-white/[0.02]")}>
                       <td className="px-4 py-3">
                         <p className="font-bold text-foreground text-sm leading-tight">{order.accountName}</p>
                         <p className="text-xs text-muted-foreground mt-0.5">{order.productName}</p>
@@ -4001,12 +4079,36 @@ function ProductionHistoryTab() {
                               isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5"
                             )}>Update Status ▾</button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-[190px]">
+                          <DropdownMenuContent align="end" className="w-[210px]">
                             <DropdownMenuItem onClick={() => deliverMutation.mutate({ id: order.id, status: "Delivered" })}>Mark as Delivered</DropdownMenuItem>
                             <DropdownMenuItem onClick={() => deliverMutation.mutate({ id: order.id, status: "Stored in Warehouse" })}>Stored in Warehouse</DropdownMenuItem>
                             <DropdownMenuItem onClick={() => deliverMutation.mutate({ id: order.id, status: "In process" })}>In process</DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => {
+                                if (window.confirm("Return this order to Floor Planning? It will reappear on its original floor and day, and be removed from Production History.")) {
+                                  returnToPlanningMutation.mutate(order.id);
+                                }
+                              }}
+                              className="text-amber-500 focus:text-amber-500"
+                            >
+                              Return to Floor Planning
+                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
+                      </td>
+                      <td className="px-2 py-3 text-right">
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`Delete this history entry for ${order.accountName}?`)) {
+                              deleteHistoryMutation.mutate(order.id);
+                            }
+                          }}
+                          title="Delete history entry"
+                          className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-all"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </td>
                     </tr>
                   ))}

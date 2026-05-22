@@ -107,6 +107,9 @@ async function createTablesIfNotExist() {
     await db.execute(sql.raw(`ALTER TABLE mdp_floor_assignments ADD COLUMN IF NOT EXISTS assigned_volume NUMERIC(12,2);`));
     await db.execute(sql.raw(`ALTER TABLE mdp_production_floors ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Running';`));
     await db.execute(sql.raw(`ALTER TABLE mdp_production_floors ADD COLUMN IF NOT EXISTS allowed_product_types JSONB DEFAULT '[]'::jsonb;`));
+    await db.execute(sql.raw(`ALTER TABLE mdp_produced_orders ADD COLUMN IF NOT EXISTS floor_assignment_id INTEGER;`));
+    await db.execute(sql.raw(`ALTER TABLE mdp_produced_orders ADD COLUMN IF NOT EXISTS week_label TEXT;`));
+    await db.execute(sql.raw(`ALTER TABLE mdp_produced_orders ADD COLUMN IF NOT EXISTS assigned_day TEXT;`));
     await db.execute(sql.raw(`
       CREATE TABLE IF NOT EXISTS product_types (
         id SERIAL PRIMARY KEY,

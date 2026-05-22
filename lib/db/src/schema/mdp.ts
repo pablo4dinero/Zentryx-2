@@ -108,6 +108,9 @@ export const mdpFloorDayStatusesTable = pgTable("mdp_floor_day_statuses", {
 export const mdpProducedOrdersTable = pgTable("mdp_produced_orders", {
   id: serial("id").primaryKey(),
   productionOrderId: integer("production_order_id"),
+  floorAssignmentId: integer("floor_assignment_id"),
+  weekLabel: text("week_label"),
+  assignedDay: text("assigned_day"),
   accountName: text("account_name").notNull(),
   productName: text("product_name").notNull(),
   productType: text("product_type").notNull(),

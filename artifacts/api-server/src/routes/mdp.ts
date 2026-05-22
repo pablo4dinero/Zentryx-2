@@ -158,6 +158,36 @@ router.put("/production-orders/:id", requireAuth, async (req: AuthRequest, res) 
   }
 });
 
+router.delete("/production-orders/:id", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const id = Number(req.params.id);
+    const [mdpRow] = await db.select().from(mdpProductionOrdersTable).where(eq(mdpProductionOrdersTable.id, id)).limit(1);
+    if (!mdpRow) { res.status(404).json({ error: "NotFound" }); return; }
+
+    // Drop everything dependent on the underlying sales order so the GET
+    // /production-orders merge can't resurrect it on the next refetch.
+    const salesOrderId = mdpRow.salesOrderId;
+    const assignments = await db.select({ id: mdpFloorAssignmentsTable.id }).from(mdpFloorAssignmentsTable)
+      .where(eq(mdpFloorAssignmentsTable.productionOrderId, id));
+    const assignmentIds = assignments.map(a => a.id);
+    if (assignmentIds.length > 0) {
+      await db.delete(mdpProductSwitchDowntimesTable)
+        .where(inArray(mdpProductSwitchDowntimesTable.afterAssignmentId, assignmentIds));
+      await db.delete(mdpFloorAssignmentsTable)
+        .where(inArray(mdpFloorAssignmentsTable.id, assignmentIds));
+    }
+    await db.delete(mdpProducedOrdersTable).where(eq(mdpProducedOrdersTable.productionOrderId, id));
+    await db.delete(mdpProductionOrdersTable).where(eq(mdpProductionOrdersTable.id, id));
+    if (salesOrderId) {
+      await db.delete(accountProductionOrdersTable).where(eq(accountProductionOrdersTable.id, salesOrderId));
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
 router.get("/production-floors", requireAuth, async (req: AuthRequest, res) => {
   try {
     const floors = await db.select().from(mdpProductionFloorsTable).orderBy(desc(mdpProductionFloorsTable.createdAt));
@@ -525,6 +555,9 @@ router.post("/produced-orders", requireAuth, async (req: AuthRequest, res) => {
     const body = req.body as any;
     const [created] = await db.insert(mdpProducedOrdersTable).values({
       productionOrderId: body.productionOrderId ? Number(body.productionOrderId) : null,
+      floorAssignmentId: body.floorAssignmentId ? Number(body.floorAssignmentId) : null,
+      weekLabel: body.weekLabel ?? null,
+      assignedDay: body.assignedDay ?? null,
       accountName: body.accountName,
       productName: body.productName,
       productType: body.productType,
@@ -536,6 +569,66 @@ router.post("/produced-orders", requireAuth, async (req: AuthRequest, res) => {
       createdAt: new Date(),
     }).returning();
     res.status(201).json(created);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+router.delete("/produced-orders/:id", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const id = Number(req.params.id);
+    await db.delete(mdpProducedOrdersTable).where(eq(mdpProducedOrdersTable.id, id));
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+router.post("/produced-orders/:id/return-to-planning", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const id = Number(req.params.id);
+    const [produced] = await db.select().from(mdpProducedOrdersTable).where(eq(mdpProducedOrdersTable.id, id)).limit(1);
+    if (!produced) { res.status(404).json({ error: "NotFound" }); return; }
+
+    // Restore the original floor assignment if we know which one it was.
+    if (produced.floorAssignmentId) {
+      await db.update(mdpFloorAssignmentsTable)
+        .set({ planStatus: "Planned", producedAt: null })
+        .where(eq(mdpFloorAssignmentsTable.id, produced.floorAssignmentId));
+    } else if (produced.productionOrderId && produced.floorId) {
+      // Fallback for legacy rows without a stored floor_assignment_id: try to
+      // match by (productionOrderId, floorId, plan_status='Produced'). We take
+      // the most recently produced one.
+      const candidates = await db.select().from(mdpFloorAssignmentsTable)
+        .where(and(
+          eq(mdpFloorAssignmentsTable.productionOrderId, produced.productionOrderId),
+          eq(mdpFloorAssignmentsTable.floorId, produced.floorId),
+          eq(mdpFloorAssignmentsTable.planStatus, "Produced"),
+        ));
+      const newest = candidates.sort((a, b) => (b.producedAt?.getTime() ?? 0) - (a.producedAt?.getTime() ?? 0))[0];
+      if (newest) {
+        await db.update(mdpFloorAssignmentsTable)
+          .set({ planStatus: "Planned", producedAt: null })
+          .where(eq(mdpFloorAssignmentsTable.id, newest.id));
+      }
+    }
+
+    // Reset the mother production order back to the planning state so the
+    // remaining assigned volume re-appears in the Planning tab list.
+    if (produced.productionOrderId) {
+      await db.update(mdpProductionOrdersTable).set({
+        isProduced: false,
+        isDelivered: false,
+        isPlanned: true,
+        orderStatus: "Planned",
+        updatedAt: new Date(),
+      }).where(eq(mdpProductionOrdersTable.id, produced.productionOrderId));
+    }
+
+    await db.delete(mdpProducedOrdersTable).where(eq(mdpProducedOrdersTable.id, id));
+    res.json({ success: true });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "InternalServerError" });
