@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import * as XLSX from "xlsx";
 import {
   useCustomOptions, DEFAULT_STAGES, DEFAULT_STATUSES, DEFAULT_PRODUCT_TYPES, DEFAULT_PRIORITIES, displayLabel,
+  useServerProductTypes,
   type CustomOptionsHandle,
 } from "@/lib/project-options";
 import { CustomOptionsSelect } from "@/components/ui/CustomOptionsSelect";
@@ -36,7 +37,7 @@ export default function ProjectsList() {
   const [statusNewValue, setStatusNewValue] = useState("");
 
   // Custom option stores (shared between filter + modal)
-  const productTypeOpts = useCustomOptions("productType", DEFAULT_PRODUCT_TYPES);
+  const productTypeOpts = useServerProductTypes();
   const stageOpts       = useCustomOptions("stage",       DEFAULT_STAGES);
   const statusOpts      = useCustomOptions("status",      DEFAULT_STATUSES);
   const priorityOpts    = useCustomOptions("priority",    DEFAULT_PRIORITIES);

@@ -15,3 +15,4 @@ export * from "./accounts";
 export * from "./weekly_activities";
 export * from "./procurement";
 export * from "./mdp";
+export * from "./product_types";

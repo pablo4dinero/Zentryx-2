@@ -108,6 +108,22 @@ async function createTablesIfNotExist() {
     await db.execute(sql.raw(`ALTER TABLE mdp_production_floors ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Running';`));
     await db.execute(sql.raw(`ALTER TABLE mdp_production_floors ADD COLUMN IF NOT EXISTS allowed_product_types JSONB DEFAULT '[]'::jsonb;`));
     await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS product_types (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `));
+    await db.execute(sql.raw(`
+      INSERT INTO product_types (name)
+      SELECT v FROM (VALUES
+        ('Seasoning'), ('Snack Dusting'), ('Bread & Dough Premix'), ('Dairy Premix'),
+        ('Functional Blend'), ('Pasta Sauce'), ('Sweet Flavour'), ('Savoury Flavour')
+      ) AS t(v)
+      WHERE NOT EXISTS (SELECT 1 FROM product_types LIMIT 1);
+    `));
+    await db.execute(sql.raw(`
       CREATE TABLE IF NOT EXISTS mdp_floor_day_statuses (
         id SERIAL PRIMARY KEY,
         floor_id INTEGER NOT NULL,

@@ -17,7 +17,7 @@ import * as XLSX from "xlsx";
 import SalesChartsPage from "./Charts";
 import SalesForecastPage from "./Forecast";
 import NewProductionOrdersPage from "./NewProductionOrders";
-import { useCustomOptions, DEFAULT_PRODUCT_TYPES, displayLabel } from "@/lib/project-options";
+import { useCustomOptions, DEFAULT_PRODUCT_TYPES, displayLabel, useServerProductTypes } from "@/lib/project-options";
 import { CustomOptionsSelect } from "@/components/ui/CustomOptionsSelect";
 
 const BASE = import.meta.env.BASE_URL;
@@ -200,7 +200,7 @@ function AddAccountModal({ onSuccess }: { onSuccess: () => void }) {
   const { fmtNGN } = useExchangeRate();
   const { toast } = useToast();
   const [manSearch, setManSearch] = useState("");
-  const typeOpts = useCustomOptions("productType", DEFAULT_PRODUCT_TYPES);
+  const typeOpts = useServerProductTypes();
   const [form, setForm] = useState({
     company: "", productName: "", accountManagers: [] as number[], contactPerson: "",
     cpPhone: "", cpEmail: "", customerType: "new", productType: "",
@@ -557,7 +557,7 @@ function AccountsPage() {
   const [showExport, setShowExport] = useState(false);
   const { theme } = useTheme();
   const isLight = theme === "light";
-  const typeOpts = useCustomOptions("productType", DEFAULT_PRODUCT_TYPES);
+  const typeOpts = useServerProductTypes();
 
   const { data: accounts = [], isLoading } = useQuery({
     queryKey: ["/api/accounts"],

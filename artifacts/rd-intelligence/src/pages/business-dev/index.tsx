@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { useExchangeRate } from "@/hooks/useExchangeRate";
 import {
   useCustomOptions, DEFAULT_STAGES, DEFAULT_STATUSES, DEFAULT_PRODUCT_TYPES, DEFAULT_PRIORITIES,
+  useServerProductTypes,
   type CustomOptionsHandle,
 } from "@/lib/project-options";
 import { CustomOptionsSelect } from "@/components/ui/CustomOptionsSelect";
@@ -119,7 +120,7 @@ export default function BusinessDev() {
   const stageOpts    = useCustomOptions("stage",       DEFAULT_STAGES);
   const statusOpts   = useCustomOptions("status",      DEFAULT_STATUSES);
   const priorityOpts = useCustomOptions("priority",    DEFAULT_PRIORITIES);
-  const typeOpts     = useCustomOptions("productType", DEFAULT_PRODUCT_TYPES);
+  const typeOpts     = useServerProductTypes();
 
   const filtered = items.filter(item => {
     const matchSearch = item.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||

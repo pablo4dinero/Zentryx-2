@@ -17,6 +17,7 @@ import { useExchangeRate, fmtNGN } from "@/hooks/useExchangeRate";
 
 import {
   useCustomOptions, DEFAULT_STAGES, DEFAULT_STATUSES, DEFAULT_PRODUCT_TYPES, DEFAULT_PRIORITIES,
+  useServerProductTypes,
 } from "@/lib/project-options";
 
 const BASE = import.meta.env.BASE_URL;
@@ -371,7 +372,7 @@ export default function ProjectDetail() {
   const stageOpts    = useCustomOptions("stage",       DEFAULT_STAGES);
   const statusOpts   = useCustomOptions("status",      DEFAULT_STATUSES);
   const priorityOpts = useCustomOptions("priority",    DEFAULT_PRIORITIES);
-  const typeOpts     = useCustomOptions("productType", DEFAULT_PRODUCT_TYPES);
+  const typeOpts     = useServerProductTypes();
 
   if (loadingProj || loadingTasks) return <PageLoader />;
   if (!project) return <div className="glass-card p-12 text-center rounded-2xl text-muted-foreground">Project not found</div>;

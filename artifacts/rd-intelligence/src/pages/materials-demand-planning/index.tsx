@@ -35,7 +35,7 @@ import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
 import { useListUsers } from "@/api-client";
 import { PlannedOrdersProvider, usePlannedOrders } from "./planned-orders-context";
-import { useCustomOptions, DEFAULT_PRODUCT_TYPES, displayLabel } from "@/lib/project-options";
+import { useCustomOptions, DEFAULT_PRODUCT_TYPES, displayLabel, useServerProductTypes } from "@/lib/project-options";
 import { CustomOptionsSelect } from "@/components/ui/CustomOptionsSelect";
 
 const BASE = import.meta.env.BASE_URL;
@@ -1515,7 +1515,7 @@ function ProductionPlanningTab() {
   // Shared dynamic product type list (same store as Sales Force "Add Account"
   // and MDP "Add Product"). Add/rename/delete happens via those forms — this
   // hook just reads the current set for the floor allow-list chips.
-  const typeOpts = useCustomOptions("productType", DEFAULT_PRODUCT_TYPES);
+  const typeOpts = useServerProductTypes();
   const normalizeType = (s: string | null | undefined): string =>
     String(s ?? "").trim().toLowerCase().replace(/[\s&_\-/]+/g, "_").replace(/_+/g, "_");
   const { theme } = useTheme();
@@ -4002,7 +4002,7 @@ function MaterialsDemandPlanningPage() {
   const [editingProduct, setEditingProduct] = React.useState<Account | null>(null);
   const [formValues, setFormValues] = React.useState({ ...DEFAULT_FORM });
   const [manSearch, setManSearch] = React.useState("");
-  const typeOpts = useCustomOptions("productType", DEFAULT_PRODUCT_TYPES);
+  const typeOpts = useServerProductTypes();
 
   const { data: users } = useListUsers();
 
