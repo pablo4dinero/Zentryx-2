@@ -6,6 +6,7 @@ import {
   mdpProductionFloorsTable,
   mdpFloorAssignmentsTable,
   mdpProducedOrdersTable,
+  mdpFloorDayStatusesTable,
   accountProductionOrdersTable,
   notificationsTable,
   usersTable,
@@ -204,24 +205,60 @@ router.put("/production-floors/:id", requireAuth, async (req: AuthRequest, res) 
   }
 });
 
-router.patch("/production-floors/:id/status", requireAuth, async (req: AuthRequest, res) => {
+router.get("/floor-day-statuses", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const id = Number(req.params.id);
-    const incoming = String((req.body as any)?.status ?? "");
+    const weekLabel = String(req.query.week || "");
+    const rows = weekLabel
+      ? await db.select().from(mdpFloorDayStatusesTable).where(eq(mdpFloorDayStatusesTable.weekLabel, weekLabel))
+      : await db.select().from(mdpFloorDayStatusesTable);
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+router.patch("/floor-day-statuses", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const body = req.body as { floorId?: number; weekLabel?: string; assignedDay?: string; status?: string };
+    const floorId = Number(body.floorId);
+    const weekLabel = String(body.weekLabel ?? "");
+    const assignedDay = String(body.assignedDay ?? "");
+    const incoming = String(body.status ?? "");
+
+    if (!floorId || !weekLabel || !assignedDay) {
+      res.status(400).json({ error: "floorId, weekLabel and assignedDay are required" });
+      return;
+    }
     if (!FLOOR_STATUSES.includes(incoming as FloorStatus)) {
       res.status(400).json({ error: "InvalidStatus", allowed: FLOOR_STATUSES });
       return;
     }
     const status = incoming as FloorStatus;
 
-    const [updated] = await db.update(mdpProductionFloorsTable)
-      .set({ status })
-      .where(eq(mdpProductionFloorsTable.id, id))
-      .returning();
-
-    if (!updated) {
-      res.status(404).json({ error: "NotFound" });
+    const [floor] = await db.select().from(mdpProductionFloorsTable).where(eq(mdpProductionFloorsTable.id, floorId)).limit(1);
+    if (!floor) {
+      res.status(404).json({ error: "FloorNotFound" });
       return;
+    }
+
+    const [existing] = await db.select().from(mdpFloorDayStatusesTable)
+      .where(and(
+        eq(mdpFloorDayStatusesTable.floorId, floorId),
+        eq(mdpFloorDayStatusesTable.weekLabel, weekLabel),
+        eq(mdpFloorDayStatusesTable.assignedDay, assignedDay),
+      )).limit(1);
+
+    let row;
+    if (existing) {
+      [row] = await db.update(mdpFloorDayStatusesTable)
+        .set({ status, updatedAt: new Date() })
+        .where(eq(mdpFloorDayStatusesTable.id, existing.id))
+        .returning();
+    } else {
+      [row] = await db.insert(mdpFloorDayStatusesTable)
+        .values({ floorId, weekLabel, assignedDay, status })
+        .returning();
     }
 
     let actorName = req.user?.email ?? "A user";
@@ -229,8 +266,8 @@ router.patch("/production-floors/:id/status", requireAuth, async (req: AuthReque
       const [actor] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, req.user.userId)).limit(1);
       if (actor?.name) actorName = actor.name;
     }
-    const title = `Floor status: ${updated.floorName} → ${status}`;
-    const message = `${actorName} set ${updated.floorName} to "${status}".`;
+    const title = `Floor status: ${floor.floorName} (${assignedDay}) → ${status}`;
+    const message = `${actorName} set ${floor.floorName} on ${assignedDay} (${weekLabel}) to "${status}".`;
     const notifType: "system" | "update" = status === "Running" ? "update" : "system";
 
     const users = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.isActive, true));
@@ -249,12 +286,12 @@ router.patch("/production-floors/:id/status", requireAuth, async (req: AuthReque
         req.user.userId,
         `set floor status to ${status}`,
         "production_floor",
-        id,
-        `${updated.floorName} → ${status}`,
+        floorId,
+        `${floor.floorName} · ${assignedDay} · ${weekLabel} → ${status}`,
       );
     }
 
-    res.json(updated);
+    res.json(row);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "InternalServerError" });

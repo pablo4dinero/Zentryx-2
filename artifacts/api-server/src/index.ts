@@ -106,6 +106,20 @@ async function createTablesIfNotExist() {
     await db.execute(sql.raw(`ALTER TABLE mdp_production_orders ADD COLUMN IF NOT EXISTS raw_material_status TEXT DEFAULT 'Pending';`));
     await db.execute(sql.raw(`ALTER TABLE mdp_floor_assignments ADD COLUMN IF NOT EXISTS assigned_volume NUMERIC(12,2);`));
     await db.execute(sql.raw(`ALTER TABLE mdp_production_floors ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Running';`));
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS mdp_floor_day_statuses (
+        id SERIAL PRIMARY KEY,
+        floor_id INTEGER NOT NULL,
+        week_label TEXT NOT NULL,
+        assigned_day TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'Running',
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `));
+    await db.execute(sql.raw(`
+      CREATE UNIQUE INDEX IF NOT EXISTS mdp_floor_day_statuses_unique
+        ON mdp_floor_day_statuses (floor_id, week_label, assigned_day);
+    `));
 
     // Migrate projects table enum columns to text so custom values are accepted
     await db.execute(sql.raw(`

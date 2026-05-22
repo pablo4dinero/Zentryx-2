@@ -74,6 +74,20 @@ export const mdpFloorAssignmentsTable = pgTable("mdp_floor_assignments", {
 });
 
 /**
+ * MDP Floor Day Statuses
+ * Per (floor, week, day) runtime status used by the planning board
+ * to flag Under Maintenance / On Hold on a single day only.
+ */
+export const mdpFloorDayStatusesTable = pgTable("mdp_floor_day_statuses", {
+  id: serial("id").primaryKey(),
+  floorId: integer("floor_id").notNull(),
+  weekLabel: text("week_label").notNull(),
+  assignedDay: text("assigned_day").notNull(),
+  status: text("status").notNull().default("Running"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+/**
  * MDP Produced Orders
  * Records completed production runs and delivery status
  */
@@ -100,3 +114,4 @@ export type MdpProductionOrder = typeof mdpProductionOrdersTable.$inferSelect;
 export type MdpProductionFloor = typeof mdpProductionFloorsTable.$inferSelect;
 export type MdpFloorAssignment = typeof mdpFloorAssignmentsTable.$inferSelect;
 export type MdpProducedOrder = typeof mdpProducedOrdersTable.$inferSelect;
+export type MdpFloorDayStatus = typeof mdpFloorDayStatusesTable.$inferSelect;

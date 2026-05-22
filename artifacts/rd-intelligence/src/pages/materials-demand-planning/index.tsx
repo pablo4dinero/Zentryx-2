@@ -1779,30 +1779,138 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     onError: (error: any) => toast({ title: "Could not delete floor", description: error?.message, variant: "destructive" }),
   });
 
-  const [statusMenuFloorId, setStatusMenuFloorId] = React.useState<number | null>(null);
-  const [dismissedOverlays, setDismissedOverlays] = React.useState<Record<number, string>>({});
+  const [statusMenuKey, setStatusMenuKey] = React.useState<string | null>(null);
+  const [dismissedOverlays, setDismissedOverlays] = React.useState<Record<string, string>>({});
 
-  const updateFloorStatusMutation = useMutation({
-    mutationFn: async ({ id, status }: { id: number; status: FloorStatus }) => {
-      const res = await fetch(`${BASE}api/mdp/production-floors/${id}/status`, {
-        method: "PATCH", headers: authHeaders(), body: JSON.stringify({ status }),
+  const floorDayStatusesQuery = useQuery({
+    queryKey: ["/api/mdp/floor-day-statuses", selectedWeekLabel],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}api/mdp/floor-day-statuses?week=${encodeURIComponent(selectedWeekLabel)}`, {
+        headers: authHeaders(),
       });
-      if (!res.ok) { const error = await res.json().catch(() => ({})); throw new Error(error.error || "Failed to update floor status"); }
-      return res.json() as Promise<ProductionFloor>;
+      if (!res.ok) { const error = await res.json().catch(() => ({})); throw new Error(error.error || "Failed to load floor day statuses"); }
+      return res.json() as Promise<Array<{ id: number; floorId: number; weekLabel: string; assignedDay: string; status: FloorStatus; updatedAt: string }>>;
     },
-    onSuccess: (updated) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-floors"] });
+    enabled: Boolean(selectedWeekLabel),
+    staleTime: 1000 * 30,
+  });
+
+  const floorDayStatusMap = React.useMemo(() => {
+    const map: Record<string, FloorStatus> = {};
+    (floorDayStatusesQuery.data ?? []).forEach(row => {
+      map[`${row.floorId}|${row.assignedDay}`] = row.status;
+    });
+    return map;
+  }, [floorDayStatusesQuery.data]);
+
+  const getFloorDayStatus = (floorId: number, day: string): FloorStatus =>
+    floorDayStatusMap[`${floorId}|${day}`] ?? "Running";
+
+  const updateFloorDayStatusMutation = useMutation({
+    mutationFn: async ({ floorId, day, status }: { floorId: number; day: string; status: FloorStatus }) => {
+      const res = await fetch(`${BASE}api/mdp/floor-day-statuses`, {
+        method: "PATCH", headers: authHeaders(),
+        body: JSON.stringify({ floorId, weekLabel: selectedWeekLabel, assignedDay: day, status }),
+      });
+      if (!res.ok) { const error = await res.json().catch(() => ({})); throw new Error(error.error || "Failed to update status"); }
+      return res.json();
+    },
+    onSuccess: (_row, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-day-statuses", selectedWeekLabel] });
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
-      setStatusMenuFloorId(null);
+      setStatusMenuKey(null);
       setDismissedOverlays(prev => {
         const next = { ...prev };
-        delete next[updated.id];
+        delete next[`${vars.floorId}|${vars.day}`];
         return next;
       });
-      toast({ title: `Floor status: ${updated.status}`, description: `${updated.floorName} → ${updated.status}` });
+      toast({ title: `Floor status: ${vars.status}`, description: `${vars.day} → ${vars.status}` });
     },
     onError: (error: any) => toast({ title: "Could not update status", description: error?.message, variant: "destructive" }),
   });
+
+  const floorStatusButton = (floor: ProductionFloor, day: string) => {
+    const current = getFloorDayStatus(floor.id, day);
+    const colors = floorStatusColor(current);
+    const menuKey = `${floor.id}|${day}`;
+    const open = statusMenuKey === menuKey;
+    return (
+      <div className="relative">
+        <button
+          onClick={() => setStatusMenuKey(open ? null : menuKey)}
+          className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold transition-colors", colors.chip)}
+          title={`Change ${floor.floorName} status for ${day}`}
+        >
+          <span className={cn("w-1.5 h-1.5 rounded-full", colors.dot)} />
+          {current}
+          <ChevronDown className="w-3 h-3 opacity-70" />
+        </button>
+        {open && (
+          <>
+            <div className="fixed inset-0 z-30" onClick={() => setStatusMenuKey(null)} />
+            <div className={cn("absolute z-40 right-0 mt-1 min-w-[160px] rounded-xl border shadow-xl py-1",
+              isLight ? "bg-white border-slate-200" : "bg-zinc-900 border-white/10"
+            )}>
+              {FLOOR_STATUSES.map(s => {
+                const c = floorStatusColor(s);
+                const isCurrent = s === current;
+                return (
+                  <button
+                    key={s}
+                    onClick={() => updateFloorDayStatusMutation.mutate({ floorId: floor.id, day, status: s })}
+                    disabled={isCurrent || updateFloorDayStatusMutation.isPending}
+                    className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors",
+                      isCurrent ? "opacity-50 cursor-not-allowed" : isLight ? "hover:bg-slate-50" : "hover:bg-white/5"
+                    )}
+                  >
+                    <span className={cn("w-2 h-2 rounded-full", c.dot)} />
+                    <span className="font-medium text-foreground">{s}</span>
+                    {isCurrent && <span className="ml-auto text-[9px] text-muted-foreground">current</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  const floorDayCautionOverlay = (floor: ProductionFloor, day: string) => {
+    const status = getFloorDayStatus(floor.id, day);
+    if (status === "Running") return null;
+    const dismissKey = `${floor.id}|${day}`;
+    if (dismissedOverlays[dismissKey] === status) return null;
+    const colors = floorStatusColor(status);
+    return (
+      <div className={cn(
+        "pointer-events-none absolute inset-0 z-20 rounded-2xl ring-2",
+        colors.ring,
+      )}>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className={cn(
+            "pointer-events-auto flex items-center gap-2 px-3 py-2 rounded-xl border shadow-lg backdrop-blur-sm animate-pulse",
+            status === "Under Maintenance"
+              ? "bg-amber-500/20 border-amber-500/40 text-amber-300"
+              : "bg-red-500/20 border-red-500/40 text-red-300",
+          )}>
+            <AlertTriangle className="w-4 h-4" />
+            <span className="text-xs font-bold uppercase tracking-wide">{status}</span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setDismissedOverlays(prev => ({ ...prev, [dismissKey]: status }));
+              }}
+              className="ml-1 p-0.5 rounded hover:bg-white/10 transition-colors"
+              title="Dismiss"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const createAssignmentMutation = useMutation({
     mutationFn: async (payload: Record<string, unknown>) => {
@@ -2345,55 +2453,9 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
               );
             };
 
-            const floorStatusButton = (floor: ProductionFloor) => {
-              const current = (floor.status ?? "Running") as FloorStatus;
-              const colors = floorStatusColor(current);
-              const open = statusMenuFloorId === floor.id;
-              return (
-                <div className="relative">
-                  <button
-                    onClick={() => setStatusMenuFloorId(open ? null : floor.id)}
-                    className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold transition-colors", colors.chip)}
-                    title="Change floor status"
-                  >
-                    <span className={cn("w-1.5 h-1.5 rounded-full", colors.dot)} />
-                    {current}
-                    <ChevronDown className="w-3 h-3 opacity-70" />
-                  </button>
-                  {open && (
-                    <>
-                      <div className="fixed inset-0 z-30" onClick={() => setStatusMenuFloorId(null)} />
-                      <div className={cn("absolute z-40 right-0 mt-1 min-w-[160px] rounded-xl border shadow-xl py-1",
-                        isLight ? "bg-white border-slate-200" : "bg-zinc-900 border-white/10"
-                      )}>
-                        {FLOOR_STATUSES.map(s => {
-                          const c = floorStatusColor(s);
-                          const isCurrent = s === current;
-                          return (
-                            <button
-                              key={s}
-                              onClick={() => updateFloorStatusMutation.mutate({ id: floor.id, status: s })}
-                              disabled={isCurrent || updateFloorStatusMutation.isPending}
-                              className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors",
-                                isCurrent ? "opacity-50 cursor-not-allowed" : isLight ? "hover:bg-slate-50" : "hover:bg-white/5"
-                              )}
-                            >
-                              <span className={cn("w-2 h-2 rounded-full", c.dot)} />
-                              <span className="font-medium text-foreground">{s}</span>
-                              {isCurrent && <span className="ml-auto text-[9px] text-muted-foreground">current</span>}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </>
-                  )}
-                </div>
-              );
-            };
-
-            const floorActionButtons = (floor: ProductionFloor) => (
+            const floorActionButtons = (floor: ProductionFloor, day?: string) => (
               <div className="flex items-center gap-1 shrink-0">
-                {floorStatusButton(floor)}
+                {day && floorStatusButton(floor, day)}
                 <button onClick={() => { setEditingFloor(floor); setEditFloorForm({ floorName: floor.floorName, blendCategory: floor.blendCategory, maxCapacityKg: String(floor.maxCapacityKg) }); setEditFloorOpen(true); }}
                   className={cn("p-1 rounded-md transition-colors text-muted-foreground hover:text-foreground", isLight ? "hover:bg-slate-100" : "hover:bg-white/10")} title="Edit">
                   <Edit3 className="w-3 h-3" />
@@ -2411,41 +2473,6 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                 )}
               </div>
             );
-
-            const floorCautionOverlay = (floor: ProductionFloor) => {
-              const status = (floor.status ?? "Running") as FloorStatus;
-              if (status === "Running") return null;
-              if (dismissedOverlays[floor.id] === status) return null;
-              const colors = floorStatusColor(status);
-              return (
-                <div className={cn(
-                  "pointer-events-none absolute inset-0 z-20 rounded-2xl ring-2",
-                  colors.ring,
-                )}>
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className={cn(
-                      "pointer-events-auto flex items-center gap-2 px-3 py-2 rounded-xl border shadow-lg backdrop-blur-sm animate-pulse",
-                      status === "Under Maintenance"
-                        ? "bg-amber-500/20 border-amber-500/40 text-amber-300"
-                        : "bg-red-500/20 border-red-500/40 text-red-300",
-                    )}>
-                      <AlertTriangle className="w-4 h-4" />
-                      <span className="text-xs font-bold uppercase tracking-wide">{status}</span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDismissedOverlays(prev => ({ ...prev, [floor.id]: status }));
-                        }}
-                        className="ml-1 p-0.5 rounded hover:bg-white/10 transition-colors"
-                        title="Dismiss"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            };
 
             if (floors.length === 0) {
               return (
@@ -2469,7 +2496,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                     const barClass = progress > 90 ? "bg-red-500" : progress > 70 ? "bg-amber-500" : "bg-emerald-500";
                     return (
                       <div key={floor.id}
-                        className={cn("relative rounded-2xl border p-4 transition-colors",
+                        className={cn("rounded-2xl border p-4 transition-colors",
                           dragOverFloorId === floor.id ? "border-primary/50 bg-primary/5"
                             : isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5"
                         )}
@@ -2477,7 +2504,6 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                         onDragLeave={() => setDragOverFloorId(c => c === floor.id ? null : c)}
                         onDrop={e => handleDropOnFloor(floor, e)}
                       >
-                        {floorCautionOverlay(floor)}
                         <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
                           <div>
                             <h3 className="text-sm font-semibold text-foreground">{floor.floorName}</h3>
@@ -2563,7 +2589,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                   : isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5"
                               )}
                             >
-                              {floorCautionOverlay(floor)}
+                              {floorDayCautionOverlay(floor, day)}
                               {/* Floor card header */}
                               <div className={cn("px-3 py-2.5 border-b rounded-t-2xl flex items-start justify-between gap-1",
                                 isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5"
@@ -2572,7 +2598,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                   <p className="text-xs font-bold text-foreground truncate">{floor.floorName}</p>
                                   <p className="text-[10px] text-muted-foreground">{floor.blendCategory} · {floor.maxCapacityKg.toLocaleString()} KG</p>
                                 </div>
-                                {floorActionButtons(floor)}
+                                {floorActionButtons(floor, day)}
                               </div>
 
                               {/* Utilisation bar */}
@@ -2626,14 +2652,15 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                       : isLight ? "border-indigo-100 bg-indigo-50/40" : "border-indigo-500/15 bg-indigo-500/5"
                                   )}
                                 >
-                                  {floorCautionOverlay(floor)}
-                                  <div className={cn("px-3 py-2.5 border-b rounded-t-2xl flex items-start gap-1",
+                                  {floorDayCautionOverlay(floor, nightDay)}
+                                  <div className={cn("px-3 py-2.5 border-b rounded-t-2xl flex items-start justify-between gap-1",
                                     isLight ? "border-indigo-100 bg-indigo-50" : "border-indigo-500/15 bg-indigo-500/10"
                                   )}>
                                     <div className="min-w-0">
                                       <p className="text-xs font-bold text-foreground truncate">{floor.floorName}</p>
                                       <p className="text-[10px] text-muted-foreground">{floor.blendCategory} · {floor.maxCapacityKg.toLocaleString()} KG</p>
                                     </div>
+                                    <div className="flex items-center gap-1 shrink-0">{floorStatusButton(floor, nightDay)}</div>
                                   </div>
                                   <div className="px-3 pt-2">
                                     <div className="flex items-center gap-1.5 mb-1">
@@ -3110,10 +3137,16 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                             const dayUtil = Math.min(100, Math.round((dayKg / (floor.maxCapacityKg || 1)) * 100));
                             const dayBar = dayUtil > 90 ? "bg-red-500" : dayUtil > 70 ? "bg-amber-500" : "bg-emerald-500";
                             return (
-                              <div key={floor.id} className={cn("rounded-2xl border flex flex-col", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-slate-900")}>
+                              <div key={floor.id} className={cn("relative rounded-2xl border flex flex-col", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-slate-900")}>
+                                {floorDayCautionOverlay(floor, expandedDay!)}
                                 <div className={cn("px-4 py-3 border-b rounded-t-2xl", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5")}>
-                                  <p className="text-sm font-bold text-foreground">{floor.floorName}</p>
-                                  <p className="text-xs text-muted-foreground">{floor.blendCategory} · {floor.maxCapacityKg.toLocaleString()} KG/day</p>
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-bold text-foreground">{floor.floorName}</p>
+                                      <p className="text-xs text-muted-foreground">{floor.blendCategory} · {floor.maxCapacityKg.toLocaleString()} KG/day</p>
+                                    </div>
+                                    {floorStatusButton(floor, expandedDay!)}
+                                  </div>
                                   <div className="mt-2 flex items-center gap-2">
                                     <div className={cn("h-1.5 flex-1 rounded-full overflow-hidden", isLight ? "bg-slate-200" : "bg-white/10")}>
                                       <div className={`${dayBar} h-full transition-all`} style={{ width: `${dayUtil}%` }} />
@@ -3170,10 +3203,16 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                               const nightUtil = Math.min(100, Math.round((nightKg / (floor.maxCapacityKg || 1)) * 100));
                               const nightBar = nightUtil > 90 ? "bg-red-500" : nightUtil > 70 ? "bg-amber-500" : "bg-indigo-500";
                               return (
-                                <div key={`${floor.id}-NS`} className={cn("rounded-2xl border flex flex-col", isLight ? "border-indigo-100 bg-indigo-50/40" : "border-indigo-500/20 bg-indigo-500/5")}>
+                                <div key={`${floor.id}-NS`} className={cn("relative rounded-2xl border flex flex-col", isLight ? "border-indigo-100 bg-indigo-50/40" : "border-indigo-500/20 bg-indigo-500/5")}>
+                                  {floorDayCautionOverlay(floor, nightDay)}
                                   <div className={cn("px-4 py-3 border-b rounded-t-2xl", isLight ? "border-indigo-100 bg-indigo-50" : "border-indigo-500/20 bg-indigo-500/10")}>
-                                    <p className="text-sm font-bold text-foreground">{floor.floorName}</p>
-                                    <p className="text-xs text-muted-foreground">{floor.blendCategory} · {floor.maxCapacityKg.toLocaleString()} KG/day</p>
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="min-w-0">
+                                        <p className="text-sm font-bold text-foreground">{floor.floorName}</p>
+                                        <p className="text-xs text-muted-foreground">{floor.blendCategory} · {floor.maxCapacityKg.toLocaleString()} KG/day</p>
+                                      </div>
+                                      {floorStatusButton(floor, nightDay)}
+                                    </div>
                                     <div className="mt-2 flex items-center gap-2">
                                       <div className={cn("h-1.5 flex-1 rounded-full overflow-hidden", isLight ? "bg-indigo-100" : "bg-indigo-500/15")}>
                                         <div className={`${nightBar} h-full transition-all`} style={{ width: `${nightUtil}%` }} />
