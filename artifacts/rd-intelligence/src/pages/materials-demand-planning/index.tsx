@@ -2863,22 +2863,6 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                 <h2 className="text-base font-semibold text-foreground">Planned Orders</h2>
                 <p className="text-xs text-muted-foreground mt-0.5">Drag unassigned orders into floors or unassign existing items.</p>
               </div>
-              <div className={cn("flex gap-1 p-1 rounded-xl border", isLight ? "bg-slate-100 border-slate-200" : "bg-white/5 border-white/10")}>
-                {(["weekly", "daily"] as PlanningViewMode[]).map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => setPlanningView(mode)}
-                    className={cn("rounded-lg px-3 py-1.5 text-xs font-semibold transition-all",
-                      planningView === mode
-                        ? "bg-primary text-white shadow-sm shadow-primary/20"
-                        : isLight ? "text-slate-600 hover:text-slate-900" : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    {mode.charAt(0).toUpperCase() + mode.slice(1)}
-                  </button>
-                ))}
-              </div>
             </div>
 
             <div className={cn("rounded-2xl border p-4 flex-1 overflow-y-auto", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5")}>
