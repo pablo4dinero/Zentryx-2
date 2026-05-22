@@ -74,6 +74,19 @@ export const mdpFloorAssignmentsTable = pgTable("mdp_floor_assignments", {
 });
 
 /**
+ * MDP Product Switch Downtimes
+ * One row per "gap" that follows a specific floor assignment.
+ * Tracks the number of minutes spent cleaning between products on the
+ * same floor / day / shift.
+ */
+export const mdpProductSwitchDowntimesTable = pgTable("mdp_product_switch_downtimes", {
+  id: serial("id").primaryKey(),
+  afterAssignmentId: integer("after_assignment_id").notNull(),
+  minutes: integer("minutes").notNull().default(60),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+/**
  * MDP Floor Day Statuses
  * Per (floor, week, day) runtime status used by the planning board
  * to flag Under Maintenance / On Hold on a single day only.
@@ -115,3 +128,4 @@ export type MdpProductionFloor = typeof mdpProductionFloorsTable.$inferSelect;
 export type MdpFloorAssignment = typeof mdpFloorAssignmentsTable.$inferSelect;
 export type MdpProducedOrder = typeof mdpProducedOrdersTable.$inferSelect;
 export type MdpFloorDayStatus = typeof mdpFloorDayStatusesTable.$inferSelect;
+export type MdpProductSwitchDowntime = typeof mdpProductSwitchDowntimesTable.$inferSelect;

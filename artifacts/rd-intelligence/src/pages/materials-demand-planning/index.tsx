@@ -462,6 +462,17 @@ type ProductionFloor = {
   status?: FloorStatus | string | null;
 };
 
+function formatSwitchDuration(m: number): string {
+  if (!Number.isFinite(m) || m <= 0) return "0mins";
+  const h = Math.floor(m / 60);
+  const min = m % 60;
+  if (h === 0) return `${min}mins`;
+  if (min === 0) return `${h}${h === 1 ? "hr" : "hrs"}`;
+  return `${h}${h === 1 ? "hr" : "hrs"} ${min}mins`;
+}
+
+const SWITCH_PRESETS = [30, 60, 90, 120, 150, 180];
+
 function floorStatusColor(status: FloorStatus | string | null | undefined): { dot: string; chip: string; ring: string } {
   const s = (status ?? "Running") as FloorStatus;
   if (s === "Under Maintenance") return {
@@ -1806,6 +1817,40 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
   const getFloorDayStatus = (floorId: number, day: string): FloorStatus =>
     floorDayStatusMap[`${floorId}|${day}`] ?? "Running";
 
+  const downtimesQuery = useQuery({
+    queryKey: ["/api/mdp/product-switch-downtimes", selectedWeekLabel],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}api/mdp/product-switch-downtimes?week=${encodeURIComponent(selectedWeekLabel)}`, {
+        headers: authHeaders(),
+      });
+      if (!res.ok) { const error = await res.json().catch(() => ({})); throw new Error(error.error || "Failed to load product switch downtimes"); }
+      return res.json() as Promise<Array<{ id: number; afterAssignmentId: number; minutes: number }>>;
+    },
+    enabled: Boolean(selectedWeekLabel),
+    staleTime: 1000 * 30,
+  });
+
+  const downtimeByAssignmentId = React.useMemo(() => {
+    const map: Record<number, number> = {};
+    (downtimesQuery.data ?? []).forEach(row => { map[row.afterAssignmentId] = row.minutes; });
+    return map;
+  }, [downtimesQuery.data]);
+
+  const updateDowntimeMutation = useMutation({
+    mutationFn: async ({ afterAssignmentId, minutes }: { afterAssignmentId: number; minutes: number }) => {
+      const res = await fetch(`${BASE}api/mdp/product-switch-downtimes`, {
+        method: "PATCH", headers: authHeaders(),
+        body: JSON.stringify({ afterAssignmentId, minutes }),
+      });
+      if (!res.ok) { const error = await res.json().catch(() => ({})); throw new Error(error.error || "Failed to update switch downtime"); }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/product-switch-downtimes", selectedWeekLabel] });
+    },
+    onError: (error: any) => toast({ title: "Could not update switch time", description: error?.message, variant: "destructive" }),
+  });
+
   const updateFloorDayStatusMutation = useMutation({
     mutationFn: async ({ floorId, day, status }: { floorId: number; day: string; status: FloorStatus }) => {
       const res = await fetch(`${BASE}api/mdp/floor-day-statuses`, {
@@ -1874,6 +1919,102 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
         )}
       </div>
     );
+  };
+
+  const DowntimeSeparator = ({ afterAssignmentId }: { afterAssignmentId: number }) => {
+    const [open, setOpen] = React.useState(false);
+    const [custom, setCustom] = React.useState("");
+    const minutes = downtimeByAssignmentId[afterAssignmentId] ?? 60;
+    return (
+      <div className="relative flex items-center gap-2 px-1 py-0.5">
+        <div className={cn("flex-1 border-t border-dashed", isLight ? "border-amber-400/40" : "border-amber-500/30")} />
+        <button
+          onClick={() => setOpen(o => !o)}
+          className={cn(
+            "inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[9px] font-bold whitespace-nowrap transition-colors",
+            isLight
+              ? "bg-amber-50 border-amber-300/60 text-amber-700 hover:bg-amber-100"
+              : "bg-amber-500/10 border-amber-500/30 text-amber-300 hover:bg-amber-500/20",
+          )}
+          title="Product switch downtime"
+        >
+          <span className="w-1 h-1 rounded-full bg-amber-500" />
+          {formatSwitchDuration(minutes)} switch
+        </button>
+        <div className={cn("flex-1 border-t border-dashed", isLight ? "border-amber-400/40" : "border-amber-500/30")} />
+        {open && (
+          <>
+            <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+            <div className={cn(
+              "absolute z-40 left-1/2 -translate-x-1/2 top-full mt-1 min-w-[220px] rounded-xl border shadow-xl p-2",
+              isLight ? "bg-white border-slate-200" : "bg-zinc-900 border-white/10",
+            )}>
+              <p className="text-[9px] uppercase tracking-widest text-muted-foreground mb-1.5 px-1">Product switch</p>
+              <div className="grid grid-cols-3 gap-1 mb-2">
+                {SWITCH_PRESETS.map(m => {
+                  const isCurrent = m === minutes;
+                  return (
+                    <button
+                      key={m}
+                      onClick={() => { updateDowntimeMutation.mutate({ afterAssignmentId, minutes: m }); setOpen(false); }}
+                      className={cn(
+                        "py-1 rounded-md text-[10px] font-semibold border transition-colors",
+                        isCurrent
+                          ? "bg-amber-500/20 border-amber-500/40 text-amber-300"
+                          : isLight
+                            ? "border-slate-200 text-slate-600 hover:bg-slate-50"
+                            : "border-white/10 text-muted-foreground hover:bg-white/5",
+                      )}
+                    >
+                      {formatSwitchDuration(m)}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className={cn("flex items-center gap-1.5 border-t pt-2", isLight ? "border-slate-200" : "border-white/5")}>
+                <input
+                  type="number" min={0} step={5} placeholder="Custom min."
+                  value={custom}
+                  onChange={e => setCustom(e.target.value)}
+                  className={cn("flex-1 h-7 rounded-md border px-2 text-[10px] focus:outline-none focus:ring-1 focus:ring-amber-500/40",
+                    isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/30")}
+                  onKeyDown={e => {
+                    if (e.key === "Enter") {
+                      const v = Number(custom);
+                      if (!isNaN(v) && v >= 0) {
+                        updateDowntimeMutation.mutate({ afterAssignmentId, minutes: v });
+                        setOpen(false);
+                      }
+                    }
+                  }}
+                />
+                <button
+                  onClick={() => {
+                    const v = Number(custom);
+                    if (!isNaN(v) && v >= 0) {
+                      updateDowntimeMutation.mutate({ afterAssignmentId, minutes: v });
+                      setOpen(false);
+                    }
+                  }}
+                  className="h-7 px-2 rounded-md bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-bold"
+                >Save</button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  const interleaveDowntimes = (rows: FloorAssignmentRow[], renderCard: (r: FloorAssignmentRow) => React.ReactNode): React.ReactNode[] => {
+    const out: React.ReactNode[] = [];
+    rows.forEach((row, i) => {
+      out.push(<React.Fragment key={`c-${row.assignment.id}`}>{renderCard(row)}</React.Fragment>);
+      if (i < rows.length - 1) {
+        out.push(<DowntimeSeparator key={`d-${row.assignment.id}`} afterAssignmentId={row.assignment.id} />);
+      }
+    });
+    return out;
   };
 
   const floorDayCautionOverlay = (floor: ProductionFloor, day: string) => {
@@ -2526,7 +2667,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                         )}>
                           {assignedRows.length === 0
                             ? <div className="flex h-full min-h-[80px] items-center justify-center text-xs text-muted-foreground/60">Drop orders here</div>
-                            : <div className="space-y-2">{assignedRows.map(makeOrderCard(floor.id))}</div>
+                            : <div className="space-y-2">{interleaveDowntimes(assignedRows, makeOrderCard(floor.id))}</div>
                           }
                         </div>
                       </div>
@@ -2619,7 +2760,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                   ? <div className={cn("flex h-full min-h-[70px] items-center justify-center text-[10px] rounded-xl border border-dashed",
                                       isLight ? "border-slate-200 text-slate-400" : "border-white/10 text-muted-foreground/40"
                                     )}>Drop here</div>
-                                  : dayRows.map(makeOrderCard(floor.id))
+                                  : interleaveDowntimes(dayRows, makeOrderCard(floor.id))
                                 }
                               </div>
                             </div>
@@ -2675,7 +2816,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                       ? <div className={cn("flex h-full min-h-[70px] items-center justify-center text-[10px] rounded-xl border border-dashed",
                                           isLight ? "border-indigo-200 text-indigo-300" : "border-indigo-500/20 text-indigo-500/40"
                                         )}>Drop here</div>
-                                      : nightRows.map(makeOrderCard(floor.id))
+                                      : interleaveDowntimes(nightRows, makeOrderCard(floor.id))
                                     }
                                   </div>
                                 </div>
@@ -3158,14 +3299,14 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                   {dayRows.length === 0 ? (
                                     <div className="flex h-full min-h-[80px] items-center justify-center text-sm text-muted-foreground/40">No orders</div>
                                   ) : (
-                                    dayRows.map(row => {
+                                    interleaveDowntimes(dayRows, row => {
                                       const fullOrder = mdpOrderByMdpId.get(row.order.id);
                                       const acc = planningAccountMap[fullOrder?.accountId ?? 0];
                                       const company = acc?.company ?? fullOrder?.accountCompany ?? fullOrder?.accountName ?? "Unknown";
                                       const productName = acc?.productName ?? fullOrder?.productName ?? null;
                                       const volume = Number(fullOrder?.volume ?? row.order.volume ?? 0);
                                       return (
-                                        <div key={row.assignment.id} className={cn("rounded-xl border p-3", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5")}>
+                                        <div className={cn("rounded-xl border p-3", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5")}>
                                           <div className="flex items-start justify-between gap-2 mb-2">
                                             <div className="min-w-0">
                                               <p className="font-bold text-foreground text-sm truncate">{company}</p>
@@ -3224,14 +3365,14 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                     {nightRows.length === 0 ? (
                                       <div className="flex h-full min-h-[80px] items-center justify-center text-sm text-muted-foreground/40">No night shift orders</div>
                                     ) : (
-                                      nightRows.map(row => {
+                                      interleaveDowntimes(nightRows, row => {
                                         const fullOrder = mdpOrderByMdpId.get(row.order.id);
                                         const acc = planningAccountMap[fullOrder?.accountId ?? 0];
                                         const company = acc?.company ?? fullOrder?.accountCompany ?? fullOrder?.accountName ?? "Unknown";
                                         const productName = acc?.productName ?? fullOrder?.productName ?? null;
                                         const volume = Number(fullOrder?.volume ?? row.order.volume ?? 0);
                                         return (
-                                          <div key={row.assignment.id} className={cn("rounded-xl border p-3", isLight ? "border-indigo-100 bg-white" : "border-indigo-500/20 bg-indigo-500/5")}>
+                                          <div className={cn("rounded-xl border p-3", isLight ? "border-indigo-100 bg-white" : "border-indigo-500/20 bg-indigo-500/5")}>
                                             <div className="flex items-start justify-between gap-2 mb-2">
                                               <div className="min-w-0">
                                                 <p className="font-bold text-foreground text-sm truncate">{company}</p>

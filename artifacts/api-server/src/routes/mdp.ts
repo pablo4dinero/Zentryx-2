@@ -7,6 +7,7 @@ import {
   mdpFloorAssignmentsTable,
   mdpProducedOrdersTable,
   mdpFloorDayStatusesTable,
+  mdpProductSwitchDowntimesTable,
   accountProductionOrdersTable,
   notificationsTable,
   usersTable,
@@ -336,16 +337,35 @@ router.get("/floor-assignments", requireAuth, async (req: AuthRequest, res) => {
 router.post("/floor-assignments", requireAuth, async (req: AuthRequest, res) => {
   try {
     const body = req.body as any;
+    const floorId = Number(body.floorId);
+    const weekLabel = String(body.weekLabel ?? "");
+    const assignedDay = String(body.assignedDay ?? "");
+
     const [created] = await db.insert(mdpFloorAssignmentsTable).values({
-      floorId: Number(body.floorId),
+      floorId,
       productionOrderId: Number(body.productionOrderId),
-      weekLabel: body.weekLabel,
-      assignedDay: body.assignedDay,
+      weekLabel,
+      assignedDay,
       planStatus: body.planStatus ?? "Planned",
       assignedVolume: body.assignedVolume != null ? String(body.assignedVolume) : null,
       assignedAt: new Date(),
       producedAt: body.producedAt ? new Date(body.producedAt) : null,
     }).returning();
+
+    if (created && floorId && weekLabel && assignedDay) {
+      const siblings = await db.select({ id: mdpFloorAssignmentsTable.id }).from(mdpFloorAssignmentsTable)
+        .where(and(
+          eq(mdpFloorAssignmentsTable.floorId, floorId),
+          eq(mdpFloorAssignmentsTable.weekLabel, weekLabel),
+          eq(mdpFloorAssignmentsTable.assignedDay, assignedDay),
+        ));
+      if (siblings.length > 1) {
+        await db.insert(mdpProductSwitchDowntimesTable)
+          .values({ afterAssignmentId: created.id, minutes: 60 })
+          .onConflictDoNothing();
+      }
+    }
+
     res.status(201).json(created);
   } catch (err) {
     console.error(err);
@@ -373,8 +393,59 @@ router.patch("/floor-assignments/:id", requireAuth, async (req: AuthRequest, res
 router.delete("/floor-assignments/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
     const id = Number(req.params.id);
+    await db.delete(mdpProductSwitchDowntimesTable).where(eq(mdpProductSwitchDowntimesTable.afterAssignmentId, id));
     await db.delete(mdpFloorAssignmentsTable).where(eq(mdpFloorAssignmentsTable.id, id));
     res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+router.get("/product-switch-downtimes", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const weekLabel = String(req.query.week || "");
+    if (!weekLabel) { res.json([]); return; }
+    const rows = await db.select({
+      id: mdpProductSwitchDowntimesTable.id,
+      afterAssignmentId: mdpProductSwitchDowntimesTable.afterAssignmentId,
+      minutes: mdpProductSwitchDowntimesTable.minutes,
+    })
+      .from(mdpProductSwitchDowntimesTable)
+      .innerJoin(mdpFloorAssignmentsTable, eq(mdpFloorAssignmentsTable.id, mdpProductSwitchDowntimesTable.afterAssignmentId))
+      .where(eq(mdpFloorAssignmentsTable.weekLabel, weekLabel));
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+router.patch("/product-switch-downtimes", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const body = req.body as { afterAssignmentId?: number; minutes?: number };
+    const aid = Number(body.afterAssignmentId);
+    const minutes = Number(body.minutes);
+    if (!aid || !Number.isFinite(minutes) || minutes < 0) {
+      res.status(400).json({ error: "afterAssignmentId and non-negative minutes required" });
+      return;
+    }
+
+    const [existing] = await db.select().from(mdpProductSwitchDowntimesTable)
+      .where(eq(mdpProductSwitchDowntimesTable.afterAssignmentId, aid)).limit(1);
+
+    let row;
+    if (existing) {
+      [row] = await db.update(mdpProductSwitchDowntimesTable)
+        .set({ minutes, updatedAt: new Date() })
+        .where(eq(mdpProductSwitchDowntimesTable.id, existing.id))
+        .returning();
+    } else {
+      [row] = await db.insert(mdpProductSwitchDowntimesTable)
+        .values({ afterAssignmentId: aid, minutes })
+        .returning();
+    }
+    res.json(row);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "InternalServerError" });

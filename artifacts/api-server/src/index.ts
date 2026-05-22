@@ -120,6 +120,18 @@ async function createTablesIfNotExist() {
       CREATE UNIQUE INDEX IF NOT EXISTS mdp_floor_day_statuses_unique
         ON mdp_floor_day_statuses (floor_id, week_label, assigned_day);
     `));
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS mdp_product_switch_downtimes (
+        id SERIAL PRIMARY KEY,
+        after_assignment_id INTEGER NOT NULL,
+        minutes INTEGER NOT NULL DEFAULT 60,
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `));
+    await db.execute(sql.raw(`
+      CREATE UNIQUE INDEX IF NOT EXISTS mdp_product_switch_downtimes_unique
+        ON mdp_product_switch_downtimes (after_assignment_id);
+    `));
 
     // Migrate projects table enum columns to text so custom values are accepted
     await db.execute(sql.raw(`
