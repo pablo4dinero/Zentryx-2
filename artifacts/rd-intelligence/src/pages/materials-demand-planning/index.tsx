@@ -4255,6 +4255,65 @@ function MaterialsDemandPlanningPage() {
     });
   }, [products, search, urgencyFilter]);
 
+  type SortKey = "account" | "productType" | "volume" | "managers" | "urgency" | "added";
+  type SortDir = "asc" | "desc";
+  const [sortKey, setSortKey] = React.useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = React.useState<SortDir>("asc");
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(d => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  // Urgency ordering matches the visible severity: urgent > medium > normal.
+  const URGENCY_RANK: Record<string, number> = { urgent: 3, medium: 2, normal: 1 };
+
+  const sortedProducts = React.useMemo(() => {
+    if (!sortKey) return filteredProducts;
+    const sign = sortDir === "asc" ? 1 : -1;
+    const get = (a: Account): string | number => {
+      switch (sortKey) {
+        case "account":     return (a.company ?? "").toLowerCase();
+        case "productType": return (a.productType ?? "").toLowerCase();
+        case "volume":      return parseFloat(a.volume || "0") || 0;
+        case "managers":    return (a.accountManagerNames || []).join(", ").toLowerCase();
+        case "urgency":     return URGENCY_RANK[(a.urgencyLevel ?? "").toLowerCase()] ?? 0;
+        case "added":       return new Date(a.createdAt).getTime() || 0;
+      }
+    };
+    return [...filteredProducts].sort((a, b) => {
+      const va = get(a);
+      const vb = get(b);
+      if (va < vb) return -1 * sign;
+      if (va > vb) return  1 * sign;
+      return 0;
+    });
+  }, [filteredProducts, sortKey, sortDir]);
+
+  const SortHeader = ({ label, k, align = "left" }: { label: string; k: SortKey; align?: "left" | "right" }) => {
+    const active = sortKey === k;
+    return (
+      <th className={cn("px-5 py-3 font-medium", align === "right" ? "text-right" : "text-left")}>
+        <button
+          type="button"
+          onClick={() => toggleSort(k)}
+          className={cn("inline-flex items-center gap-1 text-xs uppercase tracking-wide transition-colors",
+            active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {label}
+          <span className="text-[9px] leading-none">
+            {active ? (sortDir === "asc" ? "▲" : "▼") : "↕"}
+          </span>
+        </button>
+      </th>
+    );
+  };
+
   const summary = React.useMemo(() => {
     const total = products.length;
     const urgentCount = products.filter((a) => a.urgencyLevel === "urgent").length;
@@ -4401,7 +4460,7 @@ function MaterialsDemandPlanningPage() {
                 </div>
 
                 <div className="flex gap-2 shrink-0">
-                  <button onClick={() => downloadCsv(filteredProducts as Account[])}
+                  <button onClick={() => downloadCsv(sortedProducts as Account[])}
                     className={cn("flex items-center gap-1.5 h-9 px-3 rounded-xl border text-xs font-medium transition-all",
                       isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:border-white/20"
                     )}>
@@ -4419,24 +4478,24 @@ function MaterialsDemandPlanningPage() {
               <table className="w-full text-sm">
                 <thead className={cn("text-xs text-muted-foreground border-b", isLight ? "bg-slate-50 border-slate-200" : "bg-white/5 border-white/5")}>
                   <tr>
-                    <th className="px-5 py-3 text-left font-medium">Account</th>
-                    <th className="px-5 py-3 text-left font-medium">Product Type</th>
-                    <th className="px-5 py-3 text-left font-medium">Volume (kg)</th>
-                    <th className="px-5 py-3 text-left font-medium">Manager(s)</th>
-                    <th className="px-5 py-3 text-left font-medium">Urgency</th>
-                    <th className="px-5 py-3 text-left font-medium">Added</th>
+                    <SortHeader label="Account" k="account" />
+                    <SortHeader label="Product Type" k="productType" />
+                    <SortHeader label="Volume (kg)" k="volume" />
+                    <SortHeader label="Manager(s)" k="managers" />
+                    <SortHeader label="Urgency" k="urgency" />
+                    <SortHeader label="Added" k="added" />
                     <th className="px-5 py-3 text-left font-medium" />
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredProducts.length === 0 ? (
+                  {sortedProducts.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="py-12 text-center text-muted-foreground text-sm">
                         No accounts match the current filters.
                       </td>
                     </tr>
                   ) : (
-                    filteredProducts.map((account) => (
+                    sortedProducts.map((account) => (
                       <tr key={account.id}
                         className={cn("border-b last:border-0 transition-colors group",
                           isLight ? "border-slate-100 hover:bg-slate-50/70" : "border-white/5 hover:bg-white/[0.03]"
@@ -4477,7 +4536,7 @@ function MaterialsDemandPlanningPage() {
                 </tbody>
               </table>
               <div className={cn("px-5 py-2.5 text-xs text-muted-foreground border-t", isLight ? "border-slate-100" : "border-white/5")}>
-                Showing {filteredProducts.length} of {products.length} accounts
+                Showing {sortedProducts.length} of {products.length} accounts
               </div>
             </div>
 
