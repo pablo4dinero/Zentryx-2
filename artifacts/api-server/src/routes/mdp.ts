@@ -175,6 +175,7 @@ router.post("/production-floors", requireAuth, async (req: AuthRequest, res) => 
       floorName: body.floorName,
       blendCategory: body.blendCategory,
       maxCapacityKg: body.maxCapacityKg !== undefined ? Number(body.maxCapacityKg) : 0,
+      allowedProductTypes: Array.isArray(body.allowedProductTypes) ? body.allowedProductTypes.map(String) : [],
       createdAt: new Date(),
     }).returning();
     res.status(201).json(created);
@@ -192,6 +193,7 @@ router.put("/production-floors/:id", requireAuth, async (req: AuthRequest, res) 
       floorName: body.floorName,
       blendCategory: body.blendCategory,
       maxCapacityKg: body.maxCapacityKg !== undefined ? Number(body.maxCapacityKg) : undefined,
+      allowedProductTypes: Array.isArray(body.allowedProductTypes) ? body.allowedProductTypes.map(String) : undefined,
     }).where(eq(mdpProductionFloorsTable.id, id)).returning();
 
     if (!updated) {

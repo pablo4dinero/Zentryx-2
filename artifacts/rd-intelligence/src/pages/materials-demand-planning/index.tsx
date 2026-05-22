@@ -460,7 +460,17 @@ type ProductionFloor = {
   blendCategory: "Sweet" | "Savory" | "Sweet/Savory" | "Savory/Sweet";
   maxCapacityKg: number;
   status?: FloorStatus | string | null;
+  allowedProductTypes?: string[] | null;
 };
+
+const PRODUCT_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: "seasoning",            label: "Seasoning" },
+  { value: "snacks_dusting",       label: "Snacks Dusting" },
+  { value: "dairy_premix",         label: "Dairy Premix" },
+  { value: "bakery_dough_premix",  label: "Bakery & Dough Premix" },
+  { value: "sweet_flavours",       label: "Sweet Flavours" },
+  { value: "savoury_flavour",      label: "Savoury Flavour" },
+];
 
 function formatSwitchDuration(m: number): string {
   if (!Number.isFinite(m) || m <= 0) return "0mins";
@@ -1520,10 +1530,11 @@ function ProductionPlanningTab() {
     floorName: "",
     blendCategory: "Sweet" as ProductionFloor["blendCategory"],
     maxCapacityKg: "0",
+    allowedProductTypes: [] as string[],
   });
   const [editFloorOpen, setEditFloorOpen] = React.useState(false);
   const [editingFloor, setEditingFloor] = React.useState<ProductionFloor | null>(null);
-  const [editFloorForm, setEditFloorForm] = React.useState({ floorName: "", blendCategory: "Sweet" as ProductionFloor["blendCategory"], maxCapacityKg: "0" });
+  const [editFloorForm, setEditFloorForm] = React.useState({ floorName: "", blendCategory: "Sweet" as ProductionFloor["blendCategory"], maxCapacityKg: "0", allowedProductTypes: [] as string[] });
   const [deleteConfirmFloorId, setDeleteConfirmFloorId] = React.useState<number | null>(null);
   const [includeSaturday, setIncludeSaturday] = React.useState(false);
   const [includeNightShift, setIncludeNightShift] = React.useState(false);
@@ -1756,7 +1767,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-floors"] });
       setFloorModalOpen(false);
-      setFloorForm({ floorName: "", blendCategory: "Sweet", maxCapacityKg: "0" });
+      setFloorForm({ floorName: "", blendCategory: "Sweet", maxCapacityKg: "0", allowedProductTypes: [] });
       toast({ title: "Floor added" });
     },
     onError: (error: any) => toast({ title: "Could not add floor", description: error?.message, variant: "destructive" }),
@@ -2227,6 +2238,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       floorName: floorForm.floorName,
       blendCategory: floorForm.blendCategory,
       maxCapacityKg: Number(floorForm.maxCapacityKg),
+      allowedProductTypes: floorForm.allowedProductTypes,
     });
   };
 
@@ -2541,6 +2553,37 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                       className={isLight ? "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:bg-white" : ""}
                     />
                   </div>
+                  <div className="grid gap-2">
+                    <Label>Product Types This Floor Can Blend</Label>
+                    <p className="text-xs text-muted-foreground -mt-1">Pick one or more — you can change this later.</p>
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      {PRODUCT_TYPE_OPTIONS.map(opt => {
+                        const selected = floorForm.allowedProductTypes.includes(opt.value);
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => setFloorForm(prev => ({
+                              ...prev,
+                              allowedProductTypes: selected
+                                ? prev.allowedProductTypes.filter(t => t !== opt.value)
+                                : [...prev.allowedProductTypes, opt.value],
+                            }))}
+                            className={cn("inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                              selected
+                                ? "bg-primary/15 border-primary/40 text-primary"
+                                : isLight
+                                  ? "border-slate-200 text-slate-600 hover:bg-slate-50"
+                                  : "border-white/10 text-muted-foreground hover:bg-white/5",
+                            )}
+                          >
+                            <span className={cn("w-1.5 h-1.5 rounded-full", selected ? "bg-primary" : "bg-muted-foreground/40")} />
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
                 <DialogFooter className="space-x-2">
                   <Button variant="outline" onClick={() => setFloorModalOpen(false)}
@@ -2636,7 +2679,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
             const floorActionButtons = (floor: ProductionFloor, day?: string) => (
               <div className="flex items-center gap-1 shrink-0">
                 {day && floorStatusButton(floor, day)}
-                <button onClick={() => { setEditingFloor(floor); setEditFloorForm({ floorName: floor.floorName, blendCategory: floor.blendCategory, maxCapacityKg: String(floor.maxCapacityKg) }); setEditFloorOpen(true); }}
+                <button onClick={() => { setEditingFloor(floor); setEditFloorForm({ floorName: floor.floorName, blendCategory: floor.blendCategory, maxCapacityKg: String(floor.maxCapacityKg), allowedProductTypes: Array.isArray(floor.allowedProductTypes) ? floor.allowedProductTypes : [] }); setEditFloorOpen(true); }}
                   className={cn("p-1 rounded-md transition-colors text-muted-foreground hover:text-foreground", isLight ? "hover:bg-slate-100" : "hover:bg-white/10")} title="Edit">
                   <Edit3 className="w-3 h-3" />
                 </button>
@@ -3002,11 +3045,41 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                       </select>
                     </div>
                     <div><label className={lCls}>Max Capacity (kg/day)</label><input value={editFloorForm.maxCapacityKg} onChange={e => setEditFloorForm(p => ({ ...p, maxCapacityKg: e.target.value }))} type="number" min="0" className={iCls} /></div>
+                    <div>
+                      <label className={lCls}>Product Types This Floor Can Blend</label>
+                      <div className="flex flex-wrap gap-2">
+                        {PRODUCT_TYPE_OPTIONS.map(opt => {
+                          const selected = editFloorForm.allowedProductTypes.includes(opt.value);
+                          return (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => setEditFloorForm(prev => ({
+                                ...prev,
+                                allowedProductTypes: selected
+                                  ? prev.allowedProductTypes.filter(t => t !== opt.value)
+                                  : [...prev.allowedProductTypes, opt.value],
+                              }))}
+                              className={cn("inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                                selected
+                                  ? "bg-primary/15 border-primary/40 text-primary"
+                                  : isLight
+                                    ? "border-gray-200 text-gray-600 hover:bg-gray-50"
+                                    : "border-white/10 text-muted-foreground hover:bg-white/5",
+                              )}
+                            >
+                              <span className={cn("w-1.5 h-1.5 rounded-full", selected ? "bg-primary" : "bg-muted-foreground/40")} />
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </>);
                 })()}
               </div>
               <div className={cn("px-6 py-4 border-t flex gap-3", isLight ? "border-gray-100" : "border-white/5")}>
-                <button onClick={() => updateFloorMutation.mutate({ id: editingFloor.id, floorName: editFloorForm.floorName, blendCategory: editFloorForm.blendCategory, maxCapacityKg: Number(editFloorForm.maxCapacityKg) })}
+                <button onClick={() => updateFloorMutation.mutate({ id: editingFloor.id, floorName: editFloorForm.floorName, blendCategory: editFloorForm.blendCategory, maxCapacityKg: Number(editFloorForm.maxCapacityKg), allowedProductTypes: editFloorForm.allowedProductTypes })}
                   disabled={!editFloorForm.floorName.trim() || Number(editFloorForm.maxCapacityKg) <= 0}
                   className="flex-1 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-60">
                   Save Changes

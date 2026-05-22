@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, timestamp, boolean, numeric, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, boolean, numeric, pgEnum, jsonb } from "drizzle-orm/pg-core";
 
 // ──────────────────────────────────────────────────────
 // MDP Module Tables
@@ -54,6 +54,7 @@ export const mdpProductionFloorsTable = pgTable("mdp_production_floors", {
   blendCategory: text("blend_category").notNull(),
   maxCapacityKg: integer("max_capacity_kg").notNull(),
   status: text("status").default("Running"),
+  allowedProductTypes: jsonb("allowed_product_types").$type<string[]>().default([]),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
