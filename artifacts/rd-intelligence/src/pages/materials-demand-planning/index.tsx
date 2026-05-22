@@ -501,6 +501,7 @@ type FloorAssignmentRow = {
     assignedDay: string;
     planStatus: string;
     assignedVolume?: string | null;
+    assignedAt?: string | null;
   };
   floor: ProductionFloor;
   order: ProductionOrder;
@@ -2357,6 +2358,37 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     return map;
   }, [productionOrdersQuery.data]);
 
+  // For each assignment, compute "remaining to assign" at the moment this
+  // assignment was created (running balance against the mother order volume).
+  // Sorted by assignedAt ascending so the first chronological partial sees the
+  // full total, the second sees what was left after the first, and so on.
+  const assignmentRemainingMap = React.useMemo(() => {
+    const map: Record<number, { remainingBefore: number; remainingAfter: number }> = {};
+    const byOrder = new Map<number, FloorAssignmentRow[]>();
+    (allAssignmentsQuery.data ?? []).forEach(row => {
+      const list = byOrder.get(row.assignment.productionOrderId) ?? [];
+      list.push(row);
+      byOrder.set(row.assignment.productionOrderId, list);
+    });
+    byOrder.forEach((rows, orderId) => {
+      const sorted = [...rows].sort((a, b) => {
+        const ta = new Date(a.assignment.assignedAt ?? 0).getTime();
+        const tb = new Date(b.assignment.assignedAt ?? 0).getTime();
+        if (ta !== tb) return ta - tb;
+        return a.assignment.id - b.assignment.id;
+      });
+      const totalVol = Number(mdpOrderByMdpId.get(orderId)?.volume ?? sorted[0]?.order?.volume ?? 0);
+      let remainingBefore = totalVol;
+      sorted.forEach(row => {
+        const assignedVol = row.assignment.assignedVolume != null ? Number(row.assignment.assignedVolume) : totalVol;
+        const remainingAfter = Math.max(0, remainingBefore - assignedVol);
+        map[row.assignment.id] = { remainingBefore, remainingAfter };
+        remainingBefore = remainingAfter;
+      });
+    });
+    return map;
+  }, [allAssignmentsQuery.data, mdpOrderByMdpId]);
+
   const printStyles = `
     @media print {
       @page { margin: 1.5cm; size: A4 portrait; }
@@ -2531,6 +2563,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
               const productTypeLabel = acc?.productType ?? row.order.productType ?? "—";
               const totalVol = Number(fullOrder?.volume ?? row.order.volume ?? 0);
               const assignedVol = row.assignment.assignedVolume != null ? Number(row.assignment.assignedVolume) : totalVol;
+              const runningBefore = assignmentRemainingMap[row.assignment.id]?.remainingBefore ?? totalVol;
               const expected = fullOrder?.expectedDeliveryDate ?? null;
               const isEditingThis = editingVolumeId === row.assignment.id;
               return (
@@ -2583,7 +2616,9 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                           <Edit3 className="w-2.5 h-2.5 opacity-0 group-hover:opacity-60 ml-0.5" />
                         </button>
                       )}
-                      {totalVol > 0 && <div className="text-[9px] text-muted-foreground/60 mt-0.5">of {totalVol.toLocaleString()} total</div>}
+                      {runningBefore > 0 && runningBefore !== assignedVol && (
+                        <div className="text-[9px] text-muted-foreground/60 mt-0.5">of {runningBefore.toLocaleString()} to assign</div>
+                      )}
                     </div>
                   </div>
                   <div className="flex gap-1.5">
@@ -3109,6 +3144,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                         const productName = acc?.productName ?? fullOrder?.productName ?? null;
                                         const totalVol = Number(fullOrder?.volume ?? row.order.volume ?? 0);
                                         const assignedVol = row.assignment.assignedVolume != null ? Number(row.assignment.assignedVolume) : totalVol;
+                                        const runningBefore = assignmentRemainingMap[row.assignment.id]?.remainingBefore ?? totalVol;
                                         return (
                                           <div key={row.assignment.id} className="border border-slate-200 rounded-lg p-2 bg-white">
                                             <p className="text-[11px] font-bold text-slate-800 leading-tight truncate">{company}</p>
@@ -3116,8 +3152,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                             <div className="flex items-center justify-between mt-1.5 gap-1">
                                               <span className="text-[10px] font-semibold text-slate-700">
                                                 {assignedVol.toLocaleString()} KG
-                                                {totalVol > 0 && totalVol !== assignedVol && (
-                                                  <span className="text-[9px] font-normal text-slate-400"> / of {totalVol.toLocaleString()}</span>
+                                                {runningBefore > 0 && runningBefore !== assignedVol && (
+                                                  <span className="text-[9px] font-normal text-slate-400"> / of {runningBefore.toLocaleString()}</span>
                                                 )}
                                               </span>
                                               <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded", row.order.microbialAnalysis === "Critical" ? "bg-red-100 text-red-700" : row.order.microbialAnalysis === "Important" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700")}>{row.order.microbialAnalysis ?? "Normal"}</span>
@@ -3170,6 +3206,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                             const productName = acc?.productName ?? fullOrder?.productName ?? null;
                                             const totalVol = Number(fullOrder?.volume ?? row.order.volume ?? 0);
                                             const assignedVol = row.assignment.assignedVolume != null ? Number(row.assignment.assignedVolume) : totalVol;
+                                            const runningBefore = assignmentRemainingMap[row.assignment.id]?.remainingBefore ?? totalVol;
                                             return (
                                               <div key={row.assignment.id} className="border border-indigo-200 rounded-lg p-2 bg-white">
                                                 <p className="text-[11px] font-bold text-slate-800 leading-tight truncate">{company}</p>
@@ -3177,8 +3214,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                                 <div className="flex items-center justify-between mt-1.5 gap-1">
                                                   <span className="text-[10px] font-semibold text-slate-700">
                                                     {assignedVol.toLocaleString()} KG
-                                                    {totalVol > 0 && totalVol !== assignedVol && (
-                                                      <span className="text-[9px] font-normal text-slate-400"> / of {totalVol.toLocaleString()}</span>
+                                                    {runningBefore > 0 && runningBefore !== assignedVol && (
+                                                      <span className="text-[9px] font-normal text-slate-400"> / of {runningBefore.toLocaleString()}</span>
                                                     )}
                                                   </span>
                                                   <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded", row.order.microbialAnalysis === "Critical" ? "bg-red-100 text-red-700" : row.order.microbialAnalysis === "Important" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700")}>{row.order.microbialAnalysis ?? "Normal"}</span>
@@ -3302,6 +3339,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                       const productName = acc?.productName ?? fullOrder?.productName ?? null;
                                       const totalVol = Number(fullOrder?.volume ?? row.order.volume ?? 0);
                                       const assignedVol = row.assignment.assignedVolume != null ? Number(row.assignment.assignedVolume) : totalVol;
+                                      const runningBefore = assignmentRemainingMap[row.assignment.id]?.remainingBefore ?? totalVol;
                                       return (
                                         <div className={cn("rounded-xl border p-3", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5")}>
                                           <div className="flex items-start justify-between gap-2 mb-2">
@@ -3311,8 +3349,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                             </div>
                                             <div className="text-right shrink-0">
                                               <span className="text-sm font-bold text-foreground">{assignedVol.toLocaleString()} KG</span>
-                                              {totalVol > 0 && totalVol !== assignedVol && (
-                                                <div className="text-[10px] text-muted-foreground/70 mt-0.5">of {totalVol.toLocaleString()} total</div>
+                                              {runningBefore > 0 && runningBefore !== assignedVol && (
+                                                <div className="text-[10px] text-muted-foreground/70 mt-0.5">of {runningBefore.toLocaleString()} to assign</div>
                                               )}
                                             </div>
                                           </div>
@@ -3374,6 +3412,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                         const productName = acc?.productName ?? fullOrder?.productName ?? null;
                                         const totalVol = Number(fullOrder?.volume ?? row.order.volume ?? 0);
                                         const assignedVol = row.assignment.assignedVolume != null ? Number(row.assignment.assignedVolume) : totalVol;
+                                        const runningBefore = assignmentRemainingMap[row.assignment.id]?.remainingBefore ?? totalVol;
                                         return (
                                           <div className={cn("rounded-xl border p-3", isLight ? "border-indigo-100 bg-white" : "border-indigo-500/20 bg-indigo-500/5")}>
                                             <div className="flex items-start justify-between gap-2 mb-2">
@@ -3383,8 +3422,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                               </div>
                                               <div className="text-right shrink-0">
                                                 <span className="text-sm font-bold text-foreground">{assignedVol.toLocaleString()} KG</span>
-                                                {totalVol > 0 && totalVol !== assignedVol && (
-                                                  <div className="text-[10px] text-muted-foreground/70 mt-0.5">of {totalVol.toLocaleString()} total</div>
+                                                {runningBefore > 0 && runningBefore !== assignedVol && (
+                                                  <div className="text-[10px] text-muted-foreground/70 mt-0.5">of {runningBefore.toLocaleString()} to assign</div>
                                                 )}
                                               </div>
                                             </div>
