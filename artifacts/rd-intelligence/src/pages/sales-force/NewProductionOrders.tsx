@@ -257,7 +257,7 @@ function LeadingProductTypeChart({
   }
 
   return (
-    <div className="glass-card rounded-2xl p-6 border border-white/5 flex flex-col min-h-[520px]">
+    <div className="glass-card rounded-2xl p-6 border border-white/5 flex flex-col h-[540px]">
       {inner}
     </div>
   );
