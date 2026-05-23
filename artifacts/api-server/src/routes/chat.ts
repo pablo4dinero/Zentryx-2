@@ -127,7 +127,14 @@ router.post("/rooms", requireAuth, async (req: AuthRequest, res) => {
     const saId = sa?.id;
 
     const rawIds = [...new Set([userId, ...(memberIds || [])])];
-    const allMemberIds = saId ? rawIds.filter(id => id !== saId) : rawIds;
+    // Privacy rule: regular users can't pull the superadmin into a room. But
+    // the superadmin must still be able to start their own DMs and groups —
+    // otherwise the creator gets filtered out, no chatRoomMembers row is
+    // inserted for them, and every click creates an orphan room their /rooms
+    // list never returns. That's the "history clears" bug.
+    const allMemberIds = saId && userId !== saId
+      ? rawIds.filter(id => id !== saId)
+      : rawIds;
 
     if (isGroup === false && allMemberIds.length === 2) {
       const otherId = allMemberIds.find(id => id !== userId)!;

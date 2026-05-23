@@ -253,6 +253,23 @@ async function createTablesIfNotExist() {
     // Add sms_verified_at column for SMS MFA feature
     await db.execute(sql.raw(`ALTER TABLE users ADD COLUMN IF NOT EXISTS sms_verified_at TIMESTAMP;`));
 
+    // Repair chat rooms whose creator was never inserted into
+    // chat_room_members. This happened to the superadmin because the
+    // POST /api/chat/rooms handler filtered them out of the member list even
+    // when they were the one starting the conversation — leaving every DM
+    // they created visible only to the other participant. Idempotent: only
+    // touches rooms where the creator is genuinely missing.
+    await db.execute(sql.raw(`
+      INSERT INTO chat_room_members (room_id, user_id)
+      SELECT cr.id, cr.created_by_id
+      FROM chat_rooms cr
+      WHERE cr.created_by_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM chat_room_members crm
+          WHERE crm.room_id = cr.id AND crm.user_id = cr.created_by_id
+        );
+    `));
+
     logger.info("Database tables created or verified successfully");
   } catch (err) {
     logger.error({ err }, "Failed to create database tables");
