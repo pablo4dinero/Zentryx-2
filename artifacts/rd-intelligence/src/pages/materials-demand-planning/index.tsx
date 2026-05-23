@@ -33,7 +33,7 @@ import { PageLoader } from "@/components/ui/spinner";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
-import { useListUsers } from "@/api-client";
+import { useListUsers, useGetCurrentUser } from "@/api-client";
 import { PlannedOrdersProvider, usePlannedOrders } from "./planned-orders-context";
 import { useCustomOptions, DEFAULT_PRODUCT_TYPES, displayLabel, useServerProductTypes } from "@/lib/project-options";
 import { CustomOptionsSelect } from "@/components/ui/CustomOptionsSelect";
@@ -3705,6 +3705,10 @@ function ProductionHistoryTab() {
   const { toast } = useToast();
   const { theme } = useTheme();
   const isLight = theme === "light";
+  // Only admins can clear lists or delete individual rows. Everyone else can
+  // still update delivery status / Return to Floor Planning.
+  const { data: currentUser } = useGetCurrentUser();
+  const isAdmin = ((currentUser?.role as string | undefined) ?? "").toLowerCase() === "admin";
   const [view, setView] = React.useState<ProductionHistoryView>("weekly");
   const [selectedWeek, setSelectedWeek] = React.useState<string>(getCurrentWeekLabel());
   const [pendingSearch, setPendingSearch] = React.useState("");
@@ -3943,7 +3947,9 @@ function ProductionHistoryTab() {
                   {filteredPending.length}
                 </span>
               </div>
-              <button onClick={() => setClearConfirm("pending")} className="text-[10px] text-red-400 hover:text-red-300 font-medium">Clear</button>
+              {isAdmin && (
+                <button onClick={() => setClearConfirm("pending")} className="text-[10px] text-red-400 hover:text-red-300 font-medium">Clear</button>
+              )}
             </div>
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
@@ -3967,7 +3973,7 @@ function ProductionHistoryTab() {
                     <th className="px-3 py-2.5 text-left font-medium">Type</th>
                     <th className="px-3 py-2.5 text-right font-medium">Vol.</th>
                     <th className="px-3 py-2.5 text-left font-medium">Material</th>
-                    <th className="w-9" />
+                    {isAdmin && <th className="w-9" />}
                   </tr>
                 </thead>
                 <tbody>
@@ -3992,19 +3998,21 @@ function ProductionHistoryTab() {
                             "bg-amber-500/10 text-amber-400"
                           )}>{rawMat}</span>
                         </td>
-                        <td className="px-2 py-2.5 text-right">
-                          <button
-                            onClick={() => {
-                              if (window.confirm(`Delete pending order "${company}"? This removes it from the system.`)) {
-                                deletePendingMutation.mutate(order.id);
-                              }
-                            }}
-                            title="Delete pending order"
-                            className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-all"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
+                        {isAdmin && (
+                          <td className="px-2 py-2.5 text-right">
+                            <button
+                              onClick={() => {
+                                if (window.confirm(`Delete pending order "${company}"? This removes it from the system.`)) {
+                                  deletePendingMutation.mutate(order.id);
+                                }
+                              }}
+                              title="Delete pending order"
+                              className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-all"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -4054,7 +4062,9 @@ function ProductionHistoryTab() {
                     <DropdownMenuItem onClick={() => downloadProductionHistoryXlsx(producedOrders, view)}>Export XLSX</DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <button onClick={() => setClearConfirm("history")} className="text-[10px] text-red-400 hover:text-red-300 font-medium h-8 px-2">Clear History</button>
+                {isAdmin && (
+                  <button onClick={() => setClearConfirm("history")} className="text-[10px] text-red-400 hover:text-red-300 font-medium h-8 px-2">Clear History</button>
+                )}
               </div>
             </div>
             {view === "weekly" && (
@@ -4089,7 +4099,7 @@ function ProductionHistoryTab() {
                     <th className="px-3 py-2.5 text-left font-medium">Produced At</th>
                     <th className="px-3 py-2.5 text-left font-medium">Status</th>
                     <th className="px-3 py-2.5 text-right font-medium">Action</th>
-                    <th className="w-9" />
+                    {isAdmin && <th className="w-9" />}
                   </tr>
                 </thead>
                 <tbody>
@@ -4137,19 +4147,21 @@ function ProductionHistoryTab() {
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </td>
-                      <td className="px-2 py-3 text-right">
-                        <button
-                          onClick={() => {
-                            if (window.confirm(`Delete this history entry for ${order.accountName}?`)) {
-                              deleteHistoryMutation.mutate(order.id);
-                            }
-                          }}
-                          title="Delete history entry"
-                          className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-all"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </td>
+                      {isAdmin && (
+                        <td className="px-2 py-3 text-right">
+                          <button
+                            onClick={() => {
+                              if (window.confirm(`Delete this history entry for ${order.accountName}?`)) {
+                                deleteHistoryMutation.mutate(order.id);
+                              }
+                            }}
+                            title="Delete history entry"
+                            className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-all"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
