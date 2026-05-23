@@ -6,9 +6,10 @@ import {
   ChevronDown, User, FlaskConical as Flask, CheckSquare, Building2,
   ArrowRight, Loader2, CalendarDays, UserCircle, TrendingUp, ClipboardList,
   PanelLeftClose, PanelLeftOpen, Lock, Unlock, ShoppingCart, Package,
-  ShieldCheck, ShieldX, Mail, Rss, Brain, CheckCheck, Check, Download
+  ShieldCheck, ShieldX, Mail, Rss, Brain, CheckCheck, Check, Download, Volume2, VolumeX
 } from "lucide-react";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
+import { useNotificationSound } from "@/hooks/useNotificationSound";
 import { useAuthStore } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -59,7 +60,17 @@ function getBlockedPaths(role: string, jobPos: string): string[] {
 
 const LAST_SEEN_NOTIFS_KEY = "zentryx_last_seen_notifications";
 
-function NotificationBell({ notifications, isLight }: { notifications: any[]; isLight: boolean }) {
+function NotificationBell({
+  notifications,
+  isLight,
+  muted,
+  setMuted,
+}: {
+  notifications: any[];
+  isLight: boolean;
+  muted: boolean;
+  setMuted: (v: boolean) => void;
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const markRead = useMarkNotificationRead();
@@ -141,6 +152,19 @@ function NotificationBell({ notifications, isLight }: { notifications: any[]; is
                 )}
               </p>
               <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setMuted(!muted)}
+                  title={muted ? "Unmute notification sounds" : "Mute notification sounds"}
+                  className={cn(
+                    "inline-flex items-center gap-1 text-[11px] font-semibold transition-colors",
+                    muted
+                      ? (isLight ? "text-slate-400 hover:text-slate-600" : "text-muted-foreground hover:text-foreground")
+                      : (isLight ? "text-primary hover:text-primary/80" : "text-primary hover:text-primary/80"),
+                  )}
+                >
+                  {muted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+                  {muted ? "Muted" : "Sound"}
+                </button>
                 {unreadCount > 0 && (
                   <button
                     onClick={markAllRead}
@@ -615,6 +639,41 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     setNewMsgPopup(null);
   };
 
+  // ── Notification sounds ─────────────────────────────────────────────────
+  // Synthesised via Web Audio (no audio files), works identically in a
+  // browser tab and inside the installed PWA window. Played on:
+  //   • new chat message  → soft two-note rising chime
+  //   • new bell notice   → single bell tone (deduped if a chat sound just
+  //                         played, since chat arrivals also create a
+  //                         notification row server-side)
+  const { playMessage, playNotification, muted: soundsMuted, setMuted: setSoundsMuted } = useNotificationSound();
+  const prevNotifCountRef = useRef(0);
+  const prevNewMsgAtRef = useRef(0);
+  const lastChatSoundAtRef = useRef(0);
+
+  useEffect(() => {
+    // Trigger when newMsgPopup picks up a fresh arrival.
+    if (newMsgPopup && newMsgPopup.messageAt > prevNewMsgAtRef.current) {
+      prevNewMsgAtRef.current = newMsgPopup.messageAt;
+      lastChatSoundAtRef.current = Date.now();
+      playMessage();
+    }
+  }, [newMsgPopup, playMessage]);
+
+  useEffect(() => {
+    const count = notifications?.length ?? 0;
+    // Skip the very first run so we don't chime on initial page load.
+    if (prevNotifCountRef.current > 0 && count > prevNotifCountRef.current) {
+      // If a chat sound just fired within the last 2s, the new notification
+      // is almost certainly the chat-derived row from notifyRoomMembers —
+      // don't double-chime.
+      if (Date.now() - lastChatSoundAtRef.current > 2000) {
+        playNotification();
+      }
+    }
+    prevNotifCountRef.current = count;
+  }, [notifications, playNotification]);
+
   return (
     <div className={cn("h-screen flex overflow-hidden", isLight ? "light-app-bg" : "bg-background")}>
 
@@ -829,7 +888,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               {isLight ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
             </button>
 
-            <NotificationBell notifications={notifications || []} isLight={isLight} />
+            <NotificationBell notifications={notifications || []} isLight={isLight} muted={soundsMuted} setMuted={setSoundsMuted} />
 
             <UserMenu user={user} logout={logout} isLight={isLight} />
           </div>
