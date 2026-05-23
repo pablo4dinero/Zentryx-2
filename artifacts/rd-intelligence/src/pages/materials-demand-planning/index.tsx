@@ -2190,6 +2190,10 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
+      // produced-orders was missing here, so a fresh Produced click after a
+      // Return-to-Floor-Planning never refreshed the Production History view
+      // until a manual reload.
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/produced-orders"] });
     },
   });
 
@@ -2348,11 +2352,24 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     toast({ title: "Order unassigned", description: "The order was returned to the unassigned list." });
   };
 
+  // Track in-flight produce requests so we can disable the button while the
+  // mutation is running, on top of the planStatus check below. Prevents
+  // accidental double-clicks from creating duplicate history rows even though
+  // the backend is now idempotent.
+  const [producingIds, setProducingIds] = React.useState<Set<number>>(new Set());
+
   const handleProduce = async (assignmentId: number, orderId: number, floorId?: number) => {
+    const row = (allAssignmentsQuery.data ?? []).find(r => r.assignment.id === assignmentId);
+    // Already produced (or already being produced) — bail. The backend is
+    // idempotent now too, but this stops the wasted round-trip and the
+    // misleading "Produced" toast.
+    if (row?.assignment.planStatus === "Produced") return;
+    if (producingIds.has(assignmentId)) return;
+
+    setProducingIds(s => { const n = new Set(s); n.add(assignmentId); return n; });
     try {
       const fullOrder = mdpOrderByMdpId.get(orderId);
       const acc = planningAccountMap[fullOrder?.accountId ?? 0];
-      const row = (allAssignmentsQuery.data ?? []).find(r => r.assignment.id === assignmentId);
       const assignedVol = row?.assignment.assignedVolume != null ? Number(row.assignment.assignedVolume) : Number(fullOrder?.volume ?? 0);
       await produceAssignmentMutation.mutateAsync({
         assignmentId,
@@ -2368,6 +2385,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       toast({ title: "Produced", description: "The order has been moved to production history." });
     } catch (error: any) {
       toast({ title: "Could not produce order", description: error?.message || "Try again.", variant: "destructive" });
+    } finally {
+      setProducingIds(s => { const n = new Set(s); n.delete(assignmentId); return n; });
     }
   };
 
@@ -2747,7 +2766,28 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                   </div>
                   <div className="flex gap-1.5">
                     <button onClick={() => handleUnassign(row.assignment.id)} className={cn("flex-1 py-1 rounded-lg text-[10px] font-semibold border transition-colors", isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}>Unplan</button>
-                    <button onClick={() => handleProduce(row.assignment.id, row.order.id, floorId)} className="flex-1 py-1 rounded-lg text-[10px] font-semibold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-colors">Produced</button>
+                    {(() => {
+                      const alreadyProduced = row.assignment.planStatus === "Produced";
+                      const isPending = producingIds.has(row.assignment.id);
+                      const disabled = alreadyProduced || isPending;
+                      return (
+                        <button
+                          onClick={() => handleProduce(row.assignment.id, row.order.id, floorId)}
+                          disabled={disabled}
+                          title={alreadyProduced ? "Already produced — use Production History to revert" : undefined}
+                          className={cn(
+                            "flex-1 py-1 rounded-lg text-[10px] font-semibold border transition-colors",
+                            alreadyProduced
+                              ? "bg-emerald-500 border-emerald-500 text-white cursor-default"
+                              : isPending
+                                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400/60 cursor-wait"
+                                : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20",
+                          )}
+                        >
+                          {alreadyProduced ? "✓ Produced" : isPending ? "Producing…" : "Produced"}
+                        </button>
+                      );
+                    })()}
                   </div>
                 </div>
               );

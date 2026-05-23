@@ -487,15 +487,25 @@ router.patch("/product-switch-downtimes", requireAuth, async (req: AuthRequest, 
 router.put("/floor-assignments/:id/produce", requireAuth, async (req: AuthRequest, res) => {
   try {
     const id = Number(req.params.id);
+
+    // Idempotency: if the assignment is already produced, leave producedAt
+    // alone and just return the existing row. Stops accidental double-clicks
+    // from re-stamping a fresh timestamp on a record the user already
+    // returned to planning or already produced.
+    const [existing] = await db.select().from(mdpFloorAssignmentsTable).where(eq(mdpFloorAssignmentsTable.id, id)).limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "NotFound" });
+      return;
+    }
+    if (existing.planStatus === "Produced") {
+      res.json(existing);
+      return;
+    }
+
     const [updated] = await db.update(mdpFloorAssignmentsTable).set({
       planStatus: "Produced",
       producedAt: new Date(),
     }).where(eq(mdpFloorAssignmentsTable.id, id)).returning();
-
-    if (!updated) {
-      res.status(404).json({ error: "NotFound" });
-      return;
-    }
 
     res.json(updated);
   } catch (err) {
@@ -553,6 +563,20 @@ router.get("/produced-orders", requireAuth, async (req: AuthRequest, res) => {
 router.post("/produced-orders", requireAuth, async (req: AuthRequest, res) => {
   try {
     const body = req.body as any;
+
+    // Idempotency: a single floor assignment can only have one produced_orders
+    // row. If the user double-clicks Produced (or any client retries the POST)
+    // we return the existing row instead of inserting a duplicate.
+    if (body.floorAssignmentId) {
+      const [existing] = await db.select().from(mdpProducedOrdersTable)
+        .where(eq(mdpProducedOrdersTable.floorAssignmentId, Number(body.floorAssignmentId)))
+        .limit(1);
+      if (existing) {
+        res.status(200).json(existing);
+        return;
+      }
+    }
+
     const [created] = await db.insert(mdpProducedOrdersTable).values({
       productionOrderId: body.productionOrderId ? Number(body.productionOrderId) : null,
       floorAssignmentId: body.floorAssignmentId ? Number(body.floorAssignmentId) : null,
