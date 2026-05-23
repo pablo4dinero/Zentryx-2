@@ -639,34 +639,67 @@ export default function ChatRoom() {
             return (
               <button key={person.id}
                 onClick={() => createPrivateRoom(person.id, person.name)}
-                className={`w-[calc(100%-8px)] mx-1 flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-sm text-left transition-colors ${isActive ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-white/5 hover:text-foreground"}`}
+                className={cn(
+                  "relative w-[calc(100%-8px)] mx-1 flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-sm text-left transition-all",
+                  isActive
+                    ? isLight
+                      ? "bg-primary/10 text-primary ring-1 ring-primary/30 shadow-sm"
+                      : "bg-primary/15 text-primary ring-1 ring-primary/30 shadow-[inset_0_0_0_1px_rgba(124,77,255,0.15)]"
+                    : isLight
+                      ? "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                      : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
+                )}
               >
+                {isActive && (
+                  <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full bg-primary shadow-[0_0_8px_rgba(124,77,255,0.6)]" />
+                )}
                 <div className="relative shrink-0">
-                  <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-secondary/50 to-primary/50 flex items-center justify-center text-white text-[11px] font-bold">
+                  <div className={cn(
+                    "w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-bold transition-shadow",
+                    isActive ? "bg-gradient-to-tr from-primary to-accent shadow-md shadow-primary/30" : "bg-gradient-to-tr from-secondary/50 to-primary/50",
+                  )}>
                     {person.name.charAt(0)}
                   </div>
-                  <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-background ${person.isActive ? "bg-green-400" : "bg-slate-500"}`} />
+                  <div className={cn(
+                    "absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border",
+                    isLight ? "border-white" : "border-background",
+                    person.isActive ? "bg-green-400" : "bg-slate-500",
+                  )} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1">
-                    <span className="truncate text-sm font-medium">{person.name}</span>
+                    <span className={cn("truncate text-sm", isActive ? "font-semibold" : "font-medium")}>{person.name}</span>
                     {person.hasUnread && <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />}
                   </div>
                   {person.lastPreview ? (
-                    <p className="text-[10px] text-muted-foreground truncate">
+                    <p className={cn(
+                      "text-[10px] truncate",
+                      isActive ? "text-primary/70" : "text-muted-foreground",
+                    )}>
                       {person.lastPreviewType === "image" ? "📷 Image" : person.lastPreviewType === "voice_note" ? "🎤 Voice note" : person.lastPreview}
                     </p>
                   ) : (
-                    <p className="text-[10px] text-muted-foreground/80 truncate">
+                    <p className={cn(
+                      "text-[10px] truncate",
+                      isActive ? "text-primary/70" : "text-muted-foreground/80",
+                    )}>
                       {person.email ?? (person.role ? person.role.replace(/_/g, " ") : "Tap to message")}
                     </p>
                   )}
                 </div>
-                {person.lastMessageAt && !isNaN(new Date(person.lastMessageAt).getTime()) && (
+                {isActive ? (
+                  <span className={cn(
+                    "shrink-0 inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full border",
+                    isLight ? "bg-primary/15 border-primary/30 text-primary" : "bg-primary/20 border-primary/40 text-primary",
+                  )}>
+                    <span className="w-1 h-1 rounded-full bg-primary animate-pulse" />
+                    Active
+                  </span>
+                ) : person.lastMessageAt && !isNaN(new Date(person.lastMessageAt).getTime()) ? (
                   <span className="text-[9px] text-muted-foreground shrink-0">
                     {format(new Date(person.lastMessageAt), "h:mm a")}
                   </span>
-                )}
+                ) : null}
               </button>
             );
           })}
@@ -675,34 +708,18 @@ export default function ChatRoom() {
 
       {/* Main Chat */}
       <div className="flex-1 flex flex-col min-w-0 relative">
-        {/* Subtle animated background — fits both themes, sits behind every
-            chat panel state (active room / empty). Pointer-events-none keeps
-            it from blocking clicks. */}
+        {/* Background — soft mesh-gradient that slowly shifts, with a faint
+            dot-grid overlay for texture. Both layers are pointer-events-none
+            and stay below content. Tuned to the brand palette in each theme. */}
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div aria-hidden className={cn("absolute inset-0", isLight ? "chat-bg-mesh-light" : "chat-bg-mesh-dark")} />
+          <div aria-hidden className={cn("absolute inset-0", isLight ? "chat-bg-dots-light" : "chat-bg-dots-dark")} />
           <div
             aria-hidden
             className={cn(
-              "absolute -top-32 -left-32 w-[420px] h-[420px] rounded-full blur-3xl opacity-30 animate-chat-blob-a",
-              isLight ? "bg-violet-200/60" : "bg-primary/20",
+              "absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t",
+              isLight ? "from-white/70 to-transparent" : "from-background/60 to-transparent",
             )}
-          />
-          <div
-            aria-hidden
-            className={cn(
-              "absolute -bottom-40 right-[-80px] w-[460px] h-[460px] rounded-full blur-3xl opacity-25 animate-chat-blob-b",
-              isLight ? "bg-cyan-200/60" : "bg-cyan-500/15",
-            )}
-          />
-          <div
-            aria-hidden
-            className={cn(
-              "absolute top-1/3 left-1/2 -translate-x-1/2 w-[300px] h-[300px] rounded-full blur-3xl opacity-20 animate-chat-blob-c",
-              isLight ? "bg-emerald-100" : "bg-emerald-500/10",
-            )}
-          />
-          <div
-            aria-hidden
-            className={cn("absolute inset-0", isLight ? "bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.7),transparent_60%)]" : "bg-[radial-gradient(circle_at_top,rgba(15,16,30,0.5),transparent_60%)]")}
           />
         </div>
         <div className="relative flex-1 flex flex-col min-h-0">
