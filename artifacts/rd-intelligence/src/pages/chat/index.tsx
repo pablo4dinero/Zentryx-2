@@ -185,6 +185,8 @@ function MessageContextMenu({ msg, isOwn, isPinned, onDelete, onPin }: {
 export default function ChatRoom() {
   const api = useApi();
   const { toast } = useToast();
+  const { theme } = useTheme();
+  const isLight = theme === "light";
   const [rooms, setRooms] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [messages, setMessages] = useState<any[]>([]);
@@ -550,7 +552,10 @@ export default function ChatRoom() {
       )}
     </AnimatePresence>
 
-    <div className="flex h-[calc(100vh-10rem)] gap-0 rounded-2xl overflow-hidden glass-card border border-white/5">
+    <div className={cn(
+      "flex h-[calc(100vh-5rem)] gap-0 rounded-2xl overflow-hidden border relative",
+      isLight ? "bg-white border-slate-200" : "glass-card border-white/5",
+    )}>
       {/* Sidebar */}
       <div className="w-72 shrink-0 border-r border-white/5 flex flex-col bg-white/[0.02]">
         <div className="p-3 border-b border-white/5 flex items-center justify-between gap-2">
@@ -651,10 +656,10 @@ export default function ChatRoom() {
                     <p className="text-[10px] text-muted-foreground truncate">
                       {person.lastPreviewType === "image" ? "📷 Image" : person.lastPreviewType === "voice_note" ? "🎤 Voice note" : person.lastPreview}
                     </p>
-                  ) : person.role ? (
-                    <p className="text-[10px] text-muted-foreground/70 truncate capitalize">{person.role}</p>
                   ) : (
-                    <p className="text-[10px] text-muted-foreground">Tap to message</p>
+                    <p className="text-[10px] text-muted-foreground/80 truncate">
+                      {person.email ?? (person.role ? person.role.replace(/_/g, " ") : "Tap to message")}
+                    </p>
                   )}
                 </div>
                 {person.lastMessageAt && !isNaN(new Date(person.lastMessageAt).getTime()) && (
@@ -669,7 +674,38 @@ export default function ChatRoom() {
       </div>
 
       {/* Main Chat */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 relative">
+        {/* Subtle animated background — fits both themes, sits behind every
+            chat panel state (active room / empty). Pointer-events-none keeps
+            it from blocking clicks. */}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div
+            aria-hidden
+            className={cn(
+              "absolute -top-32 -left-32 w-[420px] h-[420px] rounded-full blur-3xl opacity-30 animate-chat-blob-a",
+              isLight ? "bg-violet-200/60" : "bg-primary/20",
+            )}
+          />
+          <div
+            aria-hidden
+            className={cn(
+              "absolute -bottom-40 right-[-80px] w-[460px] h-[460px] rounded-full blur-3xl opacity-25 animate-chat-blob-b",
+              isLight ? "bg-cyan-200/60" : "bg-cyan-500/15",
+            )}
+          />
+          <div
+            aria-hidden
+            className={cn(
+              "absolute top-1/3 left-1/2 -translate-x-1/2 w-[300px] h-[300px] rounded-full blur-3xl opacity-20 animate-chat-blob-c",
+              isLight ? "bg-emerald-100" : "bg-emerald-500/10",
+            )}
+          />
+          <div
+            aria-hidden
+            className={cn("absolute inset-0", isLight ? "bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.7),transparent_60%)]" : "bg-[radial-gradient(circle_at_top,rgba(15,16,30,0.5),transparent_60%)]")}
+          />
+        </div>
+        <div className="relative flex-1 flex flex-col min-h-0">
         {activeRoom ? (
           <>
             <div className="px-6 py-3 border-b border-white/5 flex items-center justify-between shrink-0">
@@ -749,7 +785,15 @@ export default function ChatRoom() {
                       {showName && !isOwn && (
                         <span className="text-xs text-muted-foreground font-medium">{msg.senderName}</span>
                       )}
-                      <div className={`relative group/bubble rounded-2xl px-4 py-2.5 ${isOwn ? "bg-primary text-white rounded-tr-sm" : "bg-white/8 text-foreground rounded-tl-sm"} ${pinned ? "ring-1 ring-amber-400/30" : ""}`}>
+                      <div className={cn(
+                        "relative group/bubble rounded-2xl px-4 py-2.5",
+                        isOwn
+                          ? "bg-primary !text-white rounded-tr-sm shadow-sm"
+                          : isLight
+                            ? "bg-slate-100 text-slate-900 rounded-tl-sm border border-slate-200/80"
+                            : "bg-white/8 text-foreground rounded-tl-sm",
+                        pinned && "ring-1 ring-amber-400/30",
+                      )}>
                         {pinned && <Pin className="w-3 h-3 text-amber-400 absolute -top-1 -right-1" />}
                         <MsgContent msg={msg} isOwn={isOwn} base={BASE} onImageClick={setLightboxImg} />
                       </div>
@@ -856,6 +900,7 @@ export default function ChatRoom() {
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
     </>

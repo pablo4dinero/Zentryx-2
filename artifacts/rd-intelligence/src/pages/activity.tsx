@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { formatDistanceToNow, format } from "date-fns";
-import { Activity, RefreshCw, Radio, ChevronRight, Zap, User } from "lucide-react";
+import { Activity, RefreshCw, Zap, User } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { cn } from "@/lib/utils";
+import { useTheme } from "@/lib/theme";
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -25,31 +27,60 @@ const ENTITY_COLORS: Record<string, string> = {
   account: "text-cyan-300",
 };
 
-function getActionColor(action: string) {
-  const key = Object.keys(ACTION_COLORS).find(k => action.toLowerCase().includes(k));
-  return key ? ACTION_COLORS[key] : "bg-white/10 text-muted-foreground border-white/10";
+const LIGHT_ENTITY_COLORS: Record<string, string> = {
+  project: "text-purple-700",
+  task: "text-blue-700",
+  formulation: "text-teal-700",
+  user: "text-amber-700",
+  comment: "text-rose-700",
+  business_dev: "text-emerald-700",
+  account: "text-cyan-700",
+};
+
+const LIGHT_ACTION_COLORS: Record<string, string> = {
+  created: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  updated: "bg-blue-100 text-blue-700 border-blue-200",
+  deleted: "bg-rose-100 text-rose-700 border-rose-200",
+  completed: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  assigned: "bg-purple-100 text-purple-700 border-purple-200",
+  commented: "bg-amber-100 text-amber-700 border-amber-200",
+  login: "bg-cyan-100 text-cyan-700 border-cyan-200",
+};
+
+function getActionColor(action: string, isLight: boolean) {
+  const table = isLight ? LIGHT_ACTION_COLORS : ACTION_COLORS;
+  const key = Object.keys(table).find(k => action.toLowerCase().includes(k));
+  if (key) return table[key];
+  return isLight ? "bg-slate-100 text-slate-600 border-slate-200" : "bg-white/10 text-muted-foreground border-white/10";
 }
 
-function LiveTicker({ activities }: { activities: any[] }) {
+function LiveTicker({ activities, isLight }: { activities: any[]; isLight: boolean }) {
   const latest = activities.slice(0, 10);
   const [tickerItems] = useState([...latest, ...latest]);
+  const entityColors = isLight ? LIGHT_ENTITY_COLORS : ENTITY_COLORS;
 
   return (
-    <div className="relative overflow-hidden rounded-xl border border-white/5 bg-black/20 h-9 flex items-center">
-      <div className="shrink-0 flex items-center gap-1.5 px-3 bg-gradient-to-r from-red-500/20 to-transparent border-r border-white/5 h-full pr-4">
+    <div className={cn(
+      "relative overflow-hidden rounded-xl border h-9 flex items-center",
+      isLight ? "border-slate-200 bg-white shadow-sm" : "border-white/5 bg-black/20",
+    )}>
+      <div className={cn(
+        "shrink-0 flex items-center gap-1.5 px-3 h-full pr-4 border-r",
+        isLight ? "bg-gradient-to-r from-red-100 to-transparent border-slate-200" : "bg-gradient-to-r from-red-500/20 to-transparent border-white/5",
+      )}>
         <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-        <span className="text-[10px] font-bold text-red-400 uppercase tracking-widest">Live</span>
+        <span className={cn("text-[10px] font-bold uppercase tracking-widest", isLight ? "text-red-600" : "text-red-400")}>Live</span>
       </div>
       <div className="flex-1 overflow-hidden">
         <div className="flex animate-[ticker_40s_linear_infinite] whitespace-nowrap">
           {[...tickerItems, ...tickerItems].map((a, i) => (
-            <span key={i} className="inline-flex items-center gap-1.5 text-xs text-muted-foreground px-4">
-              <span className="text-foreground font-medium">{a.user?.name || "System"}</span>
+            <span key={i} className={cn("inline-flex items-center gap-1.5 text-xs px-4", isLight ? "text-slate-500" : "text-muted-foreground")}>
+              <span className={cn("font-semibold", isLight ? "text-slate-900" : "text-foreground")}>{a.user?.name || "System"}</span>
               <span>{a.action}</span>
-              <span className={`${ENTITY_COLORS[a.entityType] || "text-muted-foreground"} capitalize font-medium`}>{a.entityType}</span>
-              <span className="text-white/20">·</span>
-              <span className="text-white/40">{formatDistanceToNow(new Date(a.createdAt), { addSuffix: true })}</span>
-              <span className="text-white/10 mx-2">|</span>
+              <span className={cn("capitalize font-semibold", entityColors[a.entityType] || (isLight ? "text-slate-600" : "text-muted-foreground"))}>{a.entityType}</span>
+              <span className={isLight ? "text-slate-300" : "text-white/20"}>·</span>
+              <span className={isLight ? "text-slate-400" : "text-white/40"}>{formatDistanceToNow(new Date(a.createdAt), { addSuffix: true })}</span>
+              <span className={cn("mx-2", isLight ? "text-slate-200" : "text-white/10")}>|</span>
             </span>
           ))}
         </div>
@@ -59,6 +90,8 @@ function LiveTicker({ activities }: { activities: any[] }) {
 }
 
 export default function ActivityFeed() {
+  const { theme } = useTheme();
+  const isLight = theme === "light";
   const [activities, setActivities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
@@ -113,21 +146,26 @@ export default function ActivityFeed() {
               <Activity className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-display font-bold text-foreground">Live Activity Feed</h1>
+              <h1 className={cn("text-2xl font-display font-bold", isLight ? "text-slate-900" : "text-foreground")}>Live Activity Feed</h1>
               <div className="flex items-center gap-2 mt-0.5">
-                <span className="flex items-center gap-1 text-xs text-emerald-400">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className={cn("flex items-center gap-1 text-xs", isLight ? "text-emerald-600" : "text-emerald-400")}>
+                  <span className={cn("w-1.5 h-1.5 rounded-full animate-pulse", isLight ? "bg-emerald-500" : "bg-emerald-400")} />
                   Live · auto-refreshes every 5s
                 </span>
-                <span className="text-white/20">·</span>
-                <span className="text-xs text-muted-foreground">Updated {formatDistanceToNow(lastUpdated, { addSuffix: true })}</span>
+                <span className={isLight ? "text-slate-300" : "text-white/20"}>·</span>
+                <span className={cn("text-xs", isLight ? "text-slate-500" : "text-muted-foreground")}>Updated {formatDistanceToNow(lastUpdated, { addSuffix: true })}</span>
               </div>
             </div>
           </div>
         </div>
         <button
           onClick={() => { setNewCount(0); fetchActivities(); }}
-          className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-muted-foreground hover:text-foreground text-sm transition-colors border border-white/5 shrink-0"
+          className={cn(
+            "flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-colors border shrink-0",
+            isLight
+              ? "bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 shadow-sm"
+              : "bg-white/5 border-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground",
+          )}
         >
           <RefreshCw className="w-3.5 h-3.5" />
           Refresh
@@ -152,12 +190,15 @@ export default function ActivityFeed() {
       </AnimatePresence>
 
       {/* Live ticker */}
-      {activities.length > 0 && <LiveTicker activities={activities} />}
+      {activities.length > 0 && <LiveTicker activities={activities} isLight={isLight} />}
 
       {/* Legend */}
       <div className="flex flex-wrap gap-2">
         {Object.entries(ENTITY_DOT).map(([type, dot]) => (
-          <span key={type} className="flex items-center gap-1.5 text-xs text-muted-foreground bg-white/5 px-2.5 py-1 rounded-full border border-white/5">
+          <span key={type} className={cn(
+            "flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border",
+            isLight ? "text-slate-600 bg-white border-slate-200" : "text-muted-foreground bg-white/5 border-white/5",
+          )}>
             <span className={`w-2 h-2 rounded-full ${dot}`} />
             {type.replace(/_/g, ' ')}
           </span>
@@ -169,20 +210,21 @@ export default function ActivityFeed() {
         <div className="flex items-center justify-center py-20">
           <div className="flex flex-col items-center gap-3">
             <RefreshCw className="w-8 h-8 text-primary animate-spin" />
-            <p className="text-muted-foreground text-sm">Loading activity feed...</p>
+            <p className={cn("text-sm", isLight ? "text-slate-500" : "text-muted-foreground")}>Loading activity feed...</p>
           </div>
         </div>
       ) : activities.length === 0 ? (
-        <div className="text-center py-16 glass-card rounded-2xl">
-          <Activity className="w-12 h-12 mx-auto text-muted-foreground opacity-20 mb-4" />
-          <p className="text-muted-foreground">No activity yet. Activity will appear here as you use Zentryx.</p>
+        <div className={cn("text-center py-16 rounded-2xl border", isLight ? "bg-white border-slate-200" : "glass-card border-white/5")}>
+          <Activity className={cn("w-12 h-12 mx-auto opacity-20 mb-4", isLight ? "text-slate-500" : "text-muted-foreground")} />
+          <p className={cn(isLight ? "text-slate-500" : "text-muted-foreground")}>No activity yet. Activity will appear here as you use Zentryx.</p>
         </div>
       ) : (
-        <div className="relative pl-8 border-l border-white/8 space-y-0 pb-10">
+        <div className={cn("relative pl-8 border-l space-y-0 pb-10", isLight ? "border-slate-200" : "border-white/8")}>
           <AnimatePresence initial={false}>
             {activities.map((activity, index) => {
               const dotColor = ENTITY_DOT[activity.entityType] || "bg-primary";
               const isNew = newCount > 0 && index < newCount;
+              const entityColors = isLight ? LIGHT_ENTITY_COLORS : ENTITY_COLORS;
               return (
                 <motion.div
                   key={activity.id}
@@ -192,11 +234,20 @@ export default function ActivityFeed() {
                   className="relative pb-6 group"
                 >
                   {/* Timeline dot */}
-                  <div className={`absolute w-3 h-3 rounded-full -left-[30px] top-3.5 ring-2 ring-background shadow-lg ${dotColor}`} />
+                  <div className={cn(
+                    "absolute w-3 h-3 rounded-full -left-[30px] top-3.5 ring-2 shadow-lg",
+                    isLight ? "ring-white" : "ring-background",
+                    dotColor,
+                  )} />
                   {/* Connector line highlight */}
                   {index === 0 && <div className="absolute w-px bg-gradient-to-b from-primary/40 to-transparent h-full -left-[24.5px] top-0" />}
 
-                  <div className={`glass-card p-4 rounded-xl border transition-all group-hover:border-white/10 ${isNew ? "border-primary/20 bg-primary/5" : "border-white/5"}`}>
+                  <div className={cn(
+                    "p-4 rounded-xl border transition-all",
+                    isLight
+                      ? cn("bg-white shadow-sm hover:shadow-md", isNew ? "border-primary/30 bg-primary/[0.04]" : "border-slate-200 hover:border-slate-300")
+                      : cn("glass-card", isNew ? "border-primary/20 bg-primary/5" : "border-white/5 group-hover:border-white/10"),
+                  )}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-start gap-3 flex-1 min-w-0">
                         {/* Avatar */}
@@ -205,27 +256,33 @@ export default function ActivityFeed() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap mb-1">
-                            <span className="font-semibold text-sm text-foreground">{activity.user?.name || "System"}</span>
-                            <span className="text-muted-foreground text-sm">{activity.action}</span>
-                            <span className={`text-xs font-mono px-2 py-0.5 rounded-full border ${getActionColor(activity.action)}`}>
+                            <span className={cn("font-semibold text-sm", isLight ? "text-slate-900" : "text-foreground")}>{activity.user?.name || "System"}</span>
+                            <span className={cn("text-sm", isLight ? "text-slate-600" : "text-muted-foreground")}>{activity.action}</span>
+                            <span className={cn("text-xs font-mono px-2 py-0.5 rounded-full border", getActionColor(activity.action, isLight))}>
                               {activity.action.split(" ")[0]}
                             </span>
-                            <span className={`text-xs font-medium capitalize ${ENTITY_COLORS[activity.entityType] || "text-muted-foreground"}`}>
+                            <span className={cn(
+                              "text-xs font-semibold capitalize",
+                              entityColors[activity.entityType] || (isLight ? "text-slate-600" : "text-muted-foreground"),
+                            )}>
                               {activity.entityType?.replace(/_/g, " ")} {activity.entityId ? `#${activity.entityId}` : ""}
                             </span>
                           </div>
                           {activity.details && (
-                            <p className="text-sm text-muted-foreground bg-black/20 px-3 py-1.5 rounded-lg border border-white/5 font-mono text-[12px] truncate">
+                            <p className={cn(
+                              "text-sm px-3 py-1.5 rounded-lg border font-mono text-[12px] truncate",
+                              isLight ? "text-slate-700 bg-slate-50 border-slate-200" : "text-muted-foreground bg-black/20 border-white/5",
+                            )}>
                               {activity.details}
                             </p>
                           )}
                         </div>
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="text-xs text-muted-foreground whitespace-nowrap">
+                        <p className={cn("text-xs whitespace-nowrap", isLight ? "text-slate-500" : "text-muted-foreground")}>
                           {formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}
                         </p>
-                        <p className="text-[10px] text-muted-foreground/50 mt-0.5 font-mono">
+                        <p className={cn("text-[10px] mt-0.5 font-mono", isLight ? "text-slate-400" : "text-muted-foreground/50")}>
                           {format(new Date(activity.createdAt), "HH:mm")}
                         </p>
                       </div>

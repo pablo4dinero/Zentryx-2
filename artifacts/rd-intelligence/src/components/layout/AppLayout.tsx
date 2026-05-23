@@ -6,7 +6,7 @@ import {
   ChevronDown, User, FlaskConical as Flask, CheckSquare, Building2,
   ArrowRight, Loader2, CalendarDays, UserCircle, TrendingUp, ClipboardList,
   PanelLeftClose, PanelLeftOpen, Lock, Unlock, ShoppingCart, Package,
-  ShieldCheck, ShieldX, Mail, Rss, Brain
+  ShieldCheck, ShieldX, Mail, Rss, Brain, CheckCheck, Check
 } from "lucide-react";
 import { useAuthStore } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
@@ -56,11 +56,22 @@ function getBlockedPaths(role: string, jobPos: string): string[] {
   return RESTRICTED_PATHS;
 }
 
+const LAST_SEEN_NOTIFS_KEY = "zentryx_last_seen_notifications";
+
 function NotificationBell({ notifications, isLight }: { notifications: any[]; isLight: boolean }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const markRead = useMarkNotificationRead();
   const unreadCount = notifications.filter(n => !n.isRead).length;
+
+  // Smart blink — only animate when there's an unread notification newer
+  // than the user's last bell-open timestamp. Persists across reloads.
+  const [lastSeen, setLastSeen] = useState<number>(() => {
+    try { return Number(localStorage.getItem(LAST_SEEN_NOTIFS_KEY) || "0"); } catch { return 0; }
+  });
+  const hasNewSinceLastOpen = notifications.some(
+    n => !n.isRead && new Date(n.createdAt).getTime() > lastSeen,
+  );
 
   useEffect(() => {
     const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
@@ -68,17 +79,36 @@ function NotificationBell({ notifications, isLight }: { notifications: any[]; is
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  const openDropdown = () => {
+    setOpen(o => {
+      if (!o) {
+        const now = Date.now();
+        setLastSeen(now);
+        try { localStorage.setItem(LAST_SEEN_NOTIFS_KEY, String(now)); } catch {}
+      }
+      return !o;
+    });
+  };
+
   const handleMark = (id: number) => markRead.mutate({ id });
+  const markAllRead = () => {
+    notifications.filter(n => !n.isRead).forEach(n => markRead.mutate({ id: n.id }));
+  };
 
   return (
     <div className="relative" ref={ref}>
       <button
-        onClick={() => setOpen(o => !o)}
+        onClick={openDropdown}
         className={cn("relative p-2 rounded-full transition-colors", isLight ? "hover:bg-slate-100 text-slate-600" : "hover:bg-white/10 text-muted-foreground hover:text-foreground")}
       >
         <Bell className="w-5 h-5" />
         {unreadCount > 0 && (
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-destructive rounded-full shadow-[0_0_8px_rgba(255,0,0,0.8)] animate-pulse" />
+          <span className={cn(
+            "absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-destructive text-[9px] font-bold text-white flex items-center justify-center shadow",
+            hasNewSinceLastOpen && "animate-pulse",
+          )}>
+            {unreadCount > 99 ? "99+" : unreadCount}
+          </span>
         )}
       </button>
 
@@ -90,52 +120,93 @@ function NotificationBell({ notifications, isLight }: { notifications: any[]; is
             exit={{ opacity: 0, scale: 0.95, y: -8 }}
             transition={{ duration: 0.15 }}
             className={cn(
-              "absolute right-0 top-full mt-2 w-80 rounded-2xl border z-50 overflow-hidden",
+              "absolute right-0 top-full mt-2 w-[360px] max-w-[92vw] rounded-2xl border z-50 overflow-hidden",
               isLight
-                ? "border-white/50 shadow-[0_16px_48px_rgba(0,0,0,0.10),inset_0_1px_0_rgba(255,255,255,0.9)]"
+                ? "bg-white border-slate-200 shadow-[0_20px_50px_rgba(15,23,42,0.18)]"
                 : "glass-panel border-white/10 shadow-2xl",
-              isLight && "backdrop-blur-2xl saturate-200"
             )}
-            style={isLight ? { background: "rgba(255,255,255,0.82)" } : undefined}
           >
-            <div className={cn("px-4 py-3 border-b flex items-center justify-between", isLight ? "border-slate-100" : "border-white/5")}>
-              <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+            <div className={cn(
+              "px-4 py-3 border-b flex items-center justify-between gap-3",
+              isLight ? "border-slate-100 bg-slate-50/80" : "border-white/5",
+            )}>
+              <p className={cn(
+                "text-sm font-semibold flex items-center gap-2",
+                isLight ? "text-slate-900" : "text-foreground",
+              )}>
                 <Bell className="w-4 h-4 text-primary" /> Notifications
                 {unreadCount > 0 && (
                   <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-destructive text-white font-bold">{unreadCount}</span>
                 )}
               </p>
-              <Link href="/notifications" onClick={() => setOpen(false)}
-                className="text-xs text-primary hover:underline">View all</Link>
+              <div className="flex items-center gap-3">
+                {unreadCount > 0 && (
+                  <button
+                    onClick={markAllRead}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:text-primary/80 transition-colors"
+                    title="Mark all as read"
+                  >
+                    <CheckCheck className="w-3.5 h-3.5" />
+                    Mark all
+                  </button>
+                )}
+                <Link href="/notifications" onClick={() => setOpen(false)}
+                  className="text-xs font-medium text-primary hover:underline">View all</Link>
+              </div>
             </div>
-            <div className="max-h-72 overflow-y-auto custom-scrollbar">
+            <div className="max-h-80 overflow-y-auto custom-scrollbar">
               {notifications.length === 0 ? (
-                <div className="py-8 text-center text-muted-foreground text-sm">
+                <div className={cn("py-10 text-center text-sm", isLight ? "text-slate-500" : "text-muted-foreground")}>
                   <Bell className="w-6 h-6 mx-auto mb-2 opacity-30" />
                   No notifications yet
                 </div>
-              ) : notifications.slice(0, 8).map((n: any) => (
-                <button
+              ) : notifications.slice(0, 12).map((n: any) => (
+                <div
                   key={n.id}
-                  onClick={() => { handleMark(n.id); setOpen(false); }}
                   className={cn(
-                    "w-full text-left px-4 py-3 border-b last:border-0 transition-colors",
-                    isLight ? "border-slate-50 hover:bg-slate-50" : "border-white/5 hover:bg-white/5",
-                    !n.isRead && (isLight ? "bg-primary/5" : "bg-primary/10")
+                    "group flex items-start gap-3 px-4 py-3 border-b last:border-0 transition-colors",
+                    isLight ? "border-slate-100 hover:bg-slate-50" : "border-white/5 hover:bg-white/5",
+                    !n.isRead && (isLight ? "bg-primary/[0.06]" : "bg-primary/10"),
                   )}
                 >
-                  <div className="flex items-start gap-2.5">
-                    {!n.isRead && <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />}
-                    <div className={cn("flex-1 min-w-0", n.isRead && "pl-4")}>
-                      <p className="text-xs font-medium text-foreground leading-snug line-clamp-2">{n.message}</p>
-                      {n.createdAt && (
-                        <p className="text-[10px] text-muted-foreground mt-1">
-                          {new Date(n.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-                        </p>
-                      )}
-                    </div>
+                  <span className={cn(
+                    "mt-1.5 w-2 h-2 rounded-full shrink-0",
+                    n.isRead ? (isLight ? "bg-slate-300" : "bg-white/15") : "bg-primary shadow-[0_0_6px_rgba(124,77,255,0.6)]",
+                  )} />
+                  <div className="flex-1 min-w-0">
+                    {n.title && (
+                      <p className={cn(
+                        "text-xs font-semibold leading-snug line-clamp-1 mb-0.5",
+                        isLight ? "text-slate-900" : "text-foreground",
+                      )}>
+                        {n.title}
+                      </p>
+                    )}
+                    <p className={cn(
+                      "text-xs leading-snug line-clamp-2",
+                      isLight ? (n.isRead ? "text-slate-500" : "text-slate-700") : (n.isRead ? "text-muted-foreground" : "text-foreground/90"),
+                    )}>
+                      {n.message}
+                    </p>
+                    {n.createdAt && (
+                      <p className={cn("text-[10px] mt-1", isLight ? "text-slate-400" : "text-muted-foreground")}>
+                        {new Date(n.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                    )}
                   </div>
-                </button>
+                  {!n.isRead && (
+                    <button
+                      onClick={() => handleMark(n.id)}
+                      className={cn(
+                        "shrink-0 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all",
+                        isLight ? "hover:bg-emerald-100 text-slate-400 hover:text-emerald-600" : "hover:bg-emerald-500/10 text-muted-foreground hover:text-emerald-400",
+                      )}
+                      title="Mark as read"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
           </motion.div>
@@ -458,10 +529,25 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     });
   };
 
+  // Smart blink for chat icon — only animate when a NEW message has arrived
+  // since the user's last /chat visit. Persist via localStorage.
+  const CHAT_LAST_SEEN_KEY = "zentryx_chat_last_seen";
+  const NEW_MSG_DISMISS_KEY = "zentryx_new_msg_dismissed";
+  const [chatHasNew, setChatHasNew] = useState(false);
+  // Popup overlay shown when a new message arrives off-/chat. Content of the
+  // message is never shown — only the sender name, plus Open / Dismiss.
+  const [newMsgPopup, setNewMsgPopup] = useState<{
+    fromName: string;
+    roomId: number;
+    messageAt: number;
+  } | null>(null);
   useEffect(() => {
     if (location === "/chat") {
       setChatUnread(false);
       setChatUnreadCount(0);
+      setChatHasNew(false);
+      setNewMsgPopup(null);
+      try { localStorage.setItem(CHAT_LAST_SEEN_KEY, String(Date.now())); } catch {}
       return;
     }
     const checkUnread = async () => {
@@ -470,15 +556,43 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         if (!res.ok) return;
         const rooms = await res.json();
         if (!Array.isArray(rooms)) return;
-        const count = rooms.filter((r: any) => r.hasUnread).length;
-        setChatUnread(count > 0);
-        setChatUnreadCount(count);
+        const unreadRooms = rooms.filter((r: any) => r.hasUnread);
+        setChatUnread(unreadRooms.length > 0);
+        setChatUnreadCount(unreadRooms.length);
+        // "New" means: an unread room whose last message was sent after the
+        // user's last /chat visit. Without that gate the icon blinks forever
+        // any time there's any unread DM in any room.
+        let lastSeen = 0;
+        try { lastSeen = Number(localStorage.getItem(CHAT_LAST_SEEN_KEY) || "0"); } catch {}
+        let lastDismissed = 0;
+        try { lastDismissed = Number(localStorage.getItem(NEW_MSG_DISMISS_KEY) || "0"); } catch {}
+        const newMessages = unreadRooms.filter((r: any) => new Date(r.lastMessageAt ?? 0).getTime() > lastSeen);
+        setChatHasNew(newMessages.length > 0);
+        // Pop the most recent un-dismissed new-message overlay.
+        const candidates = newMessages
+          .filter((r: any) => new Date(r.lastMessageAt ?? 0).getTime() > lastDismissed)
+          .sort((a: any, b: any) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
+        const top = candidates[0];
+        if (top) {
+          setNewMsgPopup({
+            fromName: top.lastMessageSender || top.name || "a teammate",
+            roomId: top.id,
+            messageAt: new Date(top.lastMessageAt).getTime(),
+          });
+        }
       } catch { /* silent */ }
     };
     checkUnread();
     const interval = setInterval(checkUnread, 8000);
     return () => clearInterval(interval);
   }, [location]);
+
+  const dismissNewMsgPopup = () => {
+    if (newMsgPopup) {
+      try { localStorage.setItem(NEW_MSG_DISMISS_KEY, String(newMsgPopup.messageAt)); } catch {}
+    }
+    setNewMsgPopup(null);
+  };
 
   return (
     <div className={cn("h-screen flex overflow-hidden", isLight ? "light-app-bg" : "bg-background")}>
@@ -550,6 +664,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             {navItems.map((item) => {
               const isActive = location === item.href || (item.href !== "/" && location.startsWith(item.href));
               const isChatWithUnread = item.href === "/chat" && chatUnread && !isActive;
+              const isChatBlinking = isChatWithUnread && chatHasNew;
 
               const navLink = (
                 <Link
@@ -570,14 +685,20 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                       isActive ? (isLight ? "text-white" : "text-primary") : ""
                     )} />
                     {isChatWithUnread && (
-                      <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full shadow-[0_0_6px_rgba(239,68,68,0.8)] animate-pulse" />
+                      <span className={cn(
+                        "absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full shadow-[0_0_6px_rgba(239,68,68,0.8)]",
+                        isChatBlinking && "animate-pulse",
+                      )} />
                     )}
                   </div>
                   {!isCollapsed && (
                     <>
                       <span className="truncate">{item.label}</span>
                       {isChatWithUnread && (
-                        <span className="ml-auto text-[9px] font-bold text-red-400 bg-red-500/15 rounded-full px-2 py-0.5 leading-none animate-pulse uppercase tracking-wide">New</span>
+                        <span className={cn(
+                          "ml-auto text-[9px] font-bold text-red-400 bg-red-500/15 rounded-full px-2 py-0.5 leading-none uppercase tracking-wide",
+                          isChatBlinking && "animate-pulse",
+                        )}>New</span>
                       )}
                     </>
                   )}
@@ -692,8 +813,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        {/* Scrollable Content — ONLY this div scrolls */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-4 sm:p-6 lg:p-8 relative">
+        {/* Scrollable Content — ONLY this div scrolls. Chat takes full width
+            with minimal padding; every other route keeps the centred reading
+            column. */}
+        <div className={cn(
+          "flex-1 overflow-y-auto custom-scrollbar relative",
+          location === "/chat" ? "p-1.5" : "p-4 sm:p-6 lg:p-8",
+        )}>
           <AnimatePresence mode="wait">
             <motion.div
               key={location}
@@ -701,7 +827,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
-              className="max-w-7xl mx-auto"
+              className={cn(
+                location === "/chat" ? "w-full h-full" : "max-w-7xl mx-auto",
+              )}
             >
               {children}
             </motion.div>
@@ -716,6 +844,60 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           onClick={() => setIsMobileMenuOpen(false)}
         />
       )}
+
+      {/* ─── New Chat Message Overlay ────────────────────────────── */}
+      <AnimatePresence>
+        {newMsgPopup && (
+          <motion.div
+            initial={{ opacity: 0, y: -16, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -16, scale: 0.96 }}
+            transition={{ duration: 0.18 }}
+            className="fixed top-20 right-6 z-[200] w-[320px] max-w-[92vw]"
+          >
+            <div className={cn(
+              "rounded-2xl shadow-2xl border overflow-hidden",
+              isLight ? "bg-white border-slate-200" : "bg-[#1a1a2e] border-white/10",
+            )}>
+              <div className={cn("px-4 py-3 flex items-center gap-2 border-b", isLight ? "border-slate-100 bg-slate-50" : "border-white/10 bg-white/5")}>
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow">
+                  <MessageSquare className="w-4 h-4 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={cn("text-xs font-bold uppercase tracking-wider", isLight ? "text-primary" : "text-primary")}>New message</p>
+                  <p className={cn("text-[10px]", isLight ? "text-slate-500" : "text-muted-foreground")}>From {newMsgPopup.fromName}</p>
+                </div>
+              </div>
+              <div className="px-4 py-3">
+                <p className={cn("text-sm leading-snug", isLight ? "text-slate-800" : "text-foreground")}>
+                  You have one new message from <span className="font-semibold">{newMsgPopup.fromName}</span>.
+                </p>
+                <p className={cn("text-[10px] mt-1", isLight ? "text-slate-400" : "text-muted-foreground")}>
+                  Open to see the message — content is hidden until you do.
+                </p>
+              </div>
+              <div className={cn("px-3 py-3 flex gap-2 border-t", isLight ? "border-slate-100 bg-slate-50/60" : "border-white/10 bg-white/[0.02]")}>
+                <button
+                  onClick={dismissNewMsgPopup}
+                  className={cn(
+                    "flex-1 py-2 rounded-xl text-xs font-semibold transition-colors",
+                    isLight ? "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50" : "bg-white/5 border border-white/10 text-muted-foreground hover:bg-white/10",
+                  )}
+                >
+                  Dismiss
+                </button>
+                <Link
+                  href="/chat"
+                  onClick={() => setNewMsgPopup(null)}
+                  className="flex-1 inline-flex items-center justify-center py-2 rounded-xl text-xs font-semibold bg-primary text-white hover:bg-primary/90 transition-colors"
+                >
+                  Open
+                </Link>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ─── Admin Access Request Popup ──────────────────────────── */}
       {isPrivileged && accessRequests.length > 0 && (

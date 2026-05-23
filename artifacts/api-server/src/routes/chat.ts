@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { chatRoomsTable, chatRoomMembersTable, chatMessagesTable, chatReadReceiptsTable, usersTable } from "@workspace/db";
+import { chatRoomsTable, chatRoomMembersTable, chatMessagesTable, chatReadReceiptsTable, usersTable, notificationsTable } from "@workspace/db";
 import { eq, and, inArray, desc, sql, ne } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../lib/auth";
 import { SUPERADMIN_EMAIL } from "./auth";
@@ -28,6 +28,35 @@ const MSG_SELECT = {
   senderName: usersTable.name,
   senderRole: usersTable.role,
 };
+
+// Helper: when a message is posted, drop a single "new message" notification
+// row in front of every other member of the room. The notification deliberately
+// doesn't include the message content — only the sender name and a hint to
+// open the chat. The frontend notification panel surfaces these alongside any
+// other system events.
+async function notifyRoomMembers(opts: { roomId: number; senderId: number; senderName: string | null; isGroup: boolean; roomName: string }) {
+  try {
+    const members = await db.select({ userId: chatRoomMembersTable.userId })
+      .from(chatRoomMembersTable)
+      .where(eq(chatRoomMembersTable.roomId, opts.roomId));
+    const others = members.map(m => m.userId).filter(id => id !== opts.senderId);
+    if (others.length === 0) return;
+    const from = opts.senderName ?? "a teammate";
+    const title = opts.isGroup ? `New message in #${opts.roomName}` : `New message from ${from}`;
+    const message = opts.isGroup
+      ? `${from} sent a message in #${opts.roomName}. Open the chat to read it.`
+      : `${from} sent you a new message. Open the chat to read it.`;
+    await db.insert(notificationsTable).values(others.map(userId => ({
+      userId,
+      type: "update" as const,
+      title,
+      message,
+      isRead: false,
+    })));
+  } catch (err) {
+    console.error("[chat] notifyRoomMembers failed", err);
+  }
+}
 
 // Helper: update read receipt for user in room
 async function markRead(userId: number, roomId: number, messageId: number) {
@@ -212,6 +241,17 @@ router.post("/rooms/:roomId/messages", requireAuth, async (req: AuthRequest, res
       .where(eq(chatMessagesTable.id, msg.id));
     // Auto-mark sender as read
     await markRead(req.user!.userId, roomId, msg.id).catch(() => {});
+    // Drop a notification for every other room member (no message body)
+    const [room] = await db.select().from(chatRoomsTable).where(eq(chatRoomsTable.id, roomId)).limit(1);
+    if (room) {
+      await notifyRoomMembers({
+        roomId,
+        senderId: req.user!.userId,
+        senderName: withSender?.senderName ?? null,
+        isGroup: !!room.isGroup,
+        roomName: room.name ?? "",
+      });
+    }
     res.status(201).json({ ...withSender, seenBy: [] });
   } catch (err) { console.error(err); res.status(500).json({ error: "InternalServerError" }); }
 });
@@ -257,6 +297,16 @@ router.post("/rooms/:roomId/upload", requireAuth, (req: AuthRequest, res, next) 
       .leftJoin(usersTable, eq(chatMessagesTable.senderId, usersTable.id))
       .where(eq(chatMessagesTable.id, msg.id));
     await markRead(req.user!.userId, roomId, msg.id).catch(() => {});
+    const [room] = await db.select().from(chatRoomsTable).where(eq(chatRoomsTable.id, roomId)).limit(1);
+    if (room) {
+      await notifyRoomMembers({
+        roomId,
+        senderId: req.user!.userId,
+        senderName: withSender?.senderName ?? null,
+        isGroup: !!room.isGroup,
+        roomName: room.name ?? "",
+      });
+    }
     res.status(201).json({ ...withSender, seenBy: [] });
   } catch (err) { console.error(err); res.status(500).json({ error: "InternalServerError" }); }
 });

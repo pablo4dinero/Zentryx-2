@@ -569,3 +569,24 @@
 .light [class*="border-t"] {
   border-color: rgba(226, 232, 240, 0.7);
 }
+
+/* ─────────────────────────────────────────────
+   CHAT BACKGROUND BLOBS — slow drifting orbs
+   ───────────────────────────────────────────── */
+@keyframes chat-blob-a {
+  0%, 100% { transform: translate(0px, 0px) scale(1); }
+  33%      { transform: translate(40px, 60px) scale(1.08); }
+  66%      { transform: translate(-30px, 30px) scale(0.95); }
+}
+@keyframes chat-blob-b {
+  0%, 100% { transform: translate(0px, 0px) scale(1); }
+  33%      { transform: translate(-50px, -30px) scale(0.95); }
+  66%      { transform: translate(20px, -60px) scale(1.1); }
+}
+@keyframes chat-blob-c {
+  0%, 100% { transform: translate(-50%, 0px) scale(1); }
+  50%      { transform: translate(-50%, 40px) scale(1.06); }
+}
+.animate-chat-blob-a { animation: chat-blob-a 22s ease-in-out infinite; }
+.animate-chat-blob-b { animation: chat-blob-b 26s ease-in-out infinite; }
+.animate-chat-blob-c { animation: chat-blob-c 18s ease-in-out infinite; }
