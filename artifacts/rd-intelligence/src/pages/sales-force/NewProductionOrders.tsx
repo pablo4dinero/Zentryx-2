@@ -1,8 +1,10 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Search, Download, Trash2, Maximize2, Minimize2, Edit3, X } from "lucide-react";
+import { Plus, Search, Download, Trash2, Maximize2, Minimize2, Edit3, X, Calendar, ChevronDown, Pencil } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { cn } from "@/lib/utils";
+import { useTheme } from "@/lib/theme";
+import { useExchangeRate } from "@/hooks/useExchangeRate";
 import * as XLSX from "xlsx";
 
 const BASE = import.meta.env.BASE_URL;
@@ -69,6 +71,24 @@ function parseDMY(date: string | null | undefined): Date | null {
   return isNaN(parsed.getTime()) ? null : parsed;
 }
 
+// Convert between the existing dd/mm/yyyy storage format and the ISO
+// yyyy-mm-dd shape that <input type="date"> expects, so we can adopt the
+// native calendar picker without touching the backend contract.
+function dmyToIso(dmy: string | null | undefined): string {
+  if (!dmy) return "";
+  const parts = dmy.split("/");
+  if (parts.length !== 3) return "";
+  const [d, m, y] = parts;
+  if (!d || !m || !y) return "";
+  return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+}
+function isoToDmy(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return "";
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
 function isTodayDate(date: string | null | undefined): boolean {
   const parsed = parseDMY(date);
   if (!parsed) return false;
@@ -94,6 +114,125 @@ function filterByPeriod(orders: TodayOrder[], period: string): TodayOrder[] {
 }
 
 const inputClass = "w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground";
+
+// Searchable account dropdown. Uses the same input styling as the rest of the
+// form, plus a panel that filters accounts by company OR product name.
+// Click-outside dismisses; Enter on the first match selects it.
+function AccountSearchSelect({
+  value, onChange, accounts, isLoading, isLight,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  accounts: Account[];
+  isLoading: boolean;
+  isLight: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const selectedAccount = accounts.find(a => String(a.id) === String(value));
+  const filtered = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    if (!term) return accounts;
+    return accounts.filter(a =>
+      a.company.toLowerCase().includes(term)
+      || (a.productName ?? "").toLowerCase().includes(term),
+    );
+  }, [accounts, query]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        disabled={isLoading}
+        className={cn(
+          "flex h-10 w-full items-center justify-between rounded-xl border px-3 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary/50",
+          isLight
+            ? "border-slate-200 bg-white text-slate-900 hover:border-slate-300"
+            : "border-white/10 bg-black/20 text-foreground hover:border-white/20",
+          isLoading && "opacity-50 cursor-not-allowed",
+        )}
+      >
+        <span className={cn(
+          "truncate text-left",
+          !selectedAccount && (isLight ? "text-slate-400" : "text-muted-foreground"),
+        )}>
+          {selectedAccount
+            ? `${selectedAccount.company} — ${selectedAccount.productName}`
+            : "Select account"}
+        </span>
+        <ChevronDown className={cn("w-4 h-4 shrink-0 ml-2 transition-transform", open && "rotate-180", isLight ? "text-slate-500" : "opacity-60")} />
+      </button>
+
+      {open && (
+        <div className={cn(
+          "absolute top-[calc(100%+4px)] left-0 right-0 z-50 rounded-xl border shadow-xl overflow-hidden",
+          isLight ? "bg-white border-slate-200" : "bg-card border-white/10",
+        )}>
+          <div className={cn("p-2 border-b", isLight ? "border-slate-100" : "border-white/10")}>
+            <div className={cn(
+              "flex items-center gap-2 rounded-lg border px-2 py-1.5",
+              isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5",
+            )}>
+              <Search className={cn("w-3.5 h-3.5", isLight ? "text-slate-500" : "text-muted-foreground")} />
+              <input
+                autoFocus
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="Search account or product…"
+                className={cn(
+                  "flex-1 bg-transparent text-xs focus:outline-none placeholder:text-muted-foreground",
+                  isLight ? "text-slate-900" : "text-foreground",
+                )}
+                onKeyDown={e => {
+                  if (e.key === "Enter" && filtered[0]) {
+                    onChange(String(filtered[0].id));
+                    setOpen(false);
+                    setQuery("");
+                  }
+                  if (e.key === "Escape") setOpen(false);
+                }}
+              />
+            </div>
+          </div>
+          <div className="max-h-56 overflow-y-auto">
+            {filtered.length === 0 ? (
+              <p className={cn("px-3 py-4 text-center text-xs italic", isLight ? "text-slate-500" : "text-muted-foreground")}>
+                No accounts match
+              </p>
+            ) : filtered.map(a => (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => { onChange(String(a.id)); setOpen(false); setQuery(""); }}
+                className={cn(
+                  "w-full text-left px-3 py-2 text-xs transition-colors",
+                  String(a.id) === value
+                    ? (isLight ? "bg-primary/10 text-primary font-semibold" : "bg-primary/15 text-primary font-semibold")
+                    : (isLight ? "hover:bg-slate-50 text-slate-700" : "hover:bg-white/5 text-foreground"),
+                )}
+              >
+                <span className="font-medium">{a.company}</span>
+                {a.productName && <span className={cn("ml-1.5", isLight ? "text-slate-500" : "text-muted-foreground")}>· {a.productName}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function ChartTooltip({ active, payload }: any) {
   if (!active || !payload?.length) return null;
@@ -265,16 +404,22 @@ function LeadingProductTypeChart({
 
 export default function NewProductionOrdersPage() {
   const queryClient = useQueryClient();
+  const { theme } = useTheme();
+  const isLight = theme === "light";
+  const exchange = useExchangeRate();
   const [viewMode, setViewMode] = useState<ViewMode>("weekly");
   const [search, setSearch] = useState("");
-  const [showForm, setShowForm] = useState(false);
+  // Form is visible by default — clicking Cancel hides it, Add Today Order or
+  // Cancel both reset/close.
+  const [showForm, setShowForm] = useState(true);
   const [form, setForm] = useState({
     accountId: "",
     price: "",
     volume: "",
     expectedDeliveryDate: "",
-    dateDelivered: "",
   });
+  const [ngnRateOpen, setNgnRateOpen] = useState(false);
+  const [ngnRateDraft, setNgnRateDraft] = useState("");
 
   const { data: accounts = [], isLoading: accountsLoading } = useQuery<Account[]>({
     queryKey: ["/api/accounts"],
@@ -307,8 +452,7 @@ export default function NewProductionOrdersPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/production-orders"] });
-      setForm({ accountId: "", price: "", volume: "", expectedDeliveryDate: "", dateDelivered: "" });
-      setShowForm(false);
+      setForm({ accountId: "", price: "", volume: "", expectedDeliveryDate: "" });
     },
   });
 
@@ -431,7 +575,6 @@ export default function NewProductionOrdersPage() {
       volume: form.volume,
       dateOrdered: todayDMY(),
       expectedDeliveryDate: form.expectedDeliveryDate || null,
-      dateDelivered: form.dateDelivered || null,
     });
   };
 
@@ -498,19 +641,20 @@ export default function NewProductionOrdersPage() {
           </div>
 
           {showForm && (
-            <div className="space-y-4 mb-4 border border-white/10 rounded-xl p-4 bg-white/5">
+            <div className={cn(
+              "space-y-4 mb-4 border rounded-xl p-4",
+              isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5",
+            )}>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-medium text-muted-foreground mb-2 block">Account</label>
-                  <select
+                  <AccountSearchSelect
                     value={form.accountId}
-                    onChange={e => setForm(f => ({ ...f, accountId: e.target.value }))}
-                    className={cn(inputClass, accountsLoading ? "opacity-50 cursor-not-allowed" : "")}
-                    disabled={accountsLoading}
-                  >
-                    <option value="">Select account</option>
-                    {accountOptions}
-                  </select>
+                    onChange={v => setForm(f => ({ ...f, accountId: v }))}
+                    accounts={accounts}
+                    isLoading={accountsLoading}
+                    isLight={isLight}
+                  />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-muted-foreground mb-2 block">Price ($/kg)</label>
@@ -534,25 +678,21 @@ export default function NewProductionOrdersPage() {
                 </div>
                 <div>
                   <label className="text-xs font-medium text-muted-foreground mb-2 block">Expected Delivery</label>
-                  <input
-                    value={form.expectedDeliveryDate}
-                    onChange={e => setForm(f => ({ ...f, expectedDeliveryDate: e.target.value }))}
-                    type="text" className={inputClass} placeholder="dd/mm/yyyy"
-                  />
+                  <div className="relative">
+                    <input
+                      type="date"
+                      value={dmyToIso(form.expectedDeliveryDate)}
+                      onChange={e => setForm(f => ({ ...f, expectedDeliveryDate: isoToDmy(e.target.value) }))}
+                      className={cn(inputClass, "pr-10 [color-scheme:light] dark:[color-scheme:dark]")}
+                    />
+                    <Calendar className={cn("pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4", isLight ? "text-slate-400" : "text-muted-foreground")} />
+                  </div>
                 </div>
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-medium text-muted-foreground mb-2 block">Date Ordered</label>
                   <input value={todayDMY()} disabled className={cn(inputClass, "bg-white/5 cursor-not-allowed")} />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-2 block">Date Delivered</label>
-                  <input
-                    value={form.dateDelivered}
-                    onChange={e => setForm(f => ({ ...f, dateDelivered: e.target.value }))}
-                    type="text" className={inputClass} placeholder="dd/mm/yyyy"
-                  />
                 </div>
               </div>
               <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
@@ -576,11 +716,105 @@ export default function NewProductionOrdersPage() {
               <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Orders</p>
               <p className="mt-2 text-2xl font-bold text-foreground">{filteredOrders.length}</p>
             </div>
-            <div className="glass-card rounded-2xl p-4 border border-white/5">
-              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Total Income</p>
+            <div className="glass-card rounded-2xl p-4 border border-white/5 relative">
+              <div className="flex items-center justify-between">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Total Income</p>
+                <button
+                  type="button"
+                  onClick={() => { setNgnRateDraft(exchange.ngnRate != null ? String(exchange.ngnRate) : ""); setNgnRateOpen(o => !o); }}
+                  title="Set Naira rate"
+                  className={cn(
+                    "p-1 rounded-md transition-colors",
+                    isLight ? "text-slate-400 hover:text-slate-700 hover:bg-slate-100" : "text-muted-foreground hover:text-foreground hover:bg-white/10",
+                  )}
+                >
+                  <Pencil className="w-3 h-3" />
+                </button>
+              </div>
               <p className="mt-2 text-2xl font-bold text-foreground">
                 ${totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
+              <p className={cn(
+                "mt-1 text-xs",
+                exchange.ngnRate ? (isLight ? "text-emerald-600" : "text-emerald-400") : "text-muted-foreground italic",
+              )}>
+                {exchange.ngnRate
+                  ? `≈ ${exchange.fmtNGN(totalIncome)}`
+                  : "Set Naira rate to convert"}
+              </p>
+              {exchange.ngnRate && (
+                <p className="mt-0.5 text-[10px] text-muted-foreground">
+                  ₦{exchange.ngnRate.toLocaleString("en-NG", { maximumFractionDigits: 2 })}/USD
+                  {exchange.fetchedAt && ` · ${exchange.getLastUpdated()}`}
+                </p>
+              )}
+
+              {ngnRateOpen && (
+                <div className={cn(
+                  "absolute top-full right-0 mt-2 z-50 w-72 rounded-xl border p-3 shadow-xl",
+                  isLight ? "bg-white border-slate-200" : "bg-card border-white/10",
+                )}>
+                  <p className={cn("text-xs font-semibold mb-2", isLight ? "text-slate-900" : "text-foreground")}>
+                    Naira exchange rate
+                  </p>
+                  <p className={cn("text-[10px] mb-3", isLight ? "text-slate-500" : "text-muted-foreground")}>
+                    Override the auto-fetched rate. Leave blank to use the live rate.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">₦</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={ngnRateDraft}
+                      onChange={e => setNgnRateDraft(e.target.value)}
+                      placeholder="e.g. 1650.50"
+                      className={cn(
+                        "flex-1 h-8 rounded-lg border px-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary/50",
+                        isLight ? "border-slate-200 bg-white text-slate-900" : "border-white/10 bg-black/20 text-foreground",
+                      )}
+                    />
+                    <span className="text-xs text-muted-foreground">/ USD</span>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { exchange.setManualNGN(null); setNgnRateOpen(false); }}
+                      className={cn(
+                        "text-[10px] underline",
+                        isLight ? "text-slate-500 hover:text-slate-700" : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      Reset to live rate
+                    </button>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setNgnRateOpen(false)}
+                        className={cn(
+                          "px-2.5 py-1 rounded-md text-xs border",
+                          isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5",
+                        )}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const v = Number(ngnRateDraft);
+                          if (Number.isFinite(v) && v > 0) {
+                            exchange.setManualNGN(v);
+                            setNgnRateOpen(false);
+                          }
+                        }}
+                        className="px-2.5 py-1 rounded-md text-xs font-semibold bg-primary text-white hover:bg-primary/90"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="glass-card rounded-2xl p-4 border border-white/5">
               <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Date</p>
