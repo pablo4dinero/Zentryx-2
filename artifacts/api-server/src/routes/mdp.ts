@@ -9,6 +9,7 @@ import {
   mdpFloorDayStatusesTable,
   mdpProductSwitchDowntimesTable,
   accountProductionOrdersTable,
+  accountsTable,
   notificationsTable,
   usersTable,
 } from "@workspace/db";
@@ -385,13 +386,36 @@ router.post("/floor-assignments", requireAuth, async (req: AuthRequest, res) => 
     }).returning();
 
     if (created && floorId && weekLabel && assignedDay) {
-      const siblings = await db.select({ id: mdpFloorAssignmentsTable.id }).from(mdpFloorAssignmentsTable)
+      // Only auto-create a 60-min product-switch downtime when the new
+      // assignment's product type actually differs from what's already on
+      // this (floor, week, day) cell. Walking the chain
+      //   mdp_floor_assignments → mdp_production_orders (sales_order_id)
+      //   → account_production_orders → accounts (product_type)
+      // is the only place that stores productType in this app.
+      const cellAssignments = await db
+        .select({
+          id: mdpFloorAssignmentsTable.id,
+          productType: accountsTable.productType,
+        })
+        .from(mdpFloorAssignmentsTable)
+        .innerJoin(mdpProductionOrdersTable, eq(mdpFloorAssignmentsTable.productionOrderId, mdpProductionOrdersTable.id))
+        .innerJoin(accountProductionOrdersTable, eq(mdpProductionOrdersTable.salesOrderId, accountProductionOrdersTable.id))
+        .innerJoin(accountsTable, eq(accountProductionOrdersTable.accountId, accountsTable.id))
         .where(and(
           eq(mdpFloorAssignmentsTable.floorId, floorId),
           eq(mdpFloorAssignmentsTable.weekLabel, weekLabel),
           eq(mdpFloorAssignmentsTable.assignedDay, assignedDay),
         ));
-      if (siblings.length > 1) {
+      const normalise = (s: string | null) =>
+        String(s ?? "").trim().toLowerCase().replace(/[\s&_\-/]+/g, "_");
+      const newRow = cellAssignments.find(r => r.id === created.id);
+      const newType = normalise(newRow?.productType ?? null);
+      const otherTypes = cellAssignments
+        .filter(r => r.id !== created.id)
+        .map(r => normalise(r.productType))
+        .filter(t => t.length > 0);
+      const isDifferent = otherTypes.length > 0 && otherTypes.some(t => t !== newType);
+      if (isDifferent) {
         await db.insert(mdpProductSwitchDowntimesTable)
           .values({ afterAssignmentId: created.id, minutes: 60 })
           .onConflictDoNothing();

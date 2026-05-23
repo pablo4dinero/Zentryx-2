@@ -15,6 +15,7 @@ export type BlendSpeed = { id: string; label: string; timeTakenMinutes: number }
 export type Floor = {
   id: number;
   floorName: string;
+  blendCategory: string;        // "Sweet" | "Savory" | "Sweet/Savory" | "Savory/Sweet"
   maxCapacityKg: number;
   allowedProductTypes?: string[] | null;
 };
@@ -145,13 +146,29 @@ function microbialBufferDays(microbial: string): number {
   return 0;
 }
 
-// Floor eligibility for an order's product type. Empty list = unrestricted.
+// Floor eligibility:
+//   1. If the floor has an explicit allowedProductTypes list, that wins —
+//      strict include match.
+//   2. If no list is configured, fall back to blendCategory rules
+//      (Sweet floors reject Savory products and vice-versa) so a Sweet floor
+//      doesn't silently accept Seasoning just because nobody filled the list.
+//   3. Mixed categories ("Sweet/Savory", "Savory/Sweet") and unknown values
+//      accept anything in the fallback.
 function isFloorEligible(floor: Floor, orderProductType: string | null): boolean {
   const allowed = floor.allowedProductTypes ?? [];
-  if (allowed.length === 0) return true;
+  if (allowed.length > 0) {
+    if (!orderProductType) return false;
+    const norm = normalizeType(orderProductType);
+    return allowed.some(a => normalizeType(a) === norm);
+  }
   if (!orderProductType) return true;
-  const norm = normalizeType(orderProductType);
-  return allowed.some(a => normalizeType(a) === norm);
+  const t = normalizeType(orderProductType);
+  const cat = String(floor.blendCategory ?? "").trim().toLowerCase();
+  const isSavoryProduct = t.includes("seasoning") || t.includes("savoury") || t.includes("savory");
+  const isSweetProduct  = t.includes("dairy") || t.includes("bakery") || t.includes("bread") || t.includes("sweet");
+  if (cat === "sweet")  return !isSavoryProduct;
+  if (cat === "savory") return !isSweetProduct;
+  return true;
 }
 
 export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {

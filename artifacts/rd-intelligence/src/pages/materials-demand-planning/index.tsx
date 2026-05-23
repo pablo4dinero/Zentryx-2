@@ -2442,7 +2442,15 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       .filter(o => o.remainingQuantity > 0);
 
     const result = runAssistedPlanning({
-      floors,
+      // Project to the shape the planner expects — explicitly include
+      // blendCategory so the eligibility fallback can use it.
+      floors: floors.map(f => ({
+        id: f.id,
+        floorName: f.floorName,
+        blendCategory: String(f.blendCategory ?? ""),
+        maxCapacityKg: f.maxCapacityKg,
+        allowedProductTypes: f.allowedProductTypes ?? [],
+      })),
       orders: plannerOrders,
       blendSpeeds,
       workingDays,
@@ -2453,34 +2461,48 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       today: new Date(),
     });
 
-    try {
-      // POST each placement through the existing endpoint. The server's
-      // /floor-assignments POST also auto-creates the 60-min product-switch
-      // downtime when an order lands on a cell that already has one — so the
-      // switch markers appear automatically without an extra API call.
-      await Promise.all(result.placements.map(p =>
-        fetch(`${BASE}api/mdp/floor-assignments`, {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({
-            floorId: p.floorId,
-            productionOrderId: p.productionOrderId,
-            weekLabel: selectedWeekLabel,
-            assignedDay: p.assignedDay,
-            planStatus: "Planned",
-            assignedVolume: p.assignedVolume,
-          }),
-        })
-      ));
-      queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/mdp/product-switch-downtimes"] });
-      setAiSummary(result.summary);
-      setAssistedState("done");
-      window.setTimeout(() => setAssistedState("idle"), 3000);
-    } catch (error: any) {
-      setAssistedState("idle");
-      toast({ title: "Could not apply AI plan", description: error?.message || "Try again.", variant: "destructive" });
+    // allSettled: don't let a single failed POST hide the summary card. Every
+    // placement either lands on the board (fulfilled) or shows up in the
+    // failure count toast — the summary still appears either way.
+    const responses = await Promise.allSettled(result.placements.map(p =>
+      fetch(`${BASE}api/mdp/floor-assignments`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          floorId: p.floorId,
+          productionOrderId: p.productionOrderId,
+          weekLabel: selectedWeekLabel,
+          assignedDay: p.assignedDay,
+          planStatus: "Planned",
+          assignedVolume: p.assignedVolume,
+        }),
+      }).then(r => { if (!r.ok) throw new Error(`POST failed: ${r.status}`); return r; })
+    ));
+    const successful = responses.filter(r => r.status === "fulfilled").length;
+    const failedCount = responses.length - successful;
+
+    queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/mdp/product-switch-downtimes"] });
+
+    setAiSummary(result.summary);
+    setAssistedState("done");
+    window.setTimeout(() => setAssistedState("idle"), 3000);
+
+    if (result.placements.length === 0) {
+      toast({
+        title: "No placements made",
+        description: result.summary.skipped[0]?.reason || "Check floor product-type configuration and order due dates.",
+        variant: "destructive",
+      });
+    } else {
+      toast({
+        title: `AI placed ${successful} assignment${successful === 1 ? "" : "s"}`,
+        description: failedCount > 0
+          ? `${failedCount} POST(s) failed — check the summary panel for details.`
+          : `Across ${workingDays.length} day${workingDays.length === 1 ? "" : "s"}. Adjust manually as needed.`,
+        variant: failedCount > 0 ? "destructive" : "default",
+      });
     }
   };
 
