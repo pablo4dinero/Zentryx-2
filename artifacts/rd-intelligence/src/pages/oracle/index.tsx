@@ -1139,11 +1139,11 @@ export default function OraclePage() {
   const examples = EXAMPLES_BY_MODE[selectedMode];
 
   return (
-    <div className="relative flex flex-col h-full gap-0 overflow-hidden" style={{ height: "calc(100vh - 80px)" }}>
+    <div className="relative flex flex-col gap-0 overflow-hidden h-[calc(100vh-5rem)]">
       <NeuralBackground isLight={isLight} />
 
       {/* Header */}
-      <div className="flex items-center justify-between px-1 pb-4 shrink-0">
+      <div className="flex items-center justify-between px-2 pt-2 pb-2 shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-violet-600 to-pink-600 flex items-center justify-center shadow-lg shadow-violet-500/25 shrink-0">
             <Brain className="w-5 h-5 text-white" />
@@ -1168,29 +1168,33 @@ export default function OraclePage() {
         )}
       </div>
 
-      {/* Chat thread */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar px-1 pb-2 space-y-4">
+      {/* Chat thread — only scrolls when there's actual conversation; the
+          empty state below is constrained so it fits without scrolling. */}
+      <div className={cn(
+        "flex-1 px-1 pb-2 space-y-4 min-h-0",
+        isEmpty ? "overflow-hidden" : "overflow-y-auto custom-scrollbar",
+      )}>
         {isEmpty && (
-          <div className="flex flex-col items-center justify-center h-full gap-6 py-4">
+          <div className="flex flex-col items-center justify-center h-full gap-3">
             {/* Icon */}
             <div className={cn(
-              "w-16 h-16 rounded-3xl flex items-center justify-center border transition-all",
+              "w-12 h-12 rounded-2xl flex items-center justify-center border transition-all",
               selectedMode === "chat"
                 ? "bg-gradient-to-br from-violet-600/15 to-pink-600/15 border-white/5"
                 : `${activeMeta.bg} border-current/10`,
             )}>
               {(() => {
                 const Icon = activeMeta.icon;
-                return <Icon className={cn("w-8 h-8 opacity-70", activeMeta.color)} />;
+                return <Icon className={cn("w-6 h-6 opacity-70", activeMeta.color)} />;
               })()}
             </div>
 
             {/* Title + subtitle */}
-            <div className="text-center space-y-1">
+            <div className="text-center space-y-0.5">
               <p className="text-base font-semibold text-foreground">
                 {selectedMode === "chat" ? "Ask Oracle anything" : `${activeMeta.label} Agent`}
               </p>
-              <p className="text-sm text-muted-foreground max-w-sm">
+              <p className="text-xs text-muted-foreground max-w-sm">
                 {selectedMode === "chat"
                   ? "Select a specialised agent below, or ask any food science question."
                   : activeMeta.desc}

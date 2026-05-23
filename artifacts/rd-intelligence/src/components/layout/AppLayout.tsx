@@ -813,28 +813,31 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        {/* Scrollable Content — ONLY this div scrolls. Chat takes full width
-            with minimal padding; every other route keeps the centred reading
-            column. */}
-        <div className={cn(
-          "flex-1 overflow-y-auto custom-scrollbar relative",
-          location === "/chat" ? "p-1.5" : "p-4 sm:p-6 lg:p-8",
-        )}>
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={location}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className={cn(
-                location === "/chat" ? "w-full h-full" : "max-w-7xl mx-auto",
-              )}
-            >
-              {children}
-            </motion.div>
-          </AnimatePresence>
-        </div>
+        {/* Scrollable Content — ONLY this div scrolls. Chat and Oracle take
+            full width with minimal padding; every other route keeps the
+            centred reading column. */}
+        {(() => {
+          const fillScreen = location === "/chat" || location === "/oracle";
+          return (
+            <div className={cn(
+              "flex-1 overflow-y-auto custom-scrollbar relative",
+              fillScreen ? "p-1.5" : "p-4 sm:p-6 lg:p-8",
+            )}>
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={location}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                  className={cn(fillScreen ? "w-full h-full" : "max-w-7xl mx-auto")}
+                >
+                  {children}
+                </motion.div>
+              </AnimatePresence>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Mobile overlay backdrop */}
