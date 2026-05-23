@@ -2389,6 +2389,46 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
   };
 
   const [aiSummary, setAiSummary] = React.useState<PlanningSummary | null>(null);
+  const [unplanning, setUnplanning] = React.useState(false);
+
+  // Unplan every assignment in the currently selected week. The `assignments`
+  // array is sourced from the week-scoped query (key includes
+  // selectedWeekLabel), so this can't touch other weeks. Behind a confirm
+  // dialog because it can't be undone.
+  const handleUnplanAll = async () => {
+    if (assignments.length === 0) {
+      toast({ title: "Nothing to unplan", description: "This week has no assignments." });
+      return;
+    }
+    const ok = window.confirm(
+      `Unplan all ${assignments.length} assignment${assignments.length === 1 ? "" : "s"} for ${selectedWeekLabel || "this week"}? This cannot be undone.`,
+    );
+    if (!ok) return;
+    setUnplanning(true);
+    try {
+      const results = await Promise.allSettled(
+        assignments.map(row => deleteAssignmentMutation.mutateAsync(row.assignment.id)),
+      );
+      const failed = results.filter(r => r.status === "rejected").length;
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/product-switch-downtimes"] });
+      if (failed > 0) {
+        toast({
+          title: `Unplanned ${assignments.length - failed} of ${assignments.length}`,
+          description: `${failed} could not be removed. Try again.`,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Week cleared",
+          description: `Unplanned ${assignments.length} assignment${assignments.length === 1 ? "" : "s"} from ${selectedWeekLabel}.`,
+        });
+      }
+    } finally {
+      setUnplanning(false);
+    }
+  };
 
   const handleAssistedPlanning = async () => {
     if (!selectedWeek) {
@@ -2672,11 +2712,12 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
         isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5"
       )}>
         <div style={{ width: `${splitPercent}%` }} className={cn("overflow-y-auto border-r p-5", isLight ? "border-slate-200" : "border-white/10")}>
-          <div className="flex items-center justify-between gap-3 mb-5">
+          <div className="flex items-start justify-between gap-3 mb-5">
             <div>
               <h2 className="text-base font-semibold text-foreground">Production Floors</h2>
               <p className="text-xs text-muted-foreground mt-0.5">Drag planned orders into floor boxes to schedule production.</p>
             </div>
+            <div className="flex flex-col items-end gap-2 shrink-0">
             <Dialog open={floorModalOpen} onOpenChange={setFloorModalOpen}>
               <DialogTrigger asChild>
                 <Button>Add Production Floor</Button>
@@ -2772,6 +2813,24 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+            <button
+              type="button"
+              onClick={handleUnplanAll}
+              disabled={unplanning || assignments.length === 0}
+              title={assignments.length === 0
+                ? "No assignments in this week"
+                : `Unplan all ${assignments.length} assignment${assignments.length === 1 ? "" : "s"} in ${selectedWeekLabel}`}
+              className={cn(
+                "inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+                isLight
+                  ? "bg-white border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
+                  : "bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20",
+              )}
+            >
+              {unplanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+              {unplanning ? "Unplanning…" : "Unplan all"}
+            </button>
+          </div>
           </div>
 
           {/* ── Shared order card renderer ── */}
