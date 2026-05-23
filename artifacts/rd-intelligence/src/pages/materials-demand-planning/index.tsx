@@ -1547,11 +1547,35 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
   const [dragOverNightFloorId, setDragOverNightFloorId] = React.useState<number | null>(null);
 
   const now = React.useMemo(() => new Date(), []);
-  const weeks = React.useMemo(() => getWorkingWeeksForMonth(now.getFullYear(), now.getMonth()), [now]);
+  // Pull working weeks for the current month, plus the previous and next
+  // months so the week containing today still resolves correctly at the
+  // month boundary (e.g. today is a Saturday whose Monday is in the previous
+  // month, or whose week starts in the next).
+  const weeks = React.useMemo(() => {
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    const prev = new Date(y, m - 1, 1);
+    const next = new Date(y, m + 1, 1);
+    return [
+      ...getWorkingWeeksForMonth(prev.getFullYear(), prev.getMonth()),
+      ...getWorkingWeeksForMonth(y, m),
+      ...getWorkingWeeksForMonth(next.getFullYear(), next.getMonth()),
+    ];
+  }, [now]);
   const defaultWeekLabel = React.useMemo(() => {
-    return (
-      weeks.find((week) => week.days.some((day) => sameDate(day, now)))?.weekLabel ?? weeks[0]?.weekLabel ?? ""
-    );
+    // Find the working week whose Mon→Sun range contains today. Falling back
+    // to weeks[0] meant Saturday/Sunday selections always rendered Week 1 of
+    // the month — wrong every weekend.
+    const todayMid = new Date(now);
+    todayMid.setHours(0, 0, 0, 0);
+    const containingWeek = weeks.find(week => {
+      const monday = new Date(week.startDate);
+      monday.setHours(0, 0, 0, 0);
+      const sunday = new Date(monday);
+      sunday.setDate(sunday.getDate() + 6);
+      return todayMid.getTime() >= monday.getTime() && todayMid.getTime() <= sunday.getTime();
+    });
+    return containingWeek?.weekLabel ?? weeks[0]?.weekLabel ?? "";
   }, [now, weeks]);
 
   const selectedWeek = React.useMemo(
