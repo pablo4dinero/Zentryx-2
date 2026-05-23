@@ -6,8 +6,9 @@ import {
   ChevronDown, User, FlaskConical as Flask, CheckSquare, Building2,
   ArrowRight, Loader2, CalendarDays, UserCircle, TrendingUp, ClipboardList,
   PanelLeftClose, PanelLeftOpen, Lock, Unlock, ShoppingCart, Package,
-  ShieldCheck, ShieldX, Mail, Rss, Brain, CheckCheck, Check
+  ShieldCheck, ShieldX, Mail, Rss, Brain, CheckCheck, Check, Download
 } from "lucide-react";
+import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { useAuthStore } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -213,6 +214,26 @@ function NotificationBell({ notifications, isLight }: { notifications: any[]; is
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+function InstallAppButton({ isLight }: { isLight: boolean }) {
+  const { canInstall, isInstalled, promptInstall } = useInstallPrompt();
+  if (isInstalled || !canInstall) return null;
+  return (
+    <button
+      onClick={() => { void promptInstall(); }}
+      title="Install Zentryx as a desktop app"
+      className={cn(
+        "hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all",
+        isLight
+          ? "border-primary/30 text-primary bg-primary/5 hover:bg-primary/10 shadow-sm"
+          : "border-primary/30 text-primary bg-primary/10 hover:bg-primary/20",
+      )}
+    >
+      <Download className="w-3.5 h-3.5" />
+      Install App
+    </button>
   );
 }
 
@@ -799,6 +820,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <InstallAppButton isLight={isLight} />
             <button
               onClick={toggleTheme}
               className={cn("p-2 rounded-full transition-colors", isLight ? "hover:bg-slate-100 text-slate-600" : "hover:bg-white/10 text-muted-foreground hover:text-foreground")}
