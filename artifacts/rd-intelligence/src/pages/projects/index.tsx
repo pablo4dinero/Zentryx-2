@@ -3,7 +3,7 @@ import { useListProjects, useCreateProject, useDeleteProject, useListUsers, useU
 import { PageLoader } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Search, Download, Layers, Pencil, Trash2, Settings2 } from "lucide-react";
+import { Plus, Search, Download, Layers, Pencil, Trash2, Settings2, FlaskConical } from "lucide-react";
 import { format } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -154,7 +154,9 @@ export default function ProjectsList() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-display font-bold text-foreground">Project Portfolio</h1>
+          <h1 className="text-3xl font-display font-bold text-foreground flex items-center gap-3">
+            <FlaskConical className="w-8 h-8 text-primary" /> Project Portfolio
+          </h1>
           <p className="text-muted-foreground mt-1">Manage end-to-end R&D lifecycles.</p>
         </div>
         <div className="flex items-center gap-2">

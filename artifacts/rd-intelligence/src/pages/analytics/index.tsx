@@ -6,7 +6,7 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell, Legend, RadarChart, PolarGrid,
   PolarAngleAxis, PolarRadiusAxis, Radar,
 } from "recharts";
-import { TrendingUp, Maximize2, Minimize2, BarChart2, PieChart as PieIcon, Activity } from "lucide-react";
+import { TrendingUp, Maximize2, Minimize2, BarChart2, PieChart as PieIcon, Activity, LineChart } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -136,7 +136,9 @@ export default function Analytics() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className={cn("text-3xl font-display font-bold", ct.isLight ? "text-gray-900" : "text-foreground")}>Analytics</h1>
+        <h1 className={cn("text-3xl font-display font-bold flex items-center gap-3", ct.isLight ? "text-gray-900" : "text-foreground")}>
+          <LineChart className="w-8 h-8 text-primary" /> Analytics
+        </h1>
         <p className={cn("mt-1", ct.isLight ? "text-gray-500" : "text-muted-foreground")}>
           Insights, metric and powered analysis for R&D pipeline
         </p>

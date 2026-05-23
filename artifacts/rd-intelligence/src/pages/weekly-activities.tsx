@@ -4,7 +4,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronLeft, ChevronRight, Plus, Trash2, Bell, Check,
   Loader2, ChevronDown, Users, X, Send, FileSpreadsheet,
-  FileText, Search, ArrowUpDown, ArrowUp, ArrowDown, Package, ShoppingBag, Download, Pencil
+  FileText, Search, ArrowUpDown, ArrowUp, ArrowDown, Package, ShoppingBag, Download, Pencil,
+  ClipboardList,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
@@ -1001,7 +1002,9 @@ export default function WeeklyActivities() {
       {/* Page Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Weekly Activities</h1>
+          <h1 className="text-3xl font-display font-bold text-foreground flex items-center gap-3">
+            <ClipboardList className="w-8 h-8 text-primary" /> Weekly Activities
+          </h1>
           <p className="text-sm text-muted-foreground mt-1">Track team activities, samples, and dispatch records</p>
         </div>
       </div>

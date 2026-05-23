@@ -5,7 +5,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
   PieChart, Pie, Cell, AreaChart, Area, Legend, LineChart, Line,
 } from "recharts";
-import { FlaskConical, Users, Award, FolderOpen, GripHorizontal, Maximize2, Minimize2, Building } from "lucide-react";
+import { FlaskConical, Users, Award, FolderOpen, GripHorizontal, Maximize2, Minimize2, Building, LayoutDashboard } from "lucide-react";
 import { formatNumber } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { motion, AnimatePresence } from "framer-motion";
@@ -252,7 +252,9 @@ export default function Dashboard() {
   return (
     <div className="space-y-8 pb-8">
       <div>
-        <h1 className={cn("text-3xl font-display font-bold", isLight ? "text-gray-900" : "text-foreground")}>Intelligence Overview</h1>
+        <h1 className={cn("text-3xl font-display font-bold flex items-center gap-3", isLight ? "text-gray-900" : "text-foreground")}>
+          <LayoutDashboard className="w-8 h-8 text-primary" /> Intelligence Overview
+        </h1>
         <p className={cn("mt-1 text-sm", isLight ? "text-gray-500" : "text-muted-foreground")}>Zentryx R&D metrics and project insights.</p>
       </div>
 
