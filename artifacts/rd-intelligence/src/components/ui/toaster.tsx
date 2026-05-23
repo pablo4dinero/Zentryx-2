@@ -1,5 +1,6 @@
 import { useToast } from "@/hooks/use-toast"
-import { useTheme } from "next-themes"
+import { useTheme } from "@/lib/theme"
+import { cn } from "@/lib/utils"
 import {
   Toast,
   ToastClose,
@@ -11,6 +12,10 @@ import {
 
 export function Toaster() {
   const { toasts } = useToast()
+  // Use the project's theme provider — the previous import from
+  // "next-themes" returned undefined (no provider in the tree), so the
+  // light-mode overrides never fired and toasts kept rendering with the
+  // dark background in light mode.
   const { theme } = useTheme()
   const isLight = theme === "light"
 
@@ -18,17 +23,21 @@ export function Toaster() {
     <ToastProvider>
       {toasts.map(function ({ id, title, description, action, ...props }) {
         const isDestructive = props.variant === "destructive"
-        const lightClass = isLight && !isDestructive ? "bg-white border-slate-200 text-black shadow-md" : undefined
+        const lightClass = isLight && !isDestructive
+          ? "bg-white border-slate-200 text-slate-900 shadow-[0_12px_30px_rgba(15,23,42,0.12)]"
+          : undefined
         return (
           <Toast key={id} {...props} className={lightClass}>
             <div className="grid gap-1">
               {title && (
-                <ToastTitle className={isLight && !isDestructive ? "font-bold text-black" : undefined}>
+                <ToastTitle className={isLight && !isDestructive ? "font-semibold text-slate-900" : undefined}>
                   {title}
                 </ToastTitle>
               )}
               {description && (
-                <ToastDescription className={isLight && !isDestructive ? "text-black/70" : undefined}>
+                <ToastDescription className={cn(
+                  isLight && !isDestructive && "text-slate-600",
+                )}>
                   {description}
                 </ToastDescription>
               )}
