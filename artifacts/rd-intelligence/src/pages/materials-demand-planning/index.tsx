@@ -35,6 +35,7 @@ import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
 import { useListUsers, useGetCurrentUser } from "@/api-client";
 import { PlannedOrdersProvider, usePlannedOrders } from "./planned-orders-context";
+import { runAssistedPlanning, type ExistingCellUsage, type PlanningSummary } from "./ai-planner";
 import { useCustomOptions, DEFAULT_PRODUCT_TYPES, displayLabel, useServerProductTypes } from "@/lib/project-options";
 import { CustomOptionsSelect } from "@/components/ui/CustomOptionsSelect";
 
@@ -515,13 +516,6 @@ type FloorAssignmentRow = {
   order: ProductionOrder;
 };
 
-type FloorAssignmentPayload = {
-  floor_id: number;
-  production_order_id: number;
-  week_label: string;
-  assigned_day: string;
-};
-
 function sameDate(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
@@ -576,117 +570,58 @@ function getWorkingWeeksForMonth(year: number, month: number): WorkingWeek[] {
   return weeks;
 }
 
-function getMicrobialPriority(value?: string | null) {
-  switch (value) {
-    case "Critical":
-      return 0;
-    case "Important":
-      return 1;
-    default:
-      return 2;
-  }
-}
 
-function isAssignEligibleForFloor(order: ProductionOrder, blendCategory: ProductionFloor["blendCategory"]) {
-  const type = String(order.productType ?? "").toLowerCase();
-  if (blendCategory === "Savory") {
-    return type.includes("seasoning") || type.includes("savoury flavours") || type.includes("savoury flavours");
-  }
-  return true;
-}
-
-function getOrderCategory(order: ProductionOrder) {
-  const type = String(order.productType ?? "").toLowerCase();
-  if (type.includes("dairy premix")) return "Dairy Premix";
-  if (type.includes("bread premix")) return "Bread Premix";
-  if (type.includes("seasoning")) return "Seasoning";
-  if (type.includes("savoury flavours") || type.includes("savory flavours")) return "Savoury Flavours";
-  return "Other";
-}
-
-function buildOptimizedAssignments(
-  floors: ProductionFloor[],
-  unassignedOrders: ProductionOrder[],
-  weekLabel: string,
-  includeSat = false
-): FloorAssignmentPayload[] {
-  const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", ...(includeSat ? ["Sat"] : [])];
-
-  const eligibleOrders = unassignedOrders
-    .filter((order) => order.rawMaterialStatus !== "Not Available")
-    .slice()
-    .sort((a, b) => {
-      const priority = getMicrobialPriority(a.microbialAnalysis) - getMicrobialPriority(b.microbialAnalysis);
-      if (priority !== 0) return priority;
-      return Number(b.volume ?? 0) - Number(a.volume ?? 0);
-    });
-
-  const assignments: FloorAssignmentPayload[] = [];
-
-  const dayUsageByFloor: Record<number, Record<string, number>> = {};
-  const dayTypesByFloor: Record<number, Record<string, string[]>> = {};
-  for (const floor of floors) {
-    dayUsageByFloor[floor.id] = Object.fromEntries(dayNames.map(d => [d, 0]));
-    dayTypesByFloor[floor.id] = Object.fromEntries(dayNames.map(d => [d, [] as string[]]));
-  }
-
-  const preferredDayForOrder = (order: ProductionOrder): string[] => {
-    const m = order.microbialAnalysis;
-    if (m === "Critical") return dayNames;
-    if (m === "Important") return [...dayNames.slice(1), dayNames[0]];
-    return [...dayNames.slice(3), ...dayNames.slice(0, 3)];
-  };
-
-  const canAssign = (floor: ProductionFloor, day: string, order: ProductionOrder): boolean => {
-    if (!isAssignEligibleForFloor(order, floor.blendCategory)) return false;
-    const cat = getOrderCategory(order);
-    const existing = dayTypesByFloor[floor.id][day];
-    if (cat === "Seasoning" && existing.includes("Dairy Premix")) return false;
-    if (cat === "Dairy Premix" && existing.includes("Seasoning")) return false;
-    return (dayUsageByFloor[floor.id][day] + Number(order.volume ?? 0)) <= floor.maxCapacityKg;
-  };
-
-  for (const order of eligibleOrders) {
-    let placed = false;
-    for (const floor of floors) {
-      const days = preferredDayForOrder(order);
-      for (const day of days) {
-        if (canAssign(floor, day, order)) {
-          dayUsageByFloor[floor.id][day] += Number(order.volume ?? 0);
-          dayTypesByFloor[floor.id][day].push(getOrderCategory(order));
-          assignments.push({
-            floor_id: floor.id,
-            production_order_id: order.id,
-            week_label: weekLabel,
-            assigned_day: day,
-          });
-          placed = true;
-          break;
-        }
-      }
-      if (placed) break;
-    }
-  }
-
-  return assignments;
-}
+// Old heuristic scheduler removed — replaced by runAssistedPlanning() in
+// ./ai-planner.ts which honours blend speeds, microbial buffers, switch
+// times, partial-day batching, and night-shift / saturday toggles.
 
 // ── Blend Speed ─────────────────────────────────────────────────────────────
 
 interface BlendSpeed {
   id: string;
   label: string;
-  timeTaken: string;
+  timeTakenMinutes: number;
 }
 
 const DEFAULT_BLEND_SPEEDS: BlendSpeed[] = [
-  { id: "fast",   label: "Fast",   timeTaken: "" },
-  { id: "medium", label: "Medium", timeTaken: "" },
-  { id: "slow",   label: "Slow",   timeTaken: "" },
+  { id: "fast",   label: "Fast",   timeTakenMinutes: 40 },
+  { id: "medium", label: "Medium", timeTakenMinutes: 50 },
+  { id: "slow",   label: "Slow",   timeTakenMinutes: 60 },
 ];
 
 const LS_BLEND_SPEEDS     = "zentryx-blend-speeds";
 const LS_ORDER_BLENDSPEED = "zentryx-order-blendspeed";
+
+// Backward-compatible reader: earlier versions stored timeTaken as a free-text
+// string ("40 mins", "1hr"). New code stores timeTakenMinutes as a number.
+// Parse old values, fall back to the default minutes when nothing readable.
+function parseBlendSpeedsFromStorage(raw: unknown): BlendSpeed[] {
+  if (!Array.isArray(raw)) return DEFAULT_BLEND_SPEEDS;
+  const defaultsById = new Map(DEFAULT_BLEND_SPEEDS.map(s => [s.id, s.timeTakenMinutes]));
+  return raw.map((entry: any) => {
+    const id = String(entry?.id ?? `custom_${Math.random().toString(36).slice(2, 7)}`);
+    const label = String(entry?.label ?? id);
+    let minutes: number = 0;
+    if (typeof entry?.timeTakenMinutes === "number" && Number.isFinite(entry.timeTakenMinutes)) {
+      minutes = entry.timeTakenMinutes;
+    } else if (typeof entry?.timeTaken === "string") {
+      const s = entry.timeTaken.toLowerCase().trim();
+      // Pull a number out of strings like "40", "40 mins", "1hr", "1h 30m"
+      const hrMatch = s.match(/(\d+(?:\.\d+)?)\s*h(?:r|our)?s?/);
+      const minMatch = s.match(/(\d+(?:\.\d+)?)\s*m(?:in)?/);
+      const bareMatch = s.match(/^(\d+(?:\.\d+)?)\s*$/);
+      if (hrMatch || minMatch) {
+        minutes = (hrMatch ? Number(hrMatch[1]) * 60 : 0) + (minMatch ? Number(minMatch[1]) : 0);
+      } else if (bareMatch) {
+        minutes = Number(bareMatch[1]);
+      }
+    }
+    if (!Number.isFinite(minutes) || minutes <= 0) {
+      minutes = defaultsById.get(id) ?? 40;
+    }
+    return { id, label, timeTakenMinutes: minutes };
+  });
+}
 
 function blendSpeedColor(id: string) {
   if (id === "fast")   return "bg-emerald-500/10 border-emerald-500/20 text-emerald-400";
@@ -780,7 +715,7 @@ function ConfigurationDialog({
 
   const addNew = () => {
     if (!newLabel.trim()) return;
-    setDraft(d => [...d, { id: `custom_${Date.now()}`, label: newLabel.trim(), timeTaken: "" }]);
+    setDraft(d => [...d, { id: `custom_${Date.now()}`, label: newLabel.trim(), timeTakenMinutes: 0 }]);
     setNewLabel("");
   };
 
@@ -829,9 +764,16 @@ function ConfigurationDialog({
                   </button>
                 </div>
                 <div>
-                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1 block">Time Taken</label>
-                  <input value={speed.timeTaken} onChange={e => setDraft(d => d.map(s => s.id === speed.id ? { ...s, timeTaken: e.target.value } : s))}
-                    placeholder="e.g. 2 hours, 45 minutes" className={cn(inputCls, "w-full text-xs")} />
+                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1 block">Time per batch (minutes)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={speed.timeTakenMinutes || ""}
+                    onChange={e => setDraft(d => d.map(s => s.id === speed.id ? { ...s, timeTakenMinutes: Number(e.target.value) || 0 } : s))}
+                    placeholder="e.g. 40"
+                    className={cn(inputCls, "w-full text-xs")}
+                  />
                 </div>
               </div>
             ))}
@@ -876,7 +818,7 @@ function ProductionOrdersTab() {
   const [microbialById, setMicrobialById] = React.useState<Record<number, string>>({});
   const [rawMaterialById, setRawMaterialById] = React.useState<Record<number, string>>({});
   const [blendSpeeds, setBlendSpeeds] = React.useState<BlendSpeed[]>(() => {
-    try { return JSON.parse(localStorage.getItem(LS_BLEND_SPEEDS) || "null") ?? DEFAULT_BLEND_SPEEDS; }
+    try { return parseBlendSpeedsFromStorage(JSON.parse(localStorage.getItem(LS_BLEND_SPEEDS) || "null")); }
     catch { return DEFAULT_BLEND_SPEEDS; }
   });
   const [blendSpeedById, setBlendSpeedById] = React.useState<Record<number, string>>(() => {
@@ -1557,7 +1499,7 @@ function ProductionPlanningTab() {
 
   // Blend speeds from localStorage (same store as Production Orders tab)
   const blendSpeeds: BlendSpeed[] = React.useMemo(() => {
-    try { return JSON.parse(localStorage.getItem(LS_BLEND_SPEEDS) || "null") ?? DEFAULT_BLEND_SPEEDS; }
+    try { return parseBlendSpeedsFromStorage(JSON.parse(localStorage.getItem(LS_BLEND_SPEEDS) || "null")); }
     catch { return DEFAULT_BLEND_SPEEDS; }
   }, []);
   const blendSpeedByOrderId: Record<number, string> = React.useMemo(() => {
@@ -2422,31 +2364,123 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     await proceedWithDrop(floor, plannedOrder, day, dragged);
   };
 
+  const [aiSummary, setAiSummary] = React.useState<PlanningSummary | null>(null);
+
   const handleAssistedPlanning = async () => {
+    if (!selectedWeek) {
+      toast({ title: "Pick a week first", variant: "destructive" });
+      return;
+    }
     setAssistedState("optimizing");
+
+    // Build the input shape the planner expects from the existing reactive
+    // state. Everything is read live — nothing hardcoded.
+    const fastMin = blendSpeeds.find(b => b.id === "fast")?.timeTakenMinutes ?? 40;
+    const FAST_BATCHES_PER_DAY = Math.max(1, Math.floor(450 / fastMin));
+
+    // Compute minutes already burned on each (floor, day) cell from manual
+    // assignments. assignedVolume → minutes = ceil(vol / batchSize) × blendMins.
+    const existingUsage = new Map<string, ExistingCellUsage>();
+    for (const row of assignments) {
+      const floorId = row.assignment.floorId;
+      const day = row.assignment.assignedDay;
+      const key = `${floorId}|${day}`;
+      const assignedVol = row.assignment.assignedVolume != null
+        ? Number(row.assignment.assignedVolume)
+        : Number(row.order.volume ?? 0);
+      const floor = floors.find(f => f.id === floorId);
+      if (!floor) continue;
+      const bSize = floor.maxCapacityKg / FAST_BATCHES_PER_DAY;
+      const blendId = blendSpeedByOrderId[row.order.id] || "fast";
+      const blendMin = blendSpeeds.find(b => b.id === blendId)?.timeTakenMinutes ?? fastMin;
+      const minutesUsed = Math.ceil(assignedVol / bSize) * blendMin;
+      const acc = planningAccountMap[(mdpOrderByMdpId.get(row.order.id)?.accountId ?? 0) as number];
+      const productType = acc?.productType ?? row.order.productType ?? null;
+      const norm = productType ? String(productType).trim().toLowerCase().replace(/[\s&_\-/]+/g, "_") : "";
+      const prev = existingUsage.get(key);
+      if (prev) {
+        prev.minutesUsed += minutesUsed;
+        if (norm) prev.productTypes.add(norm);
+      } else {
+        existingUsage.set(key, { minutesUsed, productTypes: norm ? new Set([norm]) : new Set() });
+      }
+    }
+
+    const workingDays = ["Mon", "Tue", "Wed", "Thu", "Fri", ...(includeSaturday ? ["Sat"] : [])];
+    const workingDates = selectedWeek.days.slice(0, workingDays.length);
+
+    // Hand orders to the planner with their resolved product type and a fresh
+    // remaining-quantity number (running balance against the mother volume).
+    const plannerOrders = plannedOrders
+      .map(order => {
+        const acc = planningAccountMap[order.accountId ?? 0];
+        const productType = acc?.productType ?? order.productType ?? null;
+        const remaining = remainingVolumeByOrderId[order.id] ?? Number(order.volume ?? 0);
+        const blendId = blendSpeedByOrderId[order.id] || "fast";
+        const microbial = order.microbialAnalysis ?? "Normal";
+        const rawMaterial = order.rawMaterialStatus ?? "Pending";
+        const priorityScore = calcPriorityScore(
+          rawMaterial,
+          microbial,
+          blendId,
+          Number(order.volume ?? 0),
+          order.expectedDeliveryDate,
+        );
+        const productionLabel = `${acc?.company ?? order.accountName ?? "Unknown"} — ${acc?.productName ?? order.productName ?? "Unknown product"}`;
+        return {
+          id: order.id,
+          productionLabel,
+          productType,
+          blendSpeedId: blendId,
+          microbialAnalysis: microbial,
+          rawMaterialStatus: rawMaterial,
+          expectedDeliveryDate: order.expectedDeliveryDate ?? null,
+          remainingQuantity: remaining,
+          priorityScore,
+        };
+      })
+      .filter(o => o.remainingQuantity > 0);
+
+    const result = runAssistedPlanning({
+      floors,
+      orders: plannerOrders,
+      blendSpeeds,
+      workingDays,
+      workingDates,
+      includeNightShift,
+      existingUsage,
+      isFloorDayBlocked: (floorId, day) => getFloorDayStatus(floorId, day) !== "Running",
+      today: new Date(),
+    });
+
     try {
-      const unassignedOrders = plannedOrders.filter((order) => !assignedMap.has(order.id));
-      const assignmentPayloads = buildOptimizedAssignments(floors, unassignedOrders, selectedWeekLabel, includeSaturday);
-      await Promise.all(
-        assignmentPayloads.map((payload) =>
-          fetch(`${BASE}api/mdp/floor-assignments`, {
-            method: "POST",
-            headers: authHeaders(),
-            body: JSON.stringify({
-              floorId: payload.floor_id, productionOrderId: payload.production_order_id,
-              weekLabel: payload.week_label, assignedDay: payload.assigned_day, planStatus: "Planned",
-            }),
-          })
-        )
-      );
+      // POST each placement through the existing endpoint. The server's
+      // /floor-assignments POST also auto-creates the 60-min product-switch
+      // downtime when an order lands on a cell that already has one — so the
+      // switch markers appear automatically without an extra API call.
+      await Promise.all(result.placements.map(p =>
+        fetch(`${BASE}api/mdp/floor-assignments`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({
+            floorId: p.floorId,
+            productionOrderId: p.productionOrderId,
+            weekLabel: selectedWeekLabel,
+            assignedDay: p.assignedDay,
+            planStatus: "Planned",
+            assignedVolume: p.assignedVolume,
+          }),
+        })
+      ));
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/product-switch-downtimes"] });
+      setAiSummary(result.summary);
       setAssistedState("done");
       window.setTimeout(() => setAssistedState("idle"), 3000);
-      toast({ title: "AI Plan Optimized", description: `Planned orders sorted across floors — Critical first, Seasoning/Dairy Premix separated.` });
     } catch (error: any) {
       setAssistedState("idle");
-      toast({ title: "Could not optimize plan", description: error?.message || "Try again.", variant: "destructive" });
+      toast({ title: "Could not apply AI plan", description: error?.message || "Try again.", variant: "destructive" });
     }
   };
 
@@ -3229,7 +3263,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
               suggestedVolume={suggested}
               remainingVolume={remaining}
               blendSpeedLabel={speed?.label ?? ""}
-              blendSpeedTimeTaken={speed?.timeTaken ?? ""}
+              blendSpeedTimeTaken={speed?.timeTakenMinutes ? `${speed.timeTakenMinutes} min` : ""}
               volume={partialVolume}
               onVolumeChange={setPartialVolume}
               onConfirm={handleConfirmPartialAssign}
@@ -3238,6 +3272,95 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
             />
           );
         })()}
+      </AnimatePresence>
+
+      {/* AI Assisted Planning — summary panel after a run. Non-modal, sits in
+          the bottom-right and stays dismissible so the planner can immediately
+          adjust assignments manually. */}
+      <AnimatePresence>
+        {aiSummary && (
+          <motion.div
+            initial={{ opacity: 0, y: 16, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 16, scale: 0.96 }}
+            className="fixed bottom-6 right-6 z-[60] w-[360px] max-w-[92vw]"
+          >
+            <div className={cn(
+              "rounded-2xl border shadow-2xl overflow-hidden",
+              isLight ? "bg-white border-slate-200" : "bg-[#15172a] border-white/10",
+            )}>
+              <div className={cn(
+                "px-4 py-3 border-b flex items-center justify-between gap-3",
+                isLight ? "border-slate-100 bg-slate-50" : "border-white/10 bg-white/5",
+              )}>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-base">🤖</span>
+                  <p className={cn("text-sm font-semibold truncate", isLight ? "text-slate-900" : "text-foreground")}>
+                    AI Planning summary
+                  </p>
+                </div>
+                <button
+                  onClick={() => setAiSummary(null)}
+                  className={cn(
+                    "p-1 rounded-lg transition-colors shrink-0",
+                    isLight ? "hover:bg-slate-100 text-slate-500" : "hover:bg-white/10 text-muted-foreground",
+                  )}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-4 space-y-2 text-xs">
+                {(() => {
+                  const rows: { label: string; value: number; tone: string }[] = [
+                    { label: "Fully scheduled", value: aiSummary.fullyScheduled.length, tone: "text-emerald-500" },
+                    { label: "Partially scheduled", value: aiSummary.partiallyScheduled.length, tone: "text-amber-500" },
+                    { label: "Skipped (no floor / no capacity)", value: aiSummary.skipped.length, tone: "text-rose-500" },
+                    { label: "Switching days created", value: aiSummary.switchDays.length, tone: isLight ? "text-slate-700" : "text-foreground" },
+                    { label: "At-risk (past buffer)", value: aiSummary.atRisk.length, tone: "text-rose-500" },
+                  ];
+                  return rows.map(r => (
+                    <div key={r.label} className={cn(
+                      "flex items-center justify-between rounded-lg px-2.5 py-1.5",
+                      isLight ? "bg-slate-50" : "bg-white/5",
+                    )}>
+                      <span className={cn(isLight ? "text-slate-600" : "text-muted-foreground")}>{r.label}</span>
+                      <span className={cn("font-bold tabular-nums", r.tone)}>{r.value}</span>
+                    </div>
+                  ));
+                })()}
+                {aiSummary.partiallyScheduled.length > 0 && (
+                  <details className={cn("mt-2 rounded-lg p-2", isLight ? "bg-amber-50" : "bg-amber-500/10")}>
+                    <summary className="cursor-pointer text-[11px] font-semibold text-amber-500">
+                      Partials — {aiSummary.partiallyScheduled.length}
+                    </summary>
+                    <ul className="mt-1.5 space-y-0.5 text-[10px] text-amber-500/90">
+                      {aiSummary.partiallyScheduled.slice(0, 6).map(p => (
+                        <li key={p.orderId} className="truncate">{p.label} · {p.leftoverKg.toLocaleString()} KG left</li>
+                      ))}
+                      {aiSummary.partiallyScheduled.length > 6 && <li>… and {aiSummary.partiallyScheduled.length - 6} more</li>}
+                    </ul>
+                  </details>
+                )}
+                {aiSummary.skipped.length > 0 && (
+                  <details className={cn("mt-1 rounded-lg p-2", isLight ? "bg-rose-50" : "bg-rose-500/10")}>
+                    <summary className="cursor-pointer text-[11px] font-semibold text-rose-500">
+                      Skipped — {aiSummary.skipped.length}
+                    </summary>
+                    <ul className="mt-1.5 space-y-0.5 text-[10px] text-rose-500/90">
+                      {aiSummary.skipped.slice(0, 6).map(p => (
+                        <li key={p.orderId} className="truncate">{p.label} · {p.reason}</li>
+                      ))}
+                      {aiSummary.skipped.length > 6 && <li>… and {aiSummary.skipped.length - 6} more</li>}
+                    </ul>
+                  </details>
+                )}
+                <p className={cn("mt-2 text-[10px] italic", isLight ? "text-slate-400" : "text-muted-foreground/70")}>
+                  Adjust any placement by dragging — the AI plan is just a starting point.
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        )}
       </AnimatePresence>
 
       <AnimatePresence>
