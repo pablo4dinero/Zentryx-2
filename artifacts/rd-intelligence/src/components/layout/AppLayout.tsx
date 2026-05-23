@@ -14,6 +14,7 @@ import { useAuthStore } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { useGetCurrentUser, useListNotifications, useMarkNotificationRead } from "@/api-client";
+import { useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 
 const BASE = import.meta.env.BASE_URL;
@@ -63,18 +64,16 @@ const LAST_SEEN_NOTIFS_KEY = "zentryx_last_seen_notifications";
 function NotificationBell({
   notifications,
   isLight,
-  muted,
-  setMuted,
 }: {
   notifications: any[];
   isLight: boolean;
-  muted: boolean;
-  setMuted: (v: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const markRead = useMarkNotificationRead();
+  const queryClient = useQueryClient();
   const unreadCount = notifications.filter(n => !n.isRead).length;
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
 
   // Smart blink — only animate when there's an unread notification newer
   // than the user's last bell-open timestamp. Persists across reloads.
@@ -102,9 +101,22 @@ function NotificationBell({
     });
   };
 
-  const handleMark = (id: number) => markRead.mutate({ id });
-  const markAllRead = () => {
-    notifications.filter(n => !n.isRead).forEach(n => markRead.mutate({ id: n.id }));
+  // Mark mutations need explicit invalidation — the generated mutation hook
+  // doesn't refresh the /api/notifications query on its own, so without this
+  // the row was being marked read on the server but the badge count and the
+  // dot indicator stayed put until the page was reloaded.
+  const handleMark = (id: number) => {
+    markRead.mutate({ id }, { onSuccess: invalidate });
+  };
+  const markAllRead = async () => {
+    const unread = notifications.filter(n => !n.isRead);
+    if (unread.length === 0) return;
+    await Promise.allSettled(
+      unread.map(n => new Promise<void>(resolve => {
+        markRead.mutate({ id: n.id }, { onSettled: () => resolve() });
+      })),
+    );
+    invalidate();
   };
 
   return (
@@ -152,19 +164,6 @@ function NotificationBell({
                 )}
               </p>
               <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setMuted(!muted)}
-                  title={muted ? "Unmute notification sounds" : "Mute notification sounds"}
-                  className={cn(
-                    "inline-flex items-center gap-1 text-[11px] font-semibold transition-colors",
-                    muted
-                      ? (isLight ? "text-slate-400 hover:text-slate-600" : "text-muted-foreground hover:text-foreground")
-                      : (isLight ? "text-primary hover:text-primary/80" : "text-primary hover:text-primary/80"),
-                  )}
-                >
-                  {muted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
-                  {muted ? "Muted" : "Sound"}
-                </button>
                 {unreadCount > 0 && (
                   <button
                     onClick={markAllRead}
@@ -238,6 +237,27 @@ function NotificationBell({
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+function SoundToggle({ isLight, muted, setMuted }: { isLight: boolean; muted: boolean; setMuted: (v: boolean) => void }) {
+  return (
+    <button
+      onClick={() => setMuted(!muted)}
+      title={muted ? "Unmute notification sounds" : "Mute notification sounds"}
+      className={cn(
+        "p-2 rounded-full transition-colors",
+        isLight
+          ? muted
+            ? "hover:bg-slate-100 text-slate-400 hover:text-slate-600"
+            : "hover:bg-slate-100 text-slate-600 hover:text-slate-900"
+          : muted
+            ? "hover:bg-white/10 text-muted-foreground/60 hover:text-muted-foreground"
+            : "hover:bg-white/10 text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {muted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+    </button>
   );
 }
 
@@ -880,6 +900,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
           <div className="flex items-center gap-2 shrink-0">
             <InstallAppButton isLight={isLight} />
+            <SoundToggle isLight={isLight} muted={soundsMuted} setMuted={setSoundsMuted} />
             <button
               onClick={toggleTheme}
               className={cn("p-2 rounded-full transition-colors", isLight ? "hover:bg-slate-100 text-slate-600" : "hover:bg-white/10 text-muted-foreground hover:text-foreground")}
@@ -888,7 +909,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               {isLight ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
             </button>
 
-            <NotificationBell notifications={notifications || []} isLight={isLight} muted={soundsMuted} setMuted={setSoundsMuted} />
+            <NotificationBell notifications={notifications || []} isLight={isLight} />
 
             <UserMenu user={user} logout={logout} isLight={isLight} />
           </div>
