@@ -529,6 +529,21 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const unreadCount = notifications?.filter(n => !n.isRead).length || 0;
   const isLight = theme === "light";
 
+  // Viewport-width tracking so we can force inline `padding: 0` on the
+  // scroll container + page wrapper below lg: (1024 px). Inline styles
+  // beat every CSS class and every browser-default, so this is the only
+  // approach that's truly immune to theme-specific overrides and PWA
+  // service-worker stale-asset weirdness.
+  const [isBelowLg, setIsBelowLg] = useState<boolean>(
+    typeof window !== "undefined" ? window.innerWidth < 1024 : false,
+  );
+  useEffect(() => {
+    const onResize = () => setIsBelowLg(window.innerWidth < 1024);
+    window.addEventListener("resize", onResize);
+    onResize();
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   // ─── Access request admin popup ──────────────────────────────────────────
   const [accessRequests, setAccessRequests] = useState<{ id: string; name: string; email: string; requestedAt: string }[]>([]);
   const [processingId, setProcessingId] = useState<string | null>(null);
@@ -944,13 +959,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         {(() => {
           const fillScreen = location === "/chat" || location === "/oracle";
           return (
-            <div className={cn(
-              "flex-1 overflow-y-auto custom-scrollbar relative",
-              // .mobile-edge nukes all horizontal padding/margin/max-width
-              // below 640 px so module content sits flush with the viewport
-              // edges. From sm: up, standard reading-column padding applies.
-              fillScreen ? "p-1.5" : "mobile-edge py-3 sm:p-6 lg:p-8",
-            )}>
+            <div
+              className={cn(
+                "flex-1 overflow-y-auto custom-scrollbar relative",
+                fillScreen ? "p-1.5" : "py-3 sm:p-6 lg:p-8",
+              )}
+              style={!fillScreen && isBelowLg ? { paddingLeft: 0, paddingRight: 0 } : undefined}
+            >
               <AnimatePresence mode="wait">
                 <motion.div
                   key={location}
@@ -958,7 +973,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
                   transition={{ duration: 0.2 }}
-                  className={cn(fillScreen ? "w-full h-full" : "mobile-edge max-w-7xl sm:mx-auto")}
+                  className={cn(fillScreen ? "w-full h-full" : "max-w-7xl mx-auto")}
+                  style={!fillScreen && isBelowLg ? { maxWidth: "100%", marginLeft: 0, marginRight: 0, paddingLeft: 0, paddingRight: 0, width: "100%" } : undefined}
                 >
                   {children}
                 </motion.div>

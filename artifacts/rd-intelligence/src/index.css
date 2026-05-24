@@ -110,18 +110,11 @@
 
   /* ─────────────────────────────────────────────
      MOBILE + TABLET EDGE-TO-EDGE LAYOUT (≤ 1023 px)
-     Nuclear override that wins over any Tailwind class or inline
-     padding so module content truly hugs the left + right edges
-     of the viewport on phones AND tablets. Below lg: (1024 px) the
-     sidebar is a slide-in overlay so the main column owns the full
-     viewport width. Disabled at lg: where the desktop sidebar
-     returns to the flow and standard reading-column padding kicks
-     back in (lg:p-8).
-
-     Below lg: we also strip padding from the body, the AppLayout
-     root, and every Radix/Wouter/motion wrapper inside the scroll
-     container so nothing — light or dark mode, page-specific or
-     global — can re-introduce a left/right indent.
+     The hard edge-to-edge guarantee is implemented via inline
+     `style` props on the scroll container and motion wrapper in
+     AppLayout.tsx (inline styles beat every class and theme).
+     This rule is a safety net that strips padding from the
+     document roots so nothing at the body level can leak in.
      ───────────────────────────────────────────── */
   @media (max-width: 1023px) {
     html, body, #root {
@@ -129,16 +122,6 @@
       padding-right: 0 !important;
       margin-left: 0 !important;
       margin-right: 0 !important;
-    }
-    .mobile-edge,
-    .mobile-edge > *,
-    .mobile-edge > * > * {
-      padding-left: 0 !important;
-      padding-right: 0 !important;
-      margin-left: 0 !important;
-      margin-right: 0 !important;
-      max-width: 100% !important;
-      width: 100% !important;
     }
   }
 
