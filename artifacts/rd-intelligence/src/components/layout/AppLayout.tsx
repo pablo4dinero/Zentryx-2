@@ -702,7 +702,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         style={{ width: isCollapsed ? 64 : 256 }}
         className={cn(
           "flex-shrink-0 flex flex-col border-r z-50 overflow-hidden",
-          "transition-[width] duration-300 ease-in-out",
+          // Animate width (desktop collapse) AND transform (mobile slide-in
+          // from the logo on the left, expanding rightward into view).
+          "transition-[width,transform] duration-300 ease-in-out",
+          "transform-gpu will-change-transform origin-left",
           /* Mobile: slide in over content as fixed overlay */
           "fixed inset-y-0 left-0",
           // Stay in document flow only on real desktops (lg, 1024 px+). On
@@ -940,10 +943,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           return (
             <div className={cn(
               "flex-1 overflow-y-auto custom-scrollbar relative",
-              // Mobile uses px-2 / py-3 so pages start near the left edge
-              // (cards have their own rounded corners + interior padding).
-              // sm and up restore the standard reading-column padding.
-              fillScreen ? "p-1.5" : "px-2 py-3 sm:p-6 lg:p-8",
+              // Mobile: zero horizontal padding so content goes edge-to-edge.
+              // Cards keep their own interior padding; sm+ restores the
+              // standard reading-column padding.
+              fillScreen ? "p-1.5" : "px-0 py-3 sm:p-6 lg:p-8",
             )}>
               <AnimatePresence mode="wait">
                 <motion.div
