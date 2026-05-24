@@ -192,6 +192,22 @@ export default function ChatRoom() {
   const [users, setUsers] = useState<any[]>([]);
   const [messages, setMessages] = useState<any[]>([]);
   const [activeRoom, setActiveRoom] = useState<any>(null);
+
+  // Below lg: (1024 px) we render either the sidebar (people + channels)
+  // OR the chat panel — never both — so the chat feels like a phone chat
+  // app. Conditional rendering instead of CSS classes so PWA caching /
+  // theme overrides cannot leak the wrong panel in.
+  const [isBelowLg, setIsBelowLg] = useState<boolean>(
+    typeof window !== "undefined" ? window.innerWidth < 1024 : false,
+  );
+  useEffect(() => {
+    const onResize = () => setIsBelowLg(window.innerWidth < 1024);
+    window.addEventListener("resize", onResize);
+    onResize();
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const showSidebar = !isBelowLg || !activeRoom;
+  const showChatPanel = !isBelowLg || !!activeRoom;
   const [newMsg, setNewMsg] = useState("");
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -574,14 +590,17 @@ export default function ChatRoom() {
       "flex h-[calc(100vh-5rem)] gap-0 rounded-2xl overflow-hidden border relative",
       isLight ? "bg-white border-slate-200" : "glass-card border-white/5",
     )}>
-      {/* Sidebar — full width on mobile/tablet (below lg). When a room is
-          active on mobile we hide the sidebar entirely so the chat panel
-          owns the full screen; the back button in the chat header brings
-          the user back to this list. */}
-      <div className={cn(
-        "w-full lg:w-72 shrink-0 lg:border-r border-white/5 flex-col bg-white/[0.02]",
-        activeRoom ? "hidden lg:flex" : "flex",
-      )}>
+      {/* Sidebar — conditionally rendered. On phone/tablet we render this
+          only when no room is selected; the chat panel takes over once a
+          room is open and the back button returns the user here. */}
+      {showSidebar && (
+      <div
+        className={cn(
+          "shrink-0 border-r border-white/5 flex flex-col bg-white/[0.02]",
+          isBelowLg ? "w-full" : "w-72",
+        )}
+        style={isBelowLg ? { width: "100%" } : undefined}
+      >
         <div className="p-3 border-b border-white/5 flex items-center justify-between gap-2">
           <h2 className="font-display font-bold text-foreground">Chat</h2>
           <CreateGroupModal users={users} onCreate={createGroupRoom} />
@@ -765,13 +784,13 @@ export default function ChatRoom() {
           })}
         </div>
       </div>
+      )}
 
-      {/* Main Chat — hidden on mobile/tablet until a room is selected, so
-          the people + channels list owns the full viewport first. */}
-      <div className={cn(
-        "flex-1 min-w-0 relative",
-        activeRoom ? "flex flex-col" : "hidden lg:flex lg:flex-col",
-      )}>
+      {/* Main Chat — conditionally rendered. On phone/tablet this only
+          shows once a room is selected; until then the sidebar owns the
+          full viewport. */}
+      {showChatPanel && (
+      <div className="flex-1 flex flex-col min-w-0 relative">
         {/* Background — softly pulsing aurora gradient with three layered
             SVG waves drifting horizontally at different speeds. Calmer and
             more "official" than the previous dot-grid; tuned to the brand
@@ -1077,6 +1096,7 @@ export default function ChatRoom() {
         )}
         </div>
       </div>
+      )}
     </div>
 
     {/* View Profile modal — opened from the chat header for DMs. Shows the
