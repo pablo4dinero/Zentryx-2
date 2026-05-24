@@ -934,7 +934,7 @@ export default function ChatRoom() {
                             : undefined
                         }
                         className={cn(
-                          "relative group/bubble rounded-2xl px-4 py-2.5 text-sm font-medium",
+                          "chat-bubble-text relative group/bubble rounded-2xl px-4 py-2.5 text-sm font-medium",
                           isOwn
                             ? isLight
                               ? "bg-gradient-to-br from-indigo-500 to-violet-600 rounded-tr-sm shadow-md shadow-indigo-500/20"

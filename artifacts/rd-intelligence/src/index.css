@@ -483,6 +483,11 @@
 .light p {
   color: #334155;
 }
+/* …but let chat-bubble (and any opted-out element) keep its own colour. */
+.light .chat-bubble-text,
+.light .chat-bubble-text * {
+  color: inherit !important;
+}
 
 /* ─────────────────────────────────────────────
    LIGHT MODE — FORM INPUTS
