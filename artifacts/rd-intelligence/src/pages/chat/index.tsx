@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Send, Plus, ImageIcon, Mic, MicOff, Users, Lock, Video, Hash,
   MoreVertical, StopCircle, Trash2, Pin, PinOff, LogOut, X,
-  MessageSquare, AtSign, ChevronRight, FileText, Download, ZoomIn, Paperclip, ArrowDown,
+  MessageSquare, AtSign, ChevronRight, ArrowLeft, FileText, Download, ZoomIn, Paperclip, ArrowDown,
   Check, CheckCheck, Clock, Search,
   UserCircle, Phone, Briefcase, Building2, Mail
 } from "lucide-react";
@@ -574,8 +574,14 @@ export default function ChatRoom() {
       "flex h-[calc(100vh-5rem)] gap-0 rounded-2xl overflow-hidden border relative",
       isLight ? "bg-white border-slate-200" : "glass-card border-white/5",
     )}>
-      {/* Sidebar */}
-      <div className="w-72 shrink-0 border-r border-white/5 flex flex-col bg-white/[0.02]">
+      {/* Sidebar — full width on mobile/tablet (below lg). When a room is
+          active on mobile we hide the sidebar entirely so the chat panel
+          owns the full screen; the back button in the chat header brings
+          the user back to this list. */}
+      <div className={cn(
+        "w-full lg:w-72 shrink-0 lg:border-r border-white/5 flex-col bg-white/[0.02]",
+        activeRoom ? "hidden lg:flex" : "flex",
+      )}>
         <div className="p-3 border-b border-white/5 flex items-center justify-between gap-2">
           <h2 className="font-display font-bold text-foreground">Chat</h2>
           <CreateGroupModal users={users} onCreate={createGroupRoom} />
@@ -760,8 +766,12 @@ export default function ChatRoom() {
         </div>
       </div>
 
-      {/* Main Chat */}
-      <div className="flex-1 flex flex-col min-w-0 relative">
+      {/* Main Chat — hidden on mobile/tablet until a room is selected, so
+          the people + channels list owns the full viewport first. */}
+      <div className={cn(
+        "flex-1 min-w-0 relative",
+        activeRoom ? "flex flex-col" : "hidden lg:flex lg:flex-col",
+      )}>
         {/* Background — softly pulsing aurora gradient with three layered
             SVG waves drifting horizontally at different speeds. Calmer and
             more "official" than the previous dot-grid; tuned to the brand
@@ -829,8 +839,16 @@ export default function ChatRoom() {
                 }
               }
               return (
-            <div className="px-6 py-3 border-b border-white/5 flex items-center justify-between shrink-0 gap-3">
+            <div className="px-3 lg:px-6 py-3 border-b border-white/5 flex items-center justify-between shrink-0 gap-2 lg:gap-3">
               <div className="flex items-center gap-2 min-w-0 flex-1">
+                <button
+                  onClick={() => setActiveRoom(null)}
+                  className="lg:hidden p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors shrink-0"
+                  aria-label="Back to chats"
+                  title="Back to chats"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
                 {activeRoom.isGroup ? <Hash className="w-5 h-5 text-primary shrink-0" /> : <Lock className="w-5 h-5 text-primary shrink-0" />}
                 <h3 className="font-semibold text-foreground truncate">{activeRoom.name}</h3>
                 {isRoomPinned(activeRoom.id) && <span className="flex items-center gap-1 text-[10px] text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded-full shrink-0"><Pin className="w-2.5 h-2.5" />Pinned</span>}
