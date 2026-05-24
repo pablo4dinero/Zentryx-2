@@ -483,10 +483,23 @@
 .light p {
   color: #334155;
 }
-/* …but let chat-bubble (and any opted-out element) keep its own colour. */
+/* Chat-bubble escape hatch. Either keep inherited colour (.chat-bubble-text)
+   OR force white outright (.chat-force-white). The .chat-force-white block
+   uses !important everywhere so it wins against ANY non-!important rule —
+   the right hammer when the cascade refuses to cooperate. */
+.chat-bubble-text,
+.chat-bubble-text *,
 .light .chat-bubble-text,
 .light .chat-bubble-text * {
   color: inherit !important;
+}
+.chat-force-white,
+.chat-force-white *,
+.light .chat-force-white,
+.light .chat-force-white *,
+.dark .chat-force-white,
+.dark .chat-force-white * {
+  color: #ffffff !important;
 }
 
 /* ─────────────────────────────────────────────

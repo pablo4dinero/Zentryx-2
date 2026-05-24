@@ -935,6 +935,12 @@ export default function ChatRoom() {
                         }
                         className={cn(
                           "chat-bubble-text relative group/bubble rounded-2xl px-4 py-2.5 text-sm font-medium",
+                          // Nuclear white — wins via !important in index.css,
+                          // applied whenever the bubble's background is dark
+                          // enough that the text should be white (sent in any
+                          // theme; received in light because the received
+                          // bubble in light mode is slate-700 gradient).
+                          (isOwn || isLight) && "chat-force-white",
                           isOwn
                             ? isLight
                               ? "bg-gradient-to-br from-indigo-500 to-violet-600 rounded-tr-sm shadow-md shadow-indigo-500/20"
