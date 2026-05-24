@@ -113,7 +113,7 @@ function filterByPeriod(orders: TodayOrder[], period: string): TodayOrder[] {
   return orders.filter(o => isTodayDate(o.dateOrdered));
 }
 
-const inputClass = "w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground";
+const inputClass = "sf-field w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground";
 
 // Searchable account dropdown. Uses the same input styling as the rest of the
 // form, plus a panel that filters accounts by company OR product name.
@@ -265,6 +265,8 @@ function LeadingProductTypeChart({
 }) {
   const [chartPeriod, setChartPeriod] = useState<ChartPeriod>("all");
   const [fullscreen, setFullscreen] = useState(false);
+  const { theme: _chartTheme } = useTheme();
+  const isChartLight = _chartTheme === "light";
 
   const chartOrders = useMemo(
     () => filterByPeriod(allOrders, chartPeriod),
@@ -379,15 +381,26 @@ function LeadingProductTypeChart({
   if (fullscreen) {
     return (
       <>
-        <div className="glass-card rounded-2xl p-6 border border-white/5 flex items-center justify-center text-sm text-muted-foreground">
+        <div className={cn("glass-card rounded-2xl p-6 border flex items-center justify-center text-sm text-muted-foreground", isChartLight ? "border-slate-200" : "border-white/5")}>
           Chart open in fullscreen
         </div>
         <div
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6"
+          className={cn(
+            "fixed inset-0 z-50 backdrop-blur-sm flex items-center justify-center p-6",
+            isChartLight ? "bg-slate-900/40" : "bg-black/80",
+          )}
           onClick={e => { if (e.target === e.currentTarget) setFullscreen(false); }}
         >
-          <div className="glass-card rounded-2xl p-6 border border-white/10 w-full max-w-2xl flex flex-col"
-            style={{ height: "80vh" }}>
+          <div
+            className={cn(
+              "rounded-2xl p-6 border w-full max-w-2xl flex flex-col shadow-2xl",
+              isChartLight ? "border-slate-200" : "glass-card border-white/10",
+            )}
+            style={{
+              height: "80vh",
+              background: isChartLight ? "#ffffff" : undefined,
+            }}
+          >
             {inner}
           </div>
         </div>
@@ -828,7 +841,7 @@ export default function NewProductionOrdersPage() {
 
       {/* Search + export bar above the table */}
       <div className="flex items-center gap-3">
-        <div className="flex-1 flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+        <div className="sf-field flex-1 flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
           <Search className="w-4 h-4 text-muted-foreground flex-shrink-0" />
           <input
             value={search}
