@@ -171,6 +171,62 @@ router.post("/rooms", requireAuth, async (req: AuthRequest, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: "InternalServerError" }); }
 });
 
+// Edit a group channel — rename and/or swap members. Creator only.
+// Body: { name?: string, memberIds?: number[] }
+// memberIds, if provided, REPLACES the room's member list (creator is
+// always preserved; superadmin is stripped unless the requester is the
+// superadmin, matching POST /rooms behaviour).
+router.patch("/rooms/:roomId", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const roomId = parseInt(Array.isArray(req.params.roomId) ? req.params.roomId[0] : req.params.roomId as string);
+    const userId = req.user!.userId;
+    const { name, memberIds } = req.body as { name?: string; memberIds?: number[] };
+
+    const [room] = await db.select().from(chatRoomsTable).where(eq(chatRoomsTable.id, roomId)).limit(1);
+    if (!room) { res.status(404).json({ error: "NotFound" }); return; }
+    if (room.createdById !== userId) { res.status(403).json({ error: "Forbidden" }); return; }
+    if (!room.isGroup) { res.status(400).json({ error: "DMNotEditable" }); return; }
+
+    if (typeof name === "string" && name.trim() !== "" && name !== room.name) {
+      await db.update(chatRoomsTable).set({ name: name.trim() }).where(eq(chatRoomsTable.id, roomId));
+    }
+
+    if (Array.isArray(memberIds)) {
+      const [sa] = await db.select({ id: usersTable.id }).from(usersTable)
+        .where(eq(usersTable.email, SUPERADMIN_EMAIL)).limit(1);
+      const saId = sa?.id;
+      const requested = new Set<number>([room.createdById, ...memberIds]);
+      const desired = saId && userId !== saId
+        ? new Set([...requested].filter(id => id !== saId))
+        : requested;
+
+      const existingRows = await db.select({ userId: chatRoomMembersTable.userId })
+        .from(chatRoomMembersTable)
+        .where(eq(chatRoomMembersTable.roomId, roomId));
+      const existing = new Set(existingRows.map(r => r.userId));
+
+      const toAdd = [...desired].filter(id => !existing.has(id));
+      const toRemove = [...existing].filter(id => !desired.has(id) && id !== room.createdById);
+
+      for (const uid of toAdd) {
+        await db.insert(chatRoomMembersTable).values({ roomId, userId: uid }).catch(() => {});
+      }
+      if (toRemove.length > 0) {
+        await db.delete(chatRoomMembersTable).where(and(
+          eq(chatRoomMembersTable.roomId, roomId),
+          inArray(chatRoomMembersTable.userId, toRemove),
+        ));
+      }
+    }
+
+    const [updated] = await db.select().from(chatRoomsTable).where(eq(chatRoomsTable.id, roomId)).limit(1);
+    const memberRows = await db.select({ userId: chatRoomMembersTable.userId })
+      .from(chatRoomMembersTable)
+      .where(eq(chatRoomMembersTable.roomId, roomId));
+    res.json({ ...updated, memberUserIds: memberRows.map(m => m.userId) });
+  } catch (err) { console.error(err); res.status(500).json({ error: "InternalServerError" }); }
+});
+
 // Delete a room (creator only) or leave it
 router.delete("/rooms/:roomId", requireAuth, async (req: AuthRequest, res) => {
   try {

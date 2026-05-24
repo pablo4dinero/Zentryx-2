@@ -3,7 +3,7 @@ import {
   Send, Plus, ImageIcon, Mic, MicOff, Users, Lock, Video, Hash,
   MoreVertical, StopCircle, Trash2, Pin, PinOff, LogOut, X,
   MessageSquare, AtSign, ChevronRight, ArrowLeft, FileText, Download, ZoomIn, Paperclip, ArrowDown,
-  Check, CheckCheck, Clock, Search,
+  Check, CheckCheck, Clock, Search, Pencil, UserPlus, UserMinus,
   UserCircle, Phone, Briefcase, Building2, Mail
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -39,13 +39,20 @@ function useApi() {
       body: JSON.stringify(body),
     }).then(r => r.json());
 
+  const patch = (path: string, body: any) =>
+    fetch(`${BASE}api${path}`, {
+      method: "PATCH",
+      headers: { ...authHeader(), "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then(r => r.json());
+
   const postForm = (path: string, data: FormData) =>
     fetch(`${BASE}api${path}`, { method: "POST", headers: authHeader(), body: data }).then(r => r.json());
 
   const del = (path: string) =>
     fetch(`${BASE}api${path}`, { method: "DELETE", headers: authHeader() }).then(r => r.json());
 
-  return { get, post, postForm, del, token };
+  return { get, post, patch, postForm, del, token };
 }
 
 function usePinnedRooms() {
@@ -83,9 +90,9 @@ function usePinnedMessages(roomId: number) {
   return { isPinned, toggle };
 }
 
-function RoomContextMenu({ room, isPinned, onPin, onDelete, onLeave, isCreator }: {
+function RoomContextMenu({ room, isPinned, onPin, onDelete, onLeave, onEdit, isCreator }: {
   room: any; isPinned: boolean; onPin: () => void;
-  onDelete: () => void; onLeave: () => void; isCreator: boolean;
+  onDelete: () => void; onLeave: () => void; onEdit?: () => void; isCreator: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -117,6 +124,15 @@ function RoomContextMenu({ room, isPinned, onPin, onDelete, onLeave, isCreator }
               {isPinned ? <PinOff className="w-4 h-4 text-amber-400" /> : <Pin className="w-4 h-4 text-amber-400" />}
               {isPinned ? "Unpin" : "Pin to Top"}
             </button>
+            {isCreator && onEdit && room.isGroup && (
+              <>
+                <div className="border-t border-white/5" />
+                <button onClick={() => { onEdit(); setOpen(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left text-muted-foreground hover:bg-white/5 hover:text-foreground transition-colors">
+                  <Pencil className="w-4 h-4 text-primary" /> Edit Channel
+                </button>
+              </>
+            )}
             <div className="border-t border-white/5" />
             {isCreator ? (
               <button onClick={() => { onDelete(); setOpen(false); }}
@@ -454,6 +470,19 @@ export default function ChatRoom() {
     selectRoom(room);
   };
 
+  const editGroupRoom = async (roomId: number, name: string, memberIds: number[]) => {
+    const updated = await api.patch(`/chat/rooms/${roomId}`, { name, memberIds });
+    if (!updated || updated.error) {
+      toast({ title: "Could not save changes", description: updated?.error || "Try again.", variant: "destructive" });
+      return;
+    }
+    setRooms(prev => prev.map((r: any) => r.id === roomId ? { ...r, ...updated } : r));
+    if (activeRoom?.id === roomId) setActiveRoom((prev: any) => prev ? { ...prev, ...updated } : prev);
+    toast({ title: "Channel updated" });
+  };
+
+  const [editingRoom, setEditingRoom] = useState<any>(null);
+
   const createPrivateRoom = async (userId: number, userName: string) => {
     const room = await api.post("/chat/rooms", { name: userName, isGroup: false, memberIds: [userId] });
     setRooms(prev => { const exists = prev.find((r: any) => r.id === room.id); return exists ? prev : [...prev, room]; });
@@ -664,7 +693,7 @@ export default function ChatRoom() {
                       )}
                     </div>
                   </button>
-                  <RoomContextMenu room={room} isPinned={isRoomPinned(room.id)} onPin={() => toggleRoomPin(room.id)} onDelete={() => deleteRoom(room)} onLeave={() => deleteRoom(room)} isCreator={room.createdById === currentUserId} />
+                  <RoomContextMenu room={room} isPinned={isRoomPinned(room.id)} onPin={() => toggleRoomPin(room.id)} onDelete={() => deleteRoom(room)} onLeave={() => deleteRoom(room)} onEdit={() => setEditingRoom(room)} isCreator={room.createdById === currentUserId} />
                 </div>
               ))}
             </>
@@ -1119,6 +1148,20 @@ export default function ChatRoom() {
       </div>
     </div>
 
+    {/* Edit Channel modal — rename + add/remove members. Creator only. */}
+    <EditGroupModal
+      room={editingRoom}
+      users={users}
+      currentUserId={currentUserId}
+      onClose={() => setEditingRoom(null)}
+      onSave={(name, memberIds) => {
+        if (editingRoom) {
+          editGroupRoom(editingRoom.id, name, memberIds);
+          setEditingRoom(null);
+        }
+      }}
+    />
+
     {/* View Profile modal — opened from the chat header for DMs. Shows the
         partner's name, role, department, phone, email, and avatar. */}
     <AnimatePresence>
@@ -1373,6 +1416,106 @@ function CreateGroupModal({ users, onCreate }: { users: any[]; onCreate: (name: 
               className={isCgLight ? "bg-red-600 text-white border-red-600 hover:bg-red-700 hover:text-white" : ""}>Cancel</Button>
             <Button disabled={!name.trim()} onClick={() => { onCreate(name, selected); setOpen(false); setName(""); setSelected([]); }}>
               Create Channel
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditGroupModal({ room, users, currentUserId, onClose, onSave }: {
+  room: any | null;
+  users: any[];
+  currentUserId: number;
+  onClose: () => void;
+  onSave: (name: string, memberIds: number[]) => void;
+}) {
+  const [name, setName] = useState("");
+  const [selected, setSelected] = useState<number[]>([]);
+  const [search, setSearch] = useState("");
+  const { theme } = useTheme();
+  const isLight = theme === "light";
+
+  useEffect(() => {
+    if (room) {
+      setName(room.name ?? "");
+      const ids: number[] = Array.isArray(room.memberUserIds) ? room.memberUserIds : [];
+      // The creator is always a member but doesn't show up in the
+      // toggleable list — we filter them out so they can't accidentally
+      // remove themselves from their own channel.
+      setSelected(ids.filter(id => id !== room.createdById && id !== currentUserId));
+      setSearch("");
+    }
+  }, [room, currentUserId]);
+
+  if (!room) return null;
+
+  const toggle = (id: number) => setSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
+  const filtered = users.filter((u: any) =>
+    u.id !== room.createdById && (
+      !search.trim() || u.name.toLowerCase().includes(search.toLowerCase()) ||
+      (u.email ?? "").toLowerCase().includes(search.toLowerCase())
+    )
+  );
+
+  return (
+    <Dialog open={!!room} onOpenChange={open => { if (!open) onClose(); }}>
+      <DialogContent className={cn("sm:max-w-[440px]", isLight ? "bg-white border-gray-200 text-gray-900" : "glass-panel border-white/10")}>
+        <DialogHeader>
+          <DialogTitle className={cn("flex items-center gap-2", isLight ? "text-gray-900" : "")}>
+            <Pencil className="w-4 h-4 text-primary" /> Edit Channel
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 mt-2">
+          <div className="space-y-2">
+            <label className={cn("text-sm font-medium", isLight ? "text-gray-900" : "")}>Channel Name</label>
+            <Input value={name} onChange={e => setName(e.target.value)} placeholder="Channel name"
+              className={isLight ? "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:bg-white" : ""} />
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className={cn("text-sm font-medium", isLight ? "text-gray-900" : "")}>Members</label>
+              <span className="text-[11px] text-muted-foreground">{selected.length + 1} selected</span>
+            </div>
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search teammates…"
+                className={cn("pl-8", isLight ? "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:bg-white" : "")} />
+            </div>
+            <div className="space-y-1 max-h-56 overflow-y-auto custom-scrollbar">
+              {filtered.length === 0 && (
+                <div className="text-xs text-muted-foreground text-center py-4">No teammates match "{search}"</div>
+              )}
+              {filtered.map((u: any) => {
+                const isSelected = selected.includes(u.id);
+                return (
+                  <button key={u.id} type="button" onClick={() => toggle(u.id)}
+                    className={cn("w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors text-left",
+                      isSelected ? "bg-primary/10 text-primary"
+                        : isLight ? "text-gray-700 hover:bg-gray-50 hover:text-gray-900" : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                    )}>
+                    <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-secondary/50 to-primary/50 flex items-center justify-center text-white text-[11px] font-bold shrink-0">{u.name.charAt(0).toUpperCase()}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="truncate">{u.name}</div>
+                      {u.role && <div className="text-[10px] opacity-60 truncate capitalize">{u.role.replace(/_/g, " ")}</div>}
+                    </div>
+                    {isSelected ? (
+                      <UserMinus className="w-3.5 h-3.5 text-destructive shrink-0" />
+                    ) : (
+                      <UserPlus className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-muted-foreground">You are always a member of your own channel.</p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={onClose}
+              className={isLight ? "bg-white border-gray-200 text-gray-700 hover:bg-gray-50" : ""}>Cancel</Button>
+            <Button disabled={!name.trim()} onClick={() => onSave(name.trim(), selected)}>
+              Save Changes
             </Button>
           </div>
         </div>
