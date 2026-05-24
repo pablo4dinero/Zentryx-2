@@ -3,7 +3,7 @@ import { useListUsers } from "@/api-client";
 import { PageLoader } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Search, Calendar, Trash2, Briefcase, Edit3, X, Check, Download, LayoutGrid, List, Table2, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { Plus, Search, Calendar, Trash2, Briefcase, Edit3, X, Check, Download, LayoutGrid, List, Table2, ArrowUpDown, ArrowUp, ArrowDown, Settings2, Pencil } from "lucide-react";
 import { format } from "date-fns";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -112,6 +112,28 @@ export default function BusinessDev() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [editingCard, setEditingCard] = useState<any | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("list");
+
+  // ── Status manage panel ────────────────────────────────────────────────
+  // Mirrors the Project Portfolio pattern: a Settings2 button next to the
+  // status pills opens a small popover where the user can rename existing
+  // statuses, delete them, or add a new one. State is persisted server-
+  // side via useServerOptionList("status").
+  const [statusManageOpen, setStatusManageOpen] = useState(false);
+  const [statusEditingOption, setStatusEditingOption] = useState<string | null>(null);
+  const [statusEditValue, setStatusEditValue] = useState("");
+  const [statusNewValue, setStatusNewValue] = useState("");
+  useEffect(() => {
+    if (!statusManageOpen) return;
+    const onClick = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (!t.closest("[data-bd-status-manage]")) {
+        setStatusManageOpen(false);
+        setStatusEditingOption(null);
+      }
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [statusManageOpen]);
   const { toast } = useToast();
   const { theme } = useTheme();
   const isLight = theme === "light";
@@ -203,7 +225,7 @@ export default function BusinessDev() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input placeholder="Search BD items..." className="pl-9" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 items-center relative" data-bd-status-manage>
           {["all", ...statusOpts.options].map(s => (
             <button key={s} onClick={() => setStatusFilter(s === statusFilter && s !== "all" ? "all" : s)}
               className={cn("px-3 py-1.5 rounded-lg text-xs font-medium border transition-all capitalize",
@@ -216,6 +238,138 @@ export default function BusinessDev() {
               {s === "all" ? "All" : s.replace(/_/g, ' ')}
             </button>
           ))}
+
+          {/* Configure button — opens a popover to rename / add / delete statuses */}
+          <button
+            data-bd-status-manage
+            onClick={() => { setStatusManageOpen(o => !o); setStatusEditingOption(null); setStatusNewValue(""); }}
+            title="Configure statuses"
+            className={cn("inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors",
+              statusManageOpen
+                ? "bg-primary/10 border-primary/30 text-primary"
+                : isLight
+                  ? "border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50"
+                  : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5"
+            )}
+          ><Settings2 className="w-3.5 h-3.5" /> Configure</button>
+
+          {/* Manage popover */}
+          {statusManageOpen && (
+            <div
+              data-bd-status-manage
+              className={cn("absolute top-full left-0 z-50 mt-2 w-72 rounded-xl border shadow-xl overflow-hidden",
+                isLight ? "bg-white border-slate-200" : "bg-[#1a1a2e] border-white/10"
+              )}
+            >
+              <div className={cn("px-3 py-2 border-b flex items-center justify-between", isLight ? "border-slate-100" : "border-white/10")}>
+                <p className={cn("text-xs font-semibold uppercase tracking-wide", isLight ? "text-slate-600" : "text-muted-foreground")}>
+                  Manage Statuses
+                </p>
+                <button onClick={() => setStatusManageOpen(false)}
+                  className={cn("p-0.5 rounded", isLight ? "text-slate-400 hover:text-slate-700" : "text-muted-foreground hover:text-foreground")}>
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="max-h-56 overflow-y-auto">
+                {statusOpts.options.length === 0 && (
+                  <div className={cn("px-3 py-4 text-xs text-center", isLight ? "text-slate-400" : "text-muted-foreground")}>
+                    No statuses yet — add one below.
+                  </div>
+                )}
+                {statusOpts.options.map(option => (
+                  <div key={option} className={cn("flex items-center px-3 py-1.5 gap-1 group",
+                    isLight ? "hover:bg-slate-50" : "hover:bg-white/5"
+                  )}>
+                    {statusEditingOption === option ? (
+                      <div className="flex flex-1 items-center gap-1.5">
+                        <input
+                          autoFocus
+                          value={statusEditValue}
+                          onChange={e => setStatusEditValue(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === "Enter" && statusEditValue.trim()) {
+                              statusOpts.renameOption(option, statusEditValue.trim());
+                              if (statusFilter === option) setStatusFilter(statusEditValue.trim());
+                              setStatusEditingOption(null);
+                            }
+                            if (e.key === "Escape") setStatusEditingOption(null);
+                          }}
+                          onBlur={() => {
+                            if (statusEditValue.trim() && statusEditValue.trim() !== option) {
+                              statusOpts.renameOption(option, statusEditValue.trim());
+                              if (statusFilter === option) setStatusFilter(statusEditValue.trim());
+                            }
+                            setStatusEditingOption(null);
+                          }}
+                          className={cn("flex-1 min-w-0 text-xs px-1.5 py-0.5 rounded border focus:outline-none focus:ring-1 focus:ring-primary/40",
+                            isLight ? "bg-white border-slate-300 text-slate-900" : "bg-black/30 border-white/20 text-foreground"
+                          )}
+                        />
+                        <button
+                          onClick={() => {
+                            if (statusEditValue.trim() && statusEditValue.trim() !== option) {
+                              statusOpts.renameOption(option, statusEditValue.trim());
+                              if (statusFilter === option) setStatusFilter(statusEditValue.trim());
+                            }
+                            setStatusEditingOption(null);
+                          }}
+                          className="shrink-0 text-xs font-bold text-primary hover:opacity-70"
+                        >✓</button>
+                      </div>
+                    ) : (
+                      <>
+                        <span className={cn("flex-1 text-xs capitalize", isLight ? "text-slate-700" : "text-foreground")}>
+                          {option.replace(/_/g, " ")}
+                        </span>
+                        <button
+                          title="Rename"
+                          onClick={() => { setStatusEditingOption(option); setStatusEditValue(option.replace(/_/g, " ")); }}
+                          className={cn("opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity shrink-0",
+                            isLight ? "text-slate-400 hover:text-slate-700" : "text-muted-foreground hover:text-foreground"
+                          )}
+                        ><Pencil className="w-3 h-3" /></button>
+                        <button
+                          title="Delete"
+                          onClick={() => {
+                            statusOpts.deleteOption(option);
+                            if (statusFilter === option) setStatusFilter("all");
+                          }}
+                          className={cn("opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity shrink-0",
+                            isLight ? "text-slate-400 hover:text-red-500" : "text-muted-foreground hover:text-red-400"
+                          )}
+                        ><Trash2 className="w-3 h-3" /></button>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className={cn("px-3 py-2 border-t", isLight ? "border-slate-100" : "border-white/10")}>
+                <div className="flex items-center gap-2">
+                  <input
+                    value={statusNewValue}
+                    onChange={e => setStatusNewValue(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter" && statusNewValue.trim()) {
+                        statusOpts.addOption(statusNewValue.trim());
+                        setStatusNewValue("");
+                      }
+                    }}
+                    placeholder="New status name…"
+                    className={cn("flex-1 min-w-0 text-xs px-2 py-1 rounded-lg border focus:outline-none focus:ring-1 focus:ring-primary/40",
+                      isLight ? "bg-white border-slate-200 text-slate-900 placeholder:text-slate-400" : "bg-black/20 border-white/10 text-foreground placeholder:text-muted-foreground"
+                    )}
+                  />
+                  <button
+                    onClick={() => { if (statusNewValue.trim()) { statusOpts.addOption(statusNewValue.trim()); setStatusNewValue(""); } }}
+                    disabled={!statusNewValue.trim()}
+                    className="shrink-0 text-xs px-2.5 py-1 rounded-lg bg-primary text-white font-medium hover:bg-primary/90 disabled:opacity-40 transition-colors"
+                  >Add</button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -629,12 +783,15 @@ function EditBDModal({ item, users, onUpdate, onClose, stageOpts, statusOpts, pr
 
   const { theme: _editTheme } = useTheme();
   const isLight = _editTheme === "light";
-  const cls = cn("flex h-10 w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground", isLight ? "border-gray-200 bg-white" : "border-white/10 bg-black/20");
-  const lbl = cn("text-sm font-medium", isLight ? "text-gray-900" : "");
+  const cls = cn("flex h-10 w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground", isLight ? "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400" : "border-white/10 bg-black/20 text-foreground");
+  const lbl = cn("text-sm font-medium", isLight ? "text-slate-900" : "");
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className={cn("sm:max-w-[640px] max-h-[90vh] overflow-y-auto", isLight ? "bg-white border-gray-200 [&>button]:text-gray-900 [&>button]:opacity-100" : "glass-panel border-white/10 bg-card/95")}>
+      <DialogContent
+        className={cn("sm:max-w-[640px] max-h-[90vh] overflow-y-auto", isLight ? "border-slate-200 [&>button]:text-slate-900 [&>button]:opacity-100" : "glass-panel border-white/10 bg-card/95")}
+        style={isLight ? { background: "#ffffff", color: "rgb(15,23,42)" } : undefined}
+      >
         <DialogHeader><DialogTitle className="text-xl font-display">Edit BD Item — {item.name}</DialogTitle></DialogHeader>
         <div className="space-y-4 mt-2">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -644,7 +801,7 @@ function EditBDModal({ item, users, onUpdate, onClose, stageOpts, statusOpts, pr
             <div className="space-y-1.5"><label className={lbl}>Status</label><CustomOptionsSelect value={form.status} onChange={v => setF("status", v)} handle={statusOpts} displayFn={v => v.replace(/_/g,' ')} placeholder="Select status..." isLight={isLight} /></div>
             <div className="space-y-1.5"><label className={lbl}>Priority</label><CustomOptionsSelect value={form.priority} onChange={v => setF("priority", v)} handle={priorityOpts} placeholder="Select priority..." isLight={isLight} /></div>
             <div className="space-y-1.5"><label className={lbl}>Product Type</label><CustomOptionsSelect value={form.productType} onChange={v => setF("productType", v)} handle={typeOpts} placeholder="Select type..." isLight={isLight} /></div>
-            <div className={cn("sm:col-span-2 border-t pt-2", isLight ? "border-gray-100" : "border-white/10")}><p className={cn("text-xs font-semibold uppercase tracking-wide mb-2", isLight ? "text-gray-500" : "text-muted-foreground")}>Customer</p></div>
+            <div className={cn("sm:col-span-2 border-t pt-2", isLight ? "border-slate-200" : "border-white/10")}><p className={cn("text-xs font-semibold uppercase tracking-wide mb-2", isLight ? "text-slate-500" : "text-muted-foreground")}>Customer</p></div>
             <div className="space-y-1.5"><label className={lbl}>Name</label><input value={form.customerName} onChange={e => setF("customerName", e.target.value)} className={cls} placeholder="Customer name" /></div>
             <div className="space-y-1.5"><label className={lbl}>Email</label><input type="email" value={form.customerEmail} onChange={e => setF("customerEmail", e.target.value)} className={cls} placeholder="email@example.com" /></div>
             <div className="space-y-1.5"><label className={lbl}>Phone</label><input value={form.customerPhone} onChange={e => setF("customerPhone", e.target.value)} className={cls} placeholder="+27 xx xxx xxxx" /></div>
@@ -655,11 +812,11 @@ function EditBDModal({ item, users, onUpdate, onClose, stageOpts, statusOpts, pr
           {users.length > 0 && (
             <div className="space-y-2">
               <label className={lbl}>Assignees</label>
-              <div className={cn("flex flex-wrap gap-2 p-3 rounded-xl border max-h-28 overflow-y-auto", isLight ? "border-gray-200 bg-gray-50" : "border-white/10 bg-black/10")}>
+              <div className={cn("flex flex-wrap gap-2 p-3 rounded-xl border max-h-28 overflow-y-auto", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/10")}>
                 {users.map(u => (
                   <button key={u.id} type="button" onClick={() => toggleAssignee(u.id)}
-                    className={cn("flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all", form.assigneeIds.includes(u.id) ? "bg-primary text-white border-primary" : isLight ? "border-gray-200 text-gray-600 hover:bg-gray-50" : "border-white/10 text-muted-foreground hover:text-foreground")}>
-                    <span className={cn("w-4 h-4 rounded-full flex items-center justify-center text-[10px]", isLight ? "bg-gray-100 text-gray-700" : "bg-white/10")}>{u.name.charAt(0)}</span>
+                    className={cn("flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all", form.assigneeIds.includes(u.id) ? "bg-primary text-white border-primary" : isLight ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground")}>
+                    <span className={cn("w-4 h-4 rounded-full flex items-center justify-center text-[10px]", isLight ? "bg-slate-100 text-slate-700" : "bg-white/10")}>{u.name.charAt(0)}</span>
                     {u.name}
                   </button>
                 ))}
@@ -701,23 +858,26 @@ function CreateBDModal({ users, onCreate, stageOpts, statusOpts, priorityOpts, t
 
   const { theme: _createTheme } = useTheme();
   const isLight = _createTheme === "light";
-  const cls = cn("flex h-10 w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground", isLight ? "border-gray-200 bg-white" : "border-white/10 bg-black/20");
-  const lbl = cn("text-sm font-medium", isLight ? "text-gray-900" : "");
+  const cls = cn("flex h-10 w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground", isLight ? "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400" : "border-white/10 bg-black/20 text-foreground");
+  const lbl = cn("text-sm font-medium", isLight ? "text-slate-900" : "");
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild><Button className="gap-2"><Plus className="w-4 h-4" /> New BD Item</Button></DialogTrigger>
-      <DialogContent className={cn("sm:max-w-[620px] max-h-[90vh] overflow-y-auto", isLight ? "bg-white border-gray-200 [&>button]:text-gray-900 [&>button]:opacity-100" : "glass-panel border-white/10 bg-card/95")}>
+      <DialogContent
+        className={cn("sm:max-w-[620px] max-h-[90vh] overflow-y-auto", isLight ? "border-slate-200 [&>button]:text-slate-900 [&>button]:opacity-100" : "glass-panel border-white/10 bg-card/95")}
+        style={isLight ? { background: "#ffffff", color: "rgb(15,23,42)" } : undefined}
+      >
         <DialogHeader><DialogTitle className="text-xl font-display">New Business Development</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2 space-y-1.5"><label className={lbl}>Title *</label><input required value={form.name} onChange={e => setF("name", e.target.value)} placeholder="e.g. Seasoning Launch for Client X" className={cls} /></div>
-            <div className="sm:col-span-2 space-y-1.5"><label className={lbl}>Description</label><textarea value={form.description} onChange={e => setF("description", e.target.value)} placeholder="BD opportunity details..." className={cn("flex min-h-[60px] w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground", isLight ? "border-gray-200 bg-white" : "border-white/10 bg-black/20")} /></div>
+            <div className="sm:col-span-2 space-y-1.5"><label className={lbl}>Description</label><textarea value={form.description} onChange={e => setF("description", e.target.value)} placeholder="BD opportunity details..." className={cn("flex min-h-[60px] w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground", isLight ? "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400" : "border-white/10 bg-black/20 text-foreground")} /></div>
             <div className="space-y-1.5"><label className={lbl}>Stage</label><CustomOptionsSelect value={form.stage} onChange={v => setF("stage", v)} handle={stageOpts} displayFn={v => v.replace(/_/g,' ')} placeholder="Select stage..." isLight={isLight} /></div>
             <div className="space-y-1.5"><label className={lbl}>Status</label><CustomOptionsSelect value={form.status} onChange={v => setF("status", v)} handle={statusOpts} displayFn={v => v.replace(/_/g,' ')} placeholder="Select status..." isLight={isLight} /></div>
             <div className="space-y-1.5"><label className={lbl}>Priority</label><CustomOptionsSelect value={form.priority} onChange={v => setF("priority", v)} handle={priorityOpts} placeholder="Select priority..." isLight={isLight} /></div>
             <div className="space-y-1.5"><label className={lbl}>Product Type</label><CustomOptionsSelect value={form.productType} onChange={v => setF("productType", v)} handle={typeOpts} placeholder="Select type..." isLight={isLight} /></div>
-            <div className={cn("sm:col-span-2 border-t pt-2", isLight ? "border-gray-100" : "border-white/10")}><p className={cn("text-xs font-semibold uppercase tracking-wide mb-2", isLight ? "text-gray-500" : "text-muted-foreground")}>Customer Info</p></div>
+            <div className={cn("sm:col-span-2 border-t pt-2", isLight ? "border-slate-200" : "border-white/10")}><p className={cn("text-xs font-semibold uppercase tracking-wide mb-2", isLight ? "text-slate-500" : "text-muted-foreground")}>Customer Info</p></div>
             <div className="space-y-1.5"><label className={lbl}>Customer Name</label><input value={form.customerName} onChange={e => setF("customerName", e.target.value)} placeholder="Customer name" className={cls} /></div>
             <div className="space-y-1.5"><label className={lbl}>Email</label><input type="email" value={form.customerEmail} onChange={e => setF("customerEmail", e.target.value)} placeholder="email@example.com" className={cls} /></div>
             <div className="space-y-1.5"><label className={lbl}>Phone</label><input value={form.customerPhone} onChange={e => setF("customerPhone", e.target.value)} placeholder="+27 xx xxx xxxx" className={cls} /></div>
@@ -728,18 +888,18 @@ function CreateBDModal({ users, onCreate, stageOpts, statusOpts, priorityOpts, t
           {users.length > 0 && (
             <div className="space-y-2">
               <label className={lbl}>Assignees</label>
-              <div className={cn("flex flex-wrap gap-2 p-3 rounded-xl border max-h-28 overflow-y-auto", isLight ? "border-gray-200 bg-gray-50" : "border-white/10 bg-black/10")}>
+              <div className={cn("flex flex-wrap gap-2 p-3 rounded-xl border max-h-28 overflow-y-auto", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/10")}>
                 {users.map(u => (
                   <button key={u.id} type="button" onClick={() => toggleAssignee(u.id)}
-                    className={cn("flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all", form.assigneeIds.includes(u.id) ? "bg-primary text-white border-primary" : isLight ? "border-gray-200 text-gray-600 hover:bg-gray-50" : "border-white/10 text-muted-foreground hover:text-foreground")}>
-                    <span className={cn("w-4 h-4 rounded-full flex items-center justify-center text-[10px]", isLight ? "bg-gray-100 text-gray-700" : "bg-white/10")}>{u.name.charAt(0)}</span>
+                    className={cn("flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all", form.assigneeIds.includes(u.id) ? "bg-primary text-white border-primary" : isLight ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground")}>
+                    <span className={cn("w-4 h-4 rounded-full flex items-center justify-center text-[10px]", isLight ? "bg-slate-100 text-slate-700" : "bg-white/10")}>{u.name.charAt(0)}</span>
                     {u.name}
                   </button>
                 ))}
               </div>
             </div>
           )}
-          <div className={cn("flex justify-end gap-3 pt-2 border-t", isLight ? "border-gray-100" : "border-white/10")}>
+          <div className={cn("flex justify-end gap-3 pt-2 border-t", isLight ? "border-slate-200" : "border-white/10")}>
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
             <Button type="submit" disabled={loading}>{loading ? "Creating..." : "Create BD Item"}</Button>
           </div>
