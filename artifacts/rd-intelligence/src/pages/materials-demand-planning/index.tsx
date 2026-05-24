@@ -1471,6 +1471,18 @@ function ProductionPlanningTab() {
   const [selectedWeekLabel, setSelectedWeekLabel] = React.useState("");
   const [splitPercent, setSplitPercent] = React.useState(55);
   const [isDividerDragging, setIsDividerDragging] = React.useState(false);
+  // Tracks whether the viewport is above the md breakpoint (768px). Lets us
+  // disable the split-pane inline width on mobile so the two panes stack
+  // full-width instead of squeezing into one ~55% column.
+  const [isMdUp, setIsMdUp] = React.useState<boolean>(
+    typeof window !== "undefined" ? window.innerWidth >= 768 : true,
+  );
+  React.useEffect(() => {
+    const update = () => setIsMdUp(window.innerWidth >= 768);
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
   const [floorModalOpen, setFloorModalOpen] = React.useState(false);
   const [floorForm, setFloorForm] = React.useState({
     floorName: "",
@@ -2708,10 +2720,14 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
         </div>
       </div>
 
-      <div id="planning-split-container" className={cn("relative flex h-[720px] rounded-2xl border overflow-hidden",
-        isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5"
+      <div id="planning-split-container" className={cn(
+        "relative flex flex-col md:flex-row h-auto md:h-[720px] rounded-2xl border overflow-hidden",
+        isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5",
       )}>
-        <div style={{ width: `${splitPercent}%` }} className={cn("overflow-y-auto border-r p-5", isLight ? "border-slate-200" : "border-white/10")}>
+        <div
+          style={isMdUp ? { width: `${splitPercent}%` } : undefined}
+          className={cn("overflow-y-auto p-3 sm:p-5 w-full md:w-auto md:border-r", isLight ? "border-slate-200" : "border-white/10")}
+        >
           <div className="flex items-start justify-between gap-3 mb-5">
             <div>
               <h2 className="text-base font-semibold text-foreground">Production Floors</h2>
@@ -3171,13 +3187,18 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
           })()}
         </div>
 
+        {/* Divider is desktop-only — on mobile the two panes stack so there
+            is nothing to drag-resize. */}
         <div
-          className={cn("cursor-col-resize", isLight ? "bg-slate-200" : "bg-white/10")}
+          className={cn("hidden md:block cursor-col-resize", isLight ? "bg-slate-200" : "bg-white/10")}
           style={{ width: 10, minWidth: 10, maxWidth: 10 }}
           onMouseDown={() => setIsDividerDragging(true)}
         />
 
-        <div style={{ width: `${100 - splitPercent}%` }} className="flex flex-col overflow-hidden p-5 gap-4">
+        <div
+          style={isMdUp ? { width: `${100 - splitPercent}%` } : undefined}
+          className="flex flex-col overflow-hidden p-3 sm:p-5 gap-4 w-full md:w-auto"
+        >
           {/* Planning Summary — pinned at top */}
           <div className={cn("rounded-2xl border p-4 shrink-0", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5")}>
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Planning summary</h3>
@@ -4675,7 +4696,7 @@ function MaterialsDemandPlanningPage() {
         <p className="text-muted-foreground mt-1">Manage raw materials, demand forecasting, and procurement planning.</p>
       </div>
 
-      <div className={cn("flex gap-1 p-1 rounded-2xl border mb-6 w-fit overflow-x-auto",
+      <div className={cn("flex gap-1 p-1 rounded-2xl border mb-6 w-fit max-w-full overflow-x-auto",
         isLight ? "bg-slate-100 border-slate-200" : "bg-white/5 border-white/10"
       )}>
         {MDP_TABS.map(tab => (

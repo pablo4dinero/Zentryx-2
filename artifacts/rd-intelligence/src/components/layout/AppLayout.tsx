@@ -872,10 +872,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* Top Header — fixed as part of flex column, never scrolls */}
         <header className={cn(
-          "h-16 flex items-center justify-between px-4 sm:px-6 z-40 border-b gap-3 shrink-0",
+          "h-16 flex items-center justify-between z-40 border-b shrink-0",
+          "px-3 sm:px-6 gap-2 sm:gap-3",
           isLight ? "light-header" : "dark-shell-header"
         )}>
-          <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
             {/* Mobile hamburger */}
             <button
               className="md:hidden p-2 text-muted-foreground hover:text-foreground shrink-0"
@@ -898,7 +899,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <InstallAppButton isLight={isLight} />
             <SoundToggle isLight={isLight} muted={soundsMuted} setMuted={setSoundsMuted} />
             <button
@@ -923,7 +924,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           return (
             <div className={cn(
               "flex-1 overflow-y-auto custom-scrollbar relative",
-              fillScreen ? "p-1.5" : "p-4 sm:p-6 lg:p-8",
+              fillScreen ? "p-1.5" : "p-3 sm:p-6 lg:p-8",
             )}>
               <AnimatePresence mode="wait">
                 <motion.div

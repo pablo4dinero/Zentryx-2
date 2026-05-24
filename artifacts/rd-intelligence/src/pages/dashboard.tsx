@@ -263,7 +263,7 @@ export default function Dashboard() {
         {kpis.map((kpi, i) => (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}
             key={kpi.label}
-            className={cn("glass-card p-6 rounded-2xl flex items-start justify-between", isLight && "border border-slate-200")}>
+            className={cn("glass-card p-4 sm:p-6 rounded-2xl flex items-start justify-between", isLight && "border border-slate-200")}>
             <div>
               <p className={cn("text-sm font-medium", isLight ? "text-gray-500" : "text-muted-foreground")}>{kpi.label}</p>
               <h3 className={cn("text-3xl font-bold font-display mt-2", isLight ? "text-gray-900" : "text-foreground")}>{kpi.value}</h3>
@@ -278,10 +278,10 @@ export default function Dashboard() {
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Innovation Velocity */}
-        <div className={cn("lg:col-span-2 glass-card p-6 rounded-2xl flex flex-col", isLight && "border border-slate-200")}>
-          <div className="flex items-center justify-between mb-3">
+        <div className={cn("lg:col-span-2 glass-card p-4 sm:p-6 rounded-2xl flex flex-col", isLight && "border border-slate-200")}>
+          <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
             <h3 className={cn("text-lg font-semibold font-display", isLight ? "text-gray-900" : "")}>Innovation Velocity</h3>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <div className="flex gap-1">
                 {(["weekly", "monthly", "yearly"] as VelocityView[]).map(v => (
                   <button key={v} onClick={() => setVelocityView(v)} className={chartTypeBtn(v, velocityView === v)}>{v.charAt(0).toUpperCase() + v.slice(1)}</button>
@@ -299,7 +299,7 @@ export default function Dashboard() {
         </div>
 
         {/* Pipeline Distribution */}
-        <div className={cn("glass-card p-6 rounded-2xl flex flex-col", isLight && "border border-slate-200")}>
+        <div className={cn("glass-card p-4 sm:p-6 rounded-2xl flex flex-col", isLight && "border border-slate-200")}>
           <div className="flex items-center justify-between mb-2">
             <h3 className={cn("text-lg font-semibold font-display", isLight ? "text-gray-900" : "")}>Pipeline</h3>
             <button onClick={() => setExpandPipeline(true)} className="p-1.5 hover:bg-white/10 rounded-lg text-muted-foreground hover:text-foreground transition-colors" title="Expand">
@@ -341,7 +341,7 @@ export default function Dashboard() {
       </AnimatePresence>
 
       {/* Team Overview */}
-      <div className={cn("glass-card p-6 rounded-2xl", isLight && "border border-slate-200")}>
+      <div className={cn("glass-card p-4 sm:p-6 rounded-2xl", isLight && "border border-slate-200")}>
         <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
           <h3 className={cn("text-lg font-semibold font-display", isLight ? "text-gray-900" : "")}>Team Overview</h3>
           <div className="flex items-center gap-2 flex-wrap">
