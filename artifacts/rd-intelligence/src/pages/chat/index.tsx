@@ -286,10 +286,22 @@ export default function ChatRoom() {
         };
       });
       setRoomMeta(meta);
+      // On phone + tablet (below lg, 1024 px) we leave the chat empty so
+      // the user lands on the people + channels list first — they then
+      // tap a row to open the conversation. On desktop we keep the old
+      // behaviour and auto-open the first channel so the layout doesn't
+      // start with an empty pane.
+      const onMobile = typeof window !== "undefined" && window.innerWidth < 1024;
       const channels = list.filter((room: any) => room.isGroup);
-      if (channels.length > 0) selectRoom(channels[0]);
-      else if (list.length > 0) selectRoom(list[0]);
-      else setLoading(false);
+      if (onMobile) {
+        setLoading(false);
+      } else if (channels.length > 0) {
+        selectRoom(channels[0]);
+      } else if (list.length > 0) {
+        selectRoom(list[0]);
+      } else {
+        setLoading(false);
+      }
     });
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
