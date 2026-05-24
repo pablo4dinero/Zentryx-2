@@ -82,7 +82,10 @@ router.get("/rooms", requireAuth, async (req: AuthRequest, res) => {
     const roomIds = memberships.map(m => m.roomId);
     const rooms = await db.select().from(chatRoomsTable).where(inArray(chatRoomsTable.id, roomIds));
 
-    // For each room, get last message info
+    // For each room, get last message info + member ids so the client can
+    // match DM rooms back to specific users without falling back to the
+    // ambiguous "match by first name" heuristic (which silently merged any
+    // two users that shared a first name into the same chat thread).
     const enriched = await Promise.all(rooms.map(async (room) => {
       const [lastMsg] = await db.select(MSG_SELECT)
         .from(chatMessagesTable)
@@ -95,6 +98,10 @@ router.get("/rooms", requireAuth, async (req: AuthRequest, res) => {
         .where(and(eq(chatReadReceiptsTable.userId, userId), eq(chatReadReceiptsTable.roomId, room.id)))
         .limit(1);
 
+      const memberRows = await db.select({ userId: chatRoomMembersTable.userId })
+        .from(chatRoomMembersTable)
+        .where(eq(chatRoomMembersTable.roomId, room.id));
+
       const lastReadId = receipt?.lastReadMessageId ?? 0;
       const lastMsgId = lastMsg?.id ?? 0;
       const hasUnread = lastMsg && lastMsg.senderId !== userId && lastMsgId > lastReadId;
@@ -106,6 +113,7 @@ router.get("/rooms", requireAuth, async (req: AuthRequest, res) => {
         lastMessageSender: lastMsg?.senderName ?? null,
         lastMessageType: lastMsg?.messageType ?? null,
         hasUnread: !!hasUnread,
+        memberUserIds: memberRows.map(m => m.userId),
       };
     }));
 
@@ -326,10 +334,22 @@ router.get("/uploads/:filename", (req, res) => {
   });
 });
 
-// Get all users for private chat (superadmin always excluded)
+// Get all users for private chat (superadmin always excluded). Includes the
+// profile fields the chat View-Profile dialog needs (department, role,
+// phone, avatar) so the client doesn't have to make a second round-trip.
 router.get("/users", requireAuth, async (_req, res) => {
   try {
-    const users = await db.select({ id: usersTable.id, name: usersTable.name, email: usersTable.email, role: usersTable.role, isActive: usersTable.isActive })
+    const users = await db.select({
+      id: usersTable.id,
+      name: usersTable.name,
+      email: usersTable.email,
+      role: usersTable.role,
+      department: usersTable.department,
+      jobPosition: usersTable.jobPosition,
+      phone: usersTable.phone,
+      avatar: usersTable.avatar,
+      isActive: usersTable.isActive,
+    })
       .from(usersTable)
       .where(ne(usersTable.email, SUPERADMIN_EMAIL));
     res.json(users);

@@ -578,48 +578,50 @@
 }
 
 /* ─────────────────────────────────────────────
-   CHAT BACKGROUND — soft animated mesh + dot grid
-   Replaces the old free-floating blobs with a calmer
-   pattern that fits the brand palette and looks more
-   intentional. Two layers stack: a slow shifting
-   radial-gradient mesh, plus a dot-grid texture that
-   gently drifts diagonally.
+   CHAT BACKGROUND — aurora gradient + drifting waves
+   Three layered radial gradients in the brand palette
+   slowly breathe to give the room a calm sense of
+   motion, while two SVG waves at the bottom drift
+   horizontally at different speeds. Pointer-events-
+   none — they sit behind all content.
    ───────────────────────────────────────────── */
-@keyframes chat-mesh-shift {
-  0%, 100% { background-position: 0% 0%, 100% 100%, 50% 50%; }
-  50%      { background-position: 100% 100%, 0% 0%, 60% 40%; }
+@keyframes chat-aurora-breathe {
+  0%, 100% {
+    background-position: 0% 0%, 100% 100%, 50% 50%;
+    background-size: 220% 220%, 220% 220%, 220% 220%;
+  }
+  50% {
+    background-position: 100% 100%, 0% 0%, 55% 45%;
+    background-size: 240% 240%, 240% 240%, 240% 240%;
+  }
 }
-@keyframes chat-dot-drift {
-  0%   { background-position: 0 0; }
-  100% { background-position: 80px 80px; }
+.chat-aurora-dark {
+  background-image:
+    radial-gradient(70% 70% at 15% 25%, rgba(124, 77, 255, 0.20) 0%, transparent 60%),
+    radial-gradient(60% 60% at 85% 70%, rgba(56, 189, 248, 0.14) 0%, transparent 60%),
+    radial-gradient(55% 55% at 55% 50%, rgba(236, 72, 153, 0.10) 0%, transparent 65%);
+  background-size: 220% 220%, 220% 220%, 220% 220%;
+  animation: chat-aurora-breathe 28s ease-in-out infinite;
+}
+.chat-aurora-light {
+  background-image:
+    radial-gradient(70% 70% at 15% 25%, rgba(99, 102, 241, 0.14) 0%, transparent 60%),
+    radial-gradient(60% 60% at 85% 70%, rgba(56, 189, 248, 0.12) 0%, transparent 60%),
+    radial-gradient(55% 55% at 55% 50%, rgba(236, 72, 153, 0.08) 0%, transparent 65%);
+  background-size: 220% 220%, 220% 220%, 220% 220%;
+  animation: chat-aurora-breathe 28s ease-in-out infinite;
 }
 
-.chat-bg-mesh-dark {
-  background-image:
-    radial-gradient(60% 60% at 20% 30%, rgba(124, 77, 255, 0.18) 0%, transparent 60%),
-    radial-gradient(55% 55% at 80% 75%, rgba(56, 189, 248, 0.12) 0%, transparent 60%),
-    radial-gradient(50% 50% at 55% 50%, rgba(236, 72, 153, 0.10) 0%, transparent 65%);
-  background-size: 200% 200%, 200% 200%, 200% 200%;
-  animation: chat-mesh-shift 24s ease-in-out infinite;
+@keyframes chat-wave-drift-a {
+  0%   { transform: translateX(0); }
+  50%  { transform: translateX(-3%); }
+  100% { transform: translateX(0); }
 }
-.chat-bg-mesh-light {
-  background-image:
-    radial-gradient(60% 60% at 20% 30%, rgba(99, 102, 241, 0.12) 0%, transparent 60%),
-    radial-gradient(55% 55% at 80% 75%, rgba(56, 189, 248, 0.10) 0%, transparent 60%),
-    radial-gradient(50% 50% at 55% 50%, rgba(236, 72, 153, 0.08) 0%, transparent 65%);
-  background-size: 200% 200%, 200% 200%, 200% 200%;
-  animation: chat-mesh-shift 24s ease-in-out infinite;
+@keyframes chat-wave-drift-b {
+  0%   { transform: translateX(0); }
+  50%  { transform: translateX(2.5%); }
+  100% { transform: translateX(0); }
 }
-
-.chat-bg-dots-dark {
-  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.06) 1px, transparent 1.4px);
-  background-size: 28px 28px;
-  animation: chat-dot-drift 60s linear infinite;
-  opacity: 0.55;
-}
-.chat-bg-dots-light {
-  background-image: radial-gradient(circle, rgba(99, 102, 241, 0.12) 1px, transparent 1.4px);
-  background-size: 28px 28px;
-  animation: chat-dot-drift 60s linear infinite;
-  opacity: 0.5;
-}
+.chat-wave { transform-origin: center; }
+.chat-wave-a { animation: chat-wave-drift-a 16s ease-in-out infinite; }
+.chat-wave-b { animation: chat-wave-drift-b 22s ease-in-out infinite; }

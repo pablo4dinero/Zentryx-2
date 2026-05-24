@@ -3,7 +3,8 @@ import {
   Send, Plus, ImageIcon, Mic, MicOff, Users, Lock, Video, Hash,
   MoreVertical, StopCircle, Trash2, Pin, PinOff, LogOut, X,
   MessageSquare, AtSign, ChevronRight, FileText, Download, ZoomIn, Paperclip, ArrowDown,
-  Check, CheckCheck, Clock, Search
+  Check, CheckCheck, Clock, Search,
+  UserCircle, Phone, Briefcase, Building2, Mail
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -109,7 +110,7 @@ function RoomContextMenu({ room, isPinned, onPin, onDelete, onLeave, isCreator }
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9 }}
             transition={{ duration: 0.12 }}
-            className="absolute left-full top-0 ml-1 w-44 glass-panel border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden"
+            className="absolute right-0 top-full mt-1 w-44 glass-panel border border-white/10 rounded-xl shadow-2xl z-[80] overflow-hidden"
           >
             <button onClick={() => { onPin(); setOpen(false); }}
               className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left text-muted-foreground hover:bg-white/5 hover:text-foreground transition-colors">
@@ -230,6 +231,7 @@ export default function ChatRoom() {
 
   const { isPinned: isRoomPinned, toggle: toggleRoomPin } = usePinnedRooms();
   const { isPinned: isMsgPinned, toggle: toggleMsgPin } = usePinnedMessages(activeRoom?.id || 0);
+  const [profileUser, setProfileUser] = useState<any | null>(null);
 
   const currentUserId = (() => {
     try { return JSON.parse(atob(localStorage.getItem("rd_token")?.split(".")[1] || "")).userId; } catch { return null; }
@@ -483,7 +485,14 @@ export default function ChatRoom() {
 
   // Build people list: all users with DM room info, sorted by chosen mode
   const peopleList = users.filter((u: any) => u.id !== currentUserId).map((u: any) => {
-    const dmRoom = dmRooms.find((r: any) => r.name === u.name || r.name === u.name.split(" ")[0]);
+    // Match the DM room by membership (server now returns memberUserIds for
+    // every room). The old name-based match merged any two users that shared
+    // a first name (e.g. two "Paul"s) into the same conversation thread.
+    const dmRoom = dmRooms.find((r: any) =>
+      Array.isArray(r.memberUserIds)
+        ? r.memberUserIds.includes(u.id) && r.memberUserIds.includes(currentUserId) && r.memberUserIds.length === 2
+        : (r.name === u.name || r.name === u.name.split(" ")[0]),
+    );
     const meta = dmRoom ? roomMeta[dmRoom.id] : null;
     return { ...u, dmRoom, lastMessageAt: meta?.lastMessageAt ?? null, lastPreview: meta?.lastMessagePreview ?? null, lastPreviewType: meta?.lastMessageType ?? null, hasUnread: meta?.hasUnread ?? false };
   }).sort((a, b) => {
@@ -498,7 +507,16 @@ export default function ChatRoom() {
 
   const searchLower = sidebarSearch.toLowerCase();
   const filteredChannels = searchLower ? channels.filter((r: any) => r.name.toLowerCase().includes(searchLower)) : channels;
-  const filteredPeople = searchLower ? peopleList.filter((u: any) => u.name.toLowerCase().includes(searchLower)) : peopleList;
+  // Without a search term, only show people the current user has actually
+  // talked to (DM exists / last message timestamp / unread mark). This stops
+  // the sidebar from listing every account on the platform by default. Users
+  // can still discover anyone else by typing their name into the search box.
+  const filteredPeople = searchLower
+    ? peopleList.filter((u: any) =>
+        u.name.toLowerCase().includes(searchLower)
+        || (u.email ?? "").toLowerCase().includes(searchLower),
+      )
+    : peopleList.filter((u: any) => u.dmRoom || u.lastMessageAt || u.hasUnread);
 
   const pinnedMessages = visibleMessages.filter((m: any) => isMsgPinned(m.id));
 
@@ -708,28 +726,78 @@ export default function ChatRoom() {
 
       {/* Main Chat */}
       <div className="flex-1 flex flex-col min-w-0 relative">
-        {/* Background — soft mesh-gradient that slowly shifts, with a faint
-            dot-grid overlay for texture. Both layers are pointer-events-none
-            and stay below content. Tuned to the brand palette in each theme. */}
+        {/* Background — softly pulsing aurora gradient with three layered
+            SVG waves drifting horizontally at different speeds. Calmer and
+            more "official" than the previous dot-grid; tuned to the brand
+            palette for both themes. */}
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div aria-hidden className={cn("absolute inset-0", isLight ? "chat-bg-mesh-light" : "chat-bg-mesh-dark")} />
-          <div aria-hidden className={cn("absolute inset-0", isLight ? "chat-bg-dots-light" : "chat-bg-dots-dark")} />
+          <div aria-hidden className={cn("absolute inset-0", isLight ? "chat-aurora-light" : "chat-aurora-dark")} />
+          <svg
+            aria-hidden
+            className="absolute inset-x-0 bottom-0 w-full h-48 opacity-50"
+            viewBox="0 0 1440 240"
+            preserveAspectRatio="none"
+          >
+            <defs>
+              <linearGradient id="chatWaveA" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%"   stopColor={isLight ? "#a78bfa" : "#7c4dff"} stopOpacity="0.18" />
+                <stop offset="100%" stopColor={isLight ? "#22d3ee" : "#38bdf8"} stopOpacity="0.18" />
+              </linearGradient>
+              <linearGradient id="chatWaveB" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%"   stopColor={isLight ? "#f0abfc" : "#ec4899"} stopOpacity="0.14" />
+                <stop offset="100%" stopColor={isLight ? "#818cf8" : "#7c4dff"} stopOpacity="0.14" />
+              </linearGradient>
+            </defs>
+            <path
+              className="chat-wave chat-wave-a"
+              fill="url(#chatWaveA)"
+              d="M0,160 C240,200 480,80 720,128 C960,176 1200,80 1440,128 L1440,240 L0,240 Z"
+            />
+            <path
+              className="chat-wave chat-wave-b"
+              fill="url(#chatWaveB)"
+              d="M0,180 C240,140 480,220 720,168 C960,120 1200,200 1440,160 L1440,240 L0,240 Z"
+            />
+          </svg>
           <div
             aria-hidden
             className={cn(
-              "absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t",
-              isLight ? "from-white/70 to-transparent" : "from-background/60 to-transparent",
+              "absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t",
+              isLight ? "from-white/80 to-transparent" : "from-background/70 to-transparent",
             )}
           />
         </div>
         <div className="relative flex-1 flex flex-col min-h-0">
         {activeRoom ? (
           <>
+            {(() => {
+              // Resolve the DM partner once for use in the header / View
+              // Profile button. Channels (isGroup) have no single partner.
+              const otherUserId = !activeRoom.isGroup && Array.isArray(activeRoom.memberUserIds)
+                ? activeRoom.memberUserIds.find((id: number) => id !== currentUserId)
+                : null;
+              const dmPartner = otherUserId ? users.find((u: any) => u.id === otherUserId) : null;
+              return (
             <div className="px-6 py-3 border-b border-white/5 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
                 {activeRoom.isGroup ? <Hash className="w-5 h-5 text-primary" /> : <Lock className="w-5 h-5 text-primary" />}
                 <h3 className="font-semibold text-foreground">{activeRoom.name}</h3>
                 {isRoomPinned(activeRoom.id) && <span className="flex items-center gap-1 text-[10px] text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded-full"><Pin className="w-2.5 h-2.5" />Pinned</span>}
+                {dmPartner && (
+                  <button
+                    onClick={() => setProfileUser(dmPartner)}
+                    title={`View ${dmPartner.name}'s profile`}
+                    className={cn(
+                      "ml-1 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors",
+                      isLight
+                        ? "border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                        : "border-white/10 text-muted-foreground hover:bg-white/5 hover:text-foreground",
+                    )}
+                  >
+                    <UserCircle className="w-3.5 h-3.5" />
+                    View Profile
+                  </button>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 {pinnedMessages.length > 0 && (
@@ -751,6 +819,8 @@ export default function ChatRoom() {
                 </button>
               </div>
             </div>
+              );
+            })()}
 
             {/* Pinned messages panel */}
             <AnimatePresence>
@@ -807,7 +877,12 @@ export default function ChatRoom() {
                         isOwn
                           ? "bg-primary !text-white rounded-tr-sm shadow-sm"
                           : isLight
-                            ? "bg-slate-100 text-slate-900 rounded-tl-sm border border-slate-200/80"
+                            // Light theme: dark slate bubble + white text so
+                            // both sent (primary) and received (slate-700)
+                            // read as white-on-coloured — readable and on-
+                            // brand instead of dark-on-light competing with
+                            // the page background.
+                            ? "bg-slate-700 !text-white rounded-tl-sm shadow-sm"
                             : "bg-white/8 text-foreground rounded-tl-sm",
                         pinned && "ring-1 ring-amber-400/30",
                       )}>
@@ -920,6 +995,135 @@ export default function ChatRoom() {
         </div>
       </div>
     </div>
+
+    {/* View Profile modal — opened from the chat header for DMs. Shows the
+        partner's name, role, department, phone, email, and avatar. */}
+    <AnimatePresence>
+      {profileUser && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+          onClick={() => setProfileUser(null)}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 12 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 12 }}
+            transition={{ duration: 0.15 }}
+            onClick={e => e.stopPropagation()}
+            className={cn(
+              "w-full max-w-sm rounded-2xl border shadow-2xl overflow-hidden",
+              isLight ? "bg-white border-slate-200" : "bg-card border-white/10",
+            )}
+          >
+            <div className={cn(
+              "px-5 py-4 border-b flex items-start justify-between",
+              isLight ? "border-slate-100 bg-slate-50" : "border-white/10 bg-white/5",
+            )}>
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] uppercase tracking-widest text-primary font-bold">Team profile</p>
+                <h3 className={cn("text-base font-bold mt-0.5 truncate", isLight ? "text-slate-900" : "text-foreground")}>
+                  {profileUser.name}
+                </h3>
+              </div>
+              <button
+                onClick={() => setProfileUser(null)}
+                className={cn(
+                  "p-1.5 rounded-lg shrink-0 transition-colors",
+                  isLight ? "hover:bg-slate-100 text-slate-500" : "hover:bg-white/10 text-muted-foreground",
+                )}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5">
+              <div className="flex items-center gap-4 mb-5">
+                {profileUser.avatar ? (
+                  <img src={profileUser.avatar} alt={profileUser.name} className="w-16 h-16 rounded-2xl object-cover shadow" />
+                ) : (
+                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-xl font-bold shadow">
+                    {profileUser.name?.charAt(0) ?? "?"}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <p className={cn("text-sm font-semibold truncate", isLight ? "text-slate-900" : "text-foreground")}>{profileUser.name}</p>
+                  <p className={cn(
+                    "text-xs capitalize",
+                    profileUser.isActive ? (isLight ? "text-emerald-600" : "text-emerald-400") : "text-muted-foreground",
+                  )}>
+                    <span className={cn(
+                      "inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle",
+                      profileUser.isActive ? "bg-emerald-400" : "bg-slate-400",
+                    )} />
+                    {profileUser.isActive ? "Active now" : "Offline"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2.5">
+                {(profileUser.jobPosition || profileUser.role) && (
+                  <div className={cn("flex items-center gap-3 rounded-xl px-3 py-2.5 border", isLight ? "bg-slate-50 border-slate-100" : "bg-white/5 border-white/10")}>
+                    <Briefcase className="w-4 h-4 text-primary shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Role</p>
+                      <p className={cn("text-sm font-medium capitalize truncate", isLight ? "text-slate-900" : "text-foreground")}>
+                        {(profileUser.jobPosition ?? profileUser.role ?? "").replace(/_/g, " ")}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {profileUser.department && (
+                  <div className={cn("flex items-center gap-3 rounded-xl px-3 py-2.5 border", isLight ? "bg-slate-50 border-slate-100" : "bg-white/5 border-white/10")}>
+                    <Building2 className="w-4 h-4 text-primary shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Department</p>
+                      <p className={cn("text-sm font-medium truncate", isLight ? "text-slate-900" : "text-foreground")}>{profileUser.department}</p>
+                    </div>
+                  </div>
+                )}
+                {profileUser.phone && (
+                  <a
+                    href={`tel:${profileUser.phone}`}
+                    className={cn("flex items-center gap-3 rounded-xl px-3 py-2.5 border transition-colors", isLight ? "bg-slate-50 border-slate-100 hover:bg-slate-100" : "bg-white/5 border-white/10 hover:bg-white/10")}
+                  >
+                    <Phone className="w-4 h-4 text-primary shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Phone</p>
+                      <p className={cn("text-sm font-medium truncate", isLight ? "text-slate-900" : "text-foreground")}>{profileUser.phone}</p>
+                    </div>
+                  </a>
+                )}
+                {profileUser.email && (
+                  <a
+                    href={`mailto:${profileUser.email}`}
+                    className={cn("flex items-center gap-3 rounded-xl px-3 py-2.5 border transition-colors", isLight ? "bg-slate-50 border-slate-100 hover:bg-slate-100" : "bg-white/5 border-white/10 hover:bg-white/10")}
+                  >
+                    <Mail className="w-4 h-4 text-primary shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Email</p>
+                      <p className={cn("text-sm font-medium truncate", isLight ? "text-slate-900" : "text-foreground")}>{profileUser.email}</p>
+                    </div>
+                  </a>
+                )}
+              </div>
+            </div>
+
+            <div className={cn("px-5 py-3 border-t flex justify-end", isLight ? "border-slate-100 bg-slate-50/50" : "border-white/10 bg-white/[0.02]")}>
+              <button
+                onClick={() => setProfileUser(null)}
+                className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
     </>
   );
 }
