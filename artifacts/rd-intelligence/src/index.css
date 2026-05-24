@@ -109,12 +109,16 @@
   }
 
   /* ─────────────────────────────────────────────
-     MOBILE EDGE-TO-EDGE LAYOUT (≤ 639 px)
+     MOBILE + TABLET EDGE-TO-EDGE LAYOUT (≤ 1023 px)
      Nuclear override that wins over any Tailwind class or inline
      padding so module content truly hugs the left + right edges
-     of the viewport on phones. Disabled at sm: (640 px+).
+     of the viewport on phones AND tablets. Below lg: (1024 px) the
+     sidebar is a slide-in overlay so the main column owns the full
+     viewport width. Disabled at lg: where the desktop sidebar
+     returns to the flow and standard reading-column padding kicks
+     back in (lg:p-8).
      ───────────────────────────────────────────── */
-  @media (max-width: 639px) {
+  @media (max-width: 1023px) {
     .mobile-edge {
       padding-left: 0 !important;
       padding-right: 0 !important;

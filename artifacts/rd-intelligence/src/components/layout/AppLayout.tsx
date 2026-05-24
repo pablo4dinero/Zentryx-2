@@ -879,9 +879,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         {/* Top Header — fixed as part of flex column, never scrolls */}
         <header className={cn(
           "h-16 flex items-center justify-between z-40 border-b shrink-0",
-          // Mobile: tiny px-1 so the logo button sits flush at the left edge.
-          // sm+ restores the standard 24 px padding.
-          "px-1 sm:px-6 gap-2 sm:gap-3",
+          // Phone + tablet: tiny px-1 so the logo button sits flush at the
+          // left edge. Only on real desktops (lg, 1024 px+) does the standard
+          // 24 px topbar padding apply.
+          "px-1 lg:px-6 gap-2 sm:gap-3",
           isLight ? "light-header" : "dark-shell-header"
         )}>
           <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
