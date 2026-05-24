@@ -47,3 +47,19 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# User-uploaded content — must NEVER be committed. Chat attachments,
+# voice notes, profile images all live in object storage / persistent
+# disk in production. Local dev writes them under uploads/ which is
+# git-ignored to prevent another IP/PII leak.
+artifacts/api-server/uploads/
+uploads/
+
+# Environment files — must NEVER be committed. Use .env.example for
+# templates that go into version control.
+.env
+.env.local
+.env.*.local
+
+# IDE
+.claude/

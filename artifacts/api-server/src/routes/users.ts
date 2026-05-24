@@ -102,7 +102,7 @@ router.post("/me/confirm-phone", requireAuth, async (req: AuthRequest, res) => {
     const { otpCode, newPhone } = req.body;
     const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.user!.userId)).limit(1);
     if (!user) { res.status(404).json({ error: "NotFound" }); return; }
-    const { valid } = verifyOtp(user.email, "phone-change", otpCode);
+    const { valid } = await verifyOtp(user.email, "phone-change", otpCode);
     if (!valid) { res.status(400).json({ error: "InvalidOTP", message: "Invalid or expired code" }); return; }
     const [updated] = await db.update(usersTable).set({ phone: newPhone || null, updatedAt: new Date() }).where(eq(usersTable.id, user.id)).returning();
     res.json(formatUser(updated));

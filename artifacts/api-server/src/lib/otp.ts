@@ -1,35 +1,52 @@
 import nodemailer from "nodemailer";
+import { randomInt } from "crypto";
+import { db } from "@workspace/db";
+import { otpCodesTable } from "@workspace/db";
+import { eq, and, lt } from "drizzle-orm";
 
-interface OtpEntry {
-  code: string;
-  expiresAt: number;
-  data?: Record<string, any>;
-}
+const MAX_ATTEMPTS = 5;
+const OTP_TTL_MS = 10 * 60 * 1000;
 
-const store = new Map<string, OtpEntry>();
-
-function gc() {
-  const now = Date.now();
-  for (const [k, v] of store) if (v.expiresAt < now) store.delete(k);
-}
-
+// 6-digit OTP generated with crypto.randomInt — cryptographically secure.
+// `Math.random()` is a PRNG seeded predictably and is NOT safe for any
+// authentication token, however short-lived.
 export function genOtp() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return randomInt(100000, 1000000).toString();
 }
 
-export type OtpPurpose = "signup" | "phone-change" | "forgot-password";
+export type OtpPurpose = "signup" | "phone-change" | "forgot-password" | "mfa-email";
+
+// Periodic GC sweep — purge expired rows. Cheap because expires_at is
+// indexed via the primary key clustering, and we only sweep on send.
+async function gc() {
+  try {
+    await db.delete(otpCodesTable).where(lt(otpCodesTable.expiresAt, new Date()));
+  } catch (err) {
+    console.warn("[otp] gc failed", err);
+  }
+}
 
 export async function sendOtp(
   email: string,
   purpose: OtpPurpose,
   data?: Record<string, any>
 ): Promise<{ code: string; devMode: boolean }> {
-  gc();
+  await gc();
   const code = genOtp();
-  store.set(`${email}:${purpose}`, {
+  const expiresAt = new Date(Date.now() + OTP_TTL_MS);
+
+  // Upsert — replace any existing pending OTP for this (email, purpose) pair.
+  // Re-sending an OTP voids the previous code so the user can't combine attempts
+  // from a stale code with the new one.
+  await db.delete(otpCodesTable)
+    .where(and(eq(otpCodesTable.email, email), eq(otpCodesTable.purpose, purpose)));
+  await db.insert(otpCodesTable).values({
+    email,
+    purpose,
     code,
-    expiresAt: Date.now() + 10 * 60 * 1000,
-    data,
+    data: data ?? null,
+    attempts: 0,
+    expiresAt,
   });
 
   const resendApiKey = process.env.RESEND_API_KEY;
@@ -50,6 +67,7 @@ export async function sendOtp(
       "signup": "Verify your email — Zentryx",
       "forgot-password": "Reset your password — Zentryx",
       "phone-change": "Confirm your phone number — Zentryx",
+      "mfa-email": "Your Zentryx sign-in code",
     };
 
     const fromEmail = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
@@ -82,18 +100,35 @@ export async function sendOtp(
   return { code, devMode };
 }
 
-export function verifyOtp(
+export async function verifyOtp(
   email: string,
   purpose: OtpPurpose,
   code: string
-): { valid: boolean; data?: Record<string, any> } {
-  const entry = store.get(`${email}:${purpose}`);
-  if (!entry || entry.expiresAt < Date.now()) {
-    store.delete(`${email}:${purpose}`);
-    return { valid: false };
+): Promise<{ valid: boolean; data?: Record<string, any>; reason?: "expired" | "locked" | "mismatch" }> {
+  const [row] = await db.select().from(otpCodesTable)
+    .where(and(eq(otpCodesTable.email, email), eq(otpCodesTable.purpose, purpose)))
+    .limit(1);
+
+  if (!row || row.expiresAt.getTime() < Date.now()) {
+    if (row) await db.delete(otpCodesTable).where(eq(otpCodesTable.id, row.id));
+    return { valid: false, reason: "expired" };
   }
-  if (entry.code !== code) return { valid: false };
-  const data = entry.data;
-  store.delete(`${email}:${purpose}`);
+
+  // Lock-out after MAX_ATTEMPTS failures — kills any chance of brute-forcing
+  // the 6-digit space within the 10-minute window.
+  if (row.attempts >= MAX_ATTEMPTS) {
+    await db.delete(otpCodesTable).where(eq(otpCodesTable.id, row.id));
+    return { valid: false, reason: "locked" };
+  }
+
+  if (row.code !== code) {
+    await db.update(otpCodesTable)
+      .set({ attempts: row.attempts + 1 })
+      .where(eq(otpCodesTable.id, row.id));
+    return { valid: false, reason: "mismatch" };
+  }
+
+  const data = (row.data ?? undefined) as Record<string, any> | undefined;
+  await db.delete(otpCodesTable).where(eq(otpCodesTable.id, row.id));
   return { valid: true, data };
 }

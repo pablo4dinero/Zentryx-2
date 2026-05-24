@@ -9,12 +9,19 @@ import path from "path";
 import fs from "fs";
 
 const router = Router();
+
+// Upload directory is configurable via env so production deploys can
+// point it at a persistent disk (Render Disks, mounted EBS, etc.) or an
+// object-store-backed fuse mount. Defaults to a local folder for dev
+// convenience; the folder is git-ignored.
+const CHAT_UPLOAD_DIR = process.env.CHAT_UPLOAD_DIR
+  || path.resolve(process.cwd(), "uploads/chat");
 const upload = multer({
-  dest: "uploads/chat/",
+  dest: CHAT_UPLOAD_DIR,
   limits: { fileSize: 5 * 1024 * 1024 },
 });
 
-if (!fs.existsSync("uploads/chat")) fs.mkdirSync("uploads/chat", { recursive: true });
+if (!fs.existsSync(CHAT_UPLOAD_DIR)) fs.mkdirSync(CHAT_UPLOAD_DIR, { recursive: true });
 
 const MSG_SELECT = {
   id: chatMessagesTable.id,
@@ -382,9 +389,20 @@ router.post("/rooms/:roomId/upload", requireAuth, (req: AuthRequest, res, next) 
   } catch (err) { console.error(err); res.status(500).json({ error: "InternalServerError" }); }
 });
 
-// Serve uploaded files
+// Serve uploaded files. Filename validation guards against path traversal
+// (e.g. `?filename=../../etc/passwd`) — multer generates random IDs so a
+// legitimate filename is always alphanumeric.
 router.get("/uploads/:filename", (req, res) => {
-  const filePath = path.resolve("uploads/chat", req.params.filename);
+  const filename = req.params.filename;
+  if (!/^[A-Za-z0-9._-]+$/.test(filename)) {
+    res.status(400).json({ error: "BadRequest" });
+    return;
+  }
+  const filePath = path.resolve(CHAT_UPLOAD_DIR, filename);
+  if (!filePath.startsWith(path.resolve(CHAT_UPLOAD_DIR))) {
+    res.status(400).json({ error: "BadRequest" });
+    return;
+  }
   res.sendFile(filePath, (err) => {
     if (err && !res.headersSent) res.status(404).json({ error: "NotFound" });
   });

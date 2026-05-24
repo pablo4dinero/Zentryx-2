@@ -1,7 +1,21 @@
 import jwt from "jsonwebtoken";
 import { Request, Response, NextFunction } from "express";
 
-const JWT_SECRET = process.env.JWT_SECRET || "rd-intelligence-secret-key-2024";
+// JWT secret must come from env. Refusing to boot without it is intentional
+// — a hard-coded fallback would mean anyone with read access to this file
+// can forge tokens. Production deploys (Render) set this via environment
+// variables; local dev sets it in .env (which is git-ignored).
+const JWT_SECRET = (() => {
+  const s = process.env.JWT_SECRET;
+  if (!s || s.length < 32) {
+    throw new Error(
+      "[auth] JWT_SECRET is missing or shorter than 32 chars. " +
+      "Generate one with: node -e \"console.log(require('crypto').randomBytes(48).toString('base64'))\" " +
+      "and set it as an environment variable before starting the server.",
+    );
+  }
+  return s;
+})();
 
 export interface JwtPayload {
   userId: number;

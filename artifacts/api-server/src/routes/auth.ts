@@ -154,7 +154,7 @@ router.post("/verify-sms", async (req, res) => {
 
     let valid: boolean;
     if (isEmail) {
-      ({ valid } = verifyOtp(payload.email, "mfa-email", otpCode));
+      ({ valid } = await verifyOtp(payload.email, "mfa-email", otpCode));
     } else if (isVoice) {
       valid = await verifyVoiceOtp(user.phone!, otpCode);
     } else {
@@ -364,7 +364,7 @@ router.post("/register", async (req, res) => {
       res.status(400).json({ error: "OTPRequired", message: "Verification code required" });
       return;
     }
-    const { valid } = verifyOtp(email.toLowerCase(), "signup", otpCode);
+    const { valid } = await verifyOtp(email.toLowerCase(), "signup", otpCode);
     if (!valid) {
       res.status(400).json({ error: "InvalidOTP", message: "Invalid or expired verification code" });
       return;
@@ -430,7 +430,7 @@ router.post("/reset-password", async (req, res) => {
       res.status(400).json({ error: "BadRequest", message: "email, otpCode, newPassword required" });
       return;
     }
-    const { valid } = verifyOtp(email.toLowerCase(), "forgot-password", otpCode);
+    const { valid } = await verifyOtp(email.toLowerCase(), "forgot-password", otpCode);
     if (!valid) {
       res.status(400).json({ error: "InvalidOTP", message: "Invalid or expired code" });
       return;

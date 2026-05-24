@@ -20,3 +20,4 @@ export * from "./option_lists";
 export * from "./export_requests";
 export * from "./login_attempts";
 export * from "./admin_messages";
+export * from "./otp_codes";

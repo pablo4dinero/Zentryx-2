@@ -265,6 +265,26 @@ async function createTablesIfNotExist() {
         ON admin_message_recipients (message_id, user_id);
     `));
 
+    // One-time passcodes — persistent so they survive restarts and work
+    // across multiple server instances. Replaces the previous in-memory
+    // Map that lost state on every deploy.
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS otp_codes (
+        id SERIAL PRIMARY KEY,
+        email TEXT NOT NULL,
+        purpose TEXT NOT NULL,
+        code TEXT NOT NULL,
+        data JSONB,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        expires_at TIMESTAMP NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `));
+    await db.execute(sql.raw(`
+      CREATE UNIQUE INDEX IF NOT EXISTS otp_codes_email_purpose_unique
+        ON otp_codes (email, purpose);
+    `));
+
     // Migrate projects table enum columns to text so custom values are accepted
     await db.execute(sql.raw(`
       DO $$
