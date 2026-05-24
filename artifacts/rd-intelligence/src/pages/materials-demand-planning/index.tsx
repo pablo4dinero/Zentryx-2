@@ -1475,10 +1475,10 @@ function ProductionPlanningTab() {
   // disable the split-pane inline width on mobile so the two panes stack
   // full-width instead of squeezing into one ~55% column.
   const [isMdUp, setIsMdUp] = React.useState<boolean>(
-    typeof window !== "undefined" ? window.innerWidth >= 768 : true,
+    typeof window !== "undefined" ? window.innerWidth >= 1024 : true,
   );
   React.useEffect(() => {
-    const update = () => setIsMdUp(window.innerWidth >= 768);
+    const update = () => setIsMdUp(window.innerWidth >= 1024);
     update();
     window.addEventListener("resize", update);
     return () => window.removeEventListener("resize", update);
@@ -2721,12 +2721,12 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       </div>
 
       <div id="planning-split-container" className={cn(
-        "relative flex flex-col md:flex-row h-auto md:h-[720px] rounded-2xl border overflow-hidden",
+        "relative flex flex-col lg:flex-row h-auto lg:h-[720px] rounded-2xl border overflow-hidden",
         isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5",
       )}>
         <div
           style={isMdUp ? { width: `${splitPercent}%` } : undefined}
-          className={cn("overflow-y-auto p-3 sm:p-5 w-full md:w-auto md:border-r", isLight ? "border-slate-200" : "border-white/10")}
+          className={cn("overflow-y-auto p-3 sm:p-5 w-full lg:w-auto lg:border-r", isLight ? "border-slate-200" : "border-white/10")}
         >
           <div className="flex items-start justify-between gap-3 mb-5">
             <div>
@@ -3190,14 +3190,14 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
         {/* Divider is desktop-only — on mobile the two panes stack so there
             is nothing to drag-resize. */}
         <div
-          className={cn("hidden md:block cursor-col-resize", isLight ? "bg-slate-200" : "bg-white/10")}
+          className={cn("hidden lg:block cursor-col-resize", isLight ? "bg-slate-200" : "bg-white/10")}
           style={{ width: 10, minWidth: 10, maxWidth: 10 }}
           onMouseDown={() => setIsDividerDragging(true)}
         />
 
         <div
           style={isMdUp ? { width: `${100 - splitPercent}%` } : undefined}
-          className="flex flex-col overflow-hidden p-3 sm:p-5 gap-4 w-full md:w-auto"
+          className="flex flex-col overflow-hidden p-3 sm:p-5 gap-4 w-full lg:w-auto"
         >
           {/* Planning Summary — pinned at top */}
           <div className={cn("rounded-2xl border p-4 shrink-0", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5")}>

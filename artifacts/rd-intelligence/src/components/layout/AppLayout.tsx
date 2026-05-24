@@ -705,8 +705,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           "transition-[width] duration-300 ease-in-out",
           /* Mobile: slide in over content as fixed overlay */
           "fixed inset-y-0 left-0",
-          "md:relative md:translate-x-0",
-          isMobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
+          // Stay in document flow only on real desktops (lg, 1024 px+). On
+          // phones AND tablets the sidebar becomes a slide-in overlay so the
+          // page content owns the full viewport width by default.
+          "lg:relative lg:translate-x-0",
+          isMobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
           isLight ? "light-sidebar" : "dark-shell-sidebar"
         )}
       >
@@ -727,14 +730,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
           {/* Mobile close */}
           {!isCollapsed && (
-            <button className="md:hidden text-muted-foreground hover:text-foreground shrink-0 ml-auto" onClick={() => setIsMobileMenuOpen(false)}>
+            <button className="lg:hidden text-muted-foreground hover:text-foreground shrink-0 ml-auto" onClick={() => setIsMobileMenuOpen(false)}>
               <X className="w-5 h-5" />
             </button>
           )}
 
           {/* Desktop collapse + lock controls */}
           {!isCollapsed && (
-            <div className="hidden md:flex items-center gap-0.5 ml-auto shrink-0">
+            <div className="hidden lg:flex items-center gap-0.5 ml-auto shrink-0">
               <button
                 onClick={toggleLock}
                 title={sidebarLocked ? "Unlock sidebar" : "Lock sidebar open"}
@@ -879,7 +882,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
             {/* Mobile hamburger */}
             <button
-              className="md:hidden p-2 text-muted-foreground hover:text-foreground shrink-0"
+              className="lg:hidden p-2 text-muted-foreground hover:text-foreground shrink-0"
               onClick={() => setIsMobileMenuOpen(true)}
             >
               <Menu className="w-6 h-6" />
@@ -946,7 +949,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Mobile overlay backdrop */}
       {isMobileMenuOpen && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden"
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
           onClick={() => setIsMobileMenuOpen(false)}
         />
       )}
