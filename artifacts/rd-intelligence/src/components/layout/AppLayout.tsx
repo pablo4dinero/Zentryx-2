@@ -704,7 +704,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           "flex-shrink-0 flex flex-col border-r z-50 overflow-hidden",
           // Animate width (desktop collapse) AND transform (mobile slide-in
           // from the logo on the left, expanding rightward into view).
-          "transition-[width,transform] duration-300 ease-in-out",
+          "transition-all duration-300 ease-in-out",
           "transform-gpu will-change-transform origin-left",
           /* Mobile: slide in over content as fixed overlay */
           "fixed inset-y-0 left-0",
@@ -879,7 +879,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         {/* Top Header — fixed as part of flex column, never scrolls */}
         <header className={cn(
           "h-16 flex items-center justify-between z-40 border-b shrink-0",
-          "px-3 sm:px-6 gap-2 sm:gap-3",
+          // Mobile: tiny px-1 so the logo button sits flush at the left edge.
+          // sm+ restores the standard 24 px padding.
+          "px-1 sm:px-6 gap-2 sm:gap-3",
           isLight ? "light-header" : "dark-shell-header"
         )}>
           <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
