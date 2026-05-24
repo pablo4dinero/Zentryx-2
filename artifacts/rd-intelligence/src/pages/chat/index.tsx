@@ -946,7 +946,7 @@ export default function ChatRoom() {
                         )}
                       >
                         {pinned && <Pin className="w-3 h-3 text-amber-400 absolute -top-1 -right-1" />}
-                        <MsgContent msg={msg} isOwn={isOwn} base={BASE} onImageClick={setLightboxImg} />
+                        <MsgContent msg={msg} isOwn={isOwn} base={BASE} onImageClick={setLightboxImg} forceWhiteText={isLight || isOwn} />
                       </div>
                       <div className={`flex items-center gap-1 px-1 ${isOwn ? "flex-row-reverse" : "flex-row"}`}>
                         <span className="text-[10px] text-muted-foreground">{format(new Date(msg.createdAt), "h:mm a")}</span>
@@ -1187,11 +1187,21 @@ export default function ChatRoom() {
   );
 }
 
-function MsgContent({ msg, isOwn, base, onImageClick }: {
-  msg: any; isOwn: boolean; base: string; onImageClick: (src: string) => void;
+function MsgContent({ msg, isOwn, base, onImageClick, forceWhiteText }: {
+  msg: any; isOwn: boolean; base: string; onImageClick: (src: string) => void; forceWhiteText?: boolean;
 }) {
   if (msg.messageType === "text") {
-    return <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>;
+    // Inline color on the <p> itself — the global `.light p { color: #334155 }`
+    // rule beats any parent class/inheritance, so the text-render element has
+    // to carry its own colour to win.
+    return (
+      <p
+        style={forceWhiteText ? { color: "#ffffff" } : undefined}
+        className="text-sm whitespace-pre-wrap break-words"
+      >
+        {msg.content}
+      </p>
+    );
   }
   if (msg.messageType === "image") {
     const src = `${base}api${msg.fileUrl?.replace('/api', '')}`;
