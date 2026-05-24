@@ -549,6 +549,10 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
   const [convFrom, setConvFrom] = useState<string>("NGN");
   const [convTo, setConvTo] = useState<string>("USD");
   const [allRates, setAllRates] = useState<Record<string, number> | null>(null);
+  // The manual rate is always expressed as "1 USD = X <manualRateCurrency>"
+  // — defaulting to NGN. Any conversion that touches `manualRateCurrency`
+  // uses this override instead of the live rate.
+  const [manualRateCurrency, setManualRateCurrency] = useState<string>("NGN");
   const [manualConvRate, setManualConvRate] = useState<string>("");
   const [showManualConv, setShowManualConv] = useState(false);
   const [ratesRefreshing, setRatesRefreshing] = useState(false);
@@ -563,16 +567,30 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
   }, []);
   useEffect(() => { fetchRates(); }, [fetchRates]);
 
-  // Rate from `convFrom` → `convTo`. Cross-rate via USD because the free
-  // exchangerate-api endpoint returns USD-base rates.
+  // Effective "USD → X" rate for any currency. When the user has set a
+  // manual rate (e.g. "1 USD = 1650 NGN") that override is used whenever
+  // the conversion touches `manualRateCurrency`. Everything else falls
+  // back to the live USD-base rate from exchangerate-api.
+  const manualRateNum = manualConvRate ? parseFloat(manualConvRate) : NaN;
+  const manualRateValid = !isNaN(manualRateNum) && manualRateNum > 0;
+  const usdRateFor = (currency: string): number | null => {
+    if (currency === "USD") return 1;
+    if (currency === manualRateCurrency && manualRateValid) return manualRateNum;
+    const live = allRates?.[currency];
+    return typeof live === "number" ? live : null;
+  };
+
+  // Cross-rate convFrom → convTo via USD.
   const liveConvRate = (() => {
-    if (!allRates) return null;
-    const fromUsd = convFrom === "USD" ? 1 : allRates[convFrom];
-    const toUsd = convTo === "USD" ? 1 : allRates[convTo];
+    const fromUsd = usdRateFor(convFrom);
+    const toUsd = usdRateFor(convTo);
     if (!fromUsd || !toUsd) return null;
     return toUsd / fromUsd;
   })();
-  const effectiveConvRate = manualConvRate ? parseFloat(manualConvRate) : liveConvRate;
+  const effectiveConvRate = liveConvRate;
+  // The manual override is "active" for the current pair only if one of
+  // the selected currencies actually matches the override currency.
+  const manualOverrideActive = manualRateValid && (convFrom === manualRateCurrency || convTo === manualRateCurrency);
   const convertedAmount = (() => {
     const amt = parseFloat(convAmount);
     if (!effectiveConvRate || isNaN(amt)) return null;
@@ -835,10 +853,10 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
         <div className="flex items-center justify-between mb-3">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Currency Converter</p>
           <div className="flex items-center gap-2">
-            {liveConvRate !== null && !manualConvRate && (
+            {liveConvRate !== null && !manualOverrideActive && (
               <span className="text-[10px] text-emerald-400">Live</span>
             )}
-            {manualConvRate && (
+            {manualOverrideActive && (
               <span className="text-[10px] text-amber-400">Manual</span>
             )}
             <button onClick={fetchRates} disabled={ratesRefreshing}
@@ -887,14 +905,22 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
           )}
         </div>
         {showManualConv && (
-          <div className="flex items-center gap-2 mt-2 pt-2 border-t border-white/5">
-            <span className="text-xs text-muted-foreground">1 {convFrom} =</span>
-            <input type="number" inputMode="decimal" value={manualConvRate}
-              onChange={e => setManualConvRate(e.target.value)}
-              placeholder={liveConvRate ? `Live: ${liveConvRate.toLocaleString(undefined, { maximumFractionDigits: 4 })}` : ""}
-              className="flex-1 h-7 rounded-lg border border-white/10 bg-black/20 px-2 text-xs focus:outline-none text-foreground" />
-            <span className="text-xs text-muted-foreground">{convTo}</span>
-            {manualConvRate && <button onClick={() => setManualConvRate("")} className="text-xs text-red-400">Clear</button>}
+          <div className="flex flex-col gap-1 mt-2 pt-2 border-t border-white/5">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">1 USD =</span>
+              <input type="number" inputMode="decimal" value={manualConvRate}
+                onChange={e => setManualConvRate(e.target.value)}
+                placeholder={allRates?.[manualRateCurrency] ? `Live: ${allRates[manualRateCurrency].toLocaleString(undefined, { maximumFractionDigits: 4 })}` : ""}
+                className="flex-1 min-w-0 h-7 rounded-lg border border-white/10 bg-black/20 px-2 text-xs focus:outline-none text-foreground" />
+              <select value={manualRateCurrency} onChange={e => setManualRateCurrency(e.target.value)}
+                className="h-7 rounded-lg border border-white/10 bg-black/30 px-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/40 text-foreground cursor-pointer">
+                {SUPPORTED_CURRENCIES.filter(c => c !== "USD").map(c => <option key={c} value={c} className="bg-card">{c}</option>)}
+              </select>
+              {manualConvRate && <button onClick={() => setManualConvRate("")} className="text-xs text-red-400">Clear</button>}
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              Override is applied automatically to any conversion involving {manualRateCurrency}.
+            </p>
           </div>
         )}
       </div>
