@@ -654,14 +654,21 @@ export default function ChatRoom() {
           )}
           {filteredPeople.map((person: any) => {
             const isActive = activeRoom && person.dmRoom && activeRoom.id === person.dmRoom.id;
+            // Active-DM row design:
+            //   Light mode → solid indigo→violet gradient with white text,
+            //   matching the new chat-bubble gradient for visual continuity.
+            //   Dark mode → subtle primary tint (the existing look).
+            // Inline color override on the row guarantees white text in
+            // light mode regardless of cascade.
             return (
               <button key={person.id}
                 onClick={() => createPrivateRoom(person.id, person.name)}
+                style={isActive && isLight ? { color: "#ffffff" } : undefined}
                 className={cn(
                   "relative w-[calc(100%-8px)] mx-1 flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-sm text-left transition-all",
                   isActive
                     ? isLight
-                      ? "bg-primary/10 text-primary ring-1 ring-primary/30 shadow-sm"
+                      ? "bg-gradient-to-r from-indigo-500 to-violet-600 shadow-md shadow-indigo-500/25"
                       : "bg-primary/15 text-primary ring-1 ring-primary/30 shadow-[inset_0_0_0_1px_rgba(124,77,255,0.15)]"
                     : isLight
                       ? "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
@@ -669,48 +676,77 @@ export default function ChatRoom() {
                 )}
               >
                 {isActive && (
-                  <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full bg-primary shadow-[0_0_8px_rgba(124,77,255,0.6)]" />
+                  <span className={cn(
+                    "absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full",
+                    isLight ? "bg-white/90 shadow-[0_0_8px_rgba(255,255,255,0.6)]" : "bg-primary shadow-[0_0_8px_rgba(124,77,255,0.6)]",
+                  )} />
                 )}
                 <div className="relative shrink-0">
                   <div className={cn(
-                    "w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-bold transition-shadow",
-                    isActive ? "bg-gradient-to-tr from-primary to-accent shadow-md shadow-primary/30" : "bg-gradient-to-tr from-secondary/50 to-primary/50",
+                    "w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold transition-shadow",
+                    isActive
+                      ? isLight
+                        ? "bg-white/25 text-white shadow ring-1 ring-white/40"
+                        : "bg-gradient-to-tr from-primary to-accent text-white shadow-md shadow-primary/30"
+                      : "bg-gradient-to-tr from-secondary/50 to-primary/50 text-white",
                   )}>
                     {person.name.charAt(0)}
                   </div>
                   <div className={cn(
                     "absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border",
-                    isLight ? "border-white" : "border-background",
+                    isActive && isLight ? "border-indigo-600" : isLight ? "border-white" : "border-background",
                     person.isActive ? "bg-green-400" : "bg-slate-500",
                   )} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1">
-                    <span className={cn("truncate text-sm", isActive ? "font-semibold" : "font-medium")}>{person.name}</span>
-                    {person.hasUnread && <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />}
+                    <span className={cn(
+                      "truncate text-sm",
+                      isActive ? "font-semibold" : "font-medium",
+                    )}>
+                      {person.name}
+                    </span>
+                    {person.hasUnread && (
+                      <span className={cn(
+                        "w-1.5 h-1.5 rounded-full shrink-0",
+                        isActive && isLight ? "bg-white" : "bg-primary",
+                      )} />
+                    )}
                   </div>
                   {person.lastPreview ? (
                     <p className={cn(
                       "text-[10px] truncate",
-                      isActive ? "text-primary/70" : "text-muted-foreground",
+                      isActive
+                        ? isLight ? "text-white/85" : "text-primary/70"
+                        : "text-muted-foreground",
                     )}>
                       {person.lastPreviewType === "image" ? "📷 Image" : person.lastPreviewType === "voice_note" ? "🎤 Voice note" : person.lastPreview}
                     </p>
                   ) : (
                     <p className={cn(
                       "text-[10px] truncate",
-                      isActive ? "text-primary/70" : "text-muted-foreground/80",
+                      isActive
+                        ? isLight ? "text-white/80" : "text-primary/70"
+                        : "text-muted-foreground/80",
                     )}>
                       {person.email ?? (person.role ? person.role.replace(/_/g, " ") : "Tap to message")}
                     </p>
                   )}
                 </div>
                 {isActive ? (
-                  <span className={cn(
-                    "shrink-0 inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full border",
-                    isLight ? "bg-primary/15 border-primary/30 text-primary" : "bg-primary/20 border-primary/40 text-primary",
-                  )}>
-                    <span className="w-1 h-1 rounded-full bg-primary animate-pulse" />
+                  <span
+                    style={isLight ? { color: "#ffffff" } : undefined}
+                    className={cn(
+                      "shrink-0 inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full border",
+                      isLight
+                        ? "bg-white/20 border-white/40"
+                        : "bg-primary/20 border-primary/40 text-primary",
+                    )}
+                  >
+                    <span className={cn(
+                      "w-1 h-1 rounded-full animate-pulse",
+                      isActive && isLight ? "bg-white" : "bg-primary",
+                    )} />
                     Active
                   </span>
                 ) : person.lastMessageAt && !isNaN(new Date(person.lastMessageAt).getTime()) ? (
