@@ -117,9 +117,22 @@
      viewport width. Disabled at lg: where the desktop sidebar
      returns to the flow and standard reading-column padding kicks
      back in (lg:p-8).
+
+     Below lg: we also strip padding from the body, the AppLayout
+     root, and every Radix/Wouter/motion wrapper inside the scroll
+     container so nothing — light or dark mode, page-specific or
+     global — can re-introduce a left/right indent.
      ───────────────────────────────────────────── */
   @media (max-width: 1023px) {
-    .mobile-edge {
+    html, body, #root {
+      padding-left: 0 !important;
+      padding-right: 0 !important;
+      margin-left: 0 !important;
+      margin-right: 0 !important;
+    }
+    .mobile-edge,
+    .mobile-edge > *,
+    .mobile-edge > * > * {
       padding-left: 0 !important;
       padding-right: 0 !important;
       margin-left: 0 !important;
