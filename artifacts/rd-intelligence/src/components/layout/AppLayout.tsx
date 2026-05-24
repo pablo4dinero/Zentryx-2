@@ -40,22 +40,28 @@ const ALL_NAV_ITEMS = [
   { href: "/profile", label: "My Profile", icon: UserCircle },
 ];
 
-const RESTRICTED_PATHS = ["/sales-force", "/projects", "/weekly-activities", "/business-dev", "/procurement"];
+const RESTRICTED_PATHS = ["/sales-force", "/projects", "/weekly-activities", "/business-dev", "/procurement", "/materials-demand-planning"];
 
 function getBlockedPaths(role: string, jobPos: string): string[] {
   const r = (role || "viewer").toLowerCase();
   const jp = (jobPos || "").toLowerCase();
-  // Full access: admin, manager, ceo, any "head" role
-  const privileged = ["admin", "manager", "ceo"].includes(r) || r.includes("head") ||
-    jp.includes("head") || jp.includes("ceo") || jp.includes("admin") || jp.includes("manager");
+  // Full access: admin, manager, ceo, managing_director, any "head" role
+  const privileged = ["admin", "manager", "ceo", "managing_director"].includes(r) || r.includes("head") ||
+    jp.includes("head") || jp.includes("ceo") || jp.includes("admin") || jp.includes("manager") || jp.includes("director");
   if (privileged) return [];
+  // Viewer is explicitly read-only — no Sales Force, no Materials & Demand
+  // Planning. We list this branch first so it can't be matched by any of
+  // the later workgroup rules.
+  if (r === "viewer") return ["/sales-force", "/materials-demand-planning", "/projects", "/weekly-activities", "/business-dev", "/procurement"];
   // NPD technologist sees everything except Sales Force
   if (r === "npd_technologist") return ["/sales-force"];
   // KAM / SKAM — can see Sales Force, but not the others
   if (["key_account_manager", "senior_key_account_manager"].includes(r)) return ["/projects", "/weekly-activities", "/business-dev", "/procurement"];
   // Procurement role sees procurement and weekly activities, not Sales Force
   if (r === "procurement" || jp.includes("procurement")) return ["/sales-force", "/projects", "/business-dev"];
-  // All other roles (viewer, graphics_designer, hr, quality_control, and any unknown)
+  // All other roles (graphics_designer, hr, quality_control, and any
+  // unknown role) get the same fallback as viewer — no Sales Force, no
+  // M&DP, no project/portfolio modules.
   return RESTRICTED_PATHS;
 }
 
@@ -585,6 +591,18 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   const blockedPaths = getBlockedPaths(user?.role || "viewer", (user as any)?.jobPosition || "");
   const navItems = ALL_NAV_ITEMS.filter(item => !blockedPaths.includes(item.href));
+
+  // Redirect away if the user landed on a module their role isn't allowed
+  // to view (typing the URL directly, deep-link from a notification, etc).
+  // We wait for `user` to load so we don't redirect on the initial render
+  // when the role is still defaulting to "viewer".
+  const [, navigateAway] = useLocation();
+  useEffect(() => {
+    if (!user) return;
+    const blockedExact = blockedPaths.includes(location);
+    const blockedPrefix = blockedPaths.some(p => location.startsWith(p + "/"));
+    if (blockedExact || blockedPrefix) navigateAway("/");
+  }, [user, location, blockedPaths, navigateAway]);
 
   const isCollapsed = !sidebarLocked && sidebarCollapsed;
 
