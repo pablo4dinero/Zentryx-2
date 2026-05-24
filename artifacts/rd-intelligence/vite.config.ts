@@ -14,7 +14,7 @@ export default defineConfig({
       manifest: {
         name: "Zentryx — R&D Intelligence",
         short_name: "Zentryx",
-        description: "Zentryx R&D Intelligence Suite — projects, planning, sales, and analytics in one workspace.",
+        description: "Zentryx R&D Intelligence Suite — projects, planning, sales, and analytics in one workspace. v2",
         theme_color: "#7C4DFF",
         background_color: "#0B0B14",
         display: "standalone",

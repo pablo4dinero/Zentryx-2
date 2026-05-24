@@ -945,10 +945,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           return (
             <div className={cn(
               "flex-1 overflow-y-auto custom-scrollbar relative",
-              // Mobile: zero horizontal padding so content goes edge-to-edge.
-              // Cards keep their own interior padding; sm+ restores the
-              // standard reading-column padding.
-              fillScreen ? "p-1.5" : "px-0 py-3 sm:p-6 lg:p-8",
+              // .mobile-edge nukes all horizontal padding/margin/max-width
+              // below 640 px so module content sits flush with the viewport
+              // edges. From sm: up, standard reading-column padding applies.
+              fillScreen ? "p-1.5" : "mobile-edge py-3 sm:p-6 lg:p-8",
             )}>
               <AnimatePresence mode="wait">
                 <motion.div
@@ -957,7 +957,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
                   transition={{ duration: 0.2 }}
-                  className={cn(fillScreen ? "w-full h-full" : "max-w-7xl mx-auto")}
+                  className={cn(fillScreen ? "w-full h-full" : "mobile-edge max-w-7xl sm:mx-auto")}
                 >
                   {children}
                 </motion.div>
