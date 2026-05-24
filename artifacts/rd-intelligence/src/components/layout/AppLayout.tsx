@@ -880,16 +880,25 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           isLight ? "light-header" : "dark-shell-header"
         )}>
           <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
-            {/* Mobile hamburger — toggles the slide-in sidebar. Clicking it
-                opens the sidebar (logo + nav appears); clicking it again, or
-                outside the sidebar, or any nav link, closes it. */}
+            {/* Mobile menu trigger — uses the Zentryx logo glyph instead of
+                a generic hamburger. Tapping it toggles the slide-in sidebar
+                (sidebar header logo + nav). When the sidebar is open the
+                glyph shows a small X overlay to read as "close". */}
             <button
-              className="lg:hidden p-2 text-muted-foreground hover:text-foreground shrink-0"
+              className={cn(
+                "lg:hidden relative w-9 h-9 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-md shadow-primary/30 shrink-0 transition-all",
+                isLight && "logo-glow",
+                isMobileMenuOpen && "ring-2 ring-primary/40",
+              )}
               onClick={() => setIsMobileMenuOpen(v => !v)}
               aria-label={isMobileMenuOpen ? "Close menu" : "Open menu"}
               aria-expanded={isMobileMenuOpen}
             >
-              {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              {isMobileMenuOpen ? (
+                <X className="w-5 h-5 text-white" />
+              ) : (
+                <Zap className="w-5 h-5 text-white" />
+              )}
             </button>
 
             {/* Greeting */}
