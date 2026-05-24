@@ -213,6 +213,26 @@ async function createTablesIfNotExist() {
       );
     `));
 
+    // Login audit trail — every login attempt (success or failure).
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS login_attempts (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        email TEXT NOT NULL,
+        success BOOLEAN NOT NULL,
+        reason TEXT,
+        ip_address TEXT,
+        user_agent TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `));
+    await db.execute(sql.raw(`
+      CREATE INDEX IF NOT EXISTS login_attempts_email_idx ON login_attempts (email);
+    `));
+    await db.execute(sql.raw(`
+      CREATE INDEX IF NOT EXISTS login_attempts_created_at_idx ON login_attempts (created_at DESC);
+    `));
+
     // Migrate projects table enum columns to text so custom values are accepted
     await db.execute(sql.raw(`
       DO $$

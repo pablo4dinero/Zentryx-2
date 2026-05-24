@@ -24,6 +24,7 @@ import MaterialsDemandPlanning from "@/pages/materials-demand-planning";
 import Procurement from "@/pages/procurement";
 import NewsFeed from "@/pages/news-feed";
 import OraclePage from "@/pages/oracle";
+import AdminDashboard from "@/pages/admin";
 import NotFound from "@/pages/not-found";
 
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -61,6 +62,7 @@ function Router() {
       <Route path="/procurement" component={() => <ProtectedRoute component={Procurement} />} />
       <Route path="/news-feed" component={() => <ProtectedRoute component={NewsFeed} />} />
       <Route path="/oracle" component={() => <ProtectedRoute component={OraclePage} />} />
+      <Route path="/admin" component={() => <ProtectedRoute component={AdminDashboard} />} />
       <Route component={NotFound} />
     </Switch>
   );

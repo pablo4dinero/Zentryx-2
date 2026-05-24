@@ -38,6 +38,7 @@ const ALL_NAV_ITEMS = [
   { href: "/activity", label: "Activity Feed", icon: Activity },
   { href: "/chat", label: "Chat Room", icon: MessageSquare },
   { href: "/profile", label: "My Profile", icon: UserCircle },
+  { href: "/admin", label: "Admin Dashboard", icon: ShieldCheck, adminOnly: true },
 ];
 
 const RESTRICTED_PATHS = ["/sales-force", "/projects", "/weekly-activities", "/business-dev", "/procurement", "/materials-demand-planning"];
@@ -648,7 +649,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   const blockedPaths = getBlockedPaths(user?.role || "viewer", (user as any)?.jobPosition || "");
-  const navItems = ALL_NAV_ITEMS.filter(item => !blockedPaths.includes(item.href));
+  const isAdminUser = (user?.role || "").toLowerCase() === "admin";
+  const navItems = ALL_NAV_ITEMS.filter(item => {
+    if ((item as any).adminOnly && !isAdminUser) return false;
+    return !blockedPaths.includes(item.href);
+  });
 
   // Redirect away if the user landed on a module their role isn't allowed
   // to view (typing the URL directly, deep-link from a notification, etc).

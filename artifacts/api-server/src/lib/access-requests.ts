@@ -37,6 +37,14 @@ export function getRequest(id: string): AccessRequest | undefined {
   return req;
 }
 
+export function getAllRequests(): AccessRequest[] {
+  // Return everything in-memory (including expired) sorted newest-first.
+  // The admin dashboard's "Approvals history" tab uses this.
+  const all: AccessRequest[] = [];
+  for (const [, req] of store.entries()) all.push(req);
+  return all.sort((a, b) => b.requestedAt.getTime() - a.requestedAt.getTime());
+}
+
 export function getPendingRequests(): AccessRequest[] {
   const pending: AccessRequest[] = [];
   for (const [id, req] of store.entries()) {

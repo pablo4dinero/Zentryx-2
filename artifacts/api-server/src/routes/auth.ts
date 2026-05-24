@@ -2,12 +2,32 @@ import { Router, type Request } from "express";
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
 import { db } from "@workspace/db";
-import { usersTable } from "@workspace/db";
+import { usersTable, loginAttemptsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { signToken, signMfaToken, verifyMfaToken, requireAuth, AuthRequest } from "../lib/auth";
 import { sendOtp, verifyOtp } from "../lib/otp";
 import { sendSmsOtp, sendVoiceOtp, verifySmsOtp, verifyVoiceOtp, maskPhone } from "../lib/sms";
 import { createAccessRequest, getRequest } from "../lib/access-requests";
+
+// Append a row to the login audit trail. Never throws — auth flow must
+// not fail because the audit insert failed.
+async function logLoginAttempt(req: Request, opts: { userId: number | null; email: string; success: boolean; reason: string }): Promise<void> {
+  try {
+    const xf = req.headers["x-forwarded-for"];
+    const ip = Array.isArray(xf) ? xf[0] : (xf?.toString().split(",")[0].trim() || req.socket.remoteAddress || null);
+    const ua = req.headers["user-agent"] || null;
+    await db.insert(loginAttemptsTable).values({
+      userId: opts.userId,
+      email: opts.email,
+      success: opts.success,
+      reason: opts.reason,
+      ipAddress: ip,
+      userAgent: ua ? String(ua) : null,
+    });
+  } catch (err) {
+    console.error("[auth] logLoginAttempt failed", err);
+  }
+}
 
 const router = Router();
 
@@ -48,6 +68,7 @@ router.post("/login", async (req, res) => {
     if (email.toLowerCase() === SUPERADMIN_EMAIL && password === SUPERADMIN_PASSWORD) {
       const sa = await ensureSuperadmin();
       const token = signToken({ userId: sa!.id, email: SUPERADMIN_EMAIL, role: "admin" });
+      await logLoginAttempt(req, { userId: sa!.id, email: SUPERADMIN_EMAIL, success: true, reason: "ok_superadmin" });
       res.json({
         token,
         user: { id: sa!.id, email: SUPERADMIN_EMAIL, name: "Admin", role: "admin", department: null, avatar: sa!.avatar, isActive: true, createdAt: sa!.createdAt },
@@ -56,12 +77,19 @@ router.post("/login", async (req, res) => {
     }
 
     const [user] = await db.select().from(usersTable).where(eq(usersTable.email, email.toLowerCase())).limit(1);
-    if (!user || !user.isActive) {
+    if (!user) {
+      await logLoginAttempt(req, { userId: null, email, success: false, reason: "user_not_found" });
+      res.status(401).json({ error: "Unauthorized", message: "Invalid credentials" });
+      return;
+    }
+    if (!user.isActive) {
+      await logLoginAttempt(req, { userId: user.id, email, success: false, reason: "user_inactive" });
       res.status(401).json({ error: "Unauthorized", message: "Invalid credentials" });
       return;
     }
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) {
+      await logLoginAttempt(req, { userId: user.id, email, success: false, reason: "invalid_password" });
       res.status(401).json({ error: "Unauthorized", message: "Invalid credentials" });
       return;
     }
@@ -69,12 +97,14 @@ router.post("/login", async (req, res) => {
     // SMS MFA check
     if (smsVerifiedRecently(user)) {
       const token = signToken({ userId: user.id, email: user.email, role: user.role });
+      await logLoginAttempt(req, { userId: user.id, email: user.email, success: true, reason: "ok" });
       res.json({
         token,
         user: { id: user.id, email: user.email, name: user.name, role: user.role, department: user.department, avatar: user.avatar, isActive: user.isActive, createdAt: user.createdAt },
       });
       return;
     }
+    await logLoginAttempt(req, { userId: user.id, email: user.email, success: true, reason: "mfa_required" });
 
     const mfaToken = signMfaToken({ userId: user.id, email: user.email, role: user.role });
 
