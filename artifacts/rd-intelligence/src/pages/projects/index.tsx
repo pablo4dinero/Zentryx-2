@@ -383,7 +383,14 @@ export default function ProjectsList() {
                 />
               )}
               {view === "matrix" && <MatrixView projects={filteredProjects} />}
-              {view === "list" && <ListView projects={filteredProjects} />}
+              {view === "list" && (
+                <ListView
+                  projects={filteredProjects}
+                  productTypeOpts={productTypeOpts}
+                  stageOpts={stageOpts}
+                  statusOpts={statusOpts}
+                />
+              )}
             </motion.div>
           </AnimatePresence>
         </>

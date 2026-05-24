@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { ChevronDown, Edit3, Trash2 } from "lucide-react";
+import { ChevronDown, Edit3, Trash2, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CustomOptionsHandle } from "@/lib/project-options";
 
@@ -10,20 +10,30 @@ interface CustomOptionsSelectProps {
   displayFn?: (v: string) => string;
   placeholder?: string;
   isLight: boolean;
+  /**
+   * When true the trigger renders as a compact "ghost" pill suitable for
+   * inline use inside a table cell. Defaults to false (full-width input).
+   */
+  compact?: boolean;
 }
 
 export function CustomOptionsSelect({
-  value, onChange, handle, displayFn = v => v, placeholder = "Select...", isLight,
+  value, onChange, handle, displayFn = v => v, placeholder = "Select...", isLight, compact = false,
 }: CustomOptionsSelectProps) {
   const { options, addOption, deleteOption, renameOption } = handle;
   const [open, setOpen] = useState(false);
-  const [newOption, setNewOption] = useState("");
   const [editingOpt, setEditingOpt] = useState<string | null>(null);
   const [editVal, setEditVal] = useState("");
+  const [search, setSearch] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const filteredOptions = search.trim()
+    ? options.filter(o => o.toLowerCase().includes(search.trim().toLowerCase()))
+    : options;
+  const exactMatch = options.some(o => o.toLowerCase() === search.trim().toLowerCase());
+
   useEffect(() => {
-    if (!open) return;
+    if (!open) { setSearch(""); return; }
     const handler = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false);
@@ -49,28 +59,67 @@ export function CustomOptionsSelect({
         type="button"
         onClick={() => setOpen(o => !o)}
         className={cn(
-          "flex h-10 w-full items-center justify-between rounded-xl border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-colors",
-          isLight
+          compact
+            ? "inline-flex items-center justify-between rounded-lg px-2 py-1 text-xs focus:outline-none transition-colors min-w-0 max-w-full"
+            : "flex h-10 w-full items-center justify-between rounded-xl border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-colors",
+          !compact && (isLight
             ? "border-gray-200 bg-white text-black hover:border-gray-300"
-            : "border-white/10 bg-black/20 text-foreground hover:border-white/20"
+            : "border-white/10 bg-black/20 text-foreground hover:border-white/20"),
+          compact && (isLight
+            ? "border border-transparent hover:border-slate-200 hover:bg-slate-50 text-slate-700"
+            : "border border-transparent hover:border-white/10 hover:bg-white/5 text-foreground")
         )}
       >
         <span className={cn("truncate capitalize", !value && (isLight ? "text-gray-400" : "text-muted-foreground"))}>
           {value ? displayFn(value) : placeholder}
         </span>
-        <ChevronDown className={cn("w-4 h-4 shrink-0 ml-2 transition-transform", open && "rotate-180", isLight ? "text-gray-500" : "opacity-50")} />
+        <ChevronDown className={cn(compact ? "w-3 h-3 shrink-0 ml-1" : "w-4 h-4 shrink-0 ml-2", "transition-transform", open && "rotate-180", isLight ? "text-gray-500" : "opacity-50")} />
       </button>
 
       {open && (
         <div className={cn(
-          "absolute top-[calc(100%+4px)] left-0 right-0 z-[200] rounded-xl border shadow-xl overflow-hidden",
+          compact
+            ? "absolute top-[calc(100%+4px)] left-0 z-[200] w-56 rounded-xl border shadow-xl overflow-hidden"
+            : "absolute top-[calc(100%+4px)] left-0 right-0 z-[200] rounded-xl border shadow-xl overflow-hidden",
           isLight ? "bg-white border-gray-200" : "bg-card border-white/10"
         )}>
+          {/* Search */}
+          <div className={cn("p-2 border-b", isLight ? "border-gray-100" : "border-white/10")}>
+            <div className={cn("flex items-center gap-1.5 px-2 py-1 rounded-lg border", isLight ? "bg-slate-50 border-slate-200" : "bg-white/5 border-white/10")}>
+              <Search className={cn("w-3 h-3 shrink-0", isLight ? "text-slate-400" : "text-muted-foreground")} />
+              <input
+                autoFocus
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter" && search.trim() && !exactMatch) {
+                    e.preventDefault();
+                    addOption(search.trim());
+                    onChange(search.trim());
+                    setSearch("");
+                    setOpen(false);
+                  }
+                  if (e.key === "Escape") setOpen(false);
+                }}
+                placeholder="Search or add…"
+                className={cn("flex-1 min-w-0 text-xs bg-transparent border-none focus:outline-none", isLight ? "text-slate-900 placeholder:text-slate-400" : "text-foreground placeholder:text-muted-foreground")}
+              />
+            </div>
+          </div>
           <div className="max-h-48 overflow-y-auto">
-            {options.length === 0 && (
-              <p className="px-3 py-3 text-xs text-center text-muted-foreground">No options yet</p>
+            {filteredOptions.length === 0 && search.trim() && (
+              <button
+                type="button"
+                onClick={() => { addOption(search.trim()); onChange(search.trim()); setSearch(""); setOpen(false); }}
+                className={cn("w-full text-left px-3 py-2 text-xs flex items-center gap-1.5 transition-colors", isLight ? "text-primary hover:bg-slate-50" : "text-primary hover:bg-white/5")}
+              >
+                <span className="font-medium">+ Add</span> "<span className="font-semibold">{search.trim()}</span>"
+              </button>
             )}
-            {options.map(opt => (
+            {filteredOptions.length === 0 && !search.trim() && (
+              <p className="px-3 py-3 text-xs text-center text-muted-foreground">No options yet — type a name above to add one.</p>
+            )}
+            {filteredOptions.map(opt => (
               <div key={opt} className={cn("flex items-center group", isLight ? "hover:bg-slate-50" : "hover:bg-white/5")}>
                 {editingOpt === opt ? (
                   <input
@@ -118,31 +167,6 @@ export function CustomOptionsSelect({
             ))}
           </div>
 
-          <div className={cn("border-t p-2 flex gap-1.5", isLight ? "border-gray-100" : "border-white/10")}>
-            <input
-              type="text"
-              value={newOption}
-              onChange={e => setNewOption(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === "Enter") { e.preventDefault(); addOption(newOption); setNewOption(""); }
-              }}
-              placeholder="Add custom option..."
-              className={cn(
-                "flex-1 h-7 px-2 rounded-lg text-xs border focus:outline-none focus:ring-1 focus:ring-primary/50",
-                isLight
-                  ? "border-gray-200 bg-slate-50 text-black placeholder:text-slate-400"
-                  : "border-white/10 bg-white/5 text-foreground placeholder:text-muted-foreground"
-              )}
-            />
-            <button
-              type="button"
-              onClick={() => { addOption(newOption); setNewOption(""); }}
-              disabled={!newOption.trim()}
-              className="h-7 px-2.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 text-xs font-semibold disabled:opacity-40 transition-colors"
-            >
-              Add
-            </button>
-          </div>
         </div>
       )}
     </div>

@@ -2,12 +2,14 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
 import { format } from "date-fns";
-import { ArrowUpDown, ArrowUp, ArrowDown, Trash2, FileText, X, Send } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, Trash2, FileText, X, Send, Pencil, Calendar as CalendarIcon } from "lucide-react";
 import { useUpdateProject, useDeleteProject, useListUsers } from "@/api-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
+import { CustomOptionsSelect } from "@/components/ui/CustomOptionsSelect";
+import type { CustomOptionsHandle } from "@/lib/project-options";
 
 type SortKey = "name" | "stage" | "status" | "productType" | "customerName" | "targetDate" | "progress" | "createdAt";
 type SortDir = "asc" | "desc";
@@ -44,9 +46,14 @@ const STATUS_COLORS_LIGHT: Record<string, string> = {
   pushed_to_live: "bg-emerald-100 text-emerald-700 border-emerald-200",
 };
 
-interface Props { projects: any[] }
+interface Props {
+  projects: any[];
+  productTypeOpts: CustomOptionsHandle;
+  stageOpts: CustomOptionsHandle;
+  statusOpts: CustomOptionsHandle;
+}
 
-export function ListView({ projects }: Props) {
+export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>("createdAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; projectId: number; currentStatus: string } | null>(null);
@@ -57,6 +64,9 @@ export function ListView({ projects }: Props) {
   const [mentionIndex, setMentionIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const contextRef = useRef<HTMLDivElement>(null);
+  // Inline name editing
+  const [editingNameId, setEditingNameId] = useState<number | null>(null);
+  const [editingNameValue, setEditingNameValue] = useState("");
 
   const updateMutation = useUpdateProject();
   const deleteMutation = useDeleteProject();
@@ -107,18 +117,32 @@ export function ListView({ projects }: Props) {
   };
 
   const handleStatusChange = (projectId: number, newStatus: string) => {
-    // Optimistic update
+    updateField(projectId, "status", newStatus);
+    setContextMenu(null);
+  };
+
+  // Generic in-place field update with optimistic UI + server rollback
+  // on failure. Used by the inline editors (name / type / stage / status /
+  // due date) in the table cells.
+  const updateField = (projectId: number, field: string, value: any) => {
     queryClient.setQueryData(["/api/projects"], (old: any[]) => {
       if (!old) return old;
-      return old.map(p => p.id === projectId ? { ...p, status: newStatus } : p);
+      return old.map(p => p.id === projectId ? { ...p, [field]: value } : p);
     });
-    updateMutation.mutate({ id: projectId, data: { status: newStatus } as any }, {
+    updateMutation.mutate({ id: projectId, data: { [field]: value } as any }, {
       onError: () => {
         queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-        toast({ title: "Failed to update status", variant: "destructive" });
+        toast({ title: `Failed to update ${field}`, variant: "destructive" });
       },
     });
-    setContextMenu(null);
+  };
+
+  const commitName = (projectId: number) => {
+    const next = editingNameValue.trim();
+    if (next && next !== projects.find(p => p.id === projectId)?.name) {
+      updateField(projectId, "name", next);
+    }
+    setEditingNameId(null);
   };
 
   const handleDelete = (e: React.MouseEvent, project: any) => {
@@ -244,13 +268,48 @@ export function ListView({ projects }: Props) {
                       className={cn("border-b transition-colors group cursor-context-menu", isLight ? "border-gray-100 hover:bg-gray-50" : "border-white/5 hover:bg-white/[0.03]")}
                     >
                       <td className="px-4 py-3.5">
-                        <Link href={`/projects/${p.id}`}>
-                          <p className={cn("text-sm font-semibold group-hover:text-primary transition-colors line-clamp-1", isLight ? "text-gray-900" : "text-foreground")}>{p.name}</p>
-                          {p.description && <p className="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">{p.description}</p>}
-                        </Link>
+                        {editingNameId === p.id ? (
+                          <input
+                            autoFocus
+                            value={editingNameValue}
+                            onChange={e => setEditingNameValue(e.target.value)}
+                            onBlur={() => commitName(p.id)}
+                            onKeyDown={e => {
+                              if (e.key === "Enter") { e.preventDefault(); commitName(p.id); }
+                              if (e.key === "Escape") setEditingNameId(null);
+                            }}
+                            onClick={e => e.stopPropagation()}
+                            className={cn("text-sm font-semibold w-full rounded-lg px-2 py-1 border focus:outline-none focus:ring-2 focus:ring-primary/50",
+                              isLight ? "bg-white border-slate-200 text-slate-900" : "bg-black/30 border-white/10 text-foreground")}
+                          />
+                        ) : (
+                          <div className="flex items-center gap-1.5 group/name">
+                            <Link href={`/projects/${p.id}`} className="flex-1 min-w-0">
+                              <p className={cn("text-sm font-semibold group-hover:text-primary transition-colors line-clamp-1", isLight ? "text-gray-900" : "text-foreground")}>{p.name}</p>
+                              {p.description && <p className="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">{p.description}</p>}
+                            </Link>
+                            <button
+                              type="button"
+                              onClick={e => { e.stopPropagation(); setEditingNameId(p.id); setEditingNameValue(p.name); }}
+                              title="Rename"
+                              className={cn("opacity-0 group-hover/name:opacity-100 p-1 rounded transition-opacity shrink-0",
+                                isLight ? "text-slate-400 hover:text-slate-700 hover:bg-slate-100" : "text-muted-foreground hover:text-foreground hover:bg-white/10"
+                              )}
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3.5 hidden md:table-cell">
-                        <span className={cn("text-xs", isLight ? "text-gray-600" : "text-muted-foreground")}>{p.productType || "—"}</span>
+                        <CustomOptionsSelect
+                          compact
+                          value={p.productType || ""}
+                          onChange={v => updateField(p.id, "productType", v)}
+                          handle={productTypeOpts}
+                          placeholder="—"
+                          isLight={isLight}
+                        />
                       </td>
                       <td className="px-4 py-3.5 hidden lg:table-cell">
                         <div>
@@ -259,7 +318,15 @@ export function ListView({ projects }: Props) {
                         </div>
                       </td>
                       <td className="px-4 py-3.5 hidden sm:table-cell">
-                        <span className={cn("text-xs capitalize", isLight ? "text-gray-600" : "text-muted-foreground")}>{p.stage.replace(/_/g, " ")}</span>
+                        <CustomOptionsSelect
+                          compact
+                          value={p.stage || ""}
+                          onChange={v => updateField(p.id, "stage", v)}
+                          handle={stageOpts}
+                          displayFn={v => v.replace(/_/g, " ")}
+                          placeholder="—"
+                          isLight={isLight}
+                        />
                       </td>
                       <td className="px-4 py-3.5">
                         <div className="flex items-center gap-2">
@@ -270,14 +337,43 @@ export function ListView({ projects }: Props) {
                         </div>
                       </td>
                       <td className="px-4 py-3.5">
-                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium border capitalize ${statusColor}`}>
-                          {p.status.replace(/_/g, " ")}
-                        </span>
+                        {/* Status: colored pill stays as the visible chip; clicking the
+                            pencil opens the same status picker (search/add/rename). */}
+                        <div className="inline-flex items-center gap-1.5 group/status">
+                          <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium border capitalize ${statusColor}`}>
+                            {p.status.replace(/_/g, " ")}
+                          </span>
+                          <div className="opacity-0 group-hover/status:opacity-100 transition-opacity">
+                            <CustomOptionsSelect
+                              compact
+                              value={p.status || ""}
+                              onChange={v => updateField(p.id, "status", v)}
+                              handle={statusOpts}
+                              displayFn={() => ""}
+                              placeholder=""
+                              isLight={isLight}
+                            />
+                          </div>
+                        </div>
                       </td>
                       <td className="px-4 py-3.5 hidden xl:table-cell">
-                        <span className={cn("text-xs", isLight ? "text-gray-600" : "text-muted-foreground")}>
-                          {p.targetDate ? format(new Date(p.targetDate), "MMM d, yyyy") : "—"}
-                        </span>
+                        <div className="relative inline-flex items-center gap-1.5 group/date">
+                          <span className={cn("text-xs", isLight ? "text-gray-600" : "text-muted-foreground")}>
+                            {p.targetDate ? format(new Date(p.targetDate), "MMM d, yyyy") : "—"}
+                          </span>
+                          <label className={cn("relative cursor-pointer p-1 rounded transition-opacity opacity-0 group-hover/date:opacity-100",
+                            isLight ? "text-slate-400 hover:text-slate-700 hover:bg-slate-100" : "text-muted-foreground hover:text-foreground hover:bg-white/10"
+                          )}>
+                            <CalendarIcon className="w-3 h-3" />
+                            <input
+                              type="date"
+                              value={p.targetDate ? format(new Date(p.targetDate), "yyyy-MM-dd") : ""}
+                              onChange={e => updateField(p.id, "targetDate", e.target.value || null)}
+                              onClick={e => e.stopPropagation()}
+                              className="absolute inset-0 opacity-0 cursor-pointer"
+                            />
+                          </label>
+                        </div>
                       </td>
                       <td className="px-4 py-3.5 hidden xl:table-cell">
                         <span className={cn("text-xs", isLight ? "text-gray-600" : "text-muted-foreground")}>
