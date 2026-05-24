@@ -1191,16 +1191,17 @@ function MsgContent({ msg, isOwn, base, onImageClick, forceWhiteText }: {
   msg: any; isOwn: boolean; base: string; onImageClick: (src: string) => void; forceWhiteText?: boolean;
 }) {
   if (msg.messageType === "text") {
-    // Inline color on the <p> itself — the global `.light p { color: #334155 }`
-    // rule beats any parent class/inheritance, so the text-render element has
-    // to carry its own colour to win.
+    // Render the bubble text as a <div>, NOT a <p>. The global rule
+    // `.light p { color: #334155 }` only matches <p>, so switching the tag
+    // entirely bypasses the cascade fight. We still set color inline as
+    // belt-and-suspenders in case any future global selector targets <div>.
     return (
-      <p
+      <div
         style={forceWhiteText ? { color: "#ffffff" } : undefined}
         className="text-sm whitespace-pre-wrap break-words"
       >
         {msg.content}
-      </p>
+      </div>
     );
   }
   if (msg.messageType === "image") {
