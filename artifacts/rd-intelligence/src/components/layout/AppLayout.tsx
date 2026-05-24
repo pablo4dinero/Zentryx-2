@@ -1089,7 +1089,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 "flex-1 overflow-y-auto custom-scrollbar relative",
                 fillScreen ? "p-1.5" : "py-3 sm:p-6 lg:p-8",
               )}
-              style={!fillScreen && isBelowLg ? { paddingLeft: 2, paddingRight: 2 } : undefined}
+              style={!fillScreen && isBelowLg ? { paddingLeft: 12, paddingRight: 12 } : undefined}
             >
               <AnimatePresence mode="wait">
                 <motion.div

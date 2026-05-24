@@ -543,6 +543,18 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
   const [showRateInput, setShowRateInput] = useState(false);
   const { theme: _idTheme } = useTheme();
 
+  // Phone + tablet (< lg / 1024 px) get a different layout — charts first
+  // in a horizontal-scroll carousel, then the summary cards / converter /
+  // table stacked below. Desktop keeps the resizable two-pane layout.
+  const [isLgUp, setIsLgUp] = useState<boolean>(
+    typeof window !== "undefined" ? window.innerWidth >= 1024 : true,
+  );
+  useEffect(() => {
+    const on = () => setIsLgUp(window.innerWidth >= 1024);
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, []);
+
   // ── Currency converter widget state ────────────────────────────────────
   const SUPPORTED_CURRENCIES = ["NGN", "USD", "EUR", "GBP", "ZAR", "CNY", "KES", "GHS", "ZMW"] as const;
   const [convAmount, setConvAmount] = useState<string>("");
@@ -832,8 +844,21 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
   };
 
   return (
-  <div className="flex gap-4 h-full" style={{ minHeight: 600 }}>
-    <div style={{ width: `${leftW}%` }} className="flex flex-col gap-3 min-w-0">
+  <div
+    className={cn(
+      isLgUp ? "flex gap-4" : "flex flex-col gap-4",
+      "h-full",
+    )}
+    style={{ minHeight: isLgUp ? 600 : undefined }}
+  >
+    <div
+      style={isLgUp ? { width: `${leftW}%` } : undefined}
+      className={cn(
+        "flex flex-col gap-3 min-w-0",
+        // On phone/tablet the left panel goes BELOW the chart carousel.
+        !isLgUp && "order-2",
+      )}
+    >
       {/* Total Income — moved to top */}
       <div className="glass-card rounded-2xl p-4 border border-emerald-500/20 bg-emerald-500/5">
         <div className="flex items-start justify-between gap-3">
@@ -1023,21 +1048,38 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
 
       </div>
 
-      <div className="w-1 bg-white/10 hover:bg-primary/40 cursor-col-resize rounded-full transition-colors" onMouseDown={e => {
-        const startX = e.clientX;
-        const startW = leftW;
-        const onMove = (ev: MouseEvent) => {
-          const delta = ((ev.clientX - startX) / window.innerWidth) * 100;
-          setLeftW(Math.min(70, Math.max(30, startW + delta)));
-        };
-        const onUp = () => { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); };
-        document.addEventListener("mousemove", onMove);
-        document.addEventListener("mouseup", onUp);
-      }} />
+      {/* Drag handle — desktop only. */}
+      {isLgUp && (
+        <div className="w-1 bg-white/10 hover:bg-primary/40 cursor-col-resize rounded-full transition-colors" onMouseDown={e => {
+          const startX = e.clientX;
+          const startW = leftW;
+          const onMove = (ev: MouseEvent) => {
+            const delta = ((ev.clientX - startX) / window.innerWidth) * 100;
+            setLeftW(Math.min(70, Math.max(30, startW + delta)));
+          };
+          const onUp = () => { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); };
+          document.addEventListener("mousemove", onMove);
+          document.addEventListener("mouseup", onUp);
+        }} />
+      )}
 
-      <div className="flex-1 min-w-0 space-y-4 overflow-y-auto custom-scrollbar">
+      <div
+        className={cn(
+          // Desktop: a column of charts in the right pane, vertically scrollable
+          isLgUp && "flex-1 min-w-0 space-y-4 overflow-y-auto custom-scrollbar",
+          // Phone/tablet: a horizontal carousel that comes FIRST in the layout
+          !isLgUp && "order-1 flex gap-3 overflow-x-auto custom-scrollbar pb-2 snap-x snap-mandatory -mx-3 px-3",
+        )}
+      >
         {CHART_CFG.map(cfg => (
-          <div key={cfg.id} className="glass-card rounded-2xl p-4 border border-white/5">
+          <div
+            key={cfg.id}
+            className={cn(
+              "glass-card rounded-2xl p-4 border border-white/5",
+              // On mobile each chart card becomes a fixed-width, snap-aligned slide.
+              !isLgUp && "shrink-0 w-[78vw] max-w-[340px] snap-start",
+            )}
+          >
             <div className="flex items-center justify-between mb-3">
               <p className="text-xs font-semibold text-foreground">{cfg.title}</p>
               <button onClick={() => setChartFull(cfg.id)} className="p-1 hover:bg-white/10 rounded-lg text-muted-foreground hover:text-foreground"><Maximize2 className="w-3.5 h-3.5" /></button>
