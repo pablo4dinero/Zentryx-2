@@ -142,24 +142,69 @@
 
 /* ─────────────────────────────────────────────
    GLASSMORPHISM — LIGHT SIDEBAR
+   Properly frosted: lower background alpha so the
+   page tint shows through, a vertical gradient
+   overlay for depth, a bright inner highlight along
+   the top edge to read as a polished glass surface.
    ───────────────────────────────────────────── */
 .light-sidebar {
-  background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border-right: 1px solid rgba(255, 255, 255, 0.65);
-  box-shadow: 2px 0 24px rgba(15, 23, 42, 0.07), inset -1px 0 0 rgba(255,255,255,0.6);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78) 0%, rgba(248, 250, 255, 0.62) 100%),
+    radial-gradient(ellipse 90% 30% at 50% 0%, rgba(99, 102, 241, 0.06) 0%, transparent 70%);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
+  border-right: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow:
+    2px 0 32px rgba(15, 23, 42, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset -1px 0 0 rgba(255, 255, 255, 0.4);
 }
 
 /* ─────────────────────────────────────────────
    GLASSMORPHISM — LIGHT HEADER
    ───────────────────────────────────────────── */
 .light-header {
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.65);
-  box-shadow: 0 1px 16px rgba(15, 23, 42, 0.06), inset 0 -1px 0 rgba(226,232,240,0.6);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.85) 0%, rgba(248, 250, 255, 0.7) 100%),
+    radial-gradient(ellipse 60% 100% at 50% 0%, rgba(99, 102, 241, 0.05) 0%, transparent 70%);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow:
+    0 2px 20px rgba(15, 23, 42, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 1),
+    inset 0 -1px 0 rgba(226, 232, 240, 0.5);
+}
+
+/* ─────────────────────────────────────────────
+   GLASSMORPHISM — DARK SIDEBAR + HEADER
+   AppLayout uses glass-panel for dark mode, but
+   sidebar/header deserve a stronger treatment than
+   the generic dropdown glass-panel. Override.
+   ───────────────────────────────────────────── */
+.dark-shell-sidebar {
+  background:
+    linear-gradient(180deg, rgba(20, 22, 35, 0.65) 0%, rgba(15, 16, 28, 0.55) 100%),
+    radial-gradient(ellipse 90% 30% at 50% 0%, rgba(124, 77, 255, 0.08) 0%, transparent 70%);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    2px 0 32px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset -1px 0 0 rgba(255, 255, 255, 0.04);
+}
+.dark-shell-header {
+  background:
+    linear-gradient(180deg, rgba(20, 22, 35, 0.7) 0%, rgba(15, 16, 28, 0.6) 100%),
+    radial-gradient(ellipse 60% 100% at 50% 0%, rgba(124, 77, 255, 0.06) 0%, transparent 70%);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 2px 20px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.03);
 }
 
 /* ─────────────────────────────────────────────

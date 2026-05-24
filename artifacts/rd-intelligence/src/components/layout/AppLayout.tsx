@@ -707,7 +707,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           "fixed inset-y-0 left-0",
           "md:relative md:translate-x-0",
           isMobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
-          isLight ? "light-sidebar" : "glass-panel border-white/5"
+          isLight ? "light-sidebar" : "dark-shell-sidebar"
         )}
       >
         {/* Sidebar Header */}
@@ -873,7 +873,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         {/* Top Header — fixed as part of flex column, never scrolls */}
         <header className={cn(
           "h-16 flex items-center justify-between px-4 sm:px-6 z-40 border-b gap-3 shrink-0",
-          isLight ? "light-header" : "glass-panel border-white/5"
+          isLight ? "light-header" : "dark-shell-header"
         )}>
           <div className="flex items-center gap-3 flex-1 min-w-0">
             {/* Mobile hamburger */}
