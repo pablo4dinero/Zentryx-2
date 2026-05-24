@@ -4775,8 +4775,8 @@ function MaterialsDemandPlanningPage() {
               </div>
 
             {/* ── Customer Products Table ── */}
-            <div className={cn("glass-card rounded-2xl overflow-hidden border", isLight ? "border-slate-200 bg-white" : "border-white/5")}>
-              <table className="w-full text-sm">
+            <div className={cn("glass-card rounded-2xl overflow-x-auto custom-scrollbar border", isLight ? "border-slate-200 bg-white" : "border-white/5")}>
+              <table className="w-full text-sm min-w-[760px]">
                 <thead className={cn("text-xs text-muted-foreground border-b", isLight ? "bg-slate-50 border-slate-200" : "bg-white/5 border-white/5")}>
                   <tr>
                     <SortHeader label="Account" k="account" />

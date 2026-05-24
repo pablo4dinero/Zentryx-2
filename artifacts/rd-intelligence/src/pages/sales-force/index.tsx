@@ -674,8 +674,8 @@ function AccountsPage() {
           {filtered.map((a: any) => <AccountCard key={a.id} account={a} onClick={() => goToAccount(a)} onDelete={(e) => handleDelete(e, a.id, a.company)} />)}
         </div>
       ) : view === "list" ? (
-        <div className="glass-card rounded-2xl overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="glass-card rounded-2xl overflow-x-auto custom-scrollbar">
+          <table className="w-full text-sm min-w-[720px]">
             <thead className="text-xs text-muted-foreground bg-white/5 border-b border-white/5">
               <tr>
                 <th className="px-5 py-3 text-left font-medium">Account</th>
