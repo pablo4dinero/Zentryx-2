@@ -7,11 +7,25 @@ import { logActivity } from "../lib/activity";
 
 const router = Router();
 
-const PRIVILEGED_ROLES = ["admin", "manager", "ceo", "head_of_product_development", "head_of_department"];
-const isPrivileged = (role: string) =>
-  PRIVILEGED_ROLES.includes(role) || role.includes("head") || role.includes("manager") || role === "ceo" || role === "admin";
-
-const RESTRICTED_ROLES = ["key_account_manager", "senior_key_account_manager", "procurement"];
+// Privileged roles see ALL accounts + all Sales Force activity. Everyone
+// else (Key Account Manager, Technical Sales Officer, Customer Service
+// Lead, etc.) only sees accounts they created or were tagged on as
+// account managers.
+//
+// Important: we used to use `role.includes("manager")` as a privileged
+// check, but that string match incorrectly matched `key_account_manager`
+// and `senior_key_account_manager` — silently granting them full access.
+// The new check uses explicit role strings + a safe `head_` prefix so
+// only true department heads pass.
+function isPrivileged(role: string | null | undefined): boolean {
+  const r = (role || "").toLowerCase();
+  if (r === "admin") return true;
+  if (r === "ceo") return true;
+  if (r === "manager") return true;
+  if (r === "managing_director") return true;
+  if (r.startsWith("head_")) return true;
+  return false;
+}
 
 const formatAccount = (a: typeof accountsTable.$inferSelect) => ({
   id: a.id,
@@ -95,9 +109,11 @@ router.get("/", requireAuth, async (req: AuthRequest, res) => {
     const userRole = req.user!.role;
     const userId = req.user!.userId;
 
-    // Restricted roles: KAM, SKAM, Procurement — only see accounts they manage or created
+    // Anyone who isn't privileged (admin / manager / ceo / managing_director
+    // / head_*) only sees the accounts they created or were tagged on as
+    // an account manager.
     let accounts = allAccounts;
-    if (RESTRICTED_ROLES.includes(userRole) && !isPrivileged(userRole)) {
+    if (!isPrivileged(userRole)) {
       accounts = allAccounts.filter(a => {
         const managers = (a.accountManagers || []) as number[];
         return managers.includes(userId) || a.createdById === userId;
@@ -124,7 +140,7 @@ router.get("/:id", requireAuth, async (req: AuthRequest, res) => {
     // Apply same restricted-role visibility as the list endpoint
     const userRole = req.user!.role;
     const userId = req.user!.userId;
-    if (RESTRICTED_ROLES.includes(userRole) && !isPrivileged(userRole)) {
+    if (!isPrivileged(userRole)) {
       const managers = (account.accountManagers || []) as number[];
       if (!managers.includes(userId) && account.createdById !== userId) {
         res.status(403).json({ error: "Forbidden", message: "You don't have access to this account" });

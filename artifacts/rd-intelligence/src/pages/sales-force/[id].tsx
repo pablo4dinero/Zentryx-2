@@ -60,8 +60,8 @@ function calcPriority(account: any) {
   return { score, breakdown: [{ label: "Volume", pts: volPts }, { label: "Urgency", pts: urgPts }, { label: "Customer", pts: custPts }] };
 }
 
-const iCls = "w-full h-9 rounded-xl border border-white/10 bg-black/30 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground";
-const lCls = "text-xs font-medium text-muted-foreground mb-1 block";
+const iCls = "sf-field w-full h-9 rounded-xl border border-white/10 bg-black/30 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground";
+const lCls = "sf-field-label text-xs font-medium text-muted-foreground mb-1 block";
 
 function useApiCall() {
   const token = localStorage.getItem("rd_token");
@@ -543,30 +543,56 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
   const [showRateInput, setShowRateInput] = useState(false);
   const { theme: _idTheme } = useTheme();
 
+  // ── Currency converter widget state ────────────────────────────────────
+  const SUPPORTED_CURRENCIES = ["NGN", "USD", "EUR", "GBP", "ZAR", "CNY", "KES", "GHS", "ZMW"] as const;
+  const [convAmount, setConvAmount] = useState<string>("");
+  const [convFrom, setConvFrom] = useState<string>("NGN");
+  const [convTo, setConvTo] = useState<string>("USD");
+  const [allRates, setAllRates] = useState<Record<string, number> | null>(null);
+  const [manualConvRate, setManualConvRate] = useState<string>("");
+  const [showManualConv, setShowManualConv] = useState(false);
+  const [ratesRefreshing, setRatesRefreshing] = useState(false);
+
+  const fetchRates = useCallback(() => {
+    setRatesRefreshing(true);
+    fetch("https://api.exchangerate-api.com/v4/latest/USD")
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(d => { if (d?.rates) setAllRates(d.rates); })
+      .catch(() => { /* keep prior rates / fallback */ })
+      .finally(() => setRatesRefreshing(false));
+  }, []);
+  useEffect(() => { fetchRates(); }, [fetchRates]);
+
+  // Rate from `convFrom` → `convTo`. Cross-rate via USD because the free
+  // exchangerate-api endpoint returns USD-base rates.
+  const liveConvRate = (() => {
+    if (!allRates) return null;
+    const fromUsd = convFrom === "USD" ? 1 : allRates[convFrom];
+    const toUsd = convTo === "USD" ? 1 : allRates[convTo];
+    if (!fromUsd || !toUsd) return null;
+    return toUsd / fromUsd;
+  })();
+  const effectiveConvRate = manualConvRate ? parseFloat(manualConvRate) : liveConvRate;
+  const convertedAmount = (() => {
+    const amt = parseFloat(convAmount);
+    if (!effectiveConvRate || isNaN(amt)) return null;
+    return amt * effectiveConvRate;
+  })();
+
   const updateLocalOrder = (id: number, updates: any) => {
     setLocalOrders(prev => prev.map(order =>
       order.id === id ? { ...order, ...updates } : order
     ));
   };
 
+  // Keep the legacy ngnRate in sync with the converter's live rate cache,
+  // so the "Total Income → ≈ NGN" badge always reflects the latest fetch.
   useEffect(() => {
-    // Fetch exchange rate with proper error handling
-    fetch("https://api.exchangerate-api.com/v4/latest/USD")
-      .then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then(d => {
-        if (d?.rates?.NGN) {
-          setNgnRate(d.rates.NGN);
-        }
-      })
-      .catch(err => {
-        console.warn('Failed to load exchange rate:', err);
-        // Set a fallback rate
-        setNgnRate(1650); // Common USD to NGN rate
-      });
-  }, []);
+    if (allRates?.NGN) setNgnRate(allRates.NGN);
+    else if (!ngnRate) setNgnRate(1650); // fallback before the first fetch resolves
+    // ngnRate intentionally omitted from deps — we only want to act on rate changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allRates]);
 
   const { data: orders = [], isLoading, error } = useQuery({
     queryKey: [`/api/accounts/${accountId}/production-orders`],
@@ -803,11 +829,86 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
         )}
       </div>
 
+      {/* Currency converter — fetches live USD-base rates, supports any
+          pair from SUPPORTED_CURRENCIES, with optional manual override. */}
+      <div className="glass-card rounded-2xl p-4 border border-white/5">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Currency Converter</p>
+          <div className="flex items-center gap-2">
+            {liveConvRate !== null && !manualConvRate && (
+              <span className="text-[10px] text-emerald-400">Live</span>
+            )}
+            {manualConvRate && (
+              <span className="text-[10px] text-amber-400">Manual</span>
+            )}
+            <button onClick={fetchRates} disabled={ratesRefreshing}
+              className="text-[11px] text-primary hover:underline disabled:opacity-40">
+              {ratesRefreshing ? "Refreshing…" : "Refresh"}
+            </button>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+          <div>
+            <label className="text-[10px] text-muted-foreground mb-1 block">From</label>
+            <div className="flex gap-1">
+              <input type="number" inputMode="decimal" value={convAmount}
+                onChange={e => setConvAmount(e.target.value)}
+                placeholder="Amount"
+                className="flex-1 min-w-0 h-9 rounded-lg border border-white/10 bg-black/20 px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/40 text-foreground placeholder:text-muted-foreground" />
+              <select value={convFrom} onChange={e => setConvFrom(e.target.value)}
+                className="h-9 rounded-lg border border-white/10 bg-black/30 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary/40 text-foreground cursor-pointer">
+                {SUPPORTED_CURRENCIES.map(c => <option key={c} value={c} className="bg-card">{c}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground mb-1 block">To</label>
+            <div className="flex gap-1">
+              <input type="text" readOnly
+                value={convertedAmount !== null ? convertedAmount.toLocaleString(undefined, { maximumFractionDigits: 4 }) : ""}
+                placeholder={effectiveConvRate ? `Rate: ${effectiveConvRate.toLocaleString(undefined, { maximumFractionDigits: 4 })}` : "Loading rate…"}
+                className="flex-1 min-w-0 h-9 rounded-lg border border-white/10 bg-emerald-500/10 px-2 text-sm text-emerald-400 placeholder:text-muted-foreground/70" />
+              <select value={convTo} onChange={e => setConvTo(e.target.value)}
+                className="h-9 rounded-lg border border-white/10 bg-black/30 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary/40 text-foreground cursor-pointer">
+                {SUPPORTED_CURRENCIES.map(c => <option key={c} value={c} className="bg-card">{c}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <button onClick={() => setShowManualConv(s => !s)}
+            className="text-[11px] text-muted-foreground hover:text-foreground">
+            {showManualConv ? "Hide manual rate" : "Set rate manually"}
+          </button>
+          {effectiveConvRate && (
+            <span className="text-[10px] text-muted-foreground">
+              1 {convFrom} = {effectiveConvRate.toLocaleString(undefined, { maximumFractionDigits: 4 })} {convTo}
+            </span>
+          )}
+        </div>
+        {showManualConv && (
+          <div className="flex items-center gap-2 mt-2 pt-2 border-t border-white/5">
+            <span className="text-xs text-muted-foreground">1 {convFrom} =</span>
+            <input type="number" inputMode="decimal" value={manualConvRate}
+              onChange={e => setManualConvRate(e.target.value)}
+              placeholder={liveConvRate ? `Live: ${liveConvRate.toLocaleString(undefined, { maximumFractionDigits: 4 })}` : ""}
+              className="flex-1 h-7 rounded-lg border border-white/10 bg-black/20 px-2 text-xs focus:outline-none text-foreground" />
+            <span className="text-xs text-muted-foreground">{convTo}</span>
+            {manualConvRate && <button onClick={() => setManualConvRate("")} className="text-xs text-red-400">Clear</button>}
+          </div>
+        )}
+      </div>
+
       <div className="flex items-center justify-between">
         <p className="text-sm font-semibold text-foreground">Production Orders</p>
-        <button onClick={exportTable} className="flex items-center gap-1.5 px-3 py-1.5 border border-white/10 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:border-white/20 transition-all">
-          <Download className="w-3.5 h-3.5" /> Export
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={addRow} className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 border border-primary/30 text-primary rounded-xl text-xs font-semibold hover:bg-primary/20 transition-all">
+            <Plus className="w-3.5 h-3.5" /> Add Row
+          </button>
+          <button onClick={exportTable} className="flex items-center gap-1.5 px-3 py-1.5 border border-white/10 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:border-white/20 transition-all">
+            <Download className="w-3.5 h-3.5" /> Export
+          </button>
+        </div>
       </div>
       <div className="glass-card rounded-2xl overflow-hidden border border-white/5">
           <div className="overflow-x-auto">
@@ -868,9 +969,6 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
                 ))}
               </tbody>
             </table>
-            <button onClick={addRow} className="w-full flex items-center gap-2 px-4 py-3 text-xs text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors border-t border-white/5">
-              <Plus className="w-3.5 h-3.5" /> Add Row
-            </button>
           </div>
         </div>
 

@@ -129,6 +129,34 @@
     font-family: var(--font-display);
     @apply tracking-tight font-semibold;
   }
+
+  /* ─────────────────────────────────────────────
+     SALES FORCE — ACCOUNT INFO FORM FIELDS (LIGHT)
+     The shared iCls/lCls helpers default to a dark-glass look. In light
+     mode we override to a clean white background with slate borders so
+     the form reads as a proper light-theme form (no grey washed-out
+     inputs).
+     ───────────────────────────────────────────── */
+  .light .sf-field {
+    background: #ffffff !important;
+    border-color: rgb(226, 232, 240) !important; /* slate-200 */
+    color: rgb(15, 23, 42) !important;           /* slate-900 */
+  }
+  .light .sf-field::placeholder {
+    color: rgb(148, 163, 184) !important;        /* slate-400 */
+  }
+  .light .sf-field:focus,
+  .light .sf-field:focus-within {
+    border-color: rgb(99, 102, 241) !important;  /* indigo-500 */
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+  }
+  .light .sf-field option {
+    background: #ffffff;
+    color: rgb(15, 23, 42);
+  }
+  .light .sf-field-label {
+    color: rgb(71, 85, 105) !important;          /* slate-600 */
+  }
 }
 
 /* ─────────────────────────────────────────────
