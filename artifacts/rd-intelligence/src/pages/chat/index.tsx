@@ -599,8 +599,12 @@ export default function ChatRoom() {
     </AnimatePresence>
 
     <div className={cn(
-      "flex h-[calc(100vh-5rem)] gap-0 rounded-2xl overflow-hidden border relative",
-      isLight ? "bg-white border-slate-200" : "glass-card border-white/5",
+      // h-full (not h-[calc(100vh-...)]) so on mobile the chat fits inside
+      // the AppLayout scroll area instead of overflowing the visible
+      // viewport — overflowing was pushing the topbar off-screen on
+      // phones and making it impossible to navigate away from /chat.
+      "flex h-full gap-0 lg:rounded-2xl overflow-hidden lg:border relative",
+      isLight ? "bg-white lg:border-slate-200" : "glass-card lg:border-white/5",
     )}>
       {/* Sidebar — conditionally rendered. On phone/tablet we render this
           only when no room is selected; the chat panel takes over once a
@@ -874,11 +878,11 @@ export default function ChatRoom() {
               <div className="flex items-center gap-2 min-w-0 flex-1">
                 <button
                   onClick={() => setActiveRoom(null)}
-                  className="lg:hidden p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors shrink-0"
+                  className="lg:hidden h-10 w-10 -ml-1.5 rounded-xl flex items-center justify-center text-foreground hover:bg-white/5 active:bg-white/10 transition-colors shrink-0"
                   aria-label="Back to chats"
                   title="Back to chats"
                 >
-                  <ArrowLeft className="w-5 h-5" />
+                  <ArrowLeft className="w-6 h-6" />
                 </button>
                 {activeRoom.isGroup ? <Hash className="w-5 h-5 text-primary shrink-0" /> : <Lock className="w-5 h-5 text-primary shrink-0" />}
                 <h3 className="font-semibold text-foreground truncate">{activeRoom.name}</h3>
