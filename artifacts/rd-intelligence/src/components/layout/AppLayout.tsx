@@ -880,12 +880,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           isLight ? "light-header" : "dark-shell-header"
         )}>
           <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
-            {/* Mobile hamburger */}
+            {/* Mobile hamburger — toggles the slide-in sidebar. Clicking it
+                opens the sidebar (logo + nav appears); clicking it again, or
+                outside the sidebar, or any nav link, closes it. */}
             <button
               className="lg:hidden p-2 text-muted-foreground hover:text-foreground shrink-0"
-              onClick={() => setIsMobileMenuOpen(true)}
+              onClick={() => setIsMobileMenuOpen(v => !v)}
+              aria-label={isMobileMenuOpen ? "Close menu" : "Open menu"}
+              aria-expanded={isMobileMenuOpen}
             >
-              <Menu className="w-6 h-6" />
+              {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
 
             {/* Greeting */}
@@ -927,7 +931,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           return (
             <div className={cn(
               "flex-1 overflow-y-auto custom-scrollbar relative",
-              fillScreen ? "p-1.5" : "p-3 sm:p-6 lg:p-8",
+              // Mobile uses px-2 / py-3 so pages start near the left edge
+              // (cards have their own rounded corners + interior padding).
+              // sm and up restore the standard reading-column padding.
+              fillScreen ? "p-1.5" : "px-2 py-3 sm:p-6 lg:p-8",
             )}>
               <AnimatePresence mode="wait">
                 <motion.div
