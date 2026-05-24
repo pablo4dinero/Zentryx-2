@@ -3,7 +3,7 @@ import { useListProjects, useCreateProject, useDeleteProject, useListUsers, useU
 import { PageLoader } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Search, Download, Layers, Pencil, Trash2, Settings2, FlaskConical } from "lucide-react";
+import { Plus, Search, Download, Layers, Pencil, Trash2, Settings2, FlaskConical, ChevronDown, Check } from "lucide-react";
 import { format } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -33,6 +33,16 @@ export default function ProjectsList() {
   const [groupByType, setGroupByType] = useState(false);
   const [statusManageOpen, setStatusManageOpen] = useState(false);
   const [statusEditingOption, setStatusEditingOption] = useState<string | null>(null);
+  // Mobile-only status dropdown (replaces the long pill row below lg).
+  const [statusPickerOpen, setStatusPickerOpen] = useState(false);
+  useEffect(() => {
+    if (!statusPickerOpen) return;
+    const close = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest("[data-status-picker]")) setStatusPickerOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [statusPickerOpen]);
   const [statusEditValue, setStatusEditValue] = useState("");
   const [statusNewValue, setStatusNewValue] = useState("");
 
@@ -280,28 +290,65 @@ export default function ProjectsList() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input placeholder="Search projects..." className="pl-9" value={searchTerm} onChange={e => setSearchQuery(e.target.value)} />
             </div>
-            <div className="flex gap-2 items-center relative overflow-x-auto custom-scrollbar lg:flex-wrap lg:overflow-visible pb-1 lg:pb-0" data-status-manage="">
-              <button
-                onClick={() => setStatusFilter("all")}
-                className={cn("shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border",
-                  statusFilter === "all"
-                    ? "bg-primary text-white border-primary"
-                    : isLight ? "border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5"
-                )}
-              >All</button>
-              {statusOpts.options.map(s => (
+            <div className="flex items-center gap-2 relative" data-status-manage="">
+              {/* Mobile/tablet: one compact dropdown for the whole status list. */}
+              <div className="relative flex-1 min-w-0 lg:hidden" data-status-picker>
                 <button
-                  key={s}
-                  onClick={() => setStatusFilter(s === statusFilter ? "all" : s)}
-                  className={cn("shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border capitalize whitespace-nowrap",
-                    statusFilter === s
+                  onClick={() => setStatusPickerOpen(o => !o)}
+                  className={cn("w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs font-medium border transition-colors capitalize",
+                    isLight ? "bg-white border-gray-200 text-gray-700 hover:bg-gray-50" : "bg-white/5 border-white/10 text-foreground hover:bg-white/10"
+                  )}
+                >
+                  <span className="truncate">
+                    Status: <span className={cn("font-semibold", statusFilter !== "all" && "text-primary")}>{statusFilter === "all" ? "All" : displayLabel(statusFilter)}</span>
+                  </span>
+                  <ChevronDown className={cn("w-3.5 h-3.5 transition-transform shrink-0", statusPickerOpen && "rotate-180", isLight ? "text-gray-500" : "text-muted-foreground")} />
+                </button>
+                {statusPickerOpen && (
+                  <div className={cn("absolute top-[calc(100%+4px)] left-0 right-0 z-50 rounded-xl border shadow-xl overflow-hidden max-h-72 overflow-y-auto custom-scrollbar",
+                    isLight ? "bg-white border-gray-200" : "bg-[#1a1a2e] border-white/10"
+                  )}>
+                    {["all", ...statusOpts.options].map(s => {
+                      const selected = statusFilter === s;
+                      return (
+                        <button key={s}
+                          onClick={() => { setStatusFilter(s); setStatusPickerOpen(false); }}
+                          className={cn("w-full flex items-center gap-2 px-3 py-2 text-xs text-left capitalize transition-colors",
+                            selected ? "bg-primary/10 text-primary font-semibold" : isLight ? "text-gray-700 hover:bg-gray-50" : "text-foreground hover:bg-white/5"
+                          )}>
+                          {selected ? <Check className="w-3.5 h-3.5 text-primary shrink-0" /> : <span className="w-3.5 h-3.5 shrink-0" />}
+                          <span className="truncate">{s === "all" ? "All" : displayLabel(s)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Desktop pill row — unchanged behaviour from before. */}
+              <div className="hidden lg:flex lg:flex-wrap gap-2 items-center">
+                <button
+                  onClick={() => setStatusFilter("all")}
+                  className={cn("shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border",
+                    statusFilter === "all"
                       ? "bg-primary text-white border-primary"
                       : isLight ? "border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5"
                   )}
-                >{displayLabel(s)}</button>
-              ))}
+                >All</button>
+                {statusOpts.options.map(s => (
+                  <button
+                    key={s}
+                    onClick={() => setStatusFilter(s === statusFilter ? "all" : s)}
+                    className={cn("shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border capitalize whitespace-nowrap",
+                      statusFilter === s
+                        ? "bg-primary text-white border-primary"
+                        : isLight ? "border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5"
+                    )}
+                  >{displayLabel(s)}</button>
+                ))}
+              </div>
 
-              {/* Manage statuses button */}
+              {/* Manage statuses button — same on all sizes. */}
               <button
                 data-status-manage=""
                 onClick={() => { setStatusManageOpen(o => !o); setStatusEditingOption(null); setStatusNewValue(""); }}
