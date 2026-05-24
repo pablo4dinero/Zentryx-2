@@ -225,10 +225,10 @@ export default function BusinessDev() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input placeholder="Search BD items..." className="pl-9" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
         </div>
-        <div className="flex flex-wrap gap-2 items-center relative" data-bd-status-manage>
+        <div className="flex gap-2 items-center relative overflow-x-auto custom-scrollbar lg:flex-wrap lg:overflow-visible pb-1 lg:pb-0" data-bd-status-manage>
           {["all", ...statusOpts.options].map(s => (
             <button key={s} onClick={() => setStatusFilter(s === statusFilter && s !== "all" ? "all" : s)}
-              className={cn("px-3 py-1.5 rounded-lg text-xs font-medium border transition-all capitalize",
+              className={cn("shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all capitalize whitespace-nowrap",
                 statusFilter === s
                   ? "bg-primary text-white border-primary"
                   : isLight
@@ -244,7 +244,7 @@ export default function BusinessDev() {
             data-bd-status-manage
             onClick={() => { setStatusManageOpen(o => !o); setStatusEditingOption(null); setStatusNewValue(""); }}
             title="Configure statuses"
-            className={cn("inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors",
+            className={cn("shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors",
               statusManageOpen
                 ? "bg-primary/10 border-primary/30 text-primary"
                 : isLight

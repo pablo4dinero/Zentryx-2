@@ -68,6 +68,44 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
   const [editingNameId, setEditingNameId] = useState<number | null>(null);
   const [editingNameValue, setEditingNameValue] = useState("");
 
+  // Per-column widths. Stored in localStorage so the user's preferred
+  // column sizes survive across reloads. Drag a column's right-edge
+  // handle on desktop to resize.
+  const COL_WIDTH_KEY = "zentryx_project_list_col_widths";
+  const DEFAULT_COL_WIDTHS: Record<string, number> = {
+    name: 260, productType: 140, customerName: 200, stage: 140,
+    progress: 140, status: 150, targetDate: 130, createdAt: 130, actions: 110,
+  };
+  const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
+    try {
+      const raw = localStorage.getItem(COL_WIDTH_KEY);
+      return raw ? { ...DEFAULT_COL_WIDTHS, ...JSON.parse(raw) } : DEFAULT_COL_WIDTHS;
+    } catch { return DEFAULT_COL_WIDTHS; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(COL_WIDTH_KEY, JSON.stringify(colWidths)); } catch { /* silent */ }
+  }, [colWidths]);
+  const resizeCol = (key: string, startEvt: React.MouseEvent) => {
+    startEvt.stopPropagation();
+    startEvt.preventDefault();
+    const startX = startEvt.clientX;
+    const startWidth = colWidths[key] ?? DEFAULT_COL_WIDTHS[key] ?? 140;
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+    const onMove = (ev: MouseEvent) => {
+      const next = Math.max(80, Math.min(600, startWidth + (ev.clientX - startX)));
+      setColWidths(w => ({ ...w, [key]: next }));
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
+
   const updateMutation = useUpdateProject();
   const deleteMutation = useDeleteProject();
   const queryClient = useQueryClient();
@@ -221,35 +259,48 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
     return sortDir === "asc" ? <ArrowUp className="w-3 h-3 text-primary" /> : <ArrowDown className="w-3 h-3 text-primary" />;
   };
 
-  const Th = ({ k, label, cls = "" }: { k: SortKey; label: string; cls?: string }) => (
-    <th
-      className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide cursor-pointer transition-colors ${isLight ? "text-gray-500 hover:text-gray-900" : "text-muted-foreground hover:text-foreground"} ${cls}`}
-      onClick={() => handleSort(k)}
-    >
-      <div className="flex items-center gap-1.5">
-        {label}
-        <SortIcon k={k} />
-      </div>
-    </th>
-  );
+  const Th = ({ k, label, widthKey }: { k: SortKey; label: string; widthKey?: string }) => {
+    const key = widthKey || (k as string);
+    const width = colWidths[key];
+    return (
+      <th
+        style={width ? { width, minWidth: width, maxWidth: width } : undefined}
+        className={`relative px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide cursor-pointer transition-colors ${isLight ? "text-gray-500 hover:text-gray-900" : "text-muted-foreground hover:text-foreground"}`}
+        onClick={() => handleSort(k)}
+      >
+        <div className="flex items-center gap-1.5 pr-3">
+          {label}
+          <SortIcon k={k} />
+        </div>
+        {/* Resize handle — desktop drag affordance, hidden on small screens
+            because column widths matter less inside a horizontal scroller. */}
+        <span
+          onMouseDown={e => resizeCol(key, e)}
+          onClick={e => e.stopPropagation()}
+          className="hidden lg:block absolute top-1 bottom-1 right-0 w-1.5 cursor-col-resize hover:bg-primary/40 active:bg-primary/60 transition-colors"
+          title="Drag to resize column"
+        />
+      </th>
+    );
+  };
 
   return (
     <>
       <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
-        <div className={cn("rounded-2xl border overflow-hidden", isLight ? "bg-white border-gray-200 shadow-sm" : "glass-card border-white/10")}>
-          <div className="overflow-x-auto">
-            <table className="w-full">
+        <div className={cn("rounded-2xl border", isLight ? "bg-white border-gray-200 shadow-sm" : "glass-card border-white/10")}>
+          <div className="overflow-x-auto custom-scrollbar rounded-2xl">
+            <table className="w-full text-sm" style={{ tableLayout: "fixed", minWidth: 1280 }}>
               <thead>
                 <tr className={cn("border-b", isLight ? "border-gray-200 bg-gray-50" : "border-white/10")} style={isLight ? {} : { background: "rgba(255,255,255,0.03)" }}>
                   <Th k="name" label="Name" />
-                  <Th k="productType" label="Type" cls="hidden md:table-cell" />
-                  <Th k="customerName" label="Customer" cls="hidden lg:table-cell" />
-                  <Th k="stage" label="Stage" cls="hidden sm:table-cell" />
+                  <Th k="productType" label="Type" />
+                  <Th k="customerName" label="Customer" />
+                  <Th k="stage" label="Stage" />
                   <Th k="progress" label="Progress" />
                   <Th k="status" label="Status" />
-                  <Th k="targetDate" label="Due Date" cls="hidden xl:table-cell" />
-                  <Th k="createdAt" label="Date Added" cls="hidden xl:table-cell" />
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Actions</th>
+                  <Th k="targetDate" label="Due Date" />
+                  <Th k="createdAt" label="Date Added" />
+                  <th style={{ width: colWidths.actions, minWidth: colWidths.actions }} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -301,7 +352,7 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-3.5 hidden md:table-cell">
+                      <td className="px-4 py-3.5">
                         <CustomOptionsSelect
                           compact
                           value={p.productType || ""}
@@ -311,13 +362,13 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
                           isLight={isLight}
                         />
                       </td>
-                      <td className="px-4 py-3.5 hidden lg:table-cell">
+                      <td className="px-4 py-3.5">
                         <div>
                           <p className={cn("text-xs", isLight ? "text-gray-900" : "text-foreground")}>{p.customerName || "—"}</p>
                           {p.customerEmail && <p className="text-[10px] text-muted-foreground">{p.customerEmail}</p>}
                         </div>
                       </td>
-                      <td className="px-4 py-3.5 hidden sm:table-cell">
+                      <td className="px-4 py-3.5">
                         <CustomOptionsSelect
                           compact
                           value={p.stage || ""}
@@ -356,7 +407,7 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3.5 hidden xl:table-cell">
+                      <td className="px-4 py-3.5">
                         <div className="relative inline-flex items-center gap-1.5 group/date">
                           <span className={cn("text-xs", isLight ? "text-gray-600" : "text-muted-foreground")}>
                             {p.targetDate ? format(new Date(p.targetDate), "MMM d, yyyy") : "—"}
@@ -375,7 +426,7 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
                           </label>
                         </div>
                       </td>
-                      <td className="px-4 py-3.5 hidden xl:table-cell">
+                      <td className="px-4 py-3.5">
                         <span className={cn("text-xs", isLight ? "text-gray-600" : "text-muted-foreground")}>
                           {p.createdAt ? format(new Date(p.createdAt), "MMM d, yyyy") : "—"}
                         </span>
@@ -413,7 +464,8 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
           {sorted.length > 0 && (
             <div className={cn("px-4 py-2.5 border-t flex items-center justify-between", isLight ? "border-gray-100 bg-gray-50" : "border-white/5")} style={isLight ? {} : { background: "rgba(255,255,255,0.02)" }}>
               <p className="text-xs text-muted-foreground">{sorted.length} project{sorted.length !== 1 ? "s" : ""}</p>
-              <p className="text-xs text-muted-foreground">Right-click a row to change status · Click headers to sort</p>
+              <p className="text-xs text-muted-foreground hidden sm:block">Right-click a row to change status · Click headers to sort · Drag column edges to resize</p>
+              <p className="text-xs text-muted-foreground sm:hidden">Swipe sideways to see more columns</p>
             </div>
           )}
         </div>

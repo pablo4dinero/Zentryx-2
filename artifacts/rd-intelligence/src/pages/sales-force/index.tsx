@@ -823,12 +823,15 @@ export default function SalesForce() {
         <p className="text-muted-foreground mt-1">Manage accounts, track performance, and forecast revenue.</p>
       </div>
 
-      <div className={cn("flex gap-1 p-1 rounded-2xl border mb-6 w-fit",
+      {/* Tab row. Below lg: horizontal-scrolling so the wider labels stay
+          on a single line and don't wrap awkwardly. From lg up: fits the
+          content (w-fit) the way it always has. */}
+      <div className={cn("flex gap-1 p-1 rounded-2xl border mb-6 overflow-x-auto custom-scrollbar lg:overflow-visible lg:w-fit",
         isLight ? "bg-slate-100 border-slate-200" : "bg-white/5 border-white/10"
       )}>
         {SF_TABS.map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
-            className={cn("px-5 py-2 rounded-xl text-sm font-semibold transition-all",
+            className={cn("shrink-0 px-5 py-2 rounded-xl text-sm font-semibold transition-all whitespace-nowrap",
               activeTab === tab
                 ? "bg-primary text-white shadow-lg shadow-primary/20"
                 : isLight ? "text-slate-600 hover:text-slate-900" : "text-muted-foreground hover:text-foreground"

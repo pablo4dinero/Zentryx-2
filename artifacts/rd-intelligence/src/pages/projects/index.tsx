@@ -280,10 +280,10 @@ export default function ProjectsList() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input placeholder="Search projects..." className="pl-9" value={searchTerm} onChange={e => setSearchQuery(e.target.value)} />
             </div>
-            <div className="flex flex-wrap gap-2 items-center relative" data-status-manage="">
+            <div className="flex gap-2 items-center relative overflow-x-auto custom-scrollbar lg:flex-wrap lg:overflow-visible pb-1 lg:pb-0" data-status-manage="">
               <button
                 onClick={() => setStatusFilter("all")}
-                className={cn("px-3 py-1.5 rounded-lg text-xs font-medium transition-all border",
+                className={cn("shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border",
                   statusFilter === "all"
                     ? "bg-primary text-white border-primary"
                     : isLight ? "border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5"
@@ -293,7 +293,7 @@ export default function ProjectsList() {
                 <button
                   key={s}
                   onClick={() => setStatusFilter(s === statusFilter ? "all" : s)}
-                  className={cn("px-3 py-1.5 rounded-lg text-xs font-medium transition-all border capitalize",
+                  className={cn("shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border capitalize whitespace-nowrap",
                     statusFilter === s
                       ? "bg-primary text-white border-primary"
                       : isLight ? "border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5"
@@ -306,7 +306,7 @@ export default function ProjectsList() {
                 data-status-manage=""
                 onClick={() => { setStatusManageOpen(o => !o); setStatusEditingOption(null); setStatusNewValue(""); }}
                 title="Manage statuses"
-                className={cn("p-1.5 rounded-lg border transition-colors",
+                className={cn("shrink-0 p-1.5 rounded-lg border transition-colors",
                   statusManageOpen
                     ? "bg-primary/10 border-primary/30 text-primary"
                     : isLight ? "border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5"
