@@ -115,7 +115,7 @@ export default function ProjectsList() {
     return { headers, rows };
   };
 
-  const handleExportCSV = () => {
+  const writeCsv = () => {
     if (!projects || projects.length === 0) return;
     const { headers, rows } = buildExportRows(projects);
     const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
@@ -126,10 +126,9 @@ export default function ProjectsList() {
     a.download = `project_export_${format(new Date(), "yyyy-MM-dd")}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    toast({ title: "CSV exported", description: `${projects.length} projects exported.` });
   };
 
-  const handleExportXLSX = () => {
+  const writeXlsx = () => {
     if (!projects || projects.length === 0) return;
     const { headers, rows } = buildExportRows(projects);
     const wsData = [headers, ...rows];
@@ -145,8 +144,89 @@ export default function ProjectsList() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Projects");
     XLSX.writeFile(wb, `projects_export_${format(new Date(), "yyyy-MM-dd")}.xlsx`);
-    toast({ title: "Excel exported", description: `${projects.length} projects exported as XLSX.` });
   };
+
+  // ── Export approval gate ──────────────────────────────────────────────
+  // An admin / NPD manager must approve before non-privileged users can
+  // download project data. Self-approval happens server-side for admins
+  // so they don't see a roundtrip. State here:
+  //   null      → no request yet for this module
+  //   pending   → waiting on an approver
+  //   approved  → ready to download (next click runs the export)
+  //   denied    → blocked; clicking again creates a new request
+  //   fulfilled → already used; clicking creates a new request
+  const EXPORT_MODULE = "project-portfolio";
+  const [exportReq, setExportReq] = useState<any>(null);
+  const apiBase = import.meta.env.BASE_URL;
+  const apiHeaders = () => ({
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${localStorage.getItem("rd_token") || ""}`,
+  });
+
+  const refreshExportRequest = async () => {
+    try {
+      const r = await fetch(`${apiBase}api/export-requests/me/latest?module=${EXPORT_MODULE}`, { headers: apiHeaders() });
+      if (!r.ok) return;
+      const row = await r.json();
+      setExportReq(row);
+    } catch { /* silent */ }
+  };
+  useEffect(() => { refreshExportRequest(); }, []);
+
+  // Poll while waiting on an approver so the page reacts the moment the
+  // status flips.
+  useEffect(() => {
+    if (exportReq?.status !== "pending") return;
+    const id = setInterval(refreshExportRequest, 4000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exportReq?.status]);
+
+  const fulfillAndToast = async (id: number, fmt: "csv" | "xlsx") => {
+    if (fmt === "csv") writeCsv(); else writeXlsx();
+    try {
+      await fetch(`${apiBase}api/export-requests/${id}/fulfill`, { method: "POST", headers: apiHeaders() });
+    } catch { /* silent */ }
+    toast({ title: `${fmt === "csv" ? "CSV" : "Excel"} exported`, description: `${projects?.length ?? 0} projects exported.` });
+    refreshExportRequest();
+  };
+
+  const requestExport = async (fmt: "csv" | "xlsx") => {
+    if (!projects || projects.length === 0) {
+      toast({ title: "Nothing to export", description: "No projects available." });
+      return;
+    }
+    // If we already hold an approved request, run the export immediately.
+    if (exportReq && exportReq.status === "approved" && exportReq.fileFormat === fmt) {
+      await fulfillAndToast(exportReq.id, fmt);
+      return;
+    }
+    try {
+      const r = await fetch(`${apiBase}api/export-requests`, {
+        method: "POST",
+        headers: apiHeaders(),
+        body: JSON.stringify({ module: EXPORT_MODULE, fileFormat: fmt }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const row = await r.json();
+      setExportReq(row);
+      if (row.status === "approved") {
+        // Admin / NPD manager — server auto-approved.
+        await fulfillAndToast(row.id, fmt);
+      } else {
+        toast({
+          title: "Approval requested",
+          description: "Admin or NPD manager has been notified. You'll be able to download once approved.",
+        });
+      }
+    } catch (err) {
+      console.error("[export] request failed", err);
+      toast({ title: "Could not request approval", variant: "destructive" });
+    }
+  };
+
+  const handleExportCSV = () => requestExport("csv");
+  const handleExportXLSX = () => requestExport("xlsx");
 
   if (isLoading) return <PageLoader />;
 
@@ -192,7 +272,7 @@ export default function ProjectsList() {
       </div>
 
       {activeTab === "export" ? (
-        <ExportTab projects={projects || []} onExportCSV={handleExportCSV} onExportXLSX={handleExportXLSX} />
+        <ExportTab projects={projects || []} onExportCSV={handleExportCSV} onExportXLSX={handleExportXLSX} exportReq={exportReq} />
       ) : (
         <>
           <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
@@ -399,7 +479,7 @@ export default function ProjectsList() {
   );
 }
 
-function ExportTab({ projects, onExportCSV, onExportXLSX }: { projects: any[]; onExportCSV: () => void; onExportXLSX: () => void }) {
+function ExportTab({ projects, onExportCSV, onExportXLSX, exportReq }: { projects: any[]; onExportCSV: () => void; onExportXLSX: () => void; exportReq: any }) {
   const { theme } = useTheme();
   const isLight = theme === "light";
   const totalRevenue = projects.reduce((acc, p) => {
@@ -408,10 +488,48 @@ function ExportTab({ projects, onExportCSV, onExportXLSX }: { projects: any[]; o
     return acc + (sp * vol);
   }, 0);
 
+  const status = exportReq?.status as "pending" | "approved" | "denied" | "fulfilled" | undefined;
+  const reqFormat = exportReq?.fileFormat as "csv" | "xlsx" | undefined;
+  const isPending = status === "pending";
+
   return (
     <div className="glass-card rounded-2xl p-8">
       <h2 className="text-xl font-display font-bold mb-2">Export Project Data</h2>
       <p className="text-muted-foreground text-sm mb-6">Export all structured project data for reporting and analysis. Includes all project metadata, financial data, and progress metrics.</p>
+
+      {/* Approval workflow notice */}
+      <div className={cn(
+        "mb-6 px-4 py-3 rounded-xl border text-sm flex items-start gap-3",
+        status === "approved"
+          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+          : status === "denied"
+            ? "border-red-500/30 bg-red-500/10 text-red-300"
+            : isPending
+              ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
+              : isLight ? "border-slate-200 bg-slate-50 text-slate-700" : "border-white/10 bg-white/5 text-muted-foreground",
+      )}>
+        <span className="mt-0.5 shrink-0">{
+          status === "approved" ? "✓"
+            : status === "denied" ? "✕"
+              : isPending ? "⏳"
+                : "🔒"
+        }</span>
+        <div>
+          <p className="font-semibold">
+            {status === "approved" ? `Approved by ${exportReq?.reviewerName || "an approver"} — click "Export as ${(reqFormat || "csv").toUpperCase()}" to download.`
+              : status === "denied" ? `Denied${exportReq?.reviewerName ? ` by ${exportReq.reviewerName}` : ""}.${exportReq?.denyReason ? ` Reason: ${exportReq.denyReason}` : ""}`
+                : isPending ? `Waiting for approval${exportReq?.fileFormat ? ` (${exportReq.fileFormat.toUpperCase()})` : ""}…`
+                  : "Approval required"}
+          </p>
+          <p className="text-xs opacity-80 mt-0.5">
+            {status === "approved" ? "Your approval is single-use; a new request will be needed for the next export."
+              : status === "denied" ? "Click an export button below to submit a new request."
+                : isPending ? "An admin or NPD manager has been notified. This page refreshes automatically."
+                  : "Admin or NPD manager must approve before project data can be exported."}
+          </p>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         <div className={`border rounded-xl p-5 ${isLight ? "border-gray-200" : "border-white/10"}`}>
           <h3 className="font-semibold mb-3">What's Included</h3>
@@ -441,8 +559,26 @@ function ExportTab({ projects, onExportCSV, onExportXLSX }: { projects: any[]; o
         </div>
       </div>
       <div className="flex flex-wrap gap-3">
-        <Button onClick={onExportCSV} className="gap-2"><Download className="w-4 h-4" /> Export as CSV</Button>
-        <Button onClick={onExportXLSX} variant="outline" className="gap-2 border-green-500/30 text-green-400 hover:bg-green-500/10"><Download className="w-4 h-4" /> Export as Excel (.xlsx)</Button>
+        <Button onClick={onExportCSV} disabled={isPending} className="gap-2">
+          <Download className="w-4 h-4" />
+          {isPending
+            ? (reqFormat === "csv" ? "Awaiting Approval (CSV)…" : "Request Approval (CSV)")
+            : status === "approved" && reqFormat === "csv"
+              ? "Export as CSV (Approved)"
+              : status === "approved" && reqFormat !== "csv"
+                ? "Request Approval (CSV)"
+                : "Request Approval to Export CSV"}
+        </Button>
+        <Button onClick={onExportXLSX} disabled={isPending} variant="outline" className="gap-2 border-green-500/30 text-green-400 hover:bg-green-500/10">
+          <Download className="w-4 h-4" />
+          {isPending
+            ? (reqFormat === "xlsx" ? "Awaiting Approval (Excel)…" : "Request Approval (Excel)")
+            : status === "approved" && reqFormat === "xlsx"
+              ? "Export as Excel (Approved)"
+              : status === "approved" && reqFormat !== "xlsx"
+                ? "Request Approval (Excel)"
+                : "Request Approval to Export Excel"}
+        </Button>
       </div>
     </div>
   );

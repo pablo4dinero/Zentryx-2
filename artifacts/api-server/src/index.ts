@@ -189,6 +189,30 @@ async function createTablesIfNotExist() {
         ON mdp_product_switch_downtimes (after_assignment_id);
     `));
 
+    // Export approval workflow — admin / NPD manager must approve before a
+    // module's data can be exported as CSV / XLSX.
+    await db.execute(sql.raw(`
+      DO $$ BEGIN
+        CREATE TYPE export_request_status AS ENUM ('pending', 'approved', 'denied', 'fulfilled');
+      EXCEPTION WHEN duplicate_object THEN null; END $$;
+    `));
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS export_requests (
+        id SERIAL PRIMARY KEY,
+        requester_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        requester_name TEXT NOT NULL,
+        module TEXT NOT NULL,
+        file_format TEXT NOT NULL,
+        reason TEXT,
+        status export_request_status NOT NULL DEFAULT 'pending',
+        reviewer_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        reviewer_name TEXT,
+        reviewed_at TIMESTAMP,
+        deny_reason TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `));
+
     // Migrate projects table enum columns to text so custom values are accepted
     await db.execute(sql.raw(`
       DO $$

@@ -580,6 +580,64 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     setProcessingId(null);
   };
 
+  // ─── Export approval popup (admin / NPD manager) ───────────────────────
+  // Approvers see a small floating panel listing pending export requests.
+  // Clicking Approve / Deny resolves the row immediately. The poll runs
+  // for any privileged user; backend enforces the actual role check.
+  const [exportRequests, setExportRequests] = useState<any[]>([]);
+  const [processingExportId, setProcessingExportId] = useState<number | null>(null);
+  const dept = ((user as any)?.department || "").toLowerCase();
+  const userRoleLower = (user?.role || "").toLowerCase();
+  const isExportApprover = user && (
+    userRoleLower === "admin"
+    || userRoleLower === "ceo"
+    || userRoleLower === "managing_director"
+    || userRoleLower === "head_of_product_development"
+    || (userRoleLower === "manager" && (dept.includes("npd") || dept.includes("product")))
+    || (userRoleLower === "head_of_department" && (dept.includes("npd") || dept.includes("product")))
+  );
+  const apiHeadersJson = () => ({
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${localStorage.getItem("rd_token") || ""}`,
+  });
+
+  useEffect(() => {
+    if (!isExportApprover) return;
+    const poll = async () => {
+      try {
+        const res = await fetch(`${BASE}api/export-requests/pending`, { headers: apiHeadersJson() });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (Array.isArray(data)) setExportRequests(data);
+      } catch { /* silent */ }
+    };
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => clearInterval(interval);
+  }, [isExportApprover]);
+
+  const handleExportApprove = async (id: number) => {
+    setProcessingExportId(id);
+    try {
+      await fetch(`${BASE}api/export-requests/${id}/approve`, { method: "POST", headers: apiHeadersJson() });
+      setExportRequests(prev => prev.filter(r => r.id !== id));
+    } catch { /* silent */ }
+    setProcessingExportId(null);
+  };
+
+  const handleExportDeny = async (id: number, reason?: string) => {
+    setProcessingExportId(id);
+    try {
+      await fetch(`${BASE}api/export-requests/${id}/deny`, {
+        method: "POST",
+        headers: apiHeadersJson(),
+        body: JSON.stringify({ reason: reason || "" }),
+      });
+      setExportRequests(prev => prev.filter(r => r.id !== id));
+    } catch { /* silent */ }
+    setProcessingExportId(null);
+  };
+
   const handleDeny = async (requestId: string) => {
     setProcessingId(requestId);
     try {
@@ -1113,6 +1171,68 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                       className="flex-1 flex items-center justify-center gap-1.5 h-9 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-semibold transition-colors disabled:opacity-50"
                     >
                       {processingId === req.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldX className="w-3.5 h-3.5" />}
+                      Deny
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Export Approval Popup (Admin / NPD Manager) ──────────────── */}
+      {isExportApprover && exportRequests.length > 0 && (
+        <div className="fixed top-6 right-6 z-[100] pointer-events-none w-full max-w-sm">
+          <div className={cn(
+            "pointer-events-auto rounded-2xl shadow-2xl border overflow-hidden",
+            isLight ? "bg-white border-gray-200" : "bg-[#1a1a2e] border-white/10",
+          )}>
+            <div className={cn("px-4 py-3 flex items-center gap-2 border-b", isLight ? "border-gray-100 bg-gray-50" : "border-white/10 bg-white/5")}>
+              <Download className="w-4 h-4 text-primary shrink-0" />
+              <span className="text-sm font-semibold text-foreground">Export Approval</span>
+              {exportRequests.length > 1 && (
+                <span className="ml-auto text-xs text-muted-foreground">{exportRequests.length} pending</span>
+              )}
+            </div>
+            <div className="divide-y divide-border max-h-72 overflow-y-auto">
+              {exportRequests.map(req => (
+                <div key={req.id} className="px-4 py-3">
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className={cn("w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm font-semibold", isLight ? "bg-primary/10 text-primary" : "bg-primary/20 text-primary")}>
+                      {(req.requesterName || "?").charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{req.requesterName}</p>
+                      <p className="text-xs text-muted-foreground truncate mt-0.5">
+                        wants to export <span className="capitalize">{req.module.replace(/-/g, " ")}</span> as <span className="font-semibold">{String(req.fileFormat).toUpperCase()}</span>
+                      </p>
+                      {req.reason && (
+                        <p className="text-xs text-muted-foreground italic truncate mt-0.5">"{req.reason}"</p>
+                      )}
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        {new Date(req.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleExportApprove(req.id)}
+                      disabled={processingExportId === req.id}
+                      className="flex-1 flex items-center justify-center gap-1.5 h-9 rounded-xl bg-green-500 hover:bg-green-600 text-white text-xs font-semibold transition-colors disabled:opacity-50"
+                    >
+                      {processingExportId === req.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => {
+                        const reason = window.prompt("Deny reason (optional)") || "";
+                        handleExportDeny(req.id, reason);
+                      }}
+                      disabled={processingExportId === req.id}
+                      className="flex-1 flex items-center justify-center gap-1.5 h-9 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-semibold transition-colors disabled:opacity-50"
+                    >
+                      {processingExportId === req.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldX className="w-3.5 h-3.5" />}
                       Deny
                     </button>
                   </div>
