@@ -710,7 +710,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }, [notifications, playNotification]);
 
   return (
-    <div className={cn("h-screen flex overflow-hidden", isLight ? "light-app-bg" : "bg-background")}>
+    <div className={cn("h-screen h-dvh flex overflow-hidden", isLight ? "light-app-bg" : "bg-background")}>
 
       {/* ─── SIDEBAR ─────────────────────────────────────────────── */}
       <aside
