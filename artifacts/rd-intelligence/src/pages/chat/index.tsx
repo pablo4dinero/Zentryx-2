@@ -771,28 +771,38 @@ export default function ChatRoom() {
         {activeRoom ? (
           <>
             {(() => {
-              // Resolve the DM partner once for use in the header / View
-              // Profile button. Channels (isGroup) have no single partner.
-              const otherUserId = !activeRoom.isGroup && Array.isArray(activeRoom.memberUserIds)
-                ? activeRoom.memberUserIds.find((id: number) => id !== currentUserId)
-                : null;
-              const dmPartner = otherUserId ? users.find((u: any) => u.id === otherUserId) : null;
+              // Resolve the DM partner three ways, in order of reliability,
+              // so the View Profile button still appears for rooms whose
+              // cache predates the backend change that started returning
+              // memberUserIds:
+              //   1. memberUserIds (preferred — exact membership)
+              //   2. user whose name matches the room name (DM rooms get
+              //      named after the partner on create)
+              //   3. user whose first name matches the room name (legacy)
+              let dmPartner: any = null;
+              if (!activeRoom.isGroup) {
+                if (Array.isArray(activeRoom.memberUserIds)) {
+                  const otherId = activeRoom.memberUserIds.find((id: number) => id !== currentUserId);
+                  if (otherId) dmPartner = users.find((u: any) => u.id === otherId) ?? null;
+                }
+                if (!dmPartner) {
+                  dmPartner = users.find((u: any) => u.id !== currentUserId && u.name === activeRoom.name) ?? null;
+                }
+                if (!dmPartner) {
+                  dmPartner = users.find((u: any) => u.id !== currentUserId && u.name?.split(" ")[0] === activeRoom.name) ?? null;
+                }
+              }
               return (
-            <div className="px-6 py-3 border-b border-white/5 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2">
-                {activeRoom.isGroup ? <Hash className="w-5 h-5 text-primary" /> : <Lock className="w-5 h-5 text-primary" />}
-                <h3 className="font-semibold text-foreground">{activeRoom.name}</h3>
-                {isRoomPinned(activeRoom.id) && <span className="flex items-center gap-1 text-[10px] text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded-full"><Pin className="w-2.5 h-2.5" />Pinned</span>}
+            <div className="px-6 py-3 border-b border-white/5 flex items-center justify-between shrink-0 gap-3">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                {activeRoom.isGroup ? <Hash className="w-5 h-5 text-primary shrink-0" /> : <Lock className="w-5 h-5 text-primary shrink-0" />}
+                <h3 className="font-semibold text-foreground truncate">{activeRoom.name}</h3>
+                {isRoomPinned(activeRoom.id) && <span className="flex items-center gap-1 text-[10px] text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded-full shrink-0"><Pin className="w-2.5 h-2.5" />Pinned</span>}
                 {dmPartner && (
                   <button
                     onClick={() => setProfileUser(dmPartner)}
                     title={`View ${dmPartner.name}'s profile`}
-                    className={cn(
-                      "ml-1 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors",
-                      isLight
-                        ? "border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                        : "border-white/10 text-muted-foreground hover:bg-white/5 hover:text-foreground",
-                    )}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20 transition-colors shrink-0"
                   >
                     <UserCircle className="w-3.5 h-3.5" />
                     View Profile
