@@ -609,10 +609,11 @@ export default function ChatRoom() {
       {/* Sidebar — kept in the DOM at all times so switching panels is
           instant (no aurora SVG remount, no message-list remount). We
           just flip `display` via inline style. Inline beats every class
-          and survives PWA caching. */}
+          and survives PWA caching. `min-h-0` lets the inner people list
+          actually overflow and scroll on phone/tablet. */}
       <div
         className={cn(
-          "shrink-0 border-r border-white/5 flex-col bg-white/[0.02]",
+          "shrink-0 border-r border-white/5 flex-col bg-white/[0.02] min-h-0 h-full",
           isBelowLg ? "w-full" : "w-72",
         )}
         style={{
