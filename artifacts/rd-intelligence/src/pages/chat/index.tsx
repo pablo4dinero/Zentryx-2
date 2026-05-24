@@ -882,20 +882,33 @@ export default function ChatRoom() {
                       {showName && !isOwn && (
                         <span className="text-xs text-muted-foreground font-medium">{msg.senderName}</span>
                       )}
-                      <div className={cn(
-                        "relative group/bubble rounded-2xl px-4 py-2.5",
-                        isOwn
-                          ? "bg-primary !text-white rounded-tr-sm shadow-sm"
-                          : isLight
-                            // Light theme: dark slate bubble + white text so
-                            // both sent (primary) and received (slate-700)
-                            // read as white-on-coloured — readable and on-
-                            // brand instead of dark-on-light competing with
-                            // the page background.
-                            ? "bg-slate-700 !text-white rounded-tl-sm shadow-sm"
-                            : "bg-white/8 text-foreground rounded-tl-sm",
-                        pinned && "ring-1 ring-amber-400/30",
-                      )}>
+                      {/*
+                        Bubble palette per theme. Inline style on color avoids
+                        any Tailwind v4 vs class-cascade specificity issues
+                        with !text-white in light mode (the previous setup
+                        rendered as dark text on indigo for some users).
+                        Both sent and received bubbles use white text in light
+                        mode; backgrounds are rich gradients with a soft
+                        shadow for depth.
+                      */}
+                      <div
+                        style={
+                          isLight || isOwn
+                            ? { color: "#ffffff" }
+                            : undefined
+                        }
+                        className={cn(
+                          "relative group/bubble rounded-2xl px-4 py-2.5 text-sm font-medium",
+                          isOwn
+                            ? isLight
+                              ? "bg-gradient-to-br from-indigo-500 to-violet-600 rounded-tr-sm shadow-md shadow-indigo-500/20"
+                              : "bg-primary rounded-tr-sm shadow-sm"
+                            : isLight
+                              ? "bg-gradient-to-br from-slate-700 to-slate-800 rounded-tl-sm shadow-md shadow-slate-700/20"
+                              : "bg-white/8 text-foreground rounded-tl-sm",
+                          pinned && "ring-1 ring-amber-400/30",
+                        )}
+                      >
                         {pinned && <Pin className="w-3 h-3 text-amber-400 absolute -top-1 -right-1" />}
                         <MsgContent msg={msg} isOwn={isOwn} base={BASE} onImageClick={setLightboxImg} />
                       </div>
