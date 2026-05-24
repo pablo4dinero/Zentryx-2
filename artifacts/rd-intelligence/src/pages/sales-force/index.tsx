@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
@@ -103,8 +103,44 @@ function UrgencyIndicator({ level }: { level: string }) {
   );
 }
 
+const EXPORT_MODULE_SALESFORCE = "sales-force";
+
 function ExportModal({ accounts, onClose }: { accounts: any[]; onClose: () => void }) {
   const [format, setFormat] = useState<"csv" | "xlsx">("xlsx");
+  const [exportReq, setExportReq] = useState<any>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [polling, setPolling] = useState(false);
+  const apiBase = import.meta.env.BASE_URL;
+  const apiHeaders = () => ({
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${localStorage.getItem("rd_token") || ""}`,
+  });
+
+  // Pull the user's latest sales-force export request so the modal opens
+  // already aware of any pending/approved approval.
+  React.useEffect(() => {
+    fetch(`${apiBase}api/export-requests/me/latest?module=${EXPORT_MODULE_SALESFORCE}`, { headers: apiHeaders() })
+      .then(r => r.ok ? r.json() : null)
+      .then(row => setExportReq(row))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // While pending, poll every 4s so the moment an admin approves the
+  // modal switches to "Approved — click to download".
+  React.useEffect(() => {
+    if (exportReq?.status !== "pending") { setPolling(false); return; }
+    setPolling(true);
+    const id = setInterval(() => {
+      fetch(`${apiBase}api/export-requests/me/latest?module=${EXPORT_MODULE_SALESFORCE}`, { headers: apiHeaders() })
+        .then(r => r.ok ? r.json() : null)
+        .then(row => setExportReq(row))
+        .catch(() => {});
+    }, 4000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exportReq?.status]);
+
   const fields = [
     { key: "id", label: "Account ID" }, { key: "company", label: "Company" },
     { key: "productName", label: "Product Name" }, { key: "productType", label: "Product Type" },
@@ -120,7 +156,7 @@ function ExportModal({ accounts, onClose }: { accounts: any[]; onClose: () => vo
   const [selected, setSelected] = useState<string[]>(fields.map(f => f.key));
   const toggle = (k: string) => setSelected(s => s.includes(k) ? s.filter(x => x !== k) : [...s, k]);
 
-  const doExport = () => {
+  const writeFile = () => {
     const data = accounts.map(a => {
       const row: Record<string, any> = {};
       const { score } = calcPriority(a);
@@ -149,8 +185,53 @@ function ExportModal({ accounts, onClose }: { accounts: any[]; onClose: () => vo
       XLSX.utils.book_append_sheet(wb, ws, "Accounts");
       XLSX.writeFile(wb, "salesforce_accounts.xlsx");
     }
+  };
+
+  const fulfillAndClose = async (id: number) => {
+    writeFile();
+    try {
+      await fetch(`${apiBase}api/export-requests/${id}/fulfill`, { method: "POST", headers: apiHeaders() });
+    } catch { /* silent */ }
     onClose();
   };
+
+  // Submit button: either downloads (when we already hold an approval
+  // matching the chosen format) or fires off a new approval request.
+  const handleAction = async () => {
+    if (selected.length === 0) return;
+    if (exportReq && exportReq.status === "approved" && exportReq.fileFormat === format) {
+      await fulfillAndClose(exportReq.id);
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const r = await fetch(`${apiBase}api/export-requests`, {
+        method: "POST",
+        headers: apiHeaders(),
+        body: JSON.stringify({ module: EXPORT_MODULE_SALESFORCE, fileFormat: format }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const row = await r.json();
+      setExportReq(row);
+      if (row.status === "approved") {
+        // Admin requester — server auto-approved.
+        await fulfillAndClose(row.id);
+      }
+    } catch (err) {
+      console.error("[sales-force export] request failed", err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const status = exportReq?.status as "pending" | "approved" | "denied" | "fulfilled" | undefined;
+  const matchedApproval = status === "approved" && exportReq?.fileFormat === format;
+  const isPending = status === "pending";
+  const buttonLabel = matchedApproval
+    ? `Export ${format.toUpperCase()} (Approved)`
+    : isPending
+      ? `Awaiting Admin Approval${exportReq?.fileFormat ? ` (${String(exportReq.fileFormat).toUpperCase()})` : ""}…`
+      : `Request Admin Approval to Export ${format.toUpperCase()}`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
@@ -182,9 +263,29 @@ function ExportModal({ accounts, onClose }: { accounts: any[]; onClose: () => vo
             ))}
           </div>
         </div>
+        {/* Approval status banner */}
+        {(status === "approved" || status === "denied" || isPending) && (
+          <div className={cn(
+            "mx-5 mb-3 px-3 py-2 rounded-lg text-xs border flex items-start gap-2",
+            status === "approved" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+              : status === "denied" ? "border-red-500/30 bg-red-500/10 text-red-300"
+                : "border-amber-500/30 bg-amber-500/10 text-amber-300",
+          )}>
+            <span>{status === "approved" ? "✓" : status === "denied" ? "✕" : "⏳"}</span>
+            <div className="flex-1 min-w-0">
+              {status === "approved" && <p>Approved by {exportReq?.reviewerName || "admin"} — single-use download.</p>}
+              {status === "denied" && <p>Denied{exportReq?.reviewerName ? ` by ${exportReq.reviewerName}` : ""}.{exportReq?.denyReason ? ` Reason: ${exportReq.denyReason}` : ""} Submit a new request to retry.</p>}
+              {isPending && <p>Waiting on admin approval{polling ? " — auto-refreshes" : ""}.</p>}
+            </div>
+          </div>
+        )}
         <div className="p-5 border-t border-white/5 flex gap-3">
-          <button onClick={doExport} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90">
-            <Download className="w-4 h-4" /> Export {format.toUpperCase()}
+          <button
+            onClick={handleAction}
+            disabled={submitting || isPending || selected.length === 0}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Download className="w-4 h-4" /> {buttonLabel}
           </button>
           <button onClick={onClose} className="px-4 py-2.5 border border-white/10 text-muted-foreground rounded-xl text-sm hover:text-foreground">Cancel</button>
         </div>
