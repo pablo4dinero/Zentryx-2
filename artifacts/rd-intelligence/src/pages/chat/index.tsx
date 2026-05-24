@@ -606,16 +606,19 @@ export default function ChatRoom() {
       "flex h-full gap-0 lg:rounded-2xl overflow-hidden lg:border relative",
       isLight ? "bg-white lg:border-slate-200" : "glass-card lg:border-white/5",
     )}>
-      {/* Sidebar — conditionally rendered. On phone/tablet we render this
-          only when no room is selected; the chat panel takes over once a
-          room is open and the back button returns the user here. */}
-      {showSidebar && (
+      {/* Sidebar — kept in the DOM at all times so switching panels is
+          instant (no aurora SVG remount, no message-list remount). We
+          just flip `display` via inline style. Inline beats every class
+          and survives PWA caching. */}
       <div
         className={cn(
-          "shrink-0 border-r border-white/5 flex flex-col bg-white/[0.02]",
+          "shrink-0 border-r border-white/5 flex-col bg-white/[0.02]",
           isBelowLg ? "w-full" : "w-72",
         )}
-        style={isBelowLg ? { width: "100%" } : undefined}
+        style={{
+          display: showSidebar ? "flex" : "none",
+          width: isBelowLg ? "100%" : undefined,
+        }}
       >
         <div className="p-3 border-b border-white/5 flex items-center justify-between gap-2">
           <h2 className="font-display font-bold text-foreground">Chat</h2>
@@ -800,13 +803,14 @@ export default function ChatRoom() {
           })}
         </div>
       </div>
-      )}
 
-      {/* Main Chat — conditionally rendered. On phone/tablet this only
-          shows once a room is selected; until then the sidebar owns the
-          full viewport. */}
-      {showChatPanel && (
-      <div className="flex-1 flex flex-col min-w-0 relative">
+      {/* Main Chat — kept in the DOM, toggled via inline display so the
+          aurora background + message list don't have to re-render on
+          every panel switch. Switching now feels instant. */}
+      <div
+        className="flex-1 min-w-0 relative flex-col"
+        style={{ display: showChatPanel ? "flex" : "none" }}
+      >
         {/* Background — softly pulsing aurora gradient with three layered
             SVG waves drifting horizontally at different speeds. Calmer and
             more "official" than the previous dot-grid; tuned to the brand
@@ -1112,7 +1116,6 @@ export default function ChatRoom() {
         )}
         </div>
       </div>
-      )}
     </div>
 
     {/* View Profile modal — opened from the chat header for DMs. Shows the
