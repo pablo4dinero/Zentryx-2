@@ -233,6 +233,38 @@ async function createTablesIfNotExist() {
       CREATE INDEX IF NOT EXISTS login_attempts_created_at_idx ON login_attempts (created_at DESC);
     `));
 
+    // Admin → user broadcast messages with per-recipient acknowledgment.
+    await db.execute(sql.raw(`
+      DO $$ BEGIN
+        CREATE TYPE admin_message_audience AS ENUM ('all', 'selected');
+      EXCEPTION WHEN duplicate_object THEN null; END $$;
+    `));
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS admin_messages (
+        id SERIAL PRIMARY KEY,
+        from_admin_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        from_admin_name TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        audience admin_message_audience NOT NULL DEFAULT 'selected',
+        recipient_count INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `));
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS admin_message_recipients (
+        id SERIAL PRIMARY KEY,
+        message_id INTEGER NOT NULL REFERENCES admin_messages(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        acknowledged_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `));
+    await db.execute(sql.raw(`
+      CREATE UNIQUE INDEX IF NOT EXISTS admin_message_recipients_unique
+        ON admin_message_recipients (message_id, user_id);
+    `));
+
     // Migrate projects table enum columns to text so custom values are accepted
     await db.execute(sql.raw(`
       DO $$

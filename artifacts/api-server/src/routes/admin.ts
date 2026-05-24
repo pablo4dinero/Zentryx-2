@@ -9,8 +9,10 @@ import {
   notificationsTable,
   accountsTable,
   projectsTable,
+  adminMessagesTable,
+  adminMessageRecipientsTable,
 } from "@workspace/db";
-import { desc, eq, gte, and, sql } from "drizzle-orm";
+import { desc, eq, gte, and, sql, isNull, inArray } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../lib/auth";
 import { getAllRequests as getAllAccessRequests } from "../lib/access-requests";
 
@@ -254,7 +256,120 @@ router.get("/approvals/access", async (_req: AuthRequest, res) => {
   }
 });
 
-// Suppress unused import warning for `notificationsTable` if unused later.
-void notificationsTable;
+// ── Admin Messages ───────────────────────────────────────────────────────
+// POST /messages — send a new broadcast or selected-user message.
+// Body: { title, body, audience: "all" | "selected", recipientIds?: number[] }
+router.post("/messages", async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.userId;
+    const [me] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (!me) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const { title, body, audience, recipientIds } = req.body as { title?: string; body?: string; audience?: "all" | "selected"; recipientIds?: number[] };
+    if (!title?.trim() || !body?.trim()) { res.status(400).json({ error: "MissingFields" }); return; }
+    const finalAudience: "all" | "selected" = audience === "all" ? "all" : "selected";
+
+    // Resolve the target user list. For "all" we take every currently-
+    // active user except the sender (admin doesn't need to ack their own
+    // message). For "selected" we take the provided ids, deduped and
+    // filtered to active users only.
+    let targetIds: number[] = [];
+    if (finalAudience === "all") {
+      const active = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.isActive, true));
+      targetIds = active.map(u => u.id).filter(id => id !== userId);
+    } else {
+      const requested = Array.isArray(recipientIds) ? [...new Set(recipientIds)] : [];
+      if (requested.length === 0) { res.status(400).json({ error: "NoRecipients" }); return; }
+      const found = await db.select({ id: usersTable.id }).from(usersTable)
+        .where(and(eq(usersTable.isActive, true), inArray(usersTable.id, requested)));
+      targetIds = found.map(u => u.id).filter(id => id !== userId);
+    }
+    if (targetIds.length === 0) { res.status(400).json({ error: "NoValidRecipients" }); return; }
+
+    const [msg] = await db.insert(adminMessagesTable).values({
+      fromAdminId: userId,
+      fromAdminName: me.name,
+      title: title.trim(),
+      body: body.trim(),
+      audience: finalAudience,
+      recipientCount: targetIds.length,
+    }).returning();
+
+    await db.insert(adminMessageRecipientsTable).values(
+      targetIds.map(uid => ({ messageId: msg.id, userId: uid })),
+    );
+
+    res.status(201).json({ ...msg, recipientCount: targetIds.length });
+  } catch (err) {
+    console.error("[admin] messages.post failed", err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+// GET /messages — list messages this admin sent, with ack counts.
+router.get("/messages", async (_req: AuthRequest, res) => {
+  try {
+    const rows = await db.select({
+      id: adminMessagesTable.id,
+      fromAdminId: adminMessagesTable.fromAdminId,
+      fromAdminName: adminMessagesTable.fromAdminName,
+      title: adminMessagesTable.title,
+      body: adminMessagesTable.body,
+      audience: adminMessagesTable.audience,
+      recipientCount: adminMessagesTable.recipientCount,
+      createdAt: adminMessagesTable.createdAt,
+    }).from(adminMessagesTable).orderBy(desc(adminMessagesTable.createdAt)).limit(200);
+
+    if (rows.length === 0) { res.json([]); return; }
+    const ids = rows.map(r => r.id);
+    const ackRows = await db.select({
+      messageId: adminMessageRecipientsTable.messageId,
+      ackCount: sql<number>`SUM(CASE WHEN ${adminMessageRecipientsTable.acknowledgedAt} IS NOT NULL THEN 1 ELSE 0 END)::int`,
+    }).from(adminMessageRecipientsTable)
+      .where(inArray(adminMessageRecipientsTable.messageId, ids))
+      .groupBy(adminMessageRecipientsTable.messageId);
+    const ackMap = new Map<number, number>(ackRows.map(r => [r.messageId, r.ackCount]));
+    res.json(rows.map(r => ({ ...r, acknowledgedCount: ackMap.get(r.id) ?? 0 })));
+  } catch (err) {
+    console.error("[admin] messages.list failed", err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+// GET /messages/:id/acknowledgments — full recipient list with ack state.
+router.get("/messages/:id/acknowledgments", async (req: AuthRequest, res) => {
+  try {
+    const id = parseInt(String(req.params.id));
+    if (Number.isNaN(id)) { res.status(400).json({ error: "BadRequest" }); return; }
+    const rows = await db.select({
+      userId: adminMessageRecipientsTable.userId,
+      userName: usersTable.name,
+      userEmail: usersTable.email,
+      acknowledgedAt: adminMessageRecipientsTable.acknowledgedAt,
+    }).from(adminMessageRecipientsTable)
+      .leftJoin(usersTable, eq(adminMessageRecipientsTable.userId, usersTable.id))
+      .where(eq(adminMessageRecipientsTable.messageId, id))
+      .orderBy(desc(adminMessageRecipientsTable.acknowledgedAt));
+    res.json(rows);
+  } catch (err) {
+    console.error("[admin] messages.acks failed", err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+// DELETE /messages/:id — cancel/remove a message (cascades to recipients).
+router.delete("/messages/:id", async (req: AuthRequest, res) => {
+  try {
+    const id = parseInt(String(req.params.id));
+    if (Number.isNaN(id)) { res.status(400).json({ error: "BadRequest" }); return; }
+    await db.delete(adminMessagesTable).where(eq(adminMessagesTable.id, id));
+    res.json({ deleted: true });
+  } catch (err) {
+    console.error("[admin] messages.delete failed", err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+// Suppress unused import warning for `notificationsTable` / `isNull`.
+void notificationsTable; void isNull;
 
 export default router;

@@ -6,7 +6,7 @@ import {
   ChevronDown, User, FlaskConical as Flask, CheckSquare, Building2,
   ArrowRight, Loader2, CalendarDays, UserCircle, TrendingUp, ClipboardList,
   PanelLeftClose, PanelLeftOpen, Lock, Unlock, ShoppingCart, Package,
-  ShieldCheck, ShieldX, Mail, Rss, Brain, CheckCheck, Check, Download, Volume2, VolumeX
+  ShieldCheck, ShieldX, Mail, Rss, Brain, CheckCheck, Check, Download, Volume2, VolumeX, Megaphone
 } from "lucide-react";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { useNotificationSound } from "@/hooks/useNotificationSound";
@@ -635,6 +635,41 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     setProcessingExportId(null);
   };
 
+  // ─── Admin → User messages popup ────────────────────────────────────────
+  // Any pending (un-acknowledged) admin message blocks the UI as a modal
+  // until the user clicks "Acknowledge". Polled every 10s so newly-sent
+  // messages appear quickly.
+  const [adminMessages, setAdminMessages] = useState<any[]>([]);
+  const [ackingMessageId, setAckingMessageId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch(`${BASE}api/admin-messages/pending`, { headers: apiHeadersJson() });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data)) setAdminMessages(data);
+      } catch { /* silent */ }
+    };
+    poll();
+    const interval = setInterval(poll, 10000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [user]);
+
+  const ackAdminMessage = async (id: number) => {
+    setAckingMessageId(id);
+    try {
+      const res = await fetch(`${BASE}api/admin-messages/${id}/acknowledge`, {
+        method: "POST",
+        headers: apiHeadersJson(),
+      });
+      if (res.ok) setAdminMessages(prev => prev.filter(m => m.id !== id));
+    } catch { /* silent */ }
+    setAckingMessageId(null);
+  };
+
   const handleExportDeny = async (id: number, reason?: string) => {
     setProcessingExportId(id);
     try {
@@ -1194,6 +1229,80 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       )}
+
+      {/* ─── Admin Messages Modal ──────────────────────────────────────── */}
+      {/* Blocks the rest of the UI behind a backdrop until the user
+          acknowledges. Multiple pending messages stack — only the newest
+          is shown; ack'ing it reveals the next one. */}
+      <AnimatePresence>
+        {adminMessages.length > 0 && (() => {
+          const m = adminMessages[0];
+          return (
+            <motion.div
+              key={m.id}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="fixed inset-0 z-[300] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+            >
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0, y: 8 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                transition={{ duration: 0.18 }}
+                className={cn(
+                  "w-full max-w-lg rounded-2xl border shadow-2xl overflow-hidden",
+                  isLight ? "bg-white border-slate-200" : "bg-[#1a1a2e] border-white/10",
+                )}
+              >
+                {/* Header */}
+                <div className={cn(
+                  "px-5 py-4 border-b flex items-start gap-3",
+                  isLight ? "border-slate-100 bg-gradient-to-r from-primary/5 to-accent/5" : "border-white/10 bg-gradient-to-r from-primary/10 to-accent/10",
+                )}>
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/30 shrink-0">
+                    <Megaphone className="w-5 h-5 text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className={cn("text-[10px] font-bold uppercase tracking-wider", isLight ? "text-primary" : "text-primary")}>
+                      Message from Admin
+                    </p>
+                    <p className={cn("font-semibold text-base leading-snug mt-0.5", isLight ? "text-slate-900" : "text-foreground")}>
+                      {m.title}
+                    </p>
+                    <p className={cn("text-[10px] mt-1", isLight ? "text-slate-500" : "text-muted-foreground")}>
+                      From {m.fromAdminName} · {new Date(m.createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Body */}
+                <div className="px-5 py-5">
+                  <p className={cn("text-sm leading-relaxed whitespace-pre-wrap", isLight ? "text-slate-700" : "text-foreground")}>
+                    {m.body}
+                  </p>
+                </div>
+
+                {/* Footer */}
+                <div className={cn("px-5 py-4 border-t flex items-center justify-between gap-3", isLight ? "border-slate-100 bg-slate-50" : "border-white/10 bg-white/[0.02]")}>
+                  <p className={cn("text-[10px]", isLight ? "text-slate-500" : "text-muted-foreground")}>
+                    {adminMessages.length > 1 ? `${adminMessages.length - 1} more message${adminMessages.length - 1 === 1 ? "" : "s"} after this` : "Acknowledge to continue."}
+                  </p>
+                  <button
+                    onClick={() => ackAdminMessage(m.id)}
+                    disabled={ackingMessageId === m.id}
+                    className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors shadow-lg shadow-primary/20"
+                  >
+                    {ackingMessageId === m.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                    I acknowledge
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          );
+        })()}
+      </AnimatePresence>
 
       {/* ─── Export Approval Popup (Admin / NPD Manager) ──────────────── */}
       {isExportApprover && exportRequests.length > 0 && (

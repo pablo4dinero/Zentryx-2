@@ -28,6 +28,7 @@ import productTypesRouter from "./product_types";
 import optionListsRouter from "./option_lists";
 import exportRequestsRouter from "./export_requests";
 import adminRouter from "./admin";
+import adminMessagesRouter from "./admin_messages";
 
 const router: IRouter = Router();
 
@@ -60,5 +61,6 @@ router.use("/product-types", productTypesRouter);
 router.use("/option-lists", optionListsRouter);
 router.use("/export-requests", exportRequestsRouter);
 router.use("/admin", adminRouter);
+router.use("/admin-messages", adminMessagesRouter);
 
 export default router;
