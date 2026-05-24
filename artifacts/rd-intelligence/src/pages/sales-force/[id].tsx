@@ -567,30 +567,42 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
   }, []);
   useEffect(() => { fetchRates(); }, [fetchRates]);
 
+  // USD/NGN is treated as a "trusted" reference pair — it ALWAYS uses
+  // the live rate from exchangerate-api regardless of any manual
+  // override. The override is for less-common currencies where the user
+  // might want to lock in their own rate.
+  const isUsdNgnPair = (a: string, b: string) =>
+    (a === "USD" && b === "NGN") || (a === "NGN" && b === "USD");
+
   // Effective "USD → X" rate for any currency. When the user has set a
-  // manual rate (e.g. "1 USD = 1650 NGN") that override is used whenever
-  // the conversion touches `manualRateCurrency`. Everything else falls
-  // back to the live USD-base rate from exchangerate-api.
+  // manual rate (e.g. "1 USD = 0.79 GBP") that override is used whenever
+  // the conversion touches `manualRateCurrency`, EXCEPT when the pair is
+  // USD/NGN — that always uses live. Everything else falls back to the
+  // live USD-base rate from exchangerate-api.
   const manualRateNum = manualConvRate ? parseFloat(manualConvRate) : NaN;
   const manualRateValid = !isNaN(manualRateNum) && manualRateNum > 0;
-  const usdRateFor = (currency: string): number | null => {
+  const usdRateFor = (currency: string, allowManual: boolean): number | null => {
     if (currency === "USD") return 1;
-    if (currency === manualRateCurrency && manualRateValid) return manualRateNum;
+    if (allowManual && currency === manualRateCurrency && manualRateValid) return manualRateNum;
     const live = allRates?.[currency];
     return typeof live === "number" ? live : null;
   };
 
-  // Cross-rate convFrom → convTo via USD.
+  // Cross-rate convFrom → convTo via USD. USD/NGN bypasses any override.
+  const allowManualForPair = !isUsdNgnPair(convFrom, convTo);
   const liveConvRate = (() => {
-    const fromUsd = usdRateFor(convFrom);
-    const toUsd = usdRateFor(convTo);
+    const fromUsd = usdRateFor(convFrom, allowManualForPair);
+    const toUsd = usdRateFor(convTo, allowManualForPair);
     if (!fromUsd || !toUsd) return null;
     return toUsd / fromUsd;
   })();
   const effectiveConvRate = liveConvRate;
-  // The manual override is "active" for the current pair only if one of
-  // the selected currencies actually matches the override currency.
-  const manualOverrideActive = manualRateValid && (convFrom === manualRateCurrency || convTo === manualRateCurrency);
+  // The manual override is "active" only when it actually affects this pair.
+  const manualOverrideActive = manualRateValid && allowManualForPair
+    && (convFrom === manualRateCurrency || convTo === manualRateCurrency);
+
+  // Live USD→NGN rate for the always-on reference display in the header.
+  const liveUsdNgn = allRates?.NGN ?? null;
   const convertedAmount = (() => {
     const amt = parseFloat(convAmount);
     if (!effectiveConvRate || isNaN(amt)) return null;
@@ -850,8 +862,16 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
       {/* Currency converter — fetches live USD-base rates, supports any
           pair from SUPPORTED_CURRENCIES, with optional manual override. */}
       <div className="glass-card rounded-2xl p-4 border border-white/5">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Currency Converter</p>
+        <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Currency Converter</p>
+            {liveUsdNgn !== null && (
+              <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" title="Live USD → NGN rate (always live, never overridden)">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                1 USD = ₦{liveUsdNgn.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             {liveConvRate !== null && !manualOverrideActive && (
               <span className="text-[10px] text-emerald-400">Live</span>
@@ -920,6 +940,9 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
             </div>
             <p className="text-[10px] text-muted-foreground">
               Override is applied automatically to any conversion involving {manualRateCurrency}.
+              {manualRateCurrency === "NGN" && (
+                <span className="block mt-0.5 text-emerald-400/80">USD ↔ NGN itself always uses the live rate shown in the header.</span>
+              )}
             </p>
           </div>
         )}
