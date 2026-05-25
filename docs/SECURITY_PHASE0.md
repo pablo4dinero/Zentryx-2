@@ -12,7 +12,7 @@ This is the runbook for the immediate security work that landed alongside this c
 | Security headers | Added `helmet` with CSP, HSTS, frame-ancestors none, object-src none. | `artifacts/api-server/src/app.ts` |
 | Rate limiting | Global 600 req / 15 min / IP. Stricter 20 req / 15 min / IP on `/auth/*` and `/export-requests`. | `artifacts/api-server/src/app.ts` |
 | CORS | Explicit allow-list from `CORS_ORIGINS` env var. Production deploys **refuse to boot** with no CORS configuration. | `artifacts/api-server/src/app.ts` |
-| Upload path | Chat upload dir is configurable via `CHAT_UPLOAD_DIR`. Path-traversal guard added on the download endpoint. Local default git-ignored. | `artifacts/api-server/src/routes/chat.ts`, `.gitignore` |
+| Object storage | Chat uploads now stream to **Cloudflare R2** (S3-compatible) via the AWS SDK. Files are private; the download endpoint mints fresh 1-hour signed URLs and 302s the client. Local disk is no longer touched. MIME-type allow-list + 2 MB cap on upload. | `artifacts/api-server/src/lib/r2.ts`, `artifacts/api-server/src/routes/chat.ts` |
 | Body size | Already 15 MB cap on JSON / urlencoded. No change. | `artifacts/api-server/src/app.ts` |
 | 17 MB checked-in chat content | Untracked via `git rm --cached`. Files still on disk locally; history scrub pending (see below). | `.gitignore` |
 
@@ -47,11 +47,22 @@ If this is empty in production the server refuses to boot — that's intentional
 
 Render → Environment → `NODE_ENV=production`. This switches the boot guard from "warn" to "fail" on the CORS config and HSTS asserts itself.
 
-### 5. Attach a persistent disk for uploads
+### 5. Set Cloudflare R2 credentials
 
-Render → your service → Disks → Add Disk. Mount it at `/data` (or any path you choose). Then set env var `CHAT_UPLOAD_DIR=/data/chat-uploads`. The server creates the subfolder on boot.
+Chat uploads now stream to Cloudflare R2 (zero egress fees, S3-compatible). Set the following env vars in **Render → Environment**:
 
-> ⚠️ The temporary filesystem on Render's stateless services is **wiped on every deploy**. Without a disk, every push deletes all chat attachments.
+| Var | Value |
+|-----|-------|
+| `R2_ENDPOINT` | `https://<account-id>.r2.cloudflarestorage.com` |
+| `R2_ACCESS_KEY_ID` | R2 API token access key |
+| `R2_SECRET_ACCESS_KEY` | R2 API token secret |
+| `R2_BUCKET_NAME` | The bucket name (e.g. `zentryx-uploads`) |
+
+The bucket should be **private** — files are served via short-lived signed URLs minted by the API, not via R2 public-bucket access.
+
+> ⚠️ R2 keys grant write access to your bucket. Anyone with them can upload arbitrary content and rack up Cloudflare bills. Never commit them, never paste them into chat or pull-request descriptions. If you suspect a key has leaked, **rotate it immediately** in the Cloudflare dashboard → R2 → Manage API Tokens.
+
+> ⚠️ Render's temporary filesystem is wiped on every deploy. Since uploads no longer touch local disk, this is no longer a data-loss risk — just keep R2 credentials valid.
 
 ### 6. Purge the 17 MB of chat content from git history
 
@@ -124,7 +135,7 @@ After deploying:
 - ❌ Mandatory MFA for privileged roles (TOTP via authenticator app)
 - ❌ SSO (OIDC for Google Workspace / Azure AD)
 - ❌ Refresh-token rotation, shorter access-token lifetime
-- ❌ Object-storage migration (currently still local disk via `CHAT_UPLOAD_DIR`)
+- ✅ ~~Object-storage migration~~ — done (Cloudflare R2 + signed URLs, see section 5)
 - ❌ Antivirus scan on uploads
 - ❌ Encryption-at-rest for sensitive columns (pricing, customer contact)
 - ❌ Data-classification matrix

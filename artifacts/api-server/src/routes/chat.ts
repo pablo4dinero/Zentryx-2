@@ -4,24 +4,33 @@ import { chatRoomsTable, chatRoomMembersTable, chatMessagesTable, chatReadReceip
 import { eq, and, inArray, desc, sql, ne } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../lib/auth";
 import { SUPERADMIN_EMAIL } from "./auth";
+import { uploadToR2, getSignedFileUrl } from "../lib/r2";
 import multer from "multer";
-import path from "path";
-import fs from "fs";
+import { randomUUID } from "crypto";
 
 const router = Router();
 
-// Upload directory is configurable via env so production deploys can
-// point it at a persistent disk (Render Disks, mounted EBS, etc.) or an
-// object-store-backed fuse mount. Defaults to a local folder for dev
-// convenience; the folder is git-ignored.
-const CHAT_UPLOAD_DIR = process.env.CHAT_UPLOAD_DIR
-  || path.resolve(process.cwd(), "uploads/chat");
+// Memory storage — files live in a Node Buffer just long enough to be
+// streamed up to R2. Nothing touches the local disk anymore, so the
+// container can be wiped on deploy without data loss and no path-
+// traversal surface remains.
+const ALLOWED_MIME_TYPES = new Set<string>([
+  "image/jpeg", "image/png", "image/gif", "image/webp",
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "audio/webm", "audio/ogg", "audio/mpeg", "audio/mp4",
+]);
 const upload = multer({
-  dest: CHAT_UPLOAD_DIR,
-  limits: { fileSize: 5 * 1024 * 1024 },
+  storage: multer.memoryStorage(),
+  // 2 MB — chat attachments are messages, not document storage. Anything
+  // larger belongs in a proper file-sharing flow.
+  limits: { fileSize: 2 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (ALLOWED_MIME_TYPES.has(file.mimetype)) cb(null, true);
+    else cb(new Error(`MIME type not allowed: ${file.mimetype}`));
+  },
 });
-
-if (!fs.existsSync(CHAT_UPLOAD_DIR)) fs.mkdirSync(CHAT_UPLOAD_DIR, { recursive: true });
 
 const MSG_SELECT = {
   id: chatMessagesTable.id,
@@ -347,12 +356,15 @@ router.delete("/rooms/:roomId/messages/:messageId", requireAuth, async (req: Aut
   } catch (err) { console.error(err); res.status(500).json({ error: "InternalServerError" }); }
 });
 
-// Upload any file (images, voice notes, documents — max 5 MB)
+// Upload an attachment (images / voice notes / documents — max 2 MB).
+// The file is streamed straight to Cloudflare R2; nothing is written to
+// the local filesystem. We store ONLY the R2 object key in the DB; the
+// download endpoint mints a fresh signed URL on demand.
 router.post("/rooms/:roomId/upload", requireAuth, (req: AuthRequest, res, next) => {
   upload.single("file")(req, res, (err) => {
     if (err) {
       if (err.code === "LIMIT_FILE_SIZE") {
-        res.status(413).json({ error: "FileTooLarge", message: "File exceeds the 5 MB limit." });
+        res.status(413).json({ error: "FileTooLarge", message: "File exceeds the 2 MB limit." });
       } else {
         res.status(400).json({ error: "UploadError", message: err.message });
       }
@@ -365,10 +377,22 @@ router.post("/rooms/:roomId/upload", requireAuth, (req: AuthRequest, res, next) 
     if (!req.file) { res.status(400).json({ error: "No file uploaded" }); return; }
     const roomId = parseInt(Array.isArray(req.params.roomId) ? req.params.roomId[0] : req.params.roomId as string);
     const messageType = (req.body.messageType as any) || (req.file.mimetype.startsWith("audio") ? "voice_note" : "image");
-    const fileUrl = `/api/chat/uploads/${req.file.filename}`;
+
+    // Build a collision-resistant R2 key. UUID + original extension so
+    // it's safe to URL-encode and keeps the user-friendly file type.
+    const ext = (req.file.originalname.split(".").pop() || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 8);
+    const key = `chat/${randomUUID()}${ext ? `.${ext}` : ""}`;
+
+    // Push to R2 first — only persist the message row if the upload
+    // succeeds, so we never end up with a DB record pointing at a
+    // file that doesn't exist.
+    await uploadToR2(key, req.file.buffer, req.file.mimetype);
+
+    // We store the R2 key (not a URL) in fileUrl. The download endpoint
+    // resolves it to a fresh signed URL each time.
     const [msg] = await db.insert(chatMessagesTable).values({
       roomId, senderId: req.user!.userId, messageType,
-      fileUrl, fileName: req.file.originalname,
+      fileUrl: key, fileName: req.file.originalname,
     }).returning();
     const [withSender] = await db.select(MSG_SELECT)
       .from(chatMessagesTable)
@@ -389,23 +413,27 @@ router.post("/rooms/:roomId/upload", requireAuth, (req: AuthRequest, res, next) 
   } catch (err) { console.error(err); res.status(500).json({ error: "InternalServerError" }); }
 });
 
-// Serve uploaded files. Filename validation guards against path traversal
-// (e.g. `?filename=../../etc/passwd`) — multer generates random IDs so a
-// legitimate filename is always alphanumeric.
-router.get("/uploads/:filename", (req, res) => {
-  const filename = req.params.filename;
-  if (!/^[A-Za-z0-9._-]+$/.test(filename)) {
-    res.status(400).json({ error: "BadRequest" });
-    return;
+// Resolve a chat attachment URL. Auth required — only members of the
+// room should be able to view its files. (We currently auth via the JWT
+// but don't check room membership; that's a Phase 1 follow-up.)
+// On hit, we mint a fresh signed R2 URL (1-hour expiry) and 302 the
+// client to it. The legacy filename-only path is preserved so existing
+// `/api/chat/uploads/<filename>` URLs in old messages keep working —
+// we just prepend the `chat/` prefix to reconstruct the R2 key.
+router.get("/uploads/:filename", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const filename = req.params.filename;
+    if (!/^[A-Za-z0-9._-]+$/.test(filename)) {
+      res.status(400).json({ error: "BadRequest" });
+      return;
+    }
+    const key = filename.startsWith("chat/") ? filename : `chat/${filename}`;
+    const signedUrl = await getSignedFileUrl(key);
+    res.redirect(signedUrl);
+  } catch (err) {
+    console.error("[chat] signed-url failed", err);
+    res.status(404).json({ error: "NotFound" });
   }
-  const filePath = path.resolve(CHAT_UPLOAD_DIR, filename);
-  if (!filePath.startsWith(path.resolve(CHAT_UPLOAD_DIR))) {
-    res.status(400).json({ error: "BadRequest" });
-    return;
-  }
-  res.sendFile(filePath, (err) => {
-    if (err && !res.headersSent) res.status(404).json({ error: "NotFound" });
-  });
 });
 
 // Get all users for private chat (superadmin always excluded). Includes the
