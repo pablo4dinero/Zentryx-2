@@ -422,8 +422,12 @@ router.post("/rooms/:roomId/upload", requireAuth, (req: AuthRequest, res, next) 
 // we just prepend the `chat/` prefix to reconstruct the R2 key.
 router.get("/uploads/:filename", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const filename = req.params.filename;
-    if (!/^[A-Za-z0-9._-]+$/.test(filename)) {
+    // Express types req.params values as `string | string[]` to cover
+    // repeated query-string-style params; for route params we know it's
+    // a single string. Narrow defensively.
+    const raw = req.params.filename;
+    const filename = Array.isArray(raw) ? raw[0] : (raw as string);
+    if (!filename || !/^[A-Za-z0-9._-]+$/.test(filename)) {
       res.status(400).json({ error: "BadRequest" });
       return;
     }

@@ -31,19 +31,47 @@ async function logLoginAttempt(req: Request, opts: { userId: number | null; emai
 
 const router = Router();
 
-// ─── Superadmin constants ────────────────────────────────────────────────────
-const SUPERADMIN_EMAIL = "paulpelumi@gmail.com";
-const SUPERADMIN_PASSWORD = "Zetrynx.123@";
-const SUPERADMIN_ID = 999999;
+// ─── Superadmin (env-backed, fail-loud) ──────────────────────────────────────
+//
+// Both values come from Render environment variables. There is no
+// fallback — if either is missing the server refuses to boot, same
+// pattern as JWT_SECRET. The password is stored as a bcrypt HASH, not
+// plaintext, so a leaked env var doesn't directly reveal the password.
+//
+// Generate a fresh hash locally with:
+//   node scripts/hash-password.js
+// then paste the output into SUPERADMIN_PASSWORD_HASH on Render.
+
+function requireSuperadminEnv(name: string): string {
+  const v = process.env[name];
+  if (!v) {
+    throw new Error(
+      `[auth] ${name} is required but not set in the environment. ` +
+      `Set it in Render → Environment. See docs/SECURITY_PHASE0.md for the hash-generation step.`,
+    );
+  }
+  return v;
+}
+
+const SUPERADMIN_EMAIL = requireSuperadminEnv("SUPERADMIN_EMAIL").toLowerCase();
+const SUPERADMIN_PASSWORD_HASH = requireSuperadminEnv("SUPERADMIN_PASSWORD_HASH");
+
+if (!SUPERADMIN_PASSWORD_HASH.startsWith("$2")) {
+  // bcrypt hashes always begin with $2a$ / $2b$ / $2y$. Catch the
+  // common foot-gun of accidentally pasting the plaintext.
+  throw new Error(
+    `[auth] SUPERADMIN_PASSWORD_HASH does not look like a bcrypt hash ` +
+    `(should start with "$2a$" or "$2b$"). Did you paste the plaintext by mistake?`,
+  );
+}
 
 async function ensureSuperadmin(): Promise<typeof usersTable.$inferSelect | null> {
   const [existing] = await db.select().from(usersTable).where(eq(usersTable.email, SUPERADMIN_EMAIL)).limit(1);
   if (existing) return existing;
-  const hash = await bcrypt.hash(SUPERADMIN_PASSWORD, 10);
   const [created] = await db.insert(usersTable).values({
     email: SUPERADMIN_EMAIL,
     name: "App Developer",
-    passwordHash: hash,
+    passwordHash: SUPERADMIN_PASSWORD_HASH,
     role: "admin",
     isActive: true,
   }).returning();
@@ -64,15 +92,28 @@ router.post("/login", async (req, res) => {
       return;
     }
 
-    // Superadmin bypass — direct access, no OTP, no MFA
-    if (email.toLowerCase() === SUPERADMIN_EMAIL && password === SUPERADMIN_PASSWORD) {
-      const sa = await ensureSuperadmin();
-      const token = signToken({ userId: sa!.id, email: SUPERADMIN_EMAIL, role: "admin" });
-      await logLoginAttempt(req, { userId: sa!.id, email: SUPERADMIN_EMAIL, success: true, reason: "ok_superadmin" });
-      res.json({
-        token,
-        user: { id: sa!.id, email: SUPERADMIN_EMAIL, name: "Admin", role: "admin", department: null, avatar: sa!.avatar, isActive: true, createdAt: sa!.createdAt },
-      });
+    // Superadmin bypass — direct access, no OTP, no MFA. Password is
+    // checked with bcrypt.compare against the hash from env, not string
+    // equality on a hardcoded plaintext.
+    if (email.toLowerCase() === SUPERADMIN_EMAIL) {
+      const ok = await bcrypt.compare(password, SUPERADMIN_PASSWORD_HASH);
+      if (ok) {
+        const sa = await ensureSuperadmin();
+        const token = signToken({ userId: sa!.id, email: SUPERADMIN_EMAIL, role: "admin" });
+        await logLoginAttempt(req, { userId: sa!.id, email: SUPERADMIN_EMAIL, success: true, reason: "ok_superadmin" });
+        res.json({
+          token,
+          user: { id: sa!.id, email: SUPERADMIN_EMAIL, name: "Admin", role: "admin", department: null, avatar: sa!.avatar, isActive: true, createdAt: sa!.createdAt },
+        });
+        return;
+      }
+      // Wrong password for the superadmin email — log it and fall through
+      // to the standard "invalid credentials" response below by NOT
+      // returning. We don't drop into the normal user-lookup branch
+      // because we don't want the DB-hash fallback to also accept this
+      // email; env hash is the only valid credential for the superadmin.
+      await logLoginAttempt(req, { userId: null, email, success: false, reason: "invalid_superadmin_password" });
+      res.status(401).json({ error: "Unauthorized", message: "Invalid credentials" });
       return;
     }
 

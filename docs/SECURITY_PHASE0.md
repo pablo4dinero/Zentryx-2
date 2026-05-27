@@ -104,6 +104,45 @@ git reset --hard origin/master
 
 > ⚠️ **This invalidates every existing clone.** Since you're the only contributor right now, just delete your local copy and re-clone after the rewrite. Don't push from the old working tree — you'll restore the deleted history.
 
+### 6b. Move the superadmin credentials into env vars
+
+The superadmin email + password used to be hardcoded in `auth.ts`. They're now driven by env vars and the password is stored as a **bcrypt hash** instead of plaintext. Server refuses to boot if either is missing or if `SUPERADMIN_PASSWORD_HASH` doesn't look like a bcrypt hash (i.e. you accidentally pasted the plaintext).
+
+> ⚠️ **The previous plaintext password (`Zetrynx.123@`) is still in your git history.** Treat it as compromised. Pick a NEW password when generating the hash below — the helper script refuses to hash the old one.
+
+**One-time setup:**
+
+```bash
+# Generate a fresh bcrypt hash. The script prompts twice with no echo,
+# rejects passwords shorter than 12 chars, and refuses to hash the
+# legacy compromised password.
+node scripts/hash-password.cjs
+```
+
+The script prints a hash that looks like `$2b$12$abcd…` to stdout. Copy the entire line.
+
+**In Render → Environment, set:**
+
+| Var | Value |
+|-----|-------|
+| `SUPERADMIN_EMAIL` | The superadmin's email (e.g. `paulpelumi@gmail.com`) — lowercase recommended; server lowercases it anyway |
+| `SUPERADMIN_PASSWORD_HASH` | The full bcrypt hash output (starts with `$2a$`, `$2b$`, or `$2y$`) |
+
+Trigger a redeploy. Verify:
+
+1. Server starts cleanly. If you see `[auth] SUPERADMIN_EMAIL is required...` you missed a var. If you see `does not look like a bcrypt hash` you pasted the plaintext.
+2. Log in with the email + NEW password → should succeed via the superadmin bypass (no OTP/MFA).
+3. Log in with the email + OLD password (`Zetrynx.123@`) → 401, `invalid_superadmin_password` row appears in `login_attempts`.
+
+**Rotating the superadmin password later:**
+
+```bash
+node scripts/hash-password.cjs      # generates a fresh hash
+# Update SUPERADMIN_PASSWORD_HASH in Render → redeploy
+# The DB user's password_hash column still holds the OLD hash, but it's
+# unused — the login bypass checks against the env hash, not the DB.
+```
+
 ### 7. Audit & rotate
 
 The 17 chat files were on a private repo, but treat them as **potentially leaked** because:
@@ -127,6 +166,10 @@ After deploying:
 - [ ] Sending a fresh OTP creates a row in `otp_codes`; verifying it deletes the row
 - [ ] Failed verify increments `attempts`; sixth attempt returns `locked`
 - [ ] Server fails to start when `JWT_SECRET` env var is unset
+- [ ] Server fails to start when `SUPERADMIN_EMAIL` or `SUPERADMIN_PASSWORD_HASH` is unset
+- [ ] Server fails to start when `SUPERADMIN_PASSWORD_HASH` doesn't begin with `$2`
+- [ ] Old hardcoded password (`Zetrynx.123@`) is rejected with `invalid_superadmin_password` in `login_attempts`
+- [ ] New password works through the superadmin bypass (single row in `login_attempts` with reason `ok_superadmin`)
 - [ ] Server in production mode (`NODE_ENV=production`) fails to start when `CORS_ORIGINS` is empty
 - [ ] `git log -- artifacts/api-server/uploads/` returns nothing after history purge
 
