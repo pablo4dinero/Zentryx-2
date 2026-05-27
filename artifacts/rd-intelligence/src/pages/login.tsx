@@ -171,7 +171,22 @@ export default function Login() {
         goMode("sms-otp");
       }
     } else if (oauthError) {
-      setError(oauthError === "cancelled" ? "Sign-in was cancelled." : "OAuth sign-in failed. Please try again.");
+      if (oauthError === "cancelled") {
+        setError("Sign-in was cancelled.");
+      } else if (oauthError === "domain_not_allowed") {
+        setError(
+          "Only Freddy Hirsch work email addresses (@freddyhirsch.co.za) are permitted to sign in. " +
+          "Please use your work email or contact your administrator.",
+        );
+      } else if (oauthError === "invalid_domain") {
+        // Legacy alias — same message as above.
+        setError(
+          "Only Freddy Hirsch work email addresses are permitted to sign in. " +
+          "Please use your work email.",
+        );
+      } else {
+        setError("OAuth sign-in failed. Please try again.");
+      }
     }
   }, []);
 

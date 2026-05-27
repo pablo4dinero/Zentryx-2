@@ -494,6 +494,30 @@ function getBaseUrl(req: Request): string {
   return process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
 }
 
+// Defense-in-depth domain restriction for OAuth sign-in.
+// In production, ALLOWED_EMAIL_DOMAINS must be a comma-separated list of
+// permitted email domains (e.g. "freddyhirsch.co.za,zentryx.dev"). Any
+// OAuth callback whose email doesn't match one of these domains is
+// rejected before any user record is touched. In development this is
+// optional (empty list means "any domain") for convenience.
+//
+// Note: this is independent of the Microsoft OAuth `/common/` endpoint
+// — the tenant restriction would be enforced by Microsoft. This check
+// runs after-the-fact on whichever email the IdP returned, so it catches
+// personal Hotmail accounts, non-tenant Google accounts, etc.
+function emailDomainAllowed(email: string): boolean {
+  const raw = process.env.ALLOWED_EMAIL_DOMAINS || "";
+  const allowed = raw.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+  if (allowed.length === 0) {
+    // In production we treat missing config as "block everything" — fail-
+    // loud rather than silently permitting anyone in.
+    if (process.env.NODE_ENV === "production") return false;
+    return true;
+  }
+  const lower = email.toLowerCase();
+  return allowed.some(d => lower.endsWith(`@${d}`));
+}
+
 async function upsertOAuthUser(email: string, name: string, avatar?: string | null) {
   let [user] = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
   if (!user) {
@@ -583,6 +607,15 @@ router.get("/google/callback", async (req, res) => {
     const email = profile.email?.toLowerCase();
     if (!email) throw new Error("Google did not return an email");
 
+    // Defense-in-depth: only @-allowed-domain emails proceed. Bounces any
+    // gmail.com / personal-domain Google account before a Zentryx user
+    // record is created.
+    if (!emailDomainAllowed(email)) {
+      console.warn(`[oauth/google] domain not allowed: ${email}`);
+      res.redirect(`${getBaseUrl(req)}/login?oauth_error=domain_not_allowed`);
+      return;
+    }
+
     const user = await upsertOAuthUser(email, profile.name || email, profile.picture);
     await oauthFinish(req, res, user);
   } catch (err) {
@@ -632,6 +665,15 @@ router.get("/microsoft/callback", async (req, res) => {
     const profile = await profileRes.json() as { displayName?: string; mail?: string; userPrincipalName?: string };
     const email = (profile.mail || profile.userPrincipalName)?.toLowerCase();
     if (!email) throw new Error("Microsoft did not return an email");
+
+    // Defense-in-depth: only @-allowed-domain emails proceed. Bounces
+    // personal Microsoft accounts (Hotmail, Outlook.com) and any other
+    // tenant's users at this gate, never creating a Zentryx user record.
+    if (!emailDomainAllowed(email)) {
+      console.warn(`[oauth/microsoft] domain not allowed: ${email}`);
+      res.redirect(`${base}/login?oauth_error=domain_not_allowed`);
+      return;
+    }
 
     const user = await upsertOAuthUser(email, profile.displayName || email);
     await oauthFinish(req, res, user);
