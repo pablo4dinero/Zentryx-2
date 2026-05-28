@@ -567,7 +567,7 @@ export default function Login() {
 
   // Both SMS and Voice paths verify through the same endpoint — the flag
   // tells the backend which Termii API to consult.
-  const handleFallbackVerify = async (isVoice: boolean) => async (e: React.FormEvent) => {
+  const handleFallbackVerify = (isVoice: boolean) => async (e: React.FormEvent) => {
     e.preventDefault();
     clearError();
     setLoading(true);

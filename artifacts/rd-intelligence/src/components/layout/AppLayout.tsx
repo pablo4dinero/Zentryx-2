@@ -61,8 +61,10 @@ function getBlockedPaths(role: string, jobPos: string): string[] {
   if (privileged) return [...adminBlock];
 
   // ── New consolidated 9-role tiers ─────────────────────────────────
-  // commercial_team: Sales Force (tagged accounts only), BD, read-only PP
-  if (r === "commercial_team") return [...adminBlock, "/projects", "/weekly-activities", "/procurement"];
+  // sales_team (formerly commercial_team): Sales Force (tagged accounts
+  // only), BD, read-only PP. The legacy commercial_team value is kept
+  // as an alias for migration-safety.
+  if (r === "sales_team" || r === "commercial_team") return [...adminBlock, "/projects", "/weekly-activities", "/procurement"];
   // npd_team: Project Portfolio, M&DP, Formulations
   if (r === "npd_team") return [...adminBlock, "/sales-force"];
   // operations_team: Procurement, M&DP, Weekly Activities (no Sales Force, no PP)

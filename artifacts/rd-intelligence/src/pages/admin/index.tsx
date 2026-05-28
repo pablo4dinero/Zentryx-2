@@ -10,6 +10,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import { useGetCurrentUser } from "@/api-client";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
+import { ZENTRYX_ROLES, roleLabel } from "@/lib/roles";
 
 const BASE = import.meta.env.BASE_URL;
 const apiHeaders = () => ({
@@ -228,13 +229,8 @@ function LoginSparkline({ isLight, series }: { isLight: boolean; series: Array<{
 // ─────────────────────────────────────────────────────────────────────────────
 // Users
 // ─────────────────────────────────────────────────────────────────────────────
-const ROLE_OPTIONS = [
-  "admin", "manager", "ceo", "managing_director",
-  "head_of_product_development", "head_of_department",
-  "npd_technologist", "key_account_manager", "senior_key_account_manager",
-  "project_manager", "procurement", "scientist", "analyst",
-  "hr", "quality_control", "graphics_designer", "viewer",
-];
+// Consolidated 9-role list — single source of truth in @/lib/roles.
+const ROLE_OPTIONS = ZENTRYX_ROLES.map(r => r.value);
 
 function UsersTab({ isLight }: { isLight: boolean }) {
   const [users, setUsers] = useState<any[]>([]);
@@ -302,7 +298,7 @@ function UsersTab({ isLight }: { isLight: boolean }) {
           )}
         >
           <option value="all">All Roles</option>
-          {ROLE_OPTIONS.map(r => <option key={r} value={r}>{r.replace(/_/g, " ")}</option>)}
+          {ROLE_OPTIONS.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
         </select>
         <button onClick={load} className={cn("inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border",
           isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5")}>
@@ -350,11 +346,18 @@ function UsersTab({ isLight }: { isLight: boolean }) {
                         onChange={e => patchUser(u.id, { role: e.target.value })}
                         disabled={savingId === u.id}
                         className={cn(
-                          "h-8 px-2 rounded-lg border text-xs cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary/40 capitalize",
+                          "h-8 px-2 rounded-lg border text-xs cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary/40",
                           isLight ? "bg-white border-slate-200 text-slate-700" : "bg-black/20 border-white/10 text-foreground",
                         )}
                       >
-                        {ROLE_OPTIONS.map(r => <option key={r} value={r}>{r.replace(/_/g, " ")}</option>)}
+                        {/* If the user is still on a legacy role value not in
+                            the consolidated list, surface it as an extra option
+                            so the select shows their real role (not a misleading
+                            fallback to the first option). */}
+                        {!ROLE_OPTIONS.includes(u.role) && (
+                          <option value={u.role}>{roleLabel(u.role)} (legacy)</option>
+                        )}
+                        {ROLE_OPTIONS.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
                       </select>
                     </td>
                     <td className="px-4 py-3">

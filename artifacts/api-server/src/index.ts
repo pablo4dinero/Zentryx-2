@@ -388,7 +388,7 @@ async function createTablesIfNotExist() {
 
     // Extend the user_role enum with the 9 consolidated role values.
     // Each ADD VALUE is wrapped so it's safe to re-run.
-    for (const newRole of ["executive", "commercial_team", "npd_team", "operations_team", "qc_team", "support_staff"]) {
+    for (const newRole of ["executive", "commercial_team", "sales_team", "npd_team", "operations_team", "qc_team", "support_staff"]) {
       await db.execute(sql.raw(`
         DO $$ BEGIN
           ALTER TYPE user_role ADD VALUE IF NOT EXISTS '${newRole}';
@@ -403,7 +403,8 @@ async function createTablesIfNotExist() {
     //   admin                           → admin (unchanged)
     //   ceo, managing_director          → executive
     //   manager, head_of_product_development, head_of_department → manager
-    //   key_account_manager, senior_key_account_manager → commercial_team
+    //   key_account_manager, senior_key_account_manager → sales_team
+    //   commercial_team (interim value)  → sales_team (renamed)
     //   npd_technologist, scientist, project_manager → npd_team
     //   procurement                     → operations_team
     //   quality_control                 → qc_team
@@ -413,7 +414,9 @@ async function createTablesIfNotExist() {
     // We DO NOT touch the superadmin row (their role is "admin" anyway).
     await db.execute(sql.raw(`UPDATE users SET role = 'executive' WHERE role IN ('ceo');`));
     await db.execute(sql.raw(`UPDATE users SET role = 'manager' WHERE role IN ('head_of_product_development', 'head_of_department');`));
-    await db.execute(sql.raw(`UPDATE users SET role = 'commercial_team' WHERE role IN ('key_account_manager', 'senior_key_account_manager');`));
+    // "Commercial Team" was renamed to "Sales Team". Migrate the original
+    // KAM roles AND anyone already on the interim commercial_team value.
+    await db.execute(sql.raw(`UPDATE users SET role = 'sales_team' WHERE role IN ('key_account_manager', 'senior_key_account_manager', 'commercial_team');`));
     await db.execute(sql.raw(`UPDATE users SET role = 'npd_team' WHERE role IN ('npd_technologist', 'scientist', 'project_manager');`));
     await db.execute(sql.raw(`UPDATE users SET role = 'operations_team' WHERE role IN ('procurement');`));
     await db.execute(sql.raw(`UPDATE users SET role = 'qc_team' WHERE role IN ('quality_control');`));

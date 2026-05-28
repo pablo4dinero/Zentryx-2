@@ -28,7 +28,8 @@ export const userRoleEnum = pgEnum("user_role", [
   "viewer",
   // New consolidated values (Phase 1 chunk 4 target list)
   "executive",
-  "commercial_team",
+  "commercial_team", // renamed → sales_team; kept in enum for migration-safety
+  "sales_team",
   "npd_team",
   "operations_team",
   "qc_team",

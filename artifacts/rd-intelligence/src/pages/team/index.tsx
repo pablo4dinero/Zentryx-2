@@ -10,26 +10,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
+import { ZENTRYX_ROLES, roleLabel } from "@/lib/roles";
 
 const BASE = import.meta.env.BASE_URL;
 
-const DEFAULT_ROLES = [
-  { value: "admin", label: "Admin" },
-  { value: "manager", label: "Manager" },
-  { value: "ceo", label: "CEO" },
-  { value: "hr", label: "HR" },
-  { value: "head_of_department", label: "Head of Department" },
-  { value: "npd_technologist", label: "NPD Technologist" },
-  { value: "head_of_product_development", label: "Head of Product Development" },
-  { value: "key_account_manager", label: "Key Account Manager" },
-  { value: "senior_key_account_manager", label: "Senior Key Account Manager" },
-  { value: "project_manager", label: "Project Manager" },
-  { value: "quality_control", label: "Quality Control" },
-  { value: "graphics_designer", label: "Graphics Designer" },
-  { value: "scientist", label: "Scientist" },
-  { value: "analyst", label: "Analyst" },
-  { value: "viewer", label: "Viewer" },
-];
+// Consolidated 9-role list — single source of truth in @/lib/roles.
+const DEFAULT_ROLES = ZENTRYX_ROLES;
 
 const CUSTOM_ROLES_KEY = "zentryx_custom_roles";
 
@@ -283,7 +269,7 @@ export default function Team() {
                       </td>
                       <td className="px-6 py-4">
                         <Badge variant={(ROLE_COLORS[user.role] as any) || "outline"} className="capitalize text-xs">
-                          {roles.find(r => r.value === user.role)?.label || user.role.replace(/_/g, ' ')}
+                          {roleLabel(user.role)}
                         </Badge>
                       </td>
                       <td className="px-6 py-4 text-muted-foreground">
