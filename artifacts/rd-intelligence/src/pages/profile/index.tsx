@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useGetCurrentUser } from "@/api-client";
 import { PageLoader } from "@/components/ui/spinner";
 import { useToast } from "@/hooks/use-toast";
-import { Camera, User, Mail, Phone, Globe, Building2, Briefcase, Lock, Save, X, Eye, EyeOff, Shield, KeyRound, CheckCircle } from "lucide-react";
+import { Camera, User, Mail, Phone, Globe, Building2, Briefcase, Lock, Save, X, Eye, EyeOff, Shield, KeyRound, CheckCircle, Smartphone, RefreshCw, Copy, AlertTriangle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
 
@@ -70,6 +70,345 @@ function AvatarUploader({ avatar, name, onChange }: { avatar: string | null; nam
       </div>
       <p className="text-[11px] text-muted-foreground">JPG, PNG — max 2MB</p>
       <input ref={inputRef} type="file" accept="image/*" onChange={handleFile} className="hidden" />
+    </div>
+  );
+}
+
+function MfaSection({ isLight }: { isLight: boolean }) {
+  const { toast } = useToast();
+  type Mode = "idle" | "enrolling-scan" | "enrolling-backup" | "regenerated";
+  const [status, setStatus] = useState<{
+    enrolled: boolean;
+    mandatory: boolean;
+    enrolledAt: string | null;
+    remainingBackupCodes: number;
+  } | null>(null);
+  const [mode, setMode] = useState<Mode>("idle");
+  const [qrCode, setQrCode] = useState("");
+  const [secret, setSecret] = useState("");
+  const [verifyCode, setVerifyCode] = useState("");
+  const [issuedCodes, setIssuedCodes] = useState<string[]>([]);
+  const [busy, setBusy] = useState<"" | "start" | "verify" | "regen">("");
+  const [error, setError] = useState("");
+  const [confirmRegen, setConfirmRegen] = useState(false);
+  const [showSecret, setShowSecret] = useState(false);
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`${BASE}api/mfa/status`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("rd_token") || ""}` },
+      });
+      if (res.ok) setStatus(await res.json());
+    } catch { /* silent */ }
+  }, []);
+  useEffect(() => { fetchStatus(); }, [fetchStatus]);
+
+  const startEnroll = async () => {
+    setError("");
+    setBusy("start");
+    try {
+      const res = await fetch(`${BASE}api/mfa/enroll/start`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("rd_token") || ""}`,
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to start enrollment");
+      setQrCode(data.qrCode);
+      setSecret(data.manualEntrySecret);
+      setVerifyCode("");
+      setMode("enrolling-scan");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const verifyEnroll = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setBusy("verify");
+    try {
+      const res = await fetch(`${BASE}api/mfa/enroll/verify`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("rd_token") || ""}`,
+        },
+        body: JSON.stringify({ code: verifyCode }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Code didn't match");
+      setIssuedCodes(data.backupCodes || []);
+      setMode("enrolling-backup");
+      toast({ title: "Two-factor enabled", description: "Save your backup codes — they will not be shown again." });
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const regenerateCodes = async () => {
+    setError("");
+    setBusy("regen");
+    try {
+      const res = await fetch(`${BASE}api/mfa/enroll/regenerate-backup-codes`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("rd_token") || ""}`,
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to regenerate codes");
+      setIssuedCodes(data.backupCodes || []);
+      setMode("regenerated");
+      setConfirmRegen(false);
+      toast({ title: "New backup codes generated", description: "Old codes are now invalid. Save the new set." });
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const finishAndReset = async () => {
+    setQrCode("");
+    setSecret("");
+    setVerifyCode("");
+    setIssuedCodes([]);
+    setMode("idle");
+    setError("");
+    await fetchStatus();
+  };
+
+  const copyCodes = () => {
+    navigator.clipboard.writeText(issuedCodes.join("\n")).then(() => {
+      toast({ title: "Copied", description: "Backup codes copied to clipboard." });
+    });
+  };
+
+  const codeInputCls = cn(
+    "w-full h-14 rounded-xl border px-4 text-center text-2xl tracking-[0.4em] font-mono focus:outline-none focus:ring-2 focus:ring-primary/40",
+    isLight ? "bg-white border-gray-200 text-gray-900" : "bg-black/20 border-white/10 text-foreground",
+  );
+
+  return (
+    <div className="glass-card rounded-2xl p-6 space-y-5">
+      {/* Header */}
+      <div className={cn("flex items-center gap-2 border-b pb-4", isLight ? "border-gray-200" : "border-white/5")}>
+        <div className="p-2 rounded-lg bg-emerald-500/10">
+          <Smartphone className="w-4 h-4 text-emerald-400" />
+        </div>
+        <div className="flex-1">
+          <p className="font-semibold text-foreground text-sm">Two-Factor Authentication (TOTP)</p>
+          <p className="text-xs text-muted-foreground">
+            A 6-digit code from your authenticator app, in addition to your password.
+          </p>
+        </div>
+        {status?.enrolled && (
+          <span className={cn("inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-full",
+            isLight ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30")}>
+            <CheckCircle className="w-3 h-3" /> Enabled
+          </span>
+        )}
+        {status && !status.enrolled && status.mandatory && (
+          <span className={cn("inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-full",
+            isLight ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-amber-500/15 text-amber-400 border border-amber-500/30")}>
+            <AlertTriangle className="w-3 h-3" /> Required for your role
+          </span>
+        )}
+        {status && !status.enrolled && !status.mandatory && (
+          <span className={cn("inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-full",
+            isLight ? "bg-gray-100 text-gray-600 border border-gray-200" : "bg-white/5 text-muted-foreground border border-white/10")}>
+            Optional — recommended
+          </span>
+        )}
+      </div>
+
+      {/* ── Idle state ──────────────────────────────────────────────── */}
+      {mode === "idle" && status && !status.enrolled && (
+        <div className="space-y-4">
+          <div className={cn("rounded-xl border p-4 text-xs space-y-2", isLight ? "border-gray-200 bg-gray-50 text-gray-700" : "border-white/10 bg-white/5 text-muted-foreground")}>
+            <p className={cn("font-semibold", isLight ? "text-gray-900" : "text-foreground")}>What you'll need:</p>
+            <p>• An authenticator app on your phone — Microsoft Authenticator, Google Authenticator, Authy, 1Password, or Bitwarden all work.</p>
+            <p>• Your phone unlocked, with the app open or ready to install.</p>
+          </div>
+          <button
+            onClick={startEnroll}
+            disabled={busy === "start"}
+            className="flex items-center gap-2 px-5 py-2.5 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 rounded-xl text-sm font-semibold hover:bg-emerald-500/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {busy === "start" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Smartphone className="w-4 h-4" />}
+            {busy === "start" ? "Generating QR…" : "Set up authenticator app"}
+          </button>
+          {error && <p className="text-xs text-red-500">{error}</p>}
+        </div>
+      )}
+
+      {mode === "idle" && status?.enrolled && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className={cn("rounded-xl border p-4", isLight ? "border-gray-200 bg-gray-50" : "border-white/10 bg-white/5")}>
+              <p className="text-xs text-muted-foreground">Enrolled</p>
+              <p className={cn("text-sm font-semibold mt-1", isLight ? "text-gray-900" : "text-foreground")}>
+                {status.enrolledAt ? new Date(status.enrolledAt).toLocaleDateString() : "—"}
+              </p>
+            </div>
+            <div className={cn("rounded-xl border p-4", isLight ? "border-gray-200 bg-gray-50" : "border-white/10 bg-white/5")}>
+              <p className="text-xs text-muted-foreground">Backup codes remaining</p>
+              <p className={cn("text-sm font-semibold mt-1", status.remainingBackupCodes <= 2
+                ? "text-amber-500"
+                : isLight ? "text-gray-900" : "text-foreground")}>
+                {status.remainingBackupCodes} of 10
+                {status.remainingBackupCodes <= 2 && (
+                  <span className="block text-[10px] font-normal mt-0.5 text-amber-500">Regenerate soon</span>
+                )}
+              </p>
+            </div>
+          </div>
+
+          {!confirmRegen ? (
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setConfirmRegen(true)}
+                className={cn("flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border transition-colors",
+                  isLight ? "border-gray-200 text-gray-700 hover:bg-gray-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5")}
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> Regenerate backup codes
+              </button>
+              <button
+                onClick={startEnroll}
+                disabled={busy === "start"}
+                className={cn("flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border transition-colors disabled:opacity-40",
+                  isLight ? "border-gray-200 text-gray-700 hover:bg-gray-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5")}
+              >
+                <Smartphone className="w-3.5 h-3.5" /> Re-enrol new device
+              </button>
+            </div>
+          ) : (
+            <div className={cn("rounded-xl border p-4 space-y-3", isLight ? "border-amber-200 bg-amber-50" : "border-amber-500/30 bg-amber-500/5")}>
+              <p className={cn("text-sm font-semibold flex items-center gap-2", isLight ? "text-amber-800" : "text-amber-300")}>
+                <AlertTriangle className="w-4 h-4" /> Regenerate backup codes?
+              </p>
+              <p className={cn("text-xs", isLight ? "text-amber-700" : "text-amber-300/80")}>
+                Your current 10 backup codes will be invalidated immediately. Make sure you have access to your authenticator app
+                before continuing — if you lose it and the new codes you'll need an admin emergency reset.
+              </p>
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  onClick={() => setConfirmRegen(false)}
+                  className={cn("px-4 py-1.5 rounded-lg text-xs font-medium", isLight ? "text-gray-600 hover:bg-gray-100" : "text-muted-foreground hover:bg-white/5")}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={regenerateCodes}
+                  disabled={busy === "regen"}
+                  className="px-4 py-1.5 rounded-lg bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {busy === "regen" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Yes, regenerate"}
+                </button>
+              </div>
+            </div>
+          )}
+          {error && <p className="text-xs text-red-500">{error}</p>}
+        </div>
+      )}
+
+      {/* ── Enrolling: scan QR + verify ──────────────────────────────── */}
+      {mode === "enrolling-scan" && (
+        <form onSubmit={verifyEnroll} className="space-y-4">
+          <div>
+            <p className={cn("text-sm font-semibold mb-1", isLight ? "text-gray-900" : "text-foreground")}>Scan this QR code</p>
+            <p className={cn("text-xs", isLight ? "text-gray-500" : "text-muted-foreground")}>
+              In your authenticator app, tap "Add account" → "Scan QR code" and point your camera at the image below.
+            </p>
+          </div>
+          <div className="flex justify-center">
+            <img src={qrCode} alt="MFA QR code" className="w-48 h-48 rounded-xl border border-white/10 bg-white p-2" />
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowSecret(s => !s)}
+            className={cn("text-xs", isLight ? "text-gray-500 hover:text-gray-900" : "text-muted-foreground hover:text-foreground")}
+          >
+            {showSecret ? "Hide" : "Can't scan?"} Enter the secret manually
+          </button>
+          {showSecret && (
+            <code className={cn("block p-3 rounded font-mono text-[11px] break-all select-all",
+              isLight ? "bg-gray-100 text-gray-900" : "bg-white/5 text-foreground")}>{secret}</code>
+          )}
+          <div>
+            <label className={cn("text-xs font-medium mb-1 block", isLight ? "text-gray-700" : "text-muted-foreground")}>
+              Enter the 6-digit code from your app to confirm
+            </label>
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              value={verifyCode}
+              onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, ""))}
+              placeholder="123 456"
+              className={codeInputCls}
+            />
+          </div>
+          {error && <p className="text-xs text-red-500">{error}</p>}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => { setMode("idle"); setError(""); }}
+              className={cn("flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border", isLight ? "border-gray-200 text-gray-600 hover:text-gray-900" : "border-white/10 text-muted-foreground hover:text-foreground")}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={busy === "verify" || verifyCode.length !== 6}
+              className="flex-1 px-4 py-2.5 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-sm font-semibold hover:bg-emerald-500/25 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {busy === "verify" ? <Loader2 className="w-4 h-4 animate-spin inline" /> : "Confirm and enable"}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* ── Backup codes display (after enroll or regenerate) ────────── */}
+      {(mode === "enrolling-backup" || mode === "regenerated") && (
+        <div className="space-y-4">
+          <div>
+            <p className={cn("text-sm font-semibold", isLight ? "text-gray-900" : "text-foreground")}>
+              {mode === "regenerated" ? "Your new backup codes" : "Save your backup codes"}
+            </p>
+            <p className={cn("text-xs mt-1", isLight ? "text-gray-500" : "text-muted-foreground")}>
+              Use these if you lose your phone or can't open your authenticator. Each works <strong>once</strong>.
+              Print them, save them in your password manager, or screenshot them <strong>now</strong> — they will not be shown again.
+            </p>
+          </div>
+          <div className={cn("rounded-xl border p-4 grid grid-cols-2 gap-2 font-mono text-sm",
+            isLight ? "border-gray-200 bg-gray-50 text-gray-900" : "border-white/10 bg-white/5 text-foreground")}>
+            {issuedCodes.map((c) => <code key={c} className="select-all">{c}</code>)}
+          </div>
+          <button
+            type="button"
+            onClick={copyCodes}
+            className={cn("w-full flex items-center justify-center gap-2 text-xs py-2 rounded-lg border", isLight ? "border-gray-200 text-gray-700 hover:bg-gray-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}
+          >
+            <Copy className="w-3.5 h-3.5" /> Copy all to clipboard
+          </button>
+          <button
+            onClick={finishAndReset}
+            className="w-full px-4 py-2.5 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-sm font-semibold hover:bg-emerald-500/25"
+          >
+            I've saved them
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -390,6 +729,9 @@ export default function ProfilePage() {
           </button>
         </div>
       </div>
+
+      {/* ── Two-Factor Authentication (TOTP) ───────────────────────────────── */}
+      <MfaSection isLight={isLight} />
     </div>
   );
 }
