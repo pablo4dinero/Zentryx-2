@@ -1,5 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { attachRealtime } from "./lib/realtime";
 import { db } from "@workspace/db";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { sql } from "drizzle-orm";
@@ -481,9 +482,13 @@ async function startServer() {
     throw err;
   }
 
-  app.listen(port, () => {
+  const server = app.listen(port, () => {
     logger.info({ port }, "Server listening");
   });
+
+  // Attach the realtime WebSocket signaling hub (1:1 call ringing + WebRTC
+  // signaling) to the same HTTP server — no separate service or port.
+  attachRealtime(server);
 }
 
 startServer();

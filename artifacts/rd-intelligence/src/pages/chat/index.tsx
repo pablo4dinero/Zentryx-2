@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
+import { useCall } from "@/lib/call";
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -202,6 +203,7 @@ function MessageContextMenu({ msg, isOwn, isPinned, onDelete, onPin }: {
 export default function ChatRoom() {
   const api = useApi();
   const { toast } = useToast();
+  const { startCall } = useCall();
   const { theme } = useTheme();
   const isLight = theme === "light";
   const [rooms, setRooms] = useState<any[]>([]);
@@ -982,6 +984,15 @@ export default function ChatRoom() {
                   dmPartner = users.find((u: any) => u.id !== currentUserId && u.name?.split(" ")[0] === activeRoom.name) ?? null;
                 }
               }
+              // Who to ring for a 1:1 call. For the unlisted-admin DM the
+              // partner isn't in `users`, so fall back to adminContact.
+              const isAdminDm = !!adminDmRoom && activeRoom.id === adminDmRoom.id;
+              const callPeerId: number | null = !activeRoom.isGroup
+                ? (isAdminDm ? (adminContact?.id ?? null) : (dmPartner?.id ?? null))
+                : null;
+              const callPeerName: string = isAdminDm
+                ? (adminContact?.name ?? "Administrator")
+                : (dmPartner?.name ?? activeRoom.name);
               return (
             <div className="px-3 lg:px-6 py-3 border-b border-white/5 flex items-center justify-between shrink-0 gap-2 lg:gap-3">
               <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -1007,6 +1018,24 @@ export default function ChatRoom() {
                     <UserCircle className="w-3.5 h-3.5" />
                     View Profile
                   </button>
+                )}
+                {callPeerId && (
+                  <>
+                    <button
+                      onClick={() => startCall(callPeerId, callPeerName, "audio")}
+                      title={`Voice call ${callPeerName}`}
+                      className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors shrink-0"
+                    >
+                      <Phone className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => startCall(callPeerId, callPeerName, "video")}
+                      title={`Video call ${callPeerName}`}
+                      className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-primary bg-primary/10 hover:bg-primary/20 border border-primary/20 transition-colors shrink-0"
+                    >
+                      <Video className="w-4 h-4" />
+                    </button>
+                  </>
                 )}
               </div>
               <div className="flex items-center gap-2">

@@ -71,6 +71,12 @@ export default defineConfig({
         target: process.env.VITE_API_URL || "http://localhost:3000",
         changeOrigin: true,
       },
+      // WebSocket signaling hub for calls — ws:true upgrades the connection.
+      "/ws": {
+        target: process.env.VITE_API_URL || "http://localhost:3000",
+        changeOrigin: true,
+        ws: true,
+      },
     },
     fs: {
       strict: true,
