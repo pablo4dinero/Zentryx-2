@@ -10,29 +10,22 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
-import { ZENTRYX_ROLES, roleLabel } from "@/lib/roles";
+import { roleLabel, useServerRoles, createCustomRole } from "@/lib/roles";
 
 const BASE = import.meta.env.BASE_URL;
 
-// Consolidated 9-role list — single source of truth in @/lib/roles.
-const DEFAULT_ROLES = ZENTRYX_ROLES;
-
-const CUSTOM_ROLES_KEY = "zentryx_custom_roles";
-
+// Roles come from the shared server-synced source (@/lib/roles): the 9
+// built-ins plus any admin-defined custom roles. Creating a role here
+// makes it with NO module access — module access is configured in the
+// Admin Dashboard (the single place that owns role permissions).
 function useRoles() {
-  const [customRoles, setCustomRoles] = useState<{ value: string; label: string }[]>(() => {
-    try { return JSON.parse(localStorage.getItem(CUSTOM_ROLES_KEY) || "[]"); } catch { return []; }
-  });
-  const allRoles = [...DEFAULT_ROLES, ...customRoles.filter(cr => !DEFAULT_ROLES.find(r => r.value === cr.value))];
-  const addRole = (label: string) => {
-    const value = label.toLowerCase().replace(/\s+/g, "_");
-    const newRole = { value, label };
-    const updated = [...customRoles, newRole];
-    setCustomRoles(updated);
-    localStorage.setItem(CUSTOM_ROLES_KEY, JSON.stringify(updated));
-    return newRole;
+  const { roles, refresh } = useServerRoles();
+  const addRole = async (label: string) => {
+    const created = await createCustomRole(label, []);
+    await refresh();
+    return created;
   };
-  return { roles: allRoles, addRole };
+  return { roles, addRole };
 }
 
 const ROLE_COLORS: Record<string, string> = {
@@ -271,6 +264,11 @@ export default function Team() {
                         <Badge variant={(ROLE_COLORS[user.role] as any) || "outline"} className="capitalize text-xs">
                           {roleLabel(user.role)}
                         </Badge>
+                        {(user as any).jobPosition && (
+                          <div className="flex items-center gap-1.5 mt-1.5 text-xs text-muted-foreground">
+                            <Briefcase className="w-3 h-3 shrink-0" /> {(user as any).jobPosition}
+                          </div>
+                        )}
                       </td>
                       <td className="px-6 py-4 text-muted-foreground">
                         <div className="flex items-center gap-1.5">
@@ -493,16 +491,19 @@ function AddDepartmentModal({ onAdd }: { onAdd: (name: string) => void }) {
   );
 }
 
-function AddRoleModal({ onAdd }: { onAdd: (label: string) => void }) {
+function AddRoleModal({ onAdd }: { onAdd: (label: string) => Promise<unknown> }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const { toast } = useToast();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    onAdd(name.trim());
-    toast({ title: "Role created!", description: `"${name.trim()}" has been added to the roles list.` });
+    await onAdd(name.trim());
+    toast({
+      title: "Role created",
+      description: `"${name.trim()}" was added. Set which modules it can access in the Admin Dashboard.`,
+    });
     setOpen(false);
     setName("");
   };

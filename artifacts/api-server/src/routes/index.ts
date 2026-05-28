@@ -30,6 +30,7 @@ import exportRequestsRouter from "./export_requests";
 import adminRouter from "./admin";
 import adminMessagesRouter from "./admin_messages";
 import mfaRouter from "./mfa";
+import customRolesRouter from "./custom_roles";
 
 const router: IRouter = Router();
 
@@ -64,5 +65,6 @@ router.use("/export-requests", exportRequestsRouter);
 router.use("/admin", adminRouter);
 router.use("/admin-messages", adminMessagesRouter);
 router.use("/mfa", mfaRouter);
+router.use("/custom-roles", customRolesRouter);
 
 export default router;

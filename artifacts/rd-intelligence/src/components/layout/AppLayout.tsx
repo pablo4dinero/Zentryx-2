@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard, FlaskConical, LineChart, Users, Bell, Activity,
@@ -13,6 +13,7 @@ import { useNotificationSound } from "@/hooks/useNotificationSound";
 import { useAuthStore } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
+import { getCustomRoleAllowedPaths, useServerRoles } from "@/lib/roles";
 import { useGetCurrentUser, useListNotifications, useMarkNotificationRead } from "@/api-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
@@ -43,6 +44,14 @@ const ALL_NAV_ITEMS = [
 
 const RESTRICTED_PATHS = ["/sales-force", "/projects", "/weekly-activities", "/business-dev", "/procurement", "/materials-demand-planning"];
 
+// All toggleable module paths (mirrors ZENTRYX_MODULES in lib/roles).
+// Used to compute the blocked list for a custom role from its allow-list.
+const ALL_MODULE_PATHS = [
+  "/", "/news-feed", "/projects", "/analytics", "/oracle", "/weekly-activities",
+  "/business-dev", "/sales-force", "/materials-demand-planning", "/procurement",
+  "/team", "/events", "/activity", "/chat",
+];
+
 function getBlockedPaths(role: string, jobPos: string): string[] {
   const r = (role || "viewer").toLowerCase();
   const jp = (jobPos || "").toLowerCase();
@@ -50,6 +59,16 @@ function getBlockedPaths(role: string, jobPos: string): string[] {
   // /admin is ALWAYS off-limits unless the user holds the literal "admin"
   // role. Even CEO / managing director / head_* roles do not get in.
   const adminBlock = r === "admin" ? [] : ["/admin"];
+
+  // ── Custom roles (admin-defined, server-synced) ───────────────────
+  // If this role is a custom one, block every module NOT in its
+  // explicit allow-list. /admin always blocked, /profile always allowed
+  // (ALWAYS_ALLOWED_PATHS, never in ALL_MODULE_PATHS so never blocked).
+  const customAllowed = getCustomRoleAllowedPaths(r);
+  if (customAllowed) {
+    const blocked = ALL_MODULE_PATHS.filter(p => !customAllowed.includes(p));
+    return [...adminBlock, ...blocked];
+  }
 
   // Privileged tiers — see everything (minus /admin if not admin).
   // Post-Phase-1: admin / executive / manager. Legacy values
@@ -702,7 +721,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     setProcessingId(null);
   };
 
-  const blockedPaths = getBlockedPaths(user?.role || "viewer", (user as any)?.jobPosition || "");
+  // Load server-synced custom roles into the cache so getBlockedPaths can
+  // resolve a custom role's module allow-list. `customRolesVersion` bumps
+  // when the fetch completes, recomputing blockedPaths below.
+  const { version: customRolesVersion } = useServerRoles();
+  const blockedPaths = useMemo(
+    () => getBlockedPaths(user?.role || "viewer", (user as any)?.jobPosition || ""),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [user?.role, (user as any)?.jobPosition, customRolesVersion],
+  );
   const isAdminUser = (user?.role || "").toLowerCase() === "admin";
   const navItems = ALL_NAV_ITEMS.filter(item => {
     if ((item as any).adminOnly && !isAdminUser) return false;
@@ -712,14 +739,19 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   // Redirect away if the user landed on a module their role isn't allowed
   // to view (typing the URL directly, deep-link from a notification, etc).
   // We wait for `user` to load so we don't redirect on the initial render
-  // when the role is still defaulting to "viewer".
+  // when the role is still defaulting to "viewer". The redirect target is
+  // the user's FIRST visible nav item (falling back to /profile) so a
+  // custom role without Dashboard access doesn't bounce into a loop.
   const [, navigateAway] = useLocation();
   useEffect(() => {
     if (!user) return;
     const blockedExact = blockedPaths.includes(location);
     const blockedPrefix = blockedPaths.some(p => location.startsWith(p + "/"));
-    if (blockedExact || blockedPrefix) navigateAway("/");
-  }, [user, location, blockedPaths, navigateAway]);
+    if (blockedExact || blockedPrefix) {
+      const safe = navItems.find(i => !blockedPaths.includes(i.href))?.href || "/profile";
+      navigateAway(safe);
+    }
+  }, [user, location, blockedPaths, navItems, navigateAway]);
 
   const isCollapsed = !sidebarLocked && sidebarCollapsed;
 

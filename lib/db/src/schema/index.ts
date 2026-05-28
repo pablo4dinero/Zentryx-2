@@ -20,4 +20,5 @@ export * from "./option_lists";
 export * from "./export_requests";
 export * from "./login_attempts";
 export * from "./admin_messages";
+export * from "./custom_roles";
 export * from "./otp_codes";

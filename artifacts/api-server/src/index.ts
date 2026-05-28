@@ -265,6 +265,18 @@ async function createTablesIfNotExist() {
         ON admin_message_recipients (message_id, user_id);
     `));
 
+    // Admin-defined custom roles with an explicit module allow-list.
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS custom_roles (
+        id SERIAL PRIMARY KEY,
+        value TEXT NOT NULL UNIQUE,
+        label TEXT NOT NULL,
+        allowed_paths JSONB NOT NULL DEFAULT '[]'::jsonb,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `));
+
     // One-time passcodes — persistent so they survive restarts and work
     // across multiple server instances. Replaces the previous in-memory
     // Map that lost state on every deploy.

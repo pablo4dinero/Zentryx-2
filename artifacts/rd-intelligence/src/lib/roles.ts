@@ -1,12 +1,19 @@
-// Single source of truth for Zentryx's consolidated system roles.
-// Phase 1 reduced 16 legacy roles to these 9. Any UI that shows a role
-// dropdown or label MUST import from here so the lists never drift apart
-// again (the drift caused the "everyone shows as Admin" bug where the
-// Admin Dashboard's stale dropdown couldn't display the new role values).
+import { useEffect, useState } from "react";
+
+// Single source of truth for Zentryx's roles + module list.
+// Built-in roles are fixed (drive hardcoded permissions). Custom roles
+// are admin-defined, server-synced, and carry an explicit module
+// allow-list so no code change is needed to grant access.
+
+const BASE = import.meta.env.BASE_URL;
 
 export interface RoleDef {
   value: string;
   label: string;
+}
+
+export interface CustomRole extends RoleDef {
+  allowedPaths: string[];
 }
 
 export const ZENTRYX_ROLES: RoleDef[] = [
@@ -21,9 +28,31 @@ export const ZENTRYX_ROLES: RoleDef[] = [
   { value: "viewer", label: "Viewer" },
 ];
 
-// Legacy → display-label map so old role values still render with a
-// friendly name during/after migration (a user briefly on a legacy
-// value won't show a raw underscore string).
+// The modules a custom role can be granted. /admin is intentionally
+// excluded — the Admin Dashboard is reserved for the built-in admin role.
+// /profile is intentionally excluded too — every user always keeps access
+// to their own profile (can't be locked out of their MFA settings).
+export const ZENTRYX_MODULES: { path: string; label: string }[] = [
+  { path: "/", label: "Dashboard" },
+  { path: "/news-feed", label: "News Feed" },
+  { path: "/projects", label: "Project Portfolio" },
+  { path: "/analytics", label: "Analytics" },
+  { path: "/oracle", label: "Oracle" },
+  { path: "/weekly-activities", label: "Weekly Activities" },
+  { path: "/business-dev", label: "Business Development" },
+  { path: "/sales-force", label: "Sales Force" },
+  { path: "/materials-demand-planning", label: "Materials & Demand Planning" },
+  { path: "/procurement", label: "Procurement" },
+  { path: "/team", label: "Team Directory" },
+  { path: "/events", label: "Events" },
+  { path: "/activity", label: "Activity Feed" },
+  { path: "/chat", label: "Chat Room" },
+];
+
+// Module paths that every authenticated user always keeps, regardless of
+// role — so a custom role with zero modules still isn't fully locked out.
+export const ALWAYS_ALLOWED_PATHS = ["/profile"];
+
 const LEGACY_LABELS: Record<string, string> = {
   ceo: "Executive",
   managing_director: "Executive",
@@ -32,7 +61,7 @@ const LEGACY_LABELS: Record<string, string> = {
   key_account_manager: "Sales Team",
   senior_key_account_manager: "Sales Team",
   customer_service_lead: "Sales Team",
-  commercial_team: "Sales Team", // renamed → sales_team
+  commercial_team: "Sales Team",
   npd_technologist: "NPD Team",
   scientist: "NPD Team",
   project_manager: "NPD Team",
@@ -44,51 +73,93 @@ const LEGACY_LABELS: Record<string, string> = {
   analyst: "Viewer",
 };
 
-// ── Custom roles ──────────────────────────────────────────────────────
-// Admins can add their own roles beyond the 9 built-ins. Custom roles are
-// stored in localStorage (shared key with the Team Directory so both the
-// Admin Dashboard and Team Directory show the same list). A custom role
-// has no special permissions — it falls through to the safe viewer-level
-// baseline in getBlockedPaths until a developer maps it explicitly.
-const CUSTOM_ROLES_KEY = "zentryx_custom_roles";
+// ── Server-synced custom roles ─────────────────────────────────────────
+// A module-level cache so synchronous helpers (roleLabel, getBlockedPaths)
+// can read custom roles without prop-drilling. The useServerRoles() hook
+// keeps it fresh.
+let _customRoles: CustomRole[] = [];
 
-export function getCustomRoles(): RoleDef[] {
+function authHeaders(): HeadersInit {
+  return { Authorization: `Bearer ${localStorage.getItem("rd_token") || ""}` };
+}
+
+export async function refreshCustomRoles(): Promise<CustomRole[]> {
   try {
-    const raw = JSON.parse(localStorage.getItem(CUSTOM_ROLES_KEY) || "[]");
-    if (!Array.isArray(raw)) return [];
-    return raw.filter((r: any) => r && typeof r.value === "string" && typeof r.label === "string");
+    const res = await fetch(`${BASE}api/custom-roles`, { headers: authHeaders() });
+    if (res.ok) {
+      const rows = await res.json();
+      if (Array.isArray(rows)) {
+        _customRoles = rows.map((r: any) => ({
+          value: r.value,
+          label: r.label,
+          allowedPaths: Array.isArray(r.allowedPaths) ? r.allowedPaths : [],
+        }));
+      }
+    }
+  } catch { /* keep prior cache */ }
+  return _customRoles;
+}
+
+export function getCachedCustomRoles(): CustomRole[] {
+  return _customRoles;
+}
+
+/** Allowed module paths for a custom role, or null if not a custom role. */
+export function getCustomRoleAllowedPaths(roleValue: string | null | undefined): string[] | null {
+  if (!roleValue) return null;
+  const found = _customRoles.find(r => r.value === roleValue);
+  return found ? found.allowedPaths : null;
+}
+
+export async function createCustomRole(label: string, allowedPaths: string[]): Promise<CustomRole | null> {
+  try {
+    const res = await fetch(`${BASE}api/custom-roles`, {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ label, allowedPaths }),
+    });
+    if (!res.ok) return null;
+    const row = await res.json();
+    await refreshCustomRoles();
+    return { value: row.value, label: row.label, allowedPaths: row.allowedPaths || [] };
   } catch {
-    return [];
+    return null;
   }
 }
 
-/** Add a custom role from a free-text label. Returns the new role. */
-export function addCustomRole(label: string): RoleDef {
-  const trimmed = label.trim();
-  const value = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-  const next = { value, label: trimmed };
-  const existing = getCustomRoles();
-  // Don't duplicate a value that's already built-in or custom.
-  if (![...ZENTRYX_ROLES, ...existing].some(r => r.value === value)) {
-    localStorage.setItem(CUSTOM_ROLES_KEY, JSON.stringify([...existing, next]));
-  }
-  return next;
-}
-
-/** The full role list: 9 built-ins + any custom roles the admin added. */
+/** Built-ins + server custom roles. */
 export function getAllRoles(): RoleDef[] {
-  const custom = getCustomRoles().filter(c => !ZENTRYX_ROLES.some(r => r.value === c.value));
-  return [...ZENTRYX_ROLES, ...custom];
+  const custom = _customRoles.filter(c => !ZENTRYX_ROLES.some(r => r.value === c.value));
+  return [...ZENTRYX_ROLES, ...custom.map(c => ({ value: c.value, label: c.label }))];
 }
 
-/** Human-friendly label for any role value, new / legacy / custom. */
+/** Human-friendly label for any role value — built-in, legacy, or custom. */
 export function roleLabel(value: string | null | undefined): string {
   if (!value) return "—";
   const exact = ZENTRYX_ROLES.find(r => r.value === value);
   if (exact) return exact.label;
-  const custom = getCustomRoles().find(r => r.value === value);
+  const custom = _customRoles.find(r => r.value === value);
   if (custom) return custom.label;
   if (LEGACY_LABELS[value]) return LEGACY_LABELS[value];
-  // Last-resort: prettify the raw value.
   return value.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+
+/**
+ * Hook that loads the server custom roles into the cache and exposes a
+ * `version` that bumps on refresh so consumers re-render. Returns the
+ * combined role list for dropdowns.
+ */
+export function useServerRoles() {
+  const [version, setVersion] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const refresh = async () => {
+    await refreshCustomRoles();
+    setVersion(v => v + 1);
+  };
+  useEffect(() => {
+    let active = true;
+    refreshCustomRoles().finally(() => { if (active) { setLoading(false); setVersion(v => v + 1); } });
+    return () => { active = false; };
+  }, []);
+  return { roles: getAllRoles(), customRoles: getCachedCustomRoles(), version, loading, refresh };
 }
