@@ -266,6 +266,28 @@ export default function ChatRoom() {
     setIsAtBottom(true);
   };
 
+  // Always land on the newest message when a room is opened/switched. A
+  // double rAF lets the freshly-rendered rows lay out before we jump, so the
+  // view reliably starts at the bottom instead of needing a manual scroll.
+  useEffect(() => {
+    if (!activeRoom) return;
+    const id = activeRoom.id;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (activeRoom?.id === id) {
+        messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+        setIsAtBottom(true);
+      }
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRoom?.id]);
+
+  // Keep pinned to the bottom as new messages arrive, but only if the user
+  // is already near the bottom (don't yank them up while reading history).
+  useEffect(() => {
+    if (isAtBottom) messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages.length]);
+
   const { isPinned: isRoomPinned, toggle: toggleRoomPin } = usePinnedRooms();
   const { isPinned: isMsgPinned, toggle: toggleMsgPin } = usePinnedMessages(activeRoom?.id || 0);
   const [profileUser, setProfileUser] = useState<any | null>(null);

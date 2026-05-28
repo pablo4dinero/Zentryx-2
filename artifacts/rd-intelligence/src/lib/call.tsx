@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
 import { useAuthStore } from "@/lib/auth";
-import { useGetCurrentUser } from "@/api-client";
 import { useToast } from "@/hooks/use-toast";
 import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff, PhoneIncoming } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -42,7 +41,6 @@ export const useCall = () => {
 
 export function CallProvider({ children }: { children: React.ReactNode }) {
   const { token } = useAuthStore();
-  const { data: me } = useGetCurrentUser();
   const { toast } = useToast();
 
   const [status, setStatus] = useState<CallStatus>("idle");
@@ -61,11 +59,46 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const ringTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const incomingOfferRef = useRef<{ callId: string; from: number; fromName: string; media: "audio" | "video" } | null>(null);
+  const ringCtxRef = useRef<AudioContext | null>(null);
+  const ringTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const send = useCallback((obj: Record<string, unknown>) => {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
   }, []);
+
+  // ── Ringtone (Web Audio, no asset) ───────────────────────────────────────
+  const stopRing = useCallback(() => {
+    if (ringTimerRef.current) { clearInterval(ringTimerRef.current); ringTimerRef.current = null; }
+    if (ringCtxRef.current) { try { ringCtxRef.current.close(); } catch { /* noop */ } ringCtxRef.current = null; }
+  }, []);
+
+  const startRing = useCallback((mode: "incoming" | "outgoing") => {
+    stopRing();
+    try {
+      const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!Ctx) return;
+      const ctx: AudioContext = new Ctx();
+      ringCtxRef.current = ctx;
+      const beep = () => {
+        if (!ringCtxRef.current) return;
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = "sine";
+        o.frequency.value = mode === "incoming" ? 540 : 440;
+        const t = ctx.currentTime;
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.18, t + 0.05);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+        o.start(t);
+        o.stop(t + 0.5);
+      };
+      beep();
+      // Incoming rings more insistently than the caller's ringback.
+      ringTimerRef.current = setInterval(beep, mode === "incoming" ? 1600 : 3200);
+    } catch { /* audio not available — visual ring still shows */ }
+  }, [stopRing]);
 
   const stopLocalMedia = useCallback(() => {
     localStreamRef.current?.getTracks().forEach(t => t.stop());
@@ -75,6 +108,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   const teardown = useCallback(() => {
     if (ringTimeoutRef.current) { clearTimeout(ringTimeoutRef.current); ringTimeoutRef.current = null; }
+    stopRing();
     try { pcRef.current?.close(); } catch { /* noop */ }
     pcRef.current = null;
     stopLocalMedia();
@@ -87,7 +121,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     setPeerName(null);
     setMuted(false);
     setWithVideo(false);
-  }, [stopLocalMedia]);
+  }, [stopLocalMedia, stopRing]);
 
   // Build a peer connection wired to send ICE + surface the remote stream.
   const makePeer = useCallback((peerId: number) => {
@@ -120,6 +154,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // ── Caller ─────────────────────────────────────────────────────────────
   const startCall = useCallback(async (toUserId: number, toName: string, callMedia: "audio" | "video") => {
     if (status !== "idle") return;
+    // Don't show a fake "ringing" screen if we aren't actually connected to
+    // the signaling server — the invite would silently go nowhere.
+    if (wsRef.current?.readyState !== WebSocket.OPEN) {
+      toast({ title: "Can't start call", description: "Reconnecting to the call service — try again in a moment." });
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: callMedia === "video" });
       localStreamRef.current = stream;
@@ -289,9 +329,17 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const handlerRef = useRef(handleSignal);
   useEffect(() => { handlerRef.current = handleSignal; }, [handleSignal]);
 
+  // Ring audibly while a call is pending (loud on the callee, softer ringback
+  // on the caller); silence it the moment the call connects or ends.
+  useEffect(() => {
+    if (status === "incoming") startRing("incoming");
+    else if (status === "outgoing") startRing("outgoing");
+    else stopRing();
+  }, [status, startRing, stopRing]);
+
   // ── WebSocket lifecycle ──────────────────────────────────────────────────
   useEffect(() => {
-    if (!token || !me) return;
+    if (!token) return;
     let closedByUs = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -318,7 +366,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       try { wsRef.current?.close(); } catch { /* noop */ }
       wsRef.current = null;
     };
-  }, [token, me]);
+  }, [token]);
 
   const value: CallContextValue = {
     status, peerName, media, withVideo, muted, localStream, remoteStream,
