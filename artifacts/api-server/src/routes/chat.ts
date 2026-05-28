@@ -440,6 +440,58 @@ router.get("/uploads/:filename", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+// ── Reachable-but-unlisted superadmin contact ────────────────────────
+// The superadmin is intentionally kept OUT of the people directory
+// (GET /users excludes them). These two routes are the controlled way a
+// regular user can still reach them WITHOUT exposing them in the list:
+//   • admin-contact returns only the minimal identity needed to render a
+//     single "Administrator" entry.
+//   • admin-dm creates-or-returns the 1:1 room between the caller and the
+//     superadmin, so messages deliver in both directions. Group creation
+//     still can't pull the superadmin in (the strips in POST/PATCH /rooms
+//     are untouched).
+router.get("/admin-contact", requireAuth, async (_req: AuthRequest, res) => {
+  try {
+    const [sa] = await db.select({ id: usersTable.id, name: usersTable.name, avatar: usersTable.avatar })
+      .from(usersTable).where(eq(usersTable.email, SUPERADMIN_EMAIL)).limit(1);
+    if (!sa) { res.json(null); return; }
+    res.json({ id: sa.id, name: sa.name, avatar: sa.avatar });
+  } catch { res.status(500).json({ error: "InternalServerError" }); }
+});
+
+router.post("/admin-dm", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.userId;
+    const [sa] = await db.select({ id: usersTable.id, name: usersTable.name })
+      .from(usersTable).where(eq(usersTable.email, SUPERADMIN_EMAIL)).limit(1);
+    if (!sa) { res.status(404).json({ error: "NoSuperadmin" }); return; }
+    const saId = sa.id;
+    if (userId === saId) { res.status(400).json({ error: "BadRequest", message: "You are the administrator." }); return; }
+
+    // Return the existing 1:1 room if one already exists (created by either
+    // side), so we never spawn duplicate admin threads.
+    const myRooms = await db.select({ roomId: chatRoomMembersTable.roomId })
+      .from(chatRoomMembersTable).where(eq(chatRoomMembersTable.userId, userId));
+    const saRooms = await db.select({ roomId: chatRoomMembersTable.roomId })
+      .from(chatRoomMembersTable).where(eq(chatRoomMembersTable.userId, saId));
+    const saRoomIds = new Set(saRooms.map(r => r.roomId));
+    const sharedIds = myRooms.map(r => r.roomId).filter(id => saRoomIds.has(id));
+    if (sharedIds.length > 0) {
+      const [existing] = await db.select().from(chatRoomsTable)
+        .where(and(inArray(chatRoomsTable.id, sharedIds), eq(chatRoomsTable.isGroup, false)))
+        .limit(1);
+      if (existing) { res.status(200).json(existing); return; }
+    }
+
+    const [room] = await db.insert(chatRoomsTable).values({
+      name: sa.name, isGroup: false, createdById: userId,
+    }).returning();
+    await db.insert(chatRoomMembersTable).values({ roomId: room.id, userId }).catch(() => {});
+    await db.insert(chatRoomMembersTable).values({ roomId: room.id, userId: saId }).catch(() => {});
+    res.status(201).json(room);
+  } catch (err) { console.error(err); res.status(500).json({ error: "InternalServerError" }); }
+});
+
 // Get all users for private chat (superadmin always excluded). Includes the
 // profile fields the chat View-Profile dialog needs (department, role,
 // phone, avatar) so the client doesn't have to make a second round-trip.

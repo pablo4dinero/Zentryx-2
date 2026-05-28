@@ -4,7 +4,7 @@ import {
   MoreVertical, StopCircle, Trash2, Pin, PinOff, LogOut, X,
   MessageSquare, AtSign, ChevronRight, ArrowLeft, FileText, Download, ZoomIn, Paperclip, ArrowDown,
   Check, CheckCheck, Clock, Search, Pencil, UserPlus, UserMinus,
-  UserCircle, Phone, Briefcase, Building2, Mail
+  UserCircle, Phone, Briefcase, Building2, Mail, ShieldCheck
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -206,6 +206,9 @@ export default function ChatRoom() {
   const isLight = theme === "light";
   const [rooms, setRooms] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  // The superadmin is unlisted (never in /chat/users) but still reachable
+  // via a dedicated "Administrator" entry. This holds their minimal identity.
+  const [adminContact, setAdminContact] = useState<{ id: number; name: string; avatar: string | null } | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
   const [activeRoom, setActiveRoom] = useState<any>(null);
 
@@ -288,6 +291,7 @@ export default function ChatRoom() {
 
   useEffect(() => {
     localStorage.removeItem("rd_chat_unread");
+    api.get("/chat/admin-contact").then((c: any) => { if (c && typeof c.id === "number") setAdminContact(c); }).catch(() => {});
     Promise.all([api.get("/chat/rooms"), api.get("/chat/users")]).then(([r, u]) => {
       const list = Array.isArray(r) ? r : [];
       setRooms(list);
@@ -489,6 +493,14 @@ export default function ChatRoom() {
     selectRoom(room);
   };
 
+  // Open (or create) the 1:1 conversation with the unlisted superadmin.
+  const openAdminDm = async () => {
+    const room = await api.post("/chat/admin-dm", {});
+    if (!room || !room.id) return;
+    setRooms(prev => { const exists = prev.find((r: any) => r.id === room.id); return exists ? prev : [...prev, room]; });
+    selectRoom(room);
+  };
+
   const insertMention = (user: any) => {
     const before = newMsg.slice(0, mentionStart);
     const after = newMsg.slice(mentionStart + 1 + (mentionQuery?.length || 0));
@@ -539,6 +551,19 @@ export default function ChatRoom() {
 
   const channels = sortRooms(rooms.filter((r: any) => r.isGroup));
   const dmRooms = rooms.filter((r: any) => !r.isGroup);
+
+  // The superadmin is unlisted, so their DM (whether started by us or by
+  // them) never matches a row in `peopleList`. Surface it through a single
+  // always-present "Administrator" entry instead, matched by their id.
+  // Gated on showAdminContact so it never mis-matches in the superadmin's
+  // own session (where adminContact is themselves).
+  const showAdminContact = !!adminContact && adminContact.id !== currentUserId;
+  const adminDmRoom = showAdminContact
+    ? dmRooms.find((r: any) => Array.isArray(r.memberUserIds)
+        && r.memberUserIds.includes(adminContact!.id)
+        && r.memberUserIds.includes(currentUserId))
+    : null;
+  const adminMeta = adminDmRoom ? roomMeta[adminDmRoom.id] : null;
 
   // Build people list: all users with DM room info, sorted by chosen mode
   const peopleList = users.filter((u: any) => u.id !== currentUserId).map((u: any) => {
@@ -696,6 +721,56 @@ export default function ChatRoom() {
                   <RoomContextMenu room={room} isPinned={isRoomPinned(room.id)} onPin={() => toggleRoomPin(room.id)} onDelete={() => deleteRoom(room)} onLeave={() => deleteRoom(room)} onEdit={() => setEditingRoom(room)} isCreator={room.createdById === currentUserId} />
                 </div>
               ))}
+            </>
+          )}
+
+          {/* Administrator — unlisted superadmin, always reachable */}
+          {showAdminContact && (
+            <>
+              <div className="px-3 mb-1 mt-3">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Support</p>
+              </div>
+              <button
+                onClick={openAdminDm}
+                style={adminDmRoom && activeRoom?.id === adminDmRoom.id && isLight ? { color: "#ffffff" } : undefined}
+                className={cn(
+                  "relative w-[calc(100%-8px)] mx-1 flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-sm text-left transition-all",
+                  adminDmRoom && activeRoom?.id === adminDmRoom.id
+                    ? isLight
+                      ? "bg-gradient-to-r from-indigo-500 to-violet-600 shadow-md shadow-indigo-500/25"
+                      : "bg-primary/15 text-primary ring-1 ring-primary/30"
+                    : isLight
+                      ? "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                      : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
+                )}
+              >
+                <div className="relative shrink-0">
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center bg-gradient-to-tr from-amber-500 to-orange-600 text-white shadow-md">
+                    <ShieldCheck className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1">
+                    <span className="truncate text-sm font-medium">Administrator</span>
+                    {adminMeta?.hasUnread && (
+                      <span className={cn(
+                        "w-1.5 h-1.5 rounded-full shrink-0",
+                        adminDmRoom && activeRoom?.id === adminDmRoom.id && isLight ? "bg-white" : "bg-primary",
+                      )} />
+                    )}
+                  </div>
+                  <p className={cn(
+                    "text-[10px] truncate",
+                    adminDmRoom && activeRoom?.id === adminDmRoom.id
+                      ? isLight ? "text-white/85" : "text-primary/70"
+                      : "text-muted-foreground",
+                  )}>
+                    {adminMeta?.lastMessagePreview
+                      ? (adminMeta.lastMessageType === "image" ? "📷 Image" : adminMeta.lastMessageType === "voice_note" ? "🎤 Voice note" : adminMeta.lastMessagePreview)
+                      : "Message the administrator"}
+                  </p>
+                </div>
+              </button>
             </>
           )}
 
@@ -919,7 +994,9 @@ export default function ChatRoom() {
                   <ArrowLeft className="w-6 h-6" />
                 </button>
                 {activeRoom.isGroup ? <Hash className="w-5 h-5 text-primary shrink-0" /> : <Lock className="w-5 h-5 text-primary shrink-0" />}
-                <h3 className="font-semibold text-foreground truncate">{activeRoom.name}</h3>
+                <h3 className="font-semibold text-foreground truncate">
+                  {adminDmRoom && activeRoom.id === adminDmRoom.id ? adminContact!.name : activeRoom.name}
+                </h3>
                 {isRoomPinned(activeRoom.id) && <span className="flex items-center gap-1 text-[10px] text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded-full shrink-0"><Pin className="w-2.5 h-2.5" />Pinned</span>}
                 {dmPartner && (
                   <button
