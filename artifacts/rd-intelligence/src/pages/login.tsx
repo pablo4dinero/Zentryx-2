@@ -11,7 +11,7 @@ import { useTheme } from "@/lib/theme";
 
 const BASE = import.meta.env.BASE_URL;
 
-type Mode = "login" | "signup" | "signup-otp" | "forgot" | "forgot-otp" | "reset" | "sms-otp" | "add-phone" | "request-pending" | "totp-challenge" | "totp-enroll" | "totp-backup-code";
+type Mode = "login" | "signup" | "signup-otp" | "forgot" | "forgot-otp" | "reset" | "sms-otp" | "add-phone" | "request-pending" | "totp-challenge" | "totp-enroll" | "totp-backup-code" | "totp-fallback-sms" | "totp-fallback-voice" | "totp-fallback-admin";
 
 async function apiFetch(path: string, body: object) {
   const r = await fetch(`${BASE}${path}`, {
@@ -101,6 +101,15 @@ export default function Login() {
   const [enrollStep, setEnrollStep] = useState<"scan" | "backup">("scan");
   const [issuedBackupCodes, setIssuedBackupCodes] = useState<string[]>([]);
   const [backupCodeInput, setBackupCodeInput] = useState("");
+
+  // ── TOTP fallback paths ───────────────────────────────────────────
+  const [fallbackPhone, setFallbackPhone] = useState("");
+  const [fallbackCode, setFallbackCode] = useState("");
+  const [fallbackDevCode, setFallbackDevCode] = useState("");
+  const [adminRequestReason, setAdminRequestReason] = useState("");
+  const [adminRequestSubmitted, setAdminRequestSubmitted] = useState(false);
+  const [adminOneTimeToken, setAdminOneTimeToken] = useState("");
+  const [adminOneTimeEmail, setAdminOneTimeEmail] = useState("");
 
   const clearError = () => setError("");
   const goMode = (m: Mode) => { setMode(m); setError(""); };
@@ -491,6 +500,116 @@ export default function Login() {
       setLocation("/");
     } catch (err: any) {
       setError(err.message || "Invalid backup code");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── TOTP fallback: send Termii SMS ───────────────────────────────────────
+  const handleFallbackSms = async () => {
+    clearError();
+    setLoading(true);
+    try {
+      const data = await apiFetch("api/mfa/fallback/sms", { mfaToken });
+      setFallbackPhone(data.phone);
+      setFallbackDevCode(data.devMode && data.code ? data.code : "");
+      setFallbackCode("");
+      if (data.devMode && data.code) {
+        toast({ title: "One-time SMS code generated", description: "Your code is shown below." });
+      } else if (!data.smsFailed) {
+        toast({ title: "Code sent", description: `Sent to ${data.phone}` });
+      }
+      goMode("totp-fallback-sms");
+    } catch (err: any) {
+      setError(err.message || "Could not send SMS code.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── TOTP fallback: Termii voice call ─────────────────────────────────────
+  const handleFallbackVoice = async () => {
+    clearError();
+    setLoading(true);
+    try {
+      const data = await apiFetch("api/mfa/fallback/voice", { mfaToken });
+      setFallbackPhone(data.phone);
+      setFallbackCode("");
+      if (!data.failed) {
+        toast({ title: "Calling you now", description: `An automated voice call is being placed to ${data.phone}.` });
+      }
+      goMode("totp-fallback-voice");
+    } catch (err: any) {
+      setError(err.message || "Could not place voice call.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Both SMS and Voice paths verify through the same endpoint — the flag
+  // tells the backend which Termii API to consult.
+  const handleFallbackVerify = async (isVoice: boolean) => async (e: React.FormEvent) => {
+    e.preventDefault();
+    clearError();
+    setLoading(true);
+    try {
+      const data = await apiFetch("api/mfa/fallback/verify", {
+        mfaToken,
+        code: fallbackCode,
+        isVoice,
+      });
+      setToken(data.token);
+      toast({ title: "Signed in", description: `Welcome, ${data.user?.name ?? ""}` });
+      setLocation("/");
+    } catch (err: any) {
+      setError(err.message || "Invalid code.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── TOTP fallback: request admin emergency approval ──────────────────────
+  const handleFallbackAdminRequest = async () => {
+    clearError();
+    setLoading(true);
+    try {
+      await apiFetch("api/mfa/fallback/admin-request", {
+        mfaToken,
+        reason: adminRequestReason || "Unable to access authenticator",
+      });
+      setAdminRequestSubmitted(true);
+      goMode("totp-fallback-admin");
+    } catch (err: any) {
+      setError(err.message || "Could not submit request.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // After admin approves out-of-band, the user types the one-time token here.
+  const handleEmergencyLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    clearError();
+    setLoading(true);
+    try {
+      const res = await fetch(`${BASE}api/mfa/emergency-login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: adminOneTimeEmail || email,
+          token: adminOneTimeToken,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Token invalid or expired");
+      setToken(data.token);
+      toast({
+        title: "Emergency login successful",
+        description: "Your MFA was reset — please re-enroll an authenticator app from Settings → Security.",
+      });
+      setLocation("/");
+    } catch (err: any) {
+      setError(err.message || "Invalid token.");
     } finally {
       setLoading(false);
     }
@@ -1060,30 +1179,29 @@ export default function Login() {
                       >
                         🔑 Enter a backup code
                       </button>
-                      {/* SMS / Voice / Admin emergency wired in Chunk 3 */}
                       <button
                         type="button"
-                        disabled
-                        title="Coming in Chunk 3"
-                        className={cn("w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm cursor-not-allowed opacity-50", isLight ? "bg-white border border-gray-200 text-gray-500" : "bg-white/5 border border-white/10 text-muted-foreground")}
+                        onClick={handleFallbackSms}
+                        disabled={loading}
+                        className={cn("w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors", isLight ? "bg-white border border-amber-200 text-gray-700 hover:bg-amber-50" : "bg-white/5 border border-amber-500/30 text-foreground hover:bg-white/10")}
                       >
-                        📱 Send code via SMS (coming soon)
+                        📱 Send code via SMS
                       </button>
                       <button
                         type="button"
-                        disabled
-                        title="Coming in Chunk 3"
-                        className={cn("w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm cursor-not-allowed opacity-50", isLight ? "bg-white border border-gray-200 text-gray-500" : "bg-white/5 border border-white/10 text-muted-foreground")}
+                        onClick={handleFallbackVoice}
+                        disabled={loading}
+                        className={cn("w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors", isLight ? "bg-white border border-amber-200 text-gray-700 hover:bg-amber-50" : "bg-white/5 border border-amber-500/30 text-foreground hover:bg-white/10")}
                       >
-                        📞 Call me with the code (coming soon)
+                        📞 Call me with the code
                       </button>
                       <button
                         type="button"
-                        disabled
-                        title="Coming in Chunk 3"
-                        className={cn("w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm cursor-not-allowed opacity-50", isLight ? "bg-white border border-gray-200 text-gray-500" : "bg-white/5 border border-white/10 text-muted-foreground")}
+                        onClick={() => goMode("totp-fallback-admin")}
+                        disabled={loading}
+                        className={cn("w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors", isLight ? "bg-white border border-amber-200 text-gray-700 hover:bg-amber-50" : "bg-white/5 border border-amber-500/30 text-foreground hover:bg-white/10")}
                       >
-                        🛡️ Request admin emergency access (coming soon)
+                        🛡️ Request admin emergency access
                       </button>
                     </div>
                   </div>
@@ -1216,6 +1334,162 @@ export default function Login() {
                   ← Back to authenticator code
                 </button>
               </form>
+            )}
+
+            {/* ── TOTP fallback: SMS code entry ────────────────────── */}
+            {mode === "totp-fallback-sms" && (
+              <form onSubmit={handleFallbackVerify(false)} className="space-y-5">
+                <div>
+                  <p className={cn("text-sm font-semibold", isLight ? "text-gray-900" : "text-foreground")}>Enter the SMS code</p>
+                  <p className={cn("text-xs mt-1", isLight ? "text-gray-500" : "text-muted-foreground")}>
+                    We sent a 6-digit code to {fallbackPhone}. It expires in 10 minutes.
+                  </p>
+                </div>
+                {fallbackDevCode && (
+                  <div className={cn("rounded-lg p-3 text-xs font-mono", isLight ? "bg-amber-50 border border-amber-200 text-amber-800" : "bg-amber-500/10 border border-amber-500/30 text-amber-300")}>
+                    <strong>Dev mode:</strong> {fallbackDevCode}
+                  </div>
+                )}
+                <input
+                  autoFocus
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  value={fallbackCode}
+                  onChange={(e) => setFallbackCode(e.target.value.replace(/\D/g, ""))}
+                  placeholder="123 456"
+                  className={cn("w-full h-14 rounded-xl border px-4 text-center text-2xl tracking-[0.4em] font-mono focus:outline-none focus:ring-2 focus:ring-primary/40",
+                    isLight ? "bg-white border-gray-200 text-gray-900" : "bg-black/20 border-white/10 text-foreground")}
+                />
+                {error && <p className="text-xs text-red-500">{error}</p>}
+                <Button type="submit" disabled={loading || fallbackCode.length !== 6} className="w-full h-11">
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify and sign in"}
+                </Button>
+                <div className="flex justify-between text-xs">
+                  <button type="button" onClick={handleFallbackSms} disabled={loading} className={cn(isLight ? "text-primary hover:underline" : "text-primary hover:underline")}>
+                    Resend SMS
+                  </button>
+                  <button type="button" onClick={() => goMode("totp-challenge")} className={cn(isLight ? "text-gray-400 hover:text-gray-700" : "text-muted-foreground hover:text-foreground")}>
+                    ← Back to authenticator
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* ── TOTP fallback: Voice code entry ──────────────────── */}
+            {mode === "totp-fallback-voice" && (
+              <form onSubmit={handleFallbackVerify(true)} className="space-y-5">
+                <div>
+                  <p className={cn("text-sm font-semibold", isLight ? "text-gray-900" : "text-foreground")}>Enter the voice code</p>
+                  <p className={cn("text-xs mt-1", isLight ? "text-gray-500" : "text-muted-foreground")}>
+                    We're calling {fallbackPhone}. Listen for the 6-digit code and type it below. Pick up if you missed the first call.
+                  </p>
+                </div>
+                <input
+                  autoFocus
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  value={fallbackCode}
+                  onChange={(e) => setFallbackCode(e.target.value.replace(/\D/g, ""))}
+                  placeholder="123 456"
+                  className={cn("w-full h-14 rounded-xl border px-4 text-center text-2xl tracking-[0.4em] font-mono focus:outline-none focus:ring-2 focus:ring-primary/40",
+                    isLight ? "bg-white border-gray-200 text-gray-900" : "bg-black/20 border-white/10 text-foreground")}
+                />
+                {error && <p className="text-xs text-red-500">{error}</p>}
+                <Button type="submit" disabled={loading || fallbackCode.length !== 6} className="w-full h-11">
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify and sign in"}
+                </Button>
+                <div className="flex justify-between text-xs">
+                  <button type="button" onClick={handleFallbackVoice} disabled={loading} className="text-primary hover:underline">
+                    Call again
+                  </button>
+                  <button type="button" onClick={() => goMode("totp-challenge")} className={cn(isLight ? "text-gray-400 hover:text-gray-700" : "text-muted-foreground hover:text-foreground")}>
+                    ← Back to authenticator
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* ── TOTP fallback: admin emergency approval ──────────── */}
+            {mode === "totp-fallback-admin" && (
+              <div className="space-y-5">
+                {!adminRequestSubmitted ? (
+                  <>
+                    <div>
+                      <p className={cn("text-sm font-semibold", isLight ? "text-gray-900" : "text-foreground")}>Request emergency access</p>
+                      <p className={cn("text-xs mt-1", isLight ? "text-gray-500" : "text-muted-foreground")}>
+                        Use this if you've lost access to your authenticator app AND your backup codes AND can't receive SMS/voice. An admin will review and may grant one-time access.
+                      </p>
+                    </div>
+                    <div>
+                      <label className={cn("text-xs font-medium mb-1 block", isLight ? "text-gray-700" : "text-muted-foreground")}>
+                        Reason (optional, helps the admin decide quickly)
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={adminRequestReason}
+                        onChange={(e) => setAdminRequestReason(e.target.value)}
+                        placeholder="e.g. lost phone yesterday, backup codes were on the same device"
+                        className={cn("w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none",
+                          isLight ? "bg-white border-gray-200 text-gray-900 placeholder:text-gray-400" : "bg-black/20 border-white/10 text-foreground placeholder:text-muted-foreground")}
+                      />
+                    </div>
+                    {error && <p className="text-xs text-red-500">{error}</p>}
+                    <Button onClick={handleFallbackAdminRequest} disabled={loading} className="w-full h-11">
+                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send request to admin"}
+                    </Button>
+                    <button type="button" onClick={() => goMode("totp-challenge")} className={cn("w-full text-xs", isLight ? "text-gray-400 hover:text-gray-700" : "text-muted-foreground hover:text-foreground")}>
+                      ← Back to authenticator
+                    </button>
+                  </>
+                ) : (
+                  <form onSubmit={handleEmergencyLogin} className="space-y-4">
+                    <div className="flex flex-col items-center gap-3 text-center">
+                      <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+                        <ShieldCheck className="w-8 h-8 text-primary" />
+                      </div>
+                      <div>
+                        <p className={cn("font-semibold text-lg", isLight ? "text-gray-900" : "text-foreground")}>Request sent</p>
+                        <p className={cn("text-xs mt-1", isLight ? "text-gray-600" : "text-muted-foreground")}>
+                          An admin has been notified. When approved, they will deliver a <strong>one-time login code</strong> to you in person, by phone, or another verified channel. Enter it below when you have it.
+                        </p>
+                      </div>
+                    </div>
+                    <div>
+                      <label className={cn("text-xs font-medium mb-1 block", isLight ? "text-gray-700" : "text-muted-foreground")}>Email</label>
+                      <input
+                        type="email"
+                        value={adminOneTimeEmail || email}
+                        onChange={(e) => setAdminOneTimeEmail(e.target.value)}
+                        placeholder="your.email@freddyhirsch.co.za"
+                        className={cn("w-full h-11 rounded-xl border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40",
+                          isLight ? "bg-white border-gray-200 text-gray-900" : "bg-black/20 border-white/10 text-foreground")}
+                      />
+                    </div>
+                    <div>
+                      <label className={cn("text-xs font-medium mb-1 block", isLight ? "text-gray-700" : "text-muted-foreground")}>One-time code from admin</label>
+                      <input
+                        type="text"
+                        value={adminOneTimeToken}
+                        onChange={(e) => setAdminOneTimeToken(e.target.value.trim())}
+                        placeholder="Paste the code your admin shared with you"
+                        className={cn("w-full h-11 rounded-xl border px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/40",
+                          isLight ? "bg-white border-gray-200 text-gray-900" : "bg-black/20 border-white/10 text-foreground")}
+                      />
+                    </div>
+                    {error && <p className="text-xs text-red-500">{error}</p>}
+                    <Button type="submit" disabled={loading || !adminOneTimeToken} className="w-full h-11">
+                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Sign in with one-time code"}
+                    </Button>
+                    <p className={cn("text-[10px] text-center", isLight ? "text-gray-400" : "text-muted-foreground")}>
+                      Once you sign in, your MFA will be reset. You'll need to re-enroll an authenticator app.
+                    </p>
+                  </form>
+                )}
+              </div>
             )}
 
             {/* ── Request Pending ──────────────────────────────────── */}
