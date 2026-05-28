@@ -127,6 +127,27 @@ export async function createCustomRole(label: string, allowedPaths: string[]): P
   }
 }
 
+/**
+ * Set the visible-module allow-list for ANY role (built-in or custom).
+ * Used by the Role Editor. Upserts the row server-side keyed by the role
+ * value, then refreshes the cache so resolution updates everywhere.
+ * The "admin" role is rejected server-side (always full access).
+ */
+export async function setRoleModules(value: string, label: string, allowedPaths: string[]): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE}api/custom-roles/${encodeURIComponent(value)}`, {
+      method: "PUT",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ label, allowedPaths }),
+    });
+    if (!res.ok) return false;
+    await refreshCustomRoles();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Built-ins + server custom roles. */
 export function getAllRoles(): RoleDef[] {
   const custom = _customRoles.filter(c => !ZENTRYX_ROLES.some(r => r.value === c.value));
@@ -162,4 +183,79 @@ export function useServerRoles() {
     return () => { active = false; };
   }, []);
   return { roles: getAllRoles(), customRoles: getCachedCustomRoles(), version, loading, refresh };
+}
+
+// ── Module visibility resolution ───────────────────────────────────────
+// Single source of truth for "which modules can a role see". Consumed by
+// AppLayout (to build the nav + redirect guard) and by the Role Editor
+// (to show current ticks). Built on top of the server-synced custom-role
+// allow-lists above, with hardcoded defaults for the built-in tiers.
+
+// Every toggleable module path (mirrors ZENTRYX_MODULES).
+export const ALL_MODULE_PATHS: string[] = ZENTRYX_MODULES.map(m => m.path);
+
+// The default viewer-level lockout used as the catch-all fallback.
+const RESTRICTED_PATHS = ["/sales-force", "/projects", "/weekly-activities", "/business-dev", "/procurement", "/materials-demand-planning"];
+
+/**
+ * Module paths a role is NOT allowed to see. /admin is always blocked
+ * unless the role is the literal "admin". When a role has an explicit
+ * server-synced allow-list (custom role OR a built-in configured via the
+ * Role Editor), that list is authoritative — everything not in it is
+ * blocked. Otherwise the hardcoded built-in tiers apply.
+ */
+export function getBlockedPaths(role: string, jobPos: string): string[] {
+  const r = (role || "viewer").toLowerCase();
+  const jp = (jobPos || "").toLowerCase();
+
+  // Admin always has full access and can never be restricted — short
+  // circuit before any allow-list/override logic to prevent lockout.
+  if (r === "admin") return [];
+
+  const adminBlock = ["/admin"];
+
+  // ── Explicit allow-list (admin-defined, server-synced) ────────────
+  // Applies to custom roles AND built-in roles configured in the Role
+  // Editor. Block every module NOT in the allow-list. /admin always
+  // blocked, /profile always allowed (never in ALL_MODULE_PATHS).
+  const explicitAllowed = getCustomRoleAllowedPaths(r);
+  if (explicitAllowed) {
+    const blocked = ALL_MODULE_PATHS.filter(p => !explicitAllowed.includes(p));
+    return [...adminBlock, ...blocked];
+  }
+
+  // Privileged tiers — see everything (minus /admin). Post-Phase-1:
+  // executive / manager. Legacy values kept for migration-safety.
+  const privileged =
+    ["executive", "manager", "ceo", "managing_director"].includes(r)
+    || r.includes("head")
+    || jp.includes("head") || jp.includes("ceo") || jp.includes("admin") || jp.includes("manager") || jp.includes("director");
+  if (privileged) return [...adminBlock];
+
+  // ── Consolidated 9-role tiers ─────────────────────────────────────
+  if (r === "sales_team" || r === "commercial_team") return [...adminBlock, "/projects", "/weekly-activities", "/procurement"];
+  if (r === "npd_team") return [...adminBlock, "/sales-force"];
+  if (r === "operations_team") return [...adminBlock, "/sales-force", "/projects", "/business-dev"];
+  if (r === "qc_team") return [...adminBlock, "/sales-force", "/business-dev"];
+  if (r === "support_staff") return [...adminBlock, "/sales-force", "/projects", "/business-dev", "/procurement", "/materials-demand-planning"];
+
+  // ── Legacy values (migration-safety) ──────────────────────────────
+  if (r === "viewer") return [...adminBlock, "/sales-force", "/materials-demand-planning", "/projects", "/weekly-activities", "/business-dev", "/procurement"];
+  if (r === "npd_technologist") return [...adminBlock, "/sales-force"];
+  if (["key_account_manager", "senior_key_account_manager"].includes(r)) return [...adminBlock, "/projects", "/weekly-activities", "/business-dev", "/procurement"];
+  if (r === "procurement" || jp.includes("procurement")) return [...adminBlock, "/sales-force", "/projects", "/business-dev"];
+
+  // Catch-all (graphics_designer, hr, unknown) — viewer fallback.
+  return [...adminBlock, ...RESTRICTED_PATHS];
+}
+
+/**
+ * The modules a role can currently see, as an allow-list. Inverse of
+ * getBlockedPaths over ALL_MODULE_PATHS. Used by the Role Editor to
+ * pre-tick the current state (covers both explicit allow-lists and the
+ * built-in defaults uniformly).
+ */
+export function getEffectiveAllowedPaths(roleValue: string, jobPos = ""): string[] {
+  const blocked = getBlockedPaths(roleValue, jobPos);
+  return ALL_MODULE_PATHS.filter(p => !blocked.includes(p));
 }

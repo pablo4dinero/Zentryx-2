@@ -13,7 +13,7 @@ import { useNotificationSound } from "@/hooks/useNotificationSound";
 import { useAuthStore } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
-import { getCustomRoleAllowedPaths, useServerRoles } from "@/lib/roles";
+import { getBlockedPaths, useServerRoles } from "@/lib/roles";
 import { useGetCurrentUser, useListNotifications, useMarkNotificationRead } from "@/api-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
@@ -42,67 +42,8 @@ const ALL_NAV_ITEMS = [
   { href: "/admin", label: "Admin Dashboard", icon: ShieldCheck, adminOnly: true },
 ];
 
-const RESTRICTED_PATHS = ["/sales-force", "/projects", "/weekly-activities", "/business-dev", "/procurement", "/materials-demand-planning"];
-
-// All toggleable module paths (mirrors ZENTRYX_MODULES in lib/roles).
-// Used to compute the blocked list for a custom role from its allow-list.
-const ALL_MODULE_PATHS = [
-  "/", "/news-feed", "/projects", "/analytics", "/oracle", "/weekly-activities",
-  "/business-dev", "/sales-force", "/materials-demand-planning", "/procurement",
-  "/team", "/events", "/activity", "/chat",
-];
-
-function getBlockedPaths(role: string, jobPos: string): string[] {
-  const r = (role || "viewer").toLowerCase();
-  const jp = (jobPos || "").toLowerCase();
-
-  // /admin is ALWAYS off-limits unless the user holds the literal "admin"
-  // role. Even CEO / managing director / head_* roles do not get in.
-  const adminBlock = r === "admin" ? [] : ["/admin"];
-
-  // ── Custom roles (admin-defined, server-synced) ───────────────────
-  // If this role is a custom one, block every module NOT in its
-  // explicit allow-list. /admin always blocked, /profile always allowed
-  // (ALWAYS_ALLOWED_PATHS, never in ALL_MODULE_PATHS so never blocked).
-  const customAllowed = getCustomRoleAllowedPaths(r);
-  if (customAllowed) {
-    const blocked = ALL_MODULE_PATHS.filter(p => !customAllowed.includes(p));
-    return [...adminBlock, ...blocked];
-  }
-
-  // Privileged tiers — see everything (minus /admin if not admin).
-  // Post-Phase-1: admin / executive / manager. Legacy values
-  // (ceo / managing_director / head_*) kept for migration-safety.
-  const privileged =
-    ["admin", "executive", "manager", "ceo", "managing_director"].includes(r)
-    || r.includes("head")
-    || jp.includes("head") || jp.includes("ceo") || jp.includes("admin") || jp.includes("manager") || jp.includes("director");
-  if (privileged) return [...adminBlock];
-
-  // ── New consolidated 9-role tiers ─────────────────────────────────
-  // sales_team (formerly commercial_team): Sales Force (tagged accounts
-  // only), BD, read-only PP. The legacy commercial_team value is kept
-  // as an alias for migration-safety.
-  if (r === "sales_team" || r === "commercial_team") return [...adminBlock, "/projects", "/weekly-activities", "/procurement"];
-  // npd_team: Project Portfolio, M&DP, Formulations
-  if (r === "npd_team") return [...adminBlock, "/sales-force"];
-  // operations_team: Procurement, M&DP, Weekly Activities (no Sales Force, no PP)
-  if (r === "operations_team") return [...adminBlock, "/sales-force", "/projects", "/business-dev"];
-  // qc_team: department of its own — sees QC-relevant modules
-  if (r === "qc_team") return [...adminBlock, "/sales-force", "/business-dev"];
-  // support_staff: read-only most modules, full Chat
-  if (r === "support_staff") return [...adminBlock, "/sales-force", "/projects", "/business-dev", "/procurement", "/materials-demand-planning"];
-
-  // ── Legacy values (kept for migration-safety — these should be
-  // replaced by the new tiers as the role migration runs) ───────────
-  if (r === "viewer") return [...adminBlock, "/sales-force", "/materials-demand-planning", "/projects", "/weekly-activities", "/business-dev", "/procurement"];
-  if (r === "npd_technologist") return [...adminBlock, "/sales-force"];
-  if (["key_account_manager", "senior_key_account_manager"].includes(r)) return [...adminBlock, "/projects", "/weekly-activities", "/business-dev", "/procurement"];
-  if (r === "procurement" || jp.includes("procurement")) return [...adminBlock, "/sales-force", "/projects", "/business-dev"];
-
-  // Catch-all (graphics_designer, hr, unknown roles) — viewer fallback
-  return [...adminBlock, ...RESTRICTED_PATHS];
-}
+// Module visibility (getBlockedPaths) now lives in lib/roles.ts as the
+// single source of truth, shared with the Admin Role Editor.
 
 const LAST_SEEN_NOTIFS_KEY = "zentryx_last_seen_notifications";
 

@@ -78,6 +78,44 @@ router.patch("/:value", async (req: AuthRequest, res) => {
   }
 });
 
+// PUT /:value — upsert module access for ANY role (admin only).
+// Unlike POST (which mints a brand-new custom role from a label) this
+// targets an explicit role value, so it's how the Role Editor configures
+// BUILT-IN roles too: it creates the row on first save and updates it
+// thereafter. The "admin" role is never restrictable — it always keeps
+// full access — so we reject it outright to prevent self-lockout.
+router.put("/:value", async (req: AuthRequest, res) => {
+  try {
+    if (req.user!.role !== "admin") { res.status(403).json({ error: "Forbidden" }); return; }
+    const value = String(req.params.value);
+    if (value === "admin") {
+      res.status(400).json({ error: "BadRequest", message: "The Admin role cannot be restricted." });
+      return;
+    }
+    const { label, allowedPaths } = req.body as { label?: string; allowedPaths?: unknown };
+    const paths = sanitisePaths(allowedPaths);
+
+    const [existing] = await db.select().from(customRolesTable).where(eq(customRolesTable.value, value)).limit(1);
+    if (existing) {
+      const set: Record<string, any> = { allowedPaths: paths, updatedAt: new Date() };
+      if (typeof label === "string" && label.trim()) set.label = label.trim();
+      const [updated] = await db.update(customRolesTable).set(set).where(eq(customRolesTable.value, value)).returning();
+      res.json(updated);
+      return;
+    }
+
+    const [created] = await db.insert(customRolesTable).values({
+      value,
+      label: (typeof label === "string" && label.trim()) ? label.trim() : value,
+      allowedPaths: paths,
+    }).returning();
+    res.status(201).json(created);
+  } catch (err) {
+    console.error("[custom-roles] upsert failed", err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
 // DELETE /:value — remove a custom role (admin only). Users still on the
 // role keep the value in their record but fall back to viewer-level
 // access until reassigned.
