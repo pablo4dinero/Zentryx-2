@@ -179,6 +179,8 @@ export default function Login() {
     const oauthToken = params.get("oauth_token");
     const oauthError = params.get("oauth_error");
     const mfaTokenParam = params.get("mfa_token");
+    const mfaTypeParam = params.get("mfa_type");
+    const mustEnrollParam = params.get("must_enroll_mfa") === "true";
     const requirePhone = params.get("require_phone");
     const phoneParam = params.get("phone");
     const smsCodeParam = params.get("sms_code");
@@ -202,7 +204,17 @@ export default function Login() {
       setVoiceMode(false);
       setEmailMode(false);
       setDevEmailOtp("");
-      if (requirePhone === "true") {
+      // TOTP-enrolled users always land on the authenticator challenge
+      // after OAuth, exactly like password sign-in.
+      if (mfaTypeParam === "totp") {
+        goMode("totp-challenge");
+      } else if (mustEnrollParam) {
+        toast({
+          title: "Two-factor required",
+          description: "Your role requires an authenticator app. Let's set one up now.",
+        });
+        goMode("totp-enroll");
+      } else if (requirePhone === "true") {
         goMode("add-phone");
       } else {
         setSmsPhone(phoneParam || "");

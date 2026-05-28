@@ -79,11 +79,6 @@ async function ensureSuperadmin(): Promise<typeof usersTable.$inferSelect | null
   return created;
 }
 
-function smsVerifiedRecently(user: typeof usersTable.$inferSelect): boolean {
-  if (!user.smsVerifiedAt) return false;
-  return (Date.now() - user.smsVerifiedAt.getTime()) < 12 * 60 * 60 * 1000;
-}
-
 // ─── Login ───────────────────────────────────────────────────────────────────
 router.post("/login", async (req, res) => {
   try {
@@ -621,27 +616,30 @@ async function oauthFinish(req: Request, res: import("express").Response, user: 
     return;
   }
 
-  if (smsVerifiedRecently(user)) {
-    const token = signToken({ userId: user.id, email: user.email, role: user.role });
-    res.redirect(`${base}/login?oauth_token=${token}`);
+  // ── TOTP-first MFA, identical policy to password login ─────────────
+  // Once a user has enrolled an authenticator they complete the TOTP
+  // challenge on EVERY login — including OAuth — with no 12-hour
+  // shortcut. The old smsVerifiedRecently bypass is gone.
+  const mfaEnrolled = !!user.mfaSecret && !!user.mfaEnrolledAt;
+  const mfaMandatory = mfaRequiredForRole(user.role);
+
+  if (mfaEnrolled) {
+    const mfaToken = signMfaToken({ userId: user.id, email: user.email, role: user.role });
+    res.redirect(`${base}/login?mfa_token=${mfaToken}&mfa_type=totp`);
     return;
   }
 
-  const mfaToken = signMfaToken({ userId: user.id, email: user.email, role: user.role });
-
-  if (!user.phone) {
-    res.redirect(`${base}/login?mfa_token=${mfaToken}&require_phone=true`);
+  // Role mandates MFA but the user hasn't enrolled yet → force them
+  // into authenticator enrollment before a session is issued.
+  if (mfaMandatory) {
+    const mfaToken = signMfaToken({ userId: user.id, email: user.email, role: user.role });
+    res.redirect(`${base}/login?mfa_token=${mfaToken}&must_enroll_mfa=true`);
     return;
   }
 
-  const result = await sendSmsOtp(user.phone);
-  const params = new URLSearchParams({
-    mfa_token: mfaToken,
-    phone: maskPhone(user.phone),
-  });
-  if (result.failed) params.set("sms_failed", "true");
-  if (result.devMode && result.code) params.set("sms_code", result.code);
-  res.redirect(`${base}/login?${params}`);
+  // Optional-MFA role, not enrolled → straight to a full session.
+  const token = signToken({ userId: user.id, email: user.email, role: user.role });
+  res.redirect(`${base}/login?oauth_token=${token}`);
 }
 
 // ─── Google OAuth ─────────────────────────────────────────────────────────────
