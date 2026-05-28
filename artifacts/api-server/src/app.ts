@@ -65,6 +65,19 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 }));
 
+// ── Permissions-Policy ─────────────────────────────────────────────────
+// Explicitly grant THIS origin access to the camera, microphone and
+// autoplay so WebRTC voice/video calls can prompt for permission and play
+// remote media — including inside the installed PWA on mobile, where a
+// missing or over-restrictive policy silently blocks getUserMedia.
+app.use((_req, res, next) => {
+  res.setHeader(
+    "Permissions-Policy",
+    "camera=(self), microphone=(self), autoplay=(self)",
+  );
+  next();
+});
+
 // ── CORS allow-list ────────────────────────────────────────────────────
 // `CORS_ORIGINS` is a comma-separated list of allowed origins set in env.
 // Falls back to "*" only in dev so frontend localhost still works without

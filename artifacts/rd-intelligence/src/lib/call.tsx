@@ -14,6 +14,35 @@ const ICE_SERVERS: RTCIceServer[] = [
   { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
 ];
 
+// Calls need a secure context (https) and the mediaDevices API. Installed
+// PWAs on mobile qualify, but very old in-app browsers don't.
+function mediaSupported(): boolean {
+  return typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
+}
+
+// Turn a getUserMedia failure into something a user can act on.
+function mediaErrorMessage(err: unknown): string {
+  const name = (err as { name?: string })?.name;
+  switch (name) {
+    case "NotAllowedError":
+    case "SecurityError":
+      return "Microphone/camera access was blocked. Allow it for Zentryx in your browser or phone settings (Site settings → Permissions), then try again.";
+    case "NotFoundError":
+    case "OverconstrainedError":
+      return "No microphone or camera was found on this device.";
+    case "NotReadableError":
+      return "Your microphone/camera is busy — close other apps using it and try again.";
+    default:
+      return "Couldn't access your microphone/camera. Make sure permission is granted and try again.";
+  }
+}
+
+// Single place that asks the OS/browser for mic (and optionally camera).
+// This is what triggers the permission prompt.
+async function acquireMedia(wantVideo: boolean): Promise<MediaStream> {
+  return navigator.mediaDevices.getUserMedia({ audio: true, video: wantVideo });
+}
+
 type CallStatus = "idle" | "outgoing" | "incoming" | "connecting" | "active";
 
 interface CallContextValue {
@@ -154,14 +183,25 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // ── Caller ─────────────────────────────────────────────────────────────
   const startCall = useCallback(async (toUserId: number, toName: string, callMedia: "audio" | "video") => {
     if (status !== "idle") return;
+    if (!mediaSupported()) {
+      toast({ title: "Calls not supported here", description: "Open Zentryx over HTTPS (or the installed app) to make calls." });
+      return;
+    }
     // Don't show a fake "ringing" screen if we aren't actually connected to
     // the signaling server — the invite would silently go nowhere.
     if (wsRef.current?.readyState !== WebSocket.OPEN) {
       toast({ title: "Can't start call", description: "Reconnecting to the call service — try again in a moment." });
       return;
     }
+    let stream: MediaStream;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: callMedia === "video" });
+      stream = await acquireMedia(callMedia === "video");
+    } catch (err) {
+      toast({ title: "Couldn't start call", description: mediaErrorMessage(err) });
+      teardown();
+      return;
+    }
+    try {
       localStreamRef.current = stream;
       setLocalStream(stream);
       const callId = crypto.randomUUID();
@@ -184,7 +224,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         }
       }, 35000);
     } catch {
-      toast({ title: "Couldn't start call", description: "Microphone/camera permission is required." });
+      toast({ title: "Couldn't start call", description: "Something went wrong setting up the call. Please try again." });
       teardown();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -194,21 +234,29 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const acceptCall = useCallback(async () => {
     const incoming = incomingOfferRef.current;
     if (!incoming) return;
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: incoming.media === "video" });
-      localStreamRef.current = stream;
-      setLocalStream(stream);
-      const pc = makePeer(incoming.from);
-      pcRef.current = pc;
-      stream.getTracks().forEach(t => pc.addTrack(t, stream));
-      setWithVideo(incoming.media === "video");
-      setStatus("connecting");
-      send({ type: "call:accept", toUserId: incoming.from, callId: incoming.callId });
-    } catch {
-      toast({ title: "Couldn't join call", description: "Microphone/camera permission is required." });
+    if (!mediaSupported()) {
+      toast({ title: "Calls not supported here", description: "Open Zentryx over HTTPS (or the installed app) to take calls." });
       send({ type: "call:reject", toUserId: incoming.from, callId: incoming.callId });
       teardown();
+      return;
     }
+    let stream: MediaStream;
+    try {
+      stream = await acquireMedia(incoming.media === "video");
+    } catch (err) {
+      toast({ title: "Couldn't join call", description: mediaErrorMessage(err) });
+      send({ type: "call:reject", toUserId: incoming.from, callId: incoming.callId });
+      teardown();
+      return;
+    }
+    localStreamRef.current = stream;
+    setLocalStream(stream);
+    const pc = makePeer(incoming.from);
+    pcRef.current = pc;
+    stream.getTracks().forEach(t => pc.addTrack(t, stream));
+    setWithVideo(incoming.media === "video");
+    setStatus("connecting");
+    send({ type: "call:accept", toUserId: incoming.from, callId: incoming.callId });
   }, [makePeer, send, teardown, toast]);
 
   const rejectCall = useCallback(() => {
