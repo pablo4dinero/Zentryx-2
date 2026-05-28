@@ -103,7 +103,7 @@ export default function Analytics() {
       if (p.status === "in_progress") acc[p.productType].inProgress++;
       return acc;
     }, {})
-  ).map(([name, d]) => ({ name, ...d }));
+  ).map(([name, d]) => ({ name, ...(d as { count: number; approved: number; inProgress: number }) }));
 
   const byStage = Object.entries(
     typedProjects.reduce((acc: Record<string, number>, p: any) => {

@@ -121,10 +121,19 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
       // Sliding refresh — push the idle window forward, but never past
       // the absolute cap. Frontend reads the new token from
       // `x-refreshed-token` if it wants to swap without re-login.
+      //
+      // IMPORTANT: strip the jwt-managed `iat` / `exp` claims off the
+      // verified payload before re-signing. jsonwebtoken throws
+      // ("payload already has an exp property") if you pass `expiresIn`
+      // alongside a payload that still carries `exp` — that throw was
+      // caught below and returned as a 401, bouncing every regular user
+      // straight back to the login screen on their first authed request.
       if (payload.idleUntil && payload.absoluteExpiry) {
         const proposedIdle = now + IDLE_TTL_SEC;
         const newIdleUntil = Math.min(proposedIdle, payload.absoluteExpiry);
-        const refreshed = { ...payload, idleUntil: newIdleUntil };
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { iat: _iat, exp: _exp, ...rest } = payload as JwtPayload & { iat?: number; exp?: number };
+        const refreshed = { ...rest, idleUntil: newIdleUntil };
         const remainingAbsolute = Math.max(1, payload.absoluteExpiry - now);
         const newToken = jwt.sign(refreshed, JWT_SECRET, { expiresIn: remainingAbsolute });
         res.setHeader("x-refreshed-token", newToken);
