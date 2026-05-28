@@ -386,15 +386,24 @@ async function createTablesIfNotExist() {
         ADD COLUMN IF NOT EXISTS emergency_login_expires TIMESTAMP;
     `));
 
-    // Extend the user_role enum with the 9 consolidated role values.
-    // Each ADD VALUE is wrapped so it's safe to re-run.
-    for (const newRole of ["executive", "commercial_team", "sales_team", "npd_team", "operations_team", "qc_team", "support_staff"]) {
-      await db.execute(sql.raw(`
-        DO $$ BEGIN
-          ALTER TYPE user_role ADD VALUE IF NOT EXISTS '${newRole}';
-        EXCEPTION WHEN duplicate_object THEN null; END $$;
-      `));
-    }
+    // Convert users.role from the fixed `user_role` enum to free TEXT so
+    // admins can assign custom roles beyond the 9 built-ins. Idempotent:
+    // only converts if the column is still the enum type. Existing values
+    // are preserved verbatim (enum labels cast cleanly to their text).
+    await db.execute(sql.raw(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'role'
+            AND udt_name = 'user_role'
+        ) THEN
+          ALTER TABLE users ALTER COLUMN role DROP DEFAULT;
+          ALTER TABLE users ALTER COLUMN role TYPE text USING role::text;
+          ALTER TABLE users ALTER COLUMN role SET DEFAULT 'viewer';
+        END IF;
+      END $$;
+    `));
 
     // ── Phase 1 Chunk 4: migrate legacy role values onto the
     // consolidated 9-role list. Idempotent — rows already on a new

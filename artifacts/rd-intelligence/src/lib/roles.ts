@@ -44,11 +44,50 @@ const LEGACY_LABELS: Record<string, string> = {
   analyst: "Viewer",
 };
 
-/** Human-friendly label for any role value, new or legacy. */
+// ── Custom roles ──────────────────────────────────────────────────────
+// Admins can add their own roles beyond the 9 built-ins. Custom roles are
+// stored in localStorage (shared key with the Team Directory so both the
+// Admin Dashboard and Team Directory show the same list). A custom role
+// has no special permissions — it falls through to the safe viewer-level
+// baseline in getBlockedPaths until a developer maps it explicitly.
+const CUSTOM_ROLES_KEY = "zentryx_custom_roles";
+
+export function getCustomRoles(): RoleDef[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CUSTOM_ROLES_KEY) || "[]");
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((r: any) => r && typeof r.value === "string" && typeof r.label === "string");
+  } catch {
+    return [];
+  }
+}
+
+/** Add a custom role from a free-text label. Returns the new role. */
+export function addCustomRole(label: string): RoleDef {
+  const trimmed = label.trim();
+  const value = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  const next = { value, label: trimmed };
+  const existing = getCustomRoles();
+  // Don't duplicate a value that's already built-in or custom.
+  if (![...ZENTRYX_ROLES, ...existing].some(r => r.value === value)) {
+    localStorage.setItem(CUSTOM_ROLES_KEY, JSON.stringify([...existing, next]));
+  }
+  return next;
+}
+
+/** The full role list: 9 built-ins + any custom roles the admin added. */
+export function getAllRoles(): RoleDef[] {
+  const custom = getCustomRoles().filter(c => !ZENTRYX_ROLES.some(r => r.value === c.value));
+  return [...ZENTRYX_ROLES, ...custom];
+}
+
+/** Human-friendly label for any role value, new / legacy / custom. */
 export function roleLabel(value: string | null | undefined): string {
   if (!value) return "—";
   const exact = ZENTRYX_ROLES.find(r => r.value === value);
   if (exact) return exact.label;
+  const custom = getCustomRoles().find(r => r.value === value);
+  if (custom) return custom.label;
   if (LEGACY_LABELS[value]) return LEGACY_LABELS[value];
   // Last-resort: prettify the raw value.
   return value.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());

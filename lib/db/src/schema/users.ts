@@ -52,7 +52,12 @@ export const usersTable = pgTable("users", {
   email: text("email").notNull().unique(),
   name: text("name").notNull(),
   passwordHash: text("password_hash").notNull(),
-  role: userRoleEnum("role").notNull().default("viewer"),
+  // `role` is free TEXT (not the enum) so admins can add custom roles
+  // beyond the 9 built-ins. The userRoleEnum above is kept only as
+  // documentation of the canonical values; the column accepts any string.
+  // Permission checks treat unknown/custom roles as viewer-level (safe
+  // default) until a developer maps them explicitly.
+  role: text("role").notNull().default("viewer"),
   department: text("department"),
   jobPosition: text("job_position"),
   phone: text("phone"),

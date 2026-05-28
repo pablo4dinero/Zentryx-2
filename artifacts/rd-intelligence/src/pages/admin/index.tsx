@@ -10,7 +10,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import { useGetCurrentUser } from "@/api-client";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
-import { ZENTRYX_ROLES, roleLabel } from "@/lib/roles";
+import { roleLabel, getAllRoles, addCustomRole } from "@/lib/roles";
 
 const BASE = import.meta.env.BASE_URL;
 const apiHeaders = () => ({
@@ -229,8 +229,8 @@ function LoginSparkline({ isLight, series }: { isLight: boolean; series: Array<{
 // ─────────────────────────────────────────────────────────────────────────────
 // Users
 // ─────────────────────────────────────────────────────────────────────────────
-// Consolidated 9-role list — single source of truth in @/lib/roles.
-const ROLE_OPTIONS = ZENTRYX_ROLES.map(r => r.value);
+// Sentinel select value that triggers the "add a new role" prompt.
+const ADD_ROLE_SENTINEL = "__add_new_role__";
 
 function UsersTab({ isLight }: { isLight: boolean }) {
   const [users, setUsers] = useState<any[]>([]);
@@ -238,6 +238,10 @@ function UsersTab({ isLight }: { isLight: boolean }) {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [savingId, setSavingId] = useState<number | null>(null);
+  // Role list (built-ins + custom). Bumping `rolesVersion` re-reads the
+  // custom roles from localStorage after one is added.
+  const [rolesVersion, setRolesVersion] = useState(0);
+  const roleOptions = useMemo(() => getAllRoles(), [rolesVersion]);
 
   const load = async () => {
     setLoading(true);
@@ -262,6 +266,20 @@ function UsersTab({ isLight }: { isLight: boolean }) {
       const updated = await apiPatch(`/admin/users/${id}`, body);
       setUsers(prev => prev.map(u => u.id === id ? { ...u, ...updated } : u));
     } finally { setSavingId(null); }
+  };
+
+  // Role dropdown change. If the user picks "Add New Role…", prompt for a
+  // name, create the custom role, then assign it. Otherwise just patch.
+  const handleRoleChange = (userId: number, value: string) => {
+    if (value === ADD_ROLE_SENTINEL) {
+      const label = window.prompt("Name the new role (e.g. Marketing Lead):")?.trim();
+      if (!label) return;
+      const created = addCustomRole(label);
+      setRolesVersion(v => v + 1);
+      patchUser(userId, { role: created.value });
+      return;
+    }
+    patchUser(userId, { role: value });
   };
 
   const resetPassword = async (id: number, name: string) => {
@@ -298,7 +316,7 @@ function UsersTab({ isLight }: { isLight: boolean }) {
           )}
         >
           <option value="all">All Roles</option>
-          {ROLE_OPTIONS.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
+          {roleOptions.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
         </select>
         <button onClick={load} className={cn("inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border",
           isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5")}>
@@ -313,11 +331,12 @@ function UsersTab({ isLight }: { isLight: boolean }) {
         )}
         {!loading && filtered.length > 0 && (
           <div className="overflow-x-auto custom-scrollbar">
-            <table className="w-full text-sm min-w-[840px]">
+            <table className="w-full text-sm min-w-[1000px]">
               <thead className={cn("text-xs uppercase", isLight ? "bg-slate-50 text-slate-500" : "bg-white/5 text-muted-foreground")}>
                 <tr>
                   <th className="px-4 py-3 text-left font-medium">User</th>
                   <th className="px-4 py-3 text-left font-medium">Role</th>
+                  <th className="px-4 py-3 text-left font-medium">Job Position</th>
                   <th className="px-4 py-3 text-left font-medium">Department</th>
                   <th className="px-4 py-3 text-left font-medium">Last Login</th>
                   <th className="px-4 py-3 text-left font-medium">Status</th>
@@ -343,22 +362,33 @@ function UsersTab({ isLight }: { isLight: boolean }) {
                     <td className="px-4 py-3">
                       <select
                         value={u.role}
-                        onChange={e => patchUser(u.id, { role: e.target.value })}
+                        onChange={e => handleRoleChange(u.id, e.target.value)}
                         disabled={savingId === u.id}
                         className={cn(
                           "h-8 px-2 rounded-lg border text-xs cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary/40",
                           isLight ? "bg-white border-slate-200 text-slate-700" : "bg-black/20 border-white/10 text-foreground",
                         )}
                       >
-                        {/* If the user is still on a legacy role value not in
-                            the consolidated list, surface it as an extra option
-                            so the select shows their real role (not a misleading
-                            fallback to the first option). */}
-                        {!ROLE_OPTIONS.includes(u.role) && (
-                          <option value={u.role}>{roleLabel(u.role)} (legacy)</option>
+                        {/* If the user is on a value not in the current list
+                            (legacy or a custom role from another browser),
+                            surface it so the select shows their real role. */}
+                        {!roleOptions.some(r => r.value === u.role) && (
+                          <option value={u.role}>{roleLabel(u.role)}</option>
                         )}
-                        {ROLE_OPTIONS.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
+                        {roleOptions.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                        <option value={ADD_ROLE_SENTINEL}>+ Add new role…</option>
                       </select>
+                    </td>
+                    <td className="px-4 py-3">
+                      <input
+                        defaultValue={u.jobPosition || ""}
+                        onBlur={e => { if (e.target.value !== (u.jobPosition || "")) patchUser(u.id, { jobPosition: e.target.value }); }}
+                        placeholder="—"
+                        className={cn(
+                          "h-8 px-2 rounded-lg border text-xs w-36 focus:outline-none focus:ring-1 focus:ring-primary/40",
+                          isLight ? "bg-white border-slate-200 text-slate-700 placeholder:text-slate-400" : "bg-black/20 border-white/10 text-foreground placeholder:text-muted-foreground",
+                        )}
+                      />
                     </td>
                     <td className="px-4 py-3">
                       <input
