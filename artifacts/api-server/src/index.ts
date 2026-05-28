@@ -387,9 +387,7 @@ async function createTablesIfNotExist() {
     `));
 
     // Extend the user_role enum with the 9 consolidated role values.
-    // Each ADD VALUE is wrapped so it's safe to re-run. Chunk 4 will
-    // migrate users from legacy values to these, then we can drop the
-    // legacy ones in a future migration.
+    // Each ADD VALUE is wrapped so it's safe to re-run.
     for (const newRole of ["executive", "commercial_team", "npd_team", "operations_team", "qc_team", "support_staff"]) {
       await db.execute(sql.raw(`
         DO $$ BEGIN
@@ -397,6 +395,30 @@ async function createTablesIfNotExist() {
         EXCEPTION WHEN duplicate_object THEN null; END $$;
       `));
     }
+
+    // ── Phase 1 Chunk 4: migrate legacy role values onto the
+    // consolidated 9-role list. Idempotent — rows already on a new
+    // value are unaffected. Mapping (per agreed list):
+    //
+    //   admin                           → admin (unchanged)
+    //   ceo, managing_director          → executive
+    //   manager, head_of_product_development, head_of_department → manager
+    //   key_account_manager, senior_key_account_manager → commercial_team
+    //   npd_technologist, scientist, project_manager → npd_team
+    //   procurement                     → operations_team
+    //   quality_control                 → qc_team
+    //   hr, graphics_designer           → support_staff
+    //   viewer, analyst                 → viewer (analyst folds in)
+    //
+    // We DO NOT touch the superadmin row (their role is "admin" anyway).
+    await db.execute(sql.raw(`UPDATE users SET role = 'executive' WHERE role IN ('ceo');`));
+    await db.execute(sql.raw(`UPDATE users SET role = 'manager' WHERE role IN ('head_of_product_development', 'head_of_department');`));
+    await db.execute(sql.raw(`UPDATE users SET role = 'commercial_team' WHERE role IN ('key_account_manager', 'senior_key_account_manager');`));
+    await db.execute(sql.raw(`UPDATE users SET role = 'npd_team' WHERE role IN ('npd_technologist', 'scientist', 'project_manager');`));
+    await db.execute(sql.raw(`UPDATE users SET role = 'operations_team' WHERE role IN ('procurement');`));
+    await db.execute(sql.raw(`UPDATE users SET role = 'qc_team' WHERE role IN ('quality_control');`));
+    await db.execute(sql.raw(`UPDATE users SET role = 'support_staff' WHERE role IN ('hr', 'graphics_designer');`));
+    await db.execute(sql.raw(`UPDATE users SET role = 'viewer' WHERE role IN ('analyst');`));
 
     // Repair chat rooms whose creator was never inserted into
     // chat_room_members. This happened to the superadmin because the

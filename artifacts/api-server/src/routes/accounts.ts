@@ -8,20 +8,20 @@ import { logActivity } from "../lib/activity";
 const router = Router();
 
 // Privileged roles see ALL accounts + all Sales Force activity. Everyone
-// else (Key Account Manager, Technical Sales Officer, Customer Service
-// Lead, etc.) only sees accounts they created or were tagged on as
-// account managers.
+// else only sees accounts they're tagged on as managers.
 //
-// Important: we used to use `role.includes("manager")` as a privileged
-// check, but that string match incorrectly matched `key_account_manager`
-// and `senior_key_account_manager` — silently granting them full access.
-// The new check uses explicit role strings + a safe `head_` prefix so
-// only true department heads pass.
+// Post-Phase-1 the role list is consolidated to: admin / executive /
+// manager + 5 team roles + viewer. We keep the legacy values mapping
+// to the same tier for safety in case any user hasn't yet been migrated
+// when this code runs.
 function isPrivileged(role: string | null | undefined): boolean {
   const r = (role || "").toLowerCase();
+  // New 9-role tiers that get privileged access
   if (r === "admin") return true;
-  if (r === "ceo") return true;
+  if (r === "executive") return true;
   if (r === "manager") return true;
+  // Legacy aliases — kept temporarily for migration-safety
+  if (r === "ceo") return true;
   if (r === "managing_director") return true;
   if (r.startsWith("head_")) return true;
   return false;

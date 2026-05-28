@@ -18,14 +18,15 @@ import { sendSmsOtp, sendVoiceOtp, verifySmsOtp, verifyVoiceOtp, maskPhone } fro
 const router = Router();
 
 // Roles that MUST have MFA enrolled before they can complete login.
-// Everyone else can opt in via Settings → Security. The role list here
-// is the new consolidated set — legacy values that fall under these
-// tiers (e.g. ceo → executive) are also covered.
+// Everyone else can opt in via Settings → Security. Post-Phase-1 these
+// are: admin / executive / manager. Legacy values are kept for safety
+// in case any user predates the role-consolidation migration.
 const MFA_REQUIRED_ROLES = new Set([
+  // New 9-role tiers (Phase 1 Chunk 4 target list)
   "admin",
   "executive",
   "manager",
-  // Legacy aliases still in use until the role-consolidation migration runs
+  // Legacy aliases still kept defensively
   "ceo",
   "managing_director",
   "head_of_product_development",

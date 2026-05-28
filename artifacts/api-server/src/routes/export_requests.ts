@@ -20,8 +20,11 @@ function isApprover(role: string | null | undefined, department: string | null |
 
   if (r === "admin") return true;
   if (m === "project-portfolio") {
-    if (r === "ceo" || r === "managing_director") return true;
+    // New 9-role tier values
+    if (r === "executive") return true;
     if (r === "manager") return d.includes("npd") || d.includes("product");
+    // Legacy aliases — kept for migration-safety
+    if (r === "ceo" || r === "managing_director") return true;
     if (r === "head_of_product_development") return true;
     if (r === "head_of_department" && (d.includes("npd") || d.includes("product"))) return true;
   }

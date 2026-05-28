@@ -48,30 +48,38 @@ function getBlockedPaths(role: string, jobPos: string): string[] {
   const jp = (jobPos || "").toLowerCase();
 
   // /admin is ALWAYS off-limits unless the user holds the literal "admin"
-  // role. Even CEO / managing director / head_* roles do not get in —
-  // this is intentional, the admin dashboard is for the system admin
-  // only. Roles other than "admin" always have /admin appended to their
-  // blocked list below.
+  // role. Even CEO / managing director / head_* roles do not get in.
   const adminBlock = r === "admin" ? [] : ["/admin"];
 
-  // Full access (everything except /admin for non-admins).
-  const privileged = ["admin", "manager", "ceo", "managing_director"].includes(r) || r.includes("head") ||
-    jp.includes("head") || jp.includes("ceo") || jp.includes("admin") || jp.includes("manager") || jp.includes("director");
+  // Privileged tiers — see everything (minus /admin if not admin).
+  // Post-Phase-1: admin / executive / manager. Legacy values
+  // (ceo / managing_director / head_*) kept for migration-safety.
+  const privileged =
+    ["admin", "executive", "manager", "ceo", "managing_director"].includes(r)
+    || r.includes("head")
+    || jp.includes("head") || jp.includes("ceo") || jp.includes("admin") || jp.includes("manager") || jp.includes("director");
   if (privileged) return [...adminBlock];
 
-  // Viewer is explicitly read-only — no Sales Force, no Materials & Demand
-  // Planning. We list this branch first so it can't be matched by any of
-  // the later workgroup rules.
+  // ── New consolidated 9-role tiers ─────────────────────────────────
+  // commercial_team: Sales Force (tagged accounts only), BD, read-only PP
+  if (r === "commercial_team") return [...adminBlock, "/projects", "/weekly-activities", "/procurement"];
+  // npd_team: Project Portfolio, M&DP, Formulations
+  if (r === "npd_team") return [...adminBlock, "/sales-force"];
+  // operations_team: Procurement, M&DP, Weekly Activities (no Sales Force, no PP)
+  if (r === "operations_team") return [...adminBlock, "/sales-force", "/projects", "/business-dev"];
+  // qc_team: department of its own — sees QC-relevant modules
+  if (r === "qc_team") return [...adminBlock, "/sales-force", "/business-dev"];
+  // support_staff: read-only most modules, full Chat
+  if (r === "support_staff") return [...adminBlock, "/sales-force", "/projects", "/business-dev", "/procurement", "/materials-demand-planning"];
+
+  // ── Legacy values (kept for migration-safety — these should be
+  // replaced by the new tiers as the role migration runs) ───────────
   if (r === "viewer") return [...adminBlock, "/sales-force", "/materials-demand-planning", "/projects", "/weekly-activities", "/business-dev", "/procurement"];
-  // NPD technologist sees everything except Sales Force
   if (r === "npd_technologist") return [...adminBlock, "/sales-force"];
-  // KAM / SKAM — can see Sales Force, but not the others
   if (["key_account_manager", "senior_key_account_manager"].includes(r)) return [...adminBlock, "/projects", "/weekly-activities", "/business-dev", "/procurement"];
-  // Procurement role sees procurement and weekly activities, not Sales Force
   if (r === "procurement" || jp.includes("procurement")) return [...adminBlock, "/sales-force", "/projects", "/business-dev"];
-  // All other roles (graphics_designer, hr, quality_control, and any
-  // unknown role) get the same fallback as viewer — no Sales Force, no
-  // M&DP, no project/portfolio modules.
+
+  // Catch-all (graphics_designer, hr, unknown roles) — viewer fallback
   return [...adminBlock, ...RESTRICTED_PATHS];
 }
 
