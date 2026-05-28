@@ -157,6 +157,81 @@ router.patch("/users/:id", async (req: AuthRequest, res) => {
   }
 });
 
+// ─── First-time admin approval queue ────────────────────────────────
+// GET /pending-approvals — list every user with approvalStatus = pending
+router.get("/pending-approvals", async (_req: AuthRequest, res) => {
+  try {
+    const rows = await db.select().from(usersTable).where(eq(usersTable.approvalStatus, "pending"));
+    res.json(rows.map(u => ({
+      id: u.id, name: u.name, email: u.email, role: u.role,
+      department: u.department, phone: u.phone, createdAt: u.createdAt,
+    })));
+  } catch (err) {
+    console.error("[admin] pending-approvals failed", err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+// POST /users/:id/approve — flip pending → approved + notify user
+router.post("/users/:id/approve", async (req: AuthRequest, res) => {
+  try {
+    const id = parseInt(String(req.params.id));
+    const approverId = req.user!.userId;
+    const [updated] = await db.update(usersTable)
+      .set({
+        approvalStatus: "approved",
+        approvedByUserId: approverId,
+        approvedAt: new Date(),
+        deniedReason: null,
+      })
+      .where(eq(usersTable.id, id))
+      .returning();
+    if (!updated) { res.status(404).json({ error: "NotFound" }); return; }
+    // Tell the user — they'll see this in their inbox after first login.
+    await db.insert(notificationsTable).values({
+      userId: id,
+      type: "system" as const,
+      title: "Account approved",
+      message: `Welcome to Zentryx. You can now sign in.`,
+      isRead: false,
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[admin] users.approve failed", err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+// POST /users/:id/deny — flip pending → denied with reason
+router.post("/users/:id/deny", async (req: AuthRequest, res) => {
+  try {
+    const id = parseInt(String(req.params.id));
+    const reason = (req.body?.reason as string) || "No reason provided";
+    const approverId = req.user!.userId;
+    const [updated] = await db.update(usersTable)
+      .set({
+        approvalStatus: "denied",
+        approvedByUserId: approverId,
+        approvedAt: new Date(),
+        deniedReason: reason,
+      })
+      .where(eq(usersTable.id, id))
+      .returning();
+    if (!updated) { res.status(404).json({ error: "NotFound" }); return; }
+    await db.insert(notificationsTable).values({
+      userId: id,
+      type: "system" as const,
+      title: "Account access denied",
+      message: `An admin reviewed your account and could not approve access at this time. Reason: ${reason}`,
+      isRead: false,
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[admin] users.deny failed", err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
 router.post("/users/:id/reset-password", async (req: AuthRequest, res) => {
   try {
     const id = parseInt(String(req.params.id));

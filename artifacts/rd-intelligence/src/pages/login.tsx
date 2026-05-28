@@ -218,17 +218,15 @@ export default function Login() {
     } else if (oauthError) {
       if (oauthError === "cancelled") {
         setError("Sign-in was cancelled.");
-      } else if (oauthError === "domain_not_allowed") {
+      } else if (oauthError === "domain_not_allowed" || oauthError === "invalid_domain") {
         setError(
           "Only Freddy Hirsch work email addresses (@freddyhirsch.co.za) are permitted to sign in. " +
           "Please use your work email or contact your administrator.",
         );
-      } else if (oauthError === "invalid_domain") {
-        // Legacy alias — same message as above.
-        setError(
-          "Only Freddy Hirsch work email addresses are permitted to sign in. " +
-          "Please use your work email.",
-        );
+      } else if (oauthError === "approval_pending") {
+        goMode("request-pending");
+      } else if (oauthError === "approval_denied") {
+        setError("Your account access has been denied. Contact your administrator for details.");
       } else {
         setError("OAuth sign-in failed. Please try again.");
       }
@@ -282,7 +280,16 @@ export default function Login() {
       const data = await apiFetch("api/auth/login", { email, password });
       handleMfaResponse(data);
     } catch (err: any) {
-      setError(err.message || "Invalid email or password.");
+      // The login endpoint returns 403 with a structured body for
+      // approval gates. apiFetch surfaces only `err.message`, so we
+      // detect by message content here.
+      const msg = err.message || "Invalid email or password.";
+      if (msg.includes("awaiting administrator approval")) {
+        setRequestUserName(name || email.split("@")[0] || "");
+        goMode("request-pending");
+        return;
+      }
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -322,6 +329,18 @@ export default function Login() {
       const data = await apiFetch("api/auth/register", {
         email, password, name, phone: phone || undefined, otpCode: signupOtp,
       });
+      // New flow: registration always ends with approval-pending. The
+      // server returns { approvalPending: true } and the UI shows the
+      // "awaiting admin approval" screen until they're approved and
+      // can log in normally.
+      if (data.approvalPending) {
+        setRequestUserName(name);
+        goMode("request-pending");
+        toast({ title: "Account submitted", description: "An admin will review your account." });
+        return;
+      }
+      // Backwards-compatible: if the server still returns the legacy
+      // mfaPending payload, route through the MFA flow as before.
       handleMfaResponse(data);
     } catch (err: any) {
       setError(err.message);

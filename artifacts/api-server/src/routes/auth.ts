@@ -2,7 +2,7 @@ import { Router, type Request } from "express";
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
 import { db } from "@workspace/db";
-import { usersTable, loginAttemptsTable } from "@workspace/db";
+import { usersTable, loginAttemptsTable, notificationsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { signToken, signSuperadminToken, signMfaToken, verifyMfaToken, requireAuth, AuthRequest } from "../lib/auth";
 import { mfaRequiredForRole } from "./mfa";
@@ -134,6 +134,29 @@ router.post("/login", async (req, res) => {
     if (!valid) {
       await logLoginAttempt(req, { userId: user.id, email, success: false, reason: "invalid_password" });
       res.status(401).json({ error: "Unauthorized", message: "Invalid credentials" });
+      return;
+    }
+
+    // ── Phase 1 first-time admin approval gate ──────────────────────
+    // Block login if the user's approval_status is anything other than
+    // 'approved'. Existing users were backfilled to 'approved' so the
+    // change is non-breaking for everyone in the system pre-Phase-1.
+    if (user.approvalStatus === "pending") {
+      await logLoginAttempt(req, { userId: user.id, email, success: false, reason: "approval_pending" });
+      res.status(403).json({
+        error: "ApprovalPending",
+        message: "Your account is awaiting administrator approval. You'll receive an email when access is granted.",
+      });
+      return;
+    }
+    if (user.approvalStatus === "denied") {
+      await logLoginAttempt(req, { userId: user.id, email, success: false, reason: "approval_denied" });
+      res.status(403).json({
+        error: "ApprovalDenied",
+        message: user.deniedReason
+          ? `Access denied: ${user.deniedReason}. Contact your administrator if you believe this is in error.`
+          : "Access denied. Contact your administrator if you believe this is in error.",
+      });
       return;
     }
 
@@ -429,14 +452,41 @@ router.post("/register", async (req, res) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
+    // New password-registered accounts also land as `pending` — first-
+    // time admin approval is unified across OAuth + password signup.
     const [user] = await db.insert(usersTable).values({
       email: email.toLowerCase(), name, passwordHash,
       role: "viewer",
       phone: phone || null,
       isActive: true,
+      approvalStatus: "pending",
     }).returning();
 
-    // New accounts go straight to SMS MFA on first login — no bypass here
+    // Notify all admins that a new account is awaiting approval.
+    try {
+      const admins = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.role, "admin"));
+      if (admins.length > 0) {
+        await db.insert(notificationsTable).values(
+          admins.map(a => ({
+            userId: a.id,
+            type: "system" as const,
+            title: "New account awaiting approval",
+            message: `${name} (${email}) just registered. Review and approve from the Admin Dashboard.`,
+            isRead: false,
+          })),
+        );
+      }
+    } catch { /* silent — notification failure must not break signup */ }
+
+    // Return a pending status — frontend will show the "awaiting
+    // approval" screen until an admin approves them. No MFA token issued
+    // because the user can't log in yet.
+    res.status(201).json({ approvalPending: true });
+    return;
+
+    // Legacy SMS MFA branch below is no longer reachable (kept as a
+    // reference until the next cleanup pass).
+    // eslint-disable-next-line no-unreachable
     const mfaToken = signMfaToken({ userId: user.id, email: user.email, role: user.role });
     if (!user.phone) {
       res.status(201).json({ mfaPending: true, requirePhone: true, mfaToken });
@@ -533,12 +583,16 @@ async function upsertOAuthUser(email: string, name: string, avatar?: string | nu
   let [user] = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
   if (!user) {
     const placeholder = await bcrypt.hash(randomUUID(), 10);
+    // New OAuth signups land as `pending` — the first-time admin
+    // approval gate. The user can complete Microsoft OAuth successfully
+    // but won't get a session token until an admin approves them.
     [user] = await db.insert(usersTable).values({
       email, name,
       passwordHash: placeholder,
       role: "viewer",
       isActive: true,
       avatar: avatar || null,
+      approvalStatus: "pending",
     }).returning();
   }
   return user;
@@ -547,10 +601,23 @@ async function upsertOAuthUser(email: string, name: string, avatar?: string | nu
 async function oauthFinish(req: Request, res: import("express").Response, user: typeof usersTable.$inferSelect) {
   const base = getBaseUrl(req);
 
-  // Superadmin has unconditional access — no MFA, no session expiry
+  // Superadmin has unconditional access — no MFA, no approval gate, no
+  // session expiry. Always lets through.
   if (user.email === SUPERADMIN_EMAIL) {
     const token = signSuperadminToken({ userId: user.id, email: user.email, role: user.role });
     res.redirect(`${base}/login?oauth_token=${token}`);
+    return;
+  }
+
+  // First-time admin approval gate — applies to OAuth too. Pending /
+  // denied users bounce back to the login screen with a clear message
+  // surfaced via the `oauth_error` query string.
+  if (user.approvalStatus === "pending") {
+    res.redirect(`${base}/login?oauth_error=approval_pending`);
+    return;
+  }
+  if (user.approvalStatus === "denied") {
+    res.redirect(`${base}/login?oauth_error=approval_denied`);
     return;
   }
 
