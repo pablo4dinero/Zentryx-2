@@ -110,13 +110,16 @@ router.get("/", requireAuth, async (req: AuthRequest, res) => {
     const userId = req.user!.userId;
 
     // Anyone who isn't privileged (admin / manager / ceo / managing_director
-    // / head_*) only sees the accounts they created or were tagged on as
-    // an account manager.
+    // / head_*) only sees the accounts they're tagged on as a manager.
+    // accountManagers is the SOLE source of truth — the legacy
+    // `createdById` fallback was removed so the creator can untag
+    // themselves from accounts they made (typical case: the admin
+    // bootstraps the account then hands it off to the real owner).
     let accounts = allAccounts;
     if (!isPrivileged(userRole)) {
       accounts = allAccounts.filter(a => {
         const managers = (a.accountManagers || []) as number[];
-        return managers.includes(userId) || a.createdById === userId;
+        return managers.includes(userId);
       });
     }
 
@@ -137,12 +140,14 @@ router.get("/:id", requireAuth, async (req: AuthRequest, res) => {
     const [account] = await db.select().from(accountsTable).where(eq(accountsTable.id, id)).limit(1);
     if (!account) { res.status(404).json({ error: "NotFound" }); return; }
 
-    // Apply same restricted-role visibility as the list endpoint
+    // Apply same restricted-role visibility as the list endpoint —
+    // accountManagers is the sole source of truth; createdById is NOT
+    // a fallback (creators must stay tagged to keep access).
     const userRole = req.user!.role;
     const userId = req.user!.userId;
     if (!isPrivileged(userRole)) {
       const managers = (account.accountManagers || []) as number[];
-      if (!managers.includes(userId) && account.createdById !== userId) {
+      if (!managers.includes(userId)) {
         res.status(403).json({ error: "Forbidden", message: "You don't have access to this account" });
         return;
       }

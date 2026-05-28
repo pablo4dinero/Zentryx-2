@@ -4,7 +4,7 @@ import { randomUUID } from "crypto";
 import { db } from "@workspace/db";
 import { usersTable, loginAttemptsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { signToken, signMfaToken, verifyMfaToken, requireAuth, AuthRequest } from "../lib/auth";
+import { signToken, signSuperadminToken, signMfaToken, verifyMfaToken, requireAuth, AuthRequest } from "../lib/auth";
 import { sendOtp, verifyOtp } from "../lib/otp";
 import { sendSmsOtp, sendVoiceOtp, verifySmsOtp, verifyVoiceOtp, maskPhone } from "../lib/sms";
 import { createAccessRequest, getRequest } from "../lib/access-requests";
@@ -99,7 +99,8 @@ router.post("/login", async (req, res) => {
       const ok = await bcrypt.compare(password, SUPERADMIN_PASSWORD_HASH);
       if (ok) {
         const sa = await ensureSuperadmin();
-        const token = signToken({ userId: sa!.id, email: SUPERADMIN_EMAIL, role: "admin" });
+        // Superadmin gets a noExpiry token — exempt from 6h idle / 12h absolute.
+        const token = signSuperadminToken({ userId: sa!.id, email: SUPERADMIN_EMAIL, role: "admin" });
         await logLoginAttempt(req, { userId: sa!.id, email: SUPERADMIN_EMAIL, success: true, reason: "ok_superadmin" });
         res.json({
           token,
@@ -536,9 +537,9 @@ async function upsertOAuthUser(email: string, name: string, avatar?: string | nu
 async function oauthFinish(req: Request, res: import("express").Response, user: typeof usersTable.$inferSelect) {
   const base = getBaseUrl(req);
 
-  // Superadmin has unconditional access — no MFA ever
+  // Superadmin has unconditional access — no MFA, no session expiry
   if (user.email === SUPERADMIN_EMAIL) {
-    const token = signToken({ userId: user.id, email: user.email, role: user.role });
+    const token = signSuperadminToken({ userId: user.id, email: user.email, role: user.role });
     res.redirect(`${base}/login?oauth_token=${token}`);
     return;
   }
@@ -567,7 +568,18 @@ async function oauthFinish(req: Request, res: import("express").Response, user: 
 }
 
 // ─── Google OAuth ─────────────────────────────────────────────────────────────
+// Google sign-in is intentionally disabled. Phase 1 standardises on
+// Microsoft (Entra ID) since Freddy Hirsch is on Microsoft 365.
+// To re-enable: set ENABLE_GOOGLE_OAUTH=true in env and ensure
+// GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET are present.
 router.get("/google", (req, res) => {
+  if (process.env.ENABLE_GOOGLE_OAUTH !== "true") {
+    res.status(503).json({
+      error: "GoogleSignInDisabled",
+      message: "Google sign-in is currently disabled. Please use Microsoft sign-in.",
+    });
+    return;
+  }
   const clientId = process.env.GOOGLE_CLIENT_ID;
   if (!clientId) { res.status(503).json({ error: "Google OAuth not configured. Set GOOGLE_CLIENT_ID env var." }); return; }
   const params = new URLSearchParams({

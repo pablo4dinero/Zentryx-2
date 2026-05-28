@@ -147,6 +147,14 @@ export default function Login() {
     const smsCodeParam = params.get("sms_code");
     const smsFailedParam = params.get("sms_failed") === "true";
 
+    // Pick up any session-expiry reason set by the global fetch
+    // interceptor before the redirect to /login.
+    const logoutReason = sessionStorage.getItem("rd_logout_reason");
+    if (logoutReason) {
+      sessionStorage.removeItem("rd_logout_reason");
+      setError(logoutReason);
+    }
+
     window.history.replaceState({}, "", window.location.pathname);
 
     if (oauthToken) {
@@ -198,12 +206,26 @@ export default function Login() {
         <div className={cn("flex-1 border-t", isLight ? "border-gray-200" : "border-white/10")} />
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <a href={`${BASE}api/auth/google`}
-          className={cn("flex items-center justify-center gap-2 h-11 px-3 rounded-xl border text-sm font-medium transition-all select-none",
-            isLight ? "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm" : "border-white/10 bg-white/5 text-foreground hover:bg-white/10"
-          )}>
+        {/* Google sign-in intentionally disabled. Freddy Hirsch is on
+            Microsoft 365; we keep the button visible (greyed out) as a
+            placeholder for future re-enablement. The backend route
+            /api/auth/google still exists but is gated by ALLOWED_EMAIL_DOMAINS
+            so a direct hit can't auto-provision a Zentryx account. */}
+        <button
+          type="button"
+          disabled
+          aria-disabled="true"
+          title="Coming soon — please sign in with Microsoft"
+          className={cn(
+            "flex items-center justify-center gap-2 h-11 px-3 rounded-xl border text-sm font-medium select-none cursor-not-allowed opacity-50",
+            isLight ? "border-gray-200 bg-white text-gray-500" : "border-white/10 bg-white/5 text-muted-foreground",
+          )}
+        >
           <GoogleIcon /> Google
-        </a>
+          <span className={cn("ml-1 text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded-full",
+            isLight ? "bg-gray-100 text-gray-500" : "bg-white/10 text-muted-foreground",
+          )}>Soon</span>
+        </button>
         <a href={`${BASE}api/auth/microsoft`}
           className={cn("flex items-center justify-center gap-2 h-11 px-3 rounded-xl border text-sm font-medium transition-all select-none",
             isLight ? "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm" : "border-white/10 bg-white/5 text-foreground hover:bg-white/10"

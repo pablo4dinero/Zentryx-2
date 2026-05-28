@@ -349,6 +349,55 @@ async function createTablesIfNotExist() {
     // Add sms_verified_at column for SMS MFA feature
     await db.execute(sql.raw(`ALTER TABLE users ADD COLUMN IF NOT EXISTS sms_verified_at TIMESTAMP;`));
 
+    // ── Phase 1 user-table additions ───────────────────────────────
+    // First-time admin approval lifecycle. Existing users default to
+    // `approved` so this migration is non-breaking; new users will be
+    // inserted as `pending` by the registration / OAuth-callback flows.
+    await db.execute(sql.raw(`
+      DO $$ BEGIN
+        CREATE TYPE user_approval_status AS ENUM ('pending', 'approved', 'denied');
+      EXCEPTION WHEN duplicate_object THEN null; END $$;
+    `));
+    await db.execute(sql.raw(`
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS approval_status user_approval_status NOT NULL DEFAULT 'approved',
+        ADD COLUMN IF NOT EXISTS approved_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP,
+        ADD COLUMN IF NOT EXISTS denied_reason TEXT;
+    `));
+
+    // TOTP MFA columns. Null mfa_secret = user has not yet enrolled.
+    // mfa_backup_codes stores bcrypt hashes (never plaintext) as a JSON
+    // array. mfa_failed_attempts gates the "show fallback options" UI.
+    await db.execute(sql.raw(`
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS mfa_secret TEXT,
+        ADD COLUMN IF NOT EXISTS mfa_enrolled_at TIMESTAMP,
+        ADD COLUMN IF NOT EXISTS mfa_backup_codes JSONB,
+        ADD COLUMN IF NOT EXISTS mfa_failed_attempts INTEGER NOT NULL DEFAULT 0;
+    `));
+
+    // Admin emergency one-time login token (the "request login approval
+    // from admin" fallback). When granted, the user can log in once and
+    // is forced into MFA re-enrollment.
+    await db.execute(sql.raw(`
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS emergency_login_token_hash TEXT,
+        ADD COLUMN IF NOT EXISTS emergency_login_expires TIMESTAMP;
+    `));
+
+    // Extend the user_role enum with the 9 consolidated role values.
+    // Each ADD VALUE is wrapped so it's safe to re-run. Chunk 4 will
+    // migrate users from legacy values to these, then we can drop the
+    // legacy ones in a future migration.
+    for (const newRole of ["executive", "commercial_team", "npd_team", "operations_team", "qc_team", "support_staff"]) {
+      await db.execute(sql.raw(`
+        DO $$ BEGIN
+          ALTER TYPE user_role ADD VALUE IF NOT EXISTS '${newRole}';
+        EXCEPTION WHEN duplicate_object THEN null; END $$;
+      `));
+    }
+
     // Repair chat rooms whose creator was never inserted into
     // chat_room_members. This happened to the superadmin because the
     // POST /api/chat/rooms handler filtered them out of the member list even

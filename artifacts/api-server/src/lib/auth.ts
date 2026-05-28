@@ -21,6 +21,16 @@ export interface JwtPayload {
   userId: number;
   email: string;
   role: string;
+  // ── Phase 1 session policy ──────────────────────────────────────────
+  // `idleUntil`     — refreshes on every authenticated request, expires
+  //                   if the user is idle longer than IDLE_TTL_SEC.
+  // `absoluteExpiry`— NEVER refreshes, hard cap on session lifetime.
+  // `noExpiry`      — true only for the superadmin; both fields are
+  //                   ignored and the legacy 7-day `exp` claim applies.
+  // Times are seconds-since-epoch to match JWT's native clock format.
+  idleUntil?: number;
+  absoluteExpiry?: number;
+  noExpiry?: boolean;
 }
 
 export interface MfaJwtPayload {
@@ -30,8 +40,38 @@ export interface MfaJwtPayload {
   mfaPending: true;
 }
 
-export function signToken(payload: JwtPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" });
+// Session lifetimes (seconds). Tweak via env in special circumstances —
+// e.g. a longer absolute cap during a known overnight migration. Default
+// matches the agreed policy: 6h idle, 12h absolute.
+const IDLE_TTL_SEC = Number(process.env.SESSION_IDLE_TTL_SEC) || 6 * 60 * 60;
+const ABSOLUTE_TTL_SEC = Number(process.env.SESSION_ABSOLUTE_TTL_SEC) || 12 * 60 * 60;
+
+function nowSec(): number {
+  return Math.floor(Date.now() / 1000);
+}
+
+/**
+ * Sign a standard session token with 6h-idle / 12h-absolute expiry.
+ * The JWT `expiresIn` is set to the absolute ceiling so a token can
+ * never outlive its absolute cap even if the idleUntil math is buggy.
+ */
+export function signToken(payload: Omit<JwtPayload, "idleUntil" | "absoluteExpiry" | "noExpiry">): string {
+  const now = nowSec();
+  const full: JwtPayload = {
+    ...payload,
+    idleUntil: now + IDLE_TTL_SEC,
+    absoluteExpiry: now + ABSOLUTE_TTL_SEC,
+  };
+  return jwt.sign(full, JWT_SECRET, { expiresIn: ABSOLUTE_TTL_SEC });
+}
+
+/**
+ * Sign a superadmin-only token that bypasses both idle and absolute
+ * expiry. Lifetime is the legacy 7 days. Only ever called from the
+ * superadmin bypass path; should never be reachable for normal users.
+ */
+export function signSuperadminToken(payload: Omit<JwtPayload, "idleUntil" | "absoluteExpiry" | "noExpiry">): string {
+  return jwt.sign({ ...payload, noExpiry: true }, JWT_SECRET, { expiresIn: "7d" });
 }
 
 export function signMfaToken(payload: Omit<MfaJwtPayload, "mfaPending">): string {
@@ -65,6 +105,32 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
       res.status(401).json({ error: "MFAPending", message: "SMS verification required" });
       return;
     }
+
+    // Session-policy gate. Superadmin tokens carry `noExpiry: true` and
+    // skip the whole block. For everyone else we enforce both ceilings.
+    if (!payload.noExpiry) {
+      const now = nowSec();
+      if (payload.absoluteExpiry && now > payload.absoluteExpiry) {
+        res.status(401).json({ error: "SessionExpired", reason: "absolute", message: "Session expired (12 h max). Please sign in again." });
+        return;
+      }
+      if (payload.idleUntil && now > payload.idleUntil) {
+        res.status(401).json({ error: "SessionExpired", reason: "idle", message: "Session expired due to inactivity. Please sign in again." });
+        return;
+      }
+      // Sliding refresh — push the idle window forward, but never past
+      // the absolute cap. Frontend reads the new token from
+      // `x-refreshed-token` if it wants to swap without re-login.
+      if (payload.idleUntil && payload.absoluteExpiry) {
+        const proposedIdle = now + IDLE_TTL_SEC;
+        const newIdleUntil = Math.min(proposedIdle, payload.absoluteExpiry);
+        const refreshed = { ...payload, idleUntil: newIdleUntil };
+        const remainingAbsolute = Math.max(1, payload.absoluteExpiry - now);
+        const newToken = jwt.sign(refreshed, JWT_SECRET, { expiresIn: remainingAbsolute });
+        res.setHeader("x-refreshed-token", newToken);
+      }
+    }
+
     req.user = payload;
     next();
   } catch {

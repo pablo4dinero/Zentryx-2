@@ -25,12 +25,19 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 }));
 
-// Setup global fetch interceptor to add Authorization header if not already present
-// This is a workaround since we can't easily modify the generated customFetch in this environment
+// Global fetch interceptor:
+//   1. Attaches `Authorization: Bearer <token>` to every authed request.
+//   2. Reads `x-refreshed-token` from successful responses and rolls the
+//      session forward (this is the 6h-idle sliding-window mechanism;
+//      the server mints a fresh token on each authed call and the
+//      frontend swaps it in transparently).
+//   3. On 401 anywhere except the login endpoint, clears state and
+//      bounces to /login. A SessionExpired body lets us show a friendly
+//      message instead of an abrupt redirect.
 const originalFetch = window.fetch;
 window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   const token = localStorage.getItem("rd_token");
-  
+
   if (token) {
     const headers = new Headers(init?.headers);
     if (!headers.has("Authorization")) {
@@ -38,13 +45,33 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     }
     init = { ...init, headers };
   }
-  
+
   const response = await originalFetch(input, init);
-  
-  if (response.status === 401 && !input.toString().includes('/api/auth/login')) {
+
+  // Sliding-window refresh — server hands us a new token on every
+  // authed request; we swap silently so the user never sees a logout
+  // unless they actually went idle past 6h or hit the 12h absolute cap.
+  const refreshed = response.headers.get("x-refreshed-token");
+  if (refreshed && refreshed !== token) {
+    localStorage.setItem("rd_token", refreshed);
+  }
+
+  if (response.status === 401 && !input.toString().includes("/api/auth/login")) {
+    // Try to read the structured reason so the login screen can show a
+    // friendly notice ("Signed out due to inactivity" vs "Session
+    // reached 12-hour limit"). Falls back to a generic message.
+    try {
+      const cloned = response.clone();
+      const body = await cloned.json().catch(() => null);
+      if (body?.error === "SessionExpired") {
+        sessionStorage.setItem("rd_logout_reason", body.reason === "absolute"
+          ? "Your session reached its 12-hour limit. Please sign in again."
+          : "You were signed out due to inactivity. Please sign in again.");
+      }
+    } catch { /* silent */ }
     localStorage.removeItem("rd_token");
     window.location.href = "/login";
   }
-  
+
   return response;
 };
