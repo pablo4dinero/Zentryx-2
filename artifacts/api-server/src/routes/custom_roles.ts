@@ -78,27 +78,30 @@ router.patch("/:value", async (req: AuthRequest, res) => {
   }
 });
 
-// PUT /:value — upsert module access for ANY role (admin only).
-// Unlike POST (which mints a brand-new custom role from a label) this
-// targets an explicit role value, so it's how the Role Editor configures
-// BUILT-IN roles too: it creates the row on first save and updates it
-// thereafter. The "admin" role is never restrictable — it always keeps
-// full access — so we reject it outright to prevent self-lockout.
+// PUT /:value — upsert label and/or module access for ANY role (admin
+// only). Unlike POST (which mints a brand-new custom role from a label)
+// this targets an explicit role value, so it's how the Role Editor
+// configures BUILT-IN roles too: it creates the row on first save and
+// updates it thereafter.
+//   • Renaming a role only changes its display label — the `value`
+//     identifier that all logic keys off never changes.
+//   • Omitting allowedPaths leaves the stored module access untouched
+//     (a label-only rename), so it never wipes access.
+//   • The "admin" role can be renamed but is NEVER restrictable — we
+//     refuse to write a module allow-list for it, and module resolution
+//     always grants admin full access regardless.
 router.put("/:value", async (req: AuthRequest, res) => {
   try {
     if (req.user!.role !== "admin") { res.status(403).json({ error: "Forbidden" }); return; }
     const value = String(req.params.value);
-    if (value === "admin") {
-      res.status(400).json({ error: "BadRequest", message: "The Admin role cannot be restricted." });
-      return;
-    }
+    const isAdminRole = value === "admin";
     const { label, allowedPaths } = req.body as { label?: string; allowedPaths?: unknown };
-    const paths = sanitisePaths(allowedPaths);
 
     const [existing] = await db.select().from(customRolesTable).where(eq(customRolesTable.value, value)).limit(1);
     if (existing) {
-      const set: Record<string, any> = { allowedPaths: paths, updatedAt: new Date() };
+      const set: Record<string, any> = { updatedAt: new Date() };
       if (typeof label === "string" && label.trim()) set.label = label.trim();
+      if (!isAdminRole && allowedPaths !== undefined) set.allowedPaths = sanitisePaths(allowedPaths);
       const [updated] = await db.update(customRolesTable).set(set).where(eq(customRolesTable.value, value)).returning();
       res.json(updated);
       return;
@@ -107,7 +110,7 @@ router.put("/:value", async (req: AuthRequest, res) => {
     const [created] = await db.insert(customRolesTable).values({
       value,
       label: (typeof label === "string" && label.trim()) ? label.trim() : value,
-      allowedPaths: paths,
+      allowedPaths: isAdminRole ? [] : sanitisePaths(allowedPaths),
     }).returning();
     res.status(201).json(created);
   } catch (err) {

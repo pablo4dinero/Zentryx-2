@@ -148,19 +148,35 @@ export async function setRoleModules(value: string, label: string, allowedPaths:
   }
 }
 
-/** Built-ins + server custom roles. */
+/**
+ * Rename ANY role (built-in or custom). Only the display label changes;
+ * the `value` identifier all logic keys off stays fixed. Module access is
+ * preserved — we seed the row with the role's current effective modules so
+ * a first-time rename of a built-in doesn't accidentally restrict it.
+ */
+export async function renameRole(value: string, label: string): Promise<boolean> {
+  return setRoleModules(value, label, getEffectiveAllowedPaths(value));
+}
+
+/** Built-ins (with any stored label override applied) + server custom roles. */
 export function getAllRoles(): RoleDef[] {
+  const builtins = ZENTRYX_ROLES.map(r => {
+    const override = _customRoles.find(c => c.value === r.value);
+    return override ? { value: r.value, label: override.label } : r;
+  });
   const custom = _customRoles.filter(c => !ZENTRYX_ROLES.some(r => r.value === c.value));
-  return [...ZENTRYX_ROLES, ...custom.map(c => ({ value: c.value, label: c.label }))];
+  return [...builtins, ...custom.map(c => ({ value: c.value, label: c.label }))];
 }
 
 /** Human-friendly label for any role value — built-in, legacy, or custom. */
 export function roleLabel(value: string | null | undefined): string {
   if (!value) return "—";
+  // A stored override (custom role OR a renamed built-in) wins so renames
+  // show up everywhere the label is displayed.
+  const override = _customRoles.find(r => r.value === value);
+  if (override) return override.label;
   const exact = ZENTRYX_ROLES.find(r => r.value === value);
   if (exact) return exact.label;
-  const custom = _customRoles.find(r => r.value === value);
-  if (custom) return custom.label;
   if (LEGACY_LABELS[value]) return LEGACY_LABELS[value];
   return value.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }

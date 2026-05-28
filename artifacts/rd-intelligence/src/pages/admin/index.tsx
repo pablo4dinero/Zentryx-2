@@ -5,13 +5,13 @@ import {
   TrendingUp, TrendingDown, Activity, KeyRound, UserCheck, UserX,
   Crown, Mail, RefreshCw, Download, Globe,
   Megaphone, Send, Trash2, ChevronDown, ChevronRight,
-  SlidersHorizontal, Save, Check,
+  SlidersHorizontal, Save, Check, Pencil, X,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { useGetCurrentUser } from "@/api-client";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
-import { roleLabel, useServerRoles, createCustomRole, ZENTRYX_MODULES, getEffectiveAllowedPaths, setRoleModules } from "@/lib/roles";
+import { roleLabel, useServerRoles, createCustomRole, ZENTRYX_MODULES, getEffectiveAllowedPaths, setRoleModules, renameRole } from "@/lib/roles";
 
 const BASE = import.meta.env.BASE_URL;
 const apiHeaders = () => ({
@@ -615,13 +615,18 @@ function RoleAccessRow({ role, isLight, expanded, onToggleExpand, onSaved, cache
   const [selected, setSelected] = useState<string[]>(() => getEffectiveAllowedPaths(role.value));
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
+  // Inline rename state.
+  const [editingName, setEditingName] = useState(false);
+  const [draftLabel, setDraftLabel] = useState(role.label);
+  const [renaming, setRenaming] = useState(false);
 
   // Re-sync ticks whenever the role cache changes (server roles finished
   // loading, or another role was just saved).
   useEffect(() => {
     setSelected(getEffectiveAllowedPaths(role.value));
+    if (!editingName) setDraftLabel(role.label);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cacheVersion, role.value]);
+  }, [cacheVersion, role.value, role.label]);
 
   const toggle = (path: string) =>
     setSelected(s => (s.includes(path) ? s.filter(p => p !== path) : [...s, path]));
@@ -637,26 +642,67 @@ function RoleAccessRow({ role, isLight, expanded, onToggleExpand, onSaved, cache
     }
   };
 
+  const startEdit = () => { setDraftLabel(role.label); setEditingName(true); };
+  const cancelEdit = () => { setEditingName(false); setDraftLabel(role.label); };
+  const saveRename = async () => {
+    const next = draftLabel.trim();
+    if (!next || next === role.label) { cancelEdit(); return; }
+    setRenaming(true);
+    const ok = await renameRole(role.value, next);
+    setRenaming(false);
+    if (ok) { setEditingName(false); await onSaved(); }
+  };
+
   return (
     <div className={cn("rounded-xl border overflow-hidden", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/[0.02]")}>
-      <button
-        onClick={onToggleExpand}
-        className={cn("w-full flex items-center justify-between gap-3 px-4 py-3 text-left transition-colors",
-          isLight ? "hover:bg-slate-50" : "hover:bg-white/5")}
-      >
-        <div className="flex items-center gap-2 min-w-0">
-          {expanded
-            ? <ChevronDown className="w-4 h-4 shrink-0 text-muted-foreground" />
-            : <ChevronRight className="w-4 h-4 shrink-0 text-muted-foreground" />}
-          <span className={cn("font-medium truncate", isLight ? "text-slate-900" : "text-foreground")}>{role.label}</span>
-          {isAdminRole && (
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 shrink-0">Full access</span>
+      <div className={cn("w-full flex items-center justify-between gap-3 px-4 py-3 transition-colors",
+        !editingName && (isLight ? "hover:bg-slate-50" : "hover:bg-white/5"))}>
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <button onClick={onToggleExpand} className="p-0.5 shrink-0" aria-label={expanded ? "Collapse" : "Expand"}>
+            {expanded
+              ? <ChevronDown className="w-4 h-4 text-muted-foreground" />
+              : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+          </button>
+          {editingName ? (
+            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+              <input
+                autoFocus
+                value={draftLabel}
+                onChange={e => setDraftLabel(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") saveRename(); if (e.key === "Escape") cancelEdit(); }}
+                className={cn("h-8 px-2 rounded-lg border text-sm flex-1 min-w-0 focus:outline-none focus:ring-1 focus:ring-primary/40",
+                  isLight ? "bg-white border-slate-200 text-slate-900" : "bg-black/20 border-white/10 text-foreground")}
+              />
+              <button onClick={saveRename} disabled={renaming} title="Save name"
+                className="p-1.5 rounded-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-50 shrink-0">
+                {renaming ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+              </button>
+              <button onClick={cancelEdit} title="Cancel"
+                className={cn("p-1.5 rounded-lg shrink-0", isLight ? "text-slate-500 hover:bg-slate-100" : "text-muted-foreground hover:bg-white/5")}>
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <>
+              <button onClick={onToggleExpand} className={cn("font-medium truncate text-left", isLight ? "text-slate-900" : "text-foreground")}>
+                {role.label}
+              </button>
+              {isAdminRole && (
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 shrink-0">Full access</span>
+              )}
+              <button onClick={startEdit} title="Rename role"
+                className={cn("p-1 rounded-md shrink-0 transition-colors", isLight ? "text-slate-400 hover:text-slate-900 hover:bg-slate-100" : "text-muted-foreground hover:text-foreground hover:bg-white/5")}>
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+            </>
           )}
         </div>
-        <span className={cn("text-xs shrink-0", isLight ? "text-slate-500" : "text-muted-foreground")}>
-          {isAdminRole ? "All modules" : `${selected.length} / ${ZENTRYX_MODULES.length} modules`}
-        </span>
-      </button>
+        {!editingName && (
+          <button onClick={onToggleExpand} className={cn("text-xs shrink-0", isLight ? "text-slate-500" : "text-muted-foreground")}>
+            {isAdminRole ? "All modules" : `${selected.length} / ${ZENTRYX_MODULES.length} modules`}
+          </button>
+        )}
+      </div>
 
       {expanded && (
         <div className={cn("px-4 pb-4 border-t", isLight ? "border-slate-100" : "border-white/10")}>
