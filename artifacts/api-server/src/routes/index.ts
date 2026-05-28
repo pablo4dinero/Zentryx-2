@@ -29,6 +29,7 @@ import optionListsRouter from "./option_lists";
 import exportRequestsRouter from "./export_requests";
 import adminRouter from "./admin";
 import adminMessagesRouter from "./admin_messages";
+import mfaRouter from "./mfa";
 
 const router: IRouter = Router();
 
@@ -62,5 +63,6 @@ router.use("/option-lists", optionListsRouter);
 router.use("/export-requests", exportRequestsRouter);
 router.use("/admin", adminRouter);
 router.use("/admin-messages", adminMessagesRouter);
+router.use("/mfa", mfaRouter);
 
 export default router;

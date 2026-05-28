@@ -11,7 +11,7 @@ import { useTheme } from "@/lib/theme";
 
 const BASE = import.meta.env.BASE_URL;
 
-type Mode = "login" | "signup" | "signup-otp" | "forgot" | "forgot-otp" | "reset" | "sms-otp" | "add-phone" | "request-pending";
+type Mode = "login" | "signup" | "signup-otp" | "forgot" | "forgot-otp" | "reset" | "sms-otp" | "add-phone" | "request-pending" | "totp-challenge" | "totp-enroll" | "totp-backup-code";
 
 async function apiFetch(path: string, body: object) {
   const r = await fetch(`${BASE}${path}`, {
@@ -90,6 +90,18 @@ export default function Login() {
   const [requestId, setRequestId] = useState("");
   const [requestUserName, setRequestUserName] = useState("");
 
+  // ── TOTP MFA fields ────────────────────────────────────────────────
+  const [totpCode, setTotpCode] = useState("");
+  const [totpAttempts, setTotpAttempts] = useState(0);
+  const [showFallbacks, setShowFallbacks] = useState(false);
+  const [enrollQr, setEnrollQr] = useState("");
+  const [enrollSecret, setEnrollSecret] = useState("");
+  const [enrollVerifyCode, setEnrollVerifyCode] = useState("");
+  const [enrollLoading, setEnrollLoading] = useState(false);
+  const [enrollStep, setEnrollStep] = useState<"scan" | "backup">("scan");
+  const [issuedBackupCodes, setIssuedBackupCodes] = useState<string[]>([]);
+  const [backupCodeInput, setBackupCodeInput] = useState("");
+
   const clearError = () => setError("");
   const goMode = (m: Mode) => { setMode(m); setError(""); };
 
@@ -104,6 +116,8 @@ export default function Login() {
     mfaPending?: boolean;
     requirePhone?: boolean;
     mfaToken?: string;
+    mfaType?: "totp" | "sms";
+    mustEnrollMfa?: boolean;
     phone?: string;
     smsFailed?: boolean;
     devMode?: boolean;
@@ -116,6 +130,20 @@ export default function Login() {
       setVoiceMode(false);
       setEmailMode(false);
       setDevEmailOtp("");
+      // Phase 1: TOTP-first MFA branching ---------------------------------
+      if (data.mfaType === "totp") {
+        goMode("totp-challenge");
+        return;
+      }
+      if (data.mustEnrollMfa) {
+        toast({
+          title: "Two-factor required",
+          description: "Your role requires an authenticator app. Let's set one up now.",
+        });
+        goMode("totp-enroll");
+        return;
+      }
+      // Legacy SMS path (will be removed in chunk 4) ----------------------
       if (data.requirePhone) {
         goMode("add-phone");
       } else {
@@ -338,6 +366,131 @@ export default function Login() {
     } catch (err: any) {
       setError(err.message);
       if (err.message.includes("Invalid") || err.message.includes("expired")) goMode("forgot-otp");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── TOTP challenge — verify the 6-digit code from authenticator ──────────
+  const handleTotpChallenge = async (e: React.FormEvent) => {
+    e.preventDefault();
+    clearError();
+    setLoading(true);
+    try {
+      const data = await apiFetch("api/mfa/totp/challenge", { mfaToken, code: totpCode });
+      setToken(data.token);
+      toast({ title: "Verified!", description: `Welcome, ${data.user?.name ?? ""}` });
+      setLocation("/");
+    } catch (err: any) {
+      // The server returns { error: "InvalidCode", attempts: N, showFallbacks: bool }
+      const msg = err.message || "Verification failed";
+      setError(msg);
+      // Attempt counter + fallback gate are surfaced via the message
+      // body the server returns. We naively bump locally too so the UI
+      // updates immediately without waiting for the next response.
+      setTotpAttempts(a => {
+        const next = a + 1;
+        if (next >= 3) setShowFallbacks(true);
+        return next;
+      });
+      if (msg.includes("Invalid MFA token") || msg.includes("expired")) goMode("login");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── TOTP enrollment — fetch QR + secret, then verify first code ──────────
+  const handleStartEnroll = async () => {
+    clearError();
+    setEnrollLoading(true);
+    try {
+      // The enrollment endpoint requires the user's session token; during
+      // the "must-enroll-MFA" flow we only have an mfaToken. Use it
+      // explicitly as the Authorization header since it carries
+      // mfaPending: true (the backend allows enrollment from MFA tokens
+      // because requireAuth doesn't gate on mfaPending here — see /enroll/start).
+      // For simplicity we just attach the mfaToken header.
+      const res = await fetch(`${BASE}api/mfa/enroll/start`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${mfaToken}`,
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Enrollment failed");
+      setEnrollQr(data.qrCode);
+      setEnrollSecret(data.manualEntrySecret);
+      setEnrollStep("scan");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setEnrollLoading(false);
+    }
+  };
+
+  const handleVerifyEnroll = async (e: React.FormEvent) => {
+    e.preventDefault();
+    clearError();
+    setEnrollLoading(true);
+    try {
+      const res = await fetch(`${BASE}api/mfa/enroll/verify`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${mfaToken}`,
+        },
+        body: JSON.stringify({ code: enrollVerifyCode }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Verification failed");
+      setIssuedBackupCodes(data.backupCodes || []);
+      setEnrollStep("backup");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setEnrollLoading(false);
+    }
+  };
+
+  // After the user confirms they've saved the backup codes, we re-issue
+  // the password+TOTP login flow from scratch so they get a real
+  // session token. Simpler than minting one server-side from the
+  // mfaToken; matches what they'd do on subsequent logins anyway.
+  const handleFinishEnroll = () => {
+    setIssuedBackupCodes([]);
+    setEnrollQr("");
+    setEnrollSecret("");
+    setEnrollVerifyCode("");
+    setEnrollStep("scan");
+    setMfaToken("");
+    goMode("login");
+    toast({
+      title: "Two-factor enabled",
+      description: "Sign in with your password and your authenticator code.",
+    });
+  };
+
+  // ─── Backup-code fallback ─────────────────────────────────────────────────
+  const handleBackupCodeVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    clearError();
+    setLoading(true);
+    try {
+      const data = await apiFetch("api/mfa/backup-code/verify", {
+        mfaToken,
+        code: backupCodeInput,
+      });
+      setToken(data.token);
+      toast({
+        title: "Signed in via backup code",
+        description: data.remainingBackupCodes <= 2
+          ? `Only ${data.remainingBackupCodes} backup code${data.remainingBackupCodes === 1 ? "" : "s"} left — regenerate from Settings.`
+          : `${data.remainingBackupCodes} backup codes remaining.`,
+      });
+      setLocation("/");
+    } catch (err: any) {
+      setError(err.message || "Invalid backup code");
     } finally {
       setLoading(false);
     }
@@ -862,6 +1015,205 @@ export default function Login() {
                 >
                   <ShieldCheck className="w-3.5 h-3.5" />
                   Request access from an admin
+                </button>
+              </form>
+            )}
+
+            {/* ── TOTP challenge (6-digit code) ─────────────────────── */}
+            {mode === "totp-challenge" && (
+              <form onSubmit={handleTotpChallenge} className="space-y-5">
+                <div>
+                  <p className={cn("text-sm font-semibold", isLight ? "text-gray-900" : "text-foreground")}>Enter your 6-digit authenticator code</p>
+                  <p className={cn("text-xs mt-1", isLight ? "text-gray-500" : "text-muted-foreground")}>
+                    Open your authenticator app (Microsoft, Google, Authy, 1Password, etc.) and type the current code for Zentryx.
+                  </p>
+                </div>
+                <input
+                  autoFocus
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
+                  placeholder="123 456"
+                  className={cn(
+                    "w-full h-14 rounded-xl border px-4 text-center text-2xl tracking-[0.4em] font-mono focus:outline-none focus:ring-2 focus:ring-primary/40",
+                    isLight ? "bg-white border-gray-200 text-gray-900" : "bg-black/20 border-white/10 text-foreground",
+                  )}
+                />
+                {error && <p className="text-xs text-red-500">{error}</p>}
+                <Button type="submit" disabled={loading || totpCode.length !== 6} className="w-full h-11">
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify"}
+                </Button>
+
+                {showFallbacks && (
+                  <div className={cn("rounded-xl border p-4 space-y-3", isLight ? "border-amber-200 bg-amber-50" : "border-amber-500/30 bg-amber-500/10")}>
+                    <p className={cn("text-xs font-semibold uppercase tracking-wide", isLight ? "text-amber-700" : "text-amber-300")}>
+                      Can't get your code?
+                    </p>
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => goMode("totp-backup-code")}
+                        className={cn("w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors", isLight ? "bg-white border border-amber-200 text-gray-700 hover:bg-amber-50" : "bg-white/5 border border-amber-500/30 text-foreground hover:bg-white/10")}
+                      >
+                        🔑 Enter a backup code
+                      </button>
+                      {/* SMS / Voice / Admin emergency wired in Chunk 3 */}
+                      <button
+                        type="button"
+                        disabled
+                        title="Coming in Chunk 3"
+                        className={cn("w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm cursor-not-allowed opacity-50", isLight ? "bg-white border border-gray-200 text-gray-500" : "bg-white/5 border border-white/10 text-muted-foreground")}
+                      >
+                        📱 Send code via SMS (coming soon)
+                      </button>
+                      <button
+                        type="button"
+                        disabled
+                        title="Coming in Chunk 3"
+                        className={cn("w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm cursor-not-allowed opacity-50", isLight ? "bg-white border border-gray-200 text-gray-500" : "bg-white/5 border border-white/10 text-muted-foreground")}
+                      >
+                        📞 Call me with the code (coming soon)
+                      </button>
+                      <button
+                        type="button"
+                        disabled
+                        title="Coming in Chunk 3"
+                        className={cn("w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm cursor-not-allowed opacity-50", isLight ? "bg-white border border-gray-200 text-gray-500" : "bg-white/5 border border-white/10 text-muted-foreground")}
+                      >
+                        🛡️ Request admin emergency access (coming soon)
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <button type="button" onClick={() => { goMode("login"); setTotpCode(""); setTotpAttempts(0); setShowFallbacks(false); }} className={cn("w-full text-xs", isLight ? "text-gray-400 hover:text-gray-700" : "text-muted-foreground hover:text-foreground")}>
+                  ← Cancel and sign in as a different user
+                </button>
+              </form>
+            )}
+
+            {/* ── TOTP enrollment ──────────────────────────────────────── */}
+            {mode === "totp-enroll" && (
+              <div className="space-y-5">
+                {!enrollQr && (
+                  <>
+                    <div>
+                      <p className={cn("text-sm font-semibold", isLight ? "text-gray-900" : "text-foreground")}>Set up two-factor authentication</p>
+                      <p className={cn("text-xs mt-1", isLight ? "text-gray-500" : "text-muted-foreground")}>
+                        Your role requires an authenticator app. This takes about 60 seconds.
+                      </p>
+                    </div>
+                    <div className={cn("rounded-xl border p-4 text-xs space-y-2", isLight ? "border-gray-200 bg-gray-50 text-gray-700" : "border-white/10 bg-white/5 text-muted-foreground")}>
+                      <p className={cn("font-semibold", isLight ? "text-gray-900" : "text-foreground")}>Before you start:</p>
+                      <p>• Install an authenticator app on your phone — Microsoft Authenticator, Google Authenticator, Authy, 1Password, or Bitwarden all work.</p>
+                      <p>• Have your phone unlocked and the app open.</p>
+                    </div>
+                    {error && <p className="text-xs text-red-500">{error}</p>}
+                    <Button onClick={handleStartEnroll} disabled={enrollLoading} className="w-full h-11">
+                      {enrollLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "I'm ready — generate my code"}
+                    </Button>
+                  </>
+                )}
+
+                {enrollQr && enrollStep === "scan" && (
+                  <form onSubmit={handleVerifyEnroll} className="space-y-4">
+                    <div>
+                      <p className={cn("text-sm font-semibold mb-1", isLight ? "text-gray-900" : "text-foreground")}>Scan this QR code</p>
+                      <p className={cn("text-xs", isLight ? "text-gray-500" : "text-muted-foreground")}>
+                        In your authenticator app, tap "Add account" → "Scan QR code" and point your camera at this image.
+                      </p>
+                    </div>
+                    <div className="flex justify-center">
+                      <img src={enrollQr} alt="MFA QR code" className="w-48 h-48 rounded-xl border border-white/10 bg-white p-2" />
+                    </div>
+                    <details className="text-xs">
+                      <summary className={cn("cursor-pointer", isLight ? "text-gray-500 hover:text-gray-900" : "text-muted-foreground hover:text-foreground")}>Can't scan? Enter the secret manually</summary>
+                      <code className={cn("block mt-2 p-2 rounded font-mono text-[11px] break-all select-all", isLight ? "bg-gray-100 text-gray-900" : "bg-white/5 text-foreground")}>{enrollSecret}</code>
+                    </details>
+                    <div>
+                      <label className={cn("text-xs font-medium mb-1 block", isLight ? "text-gray-700" : "text-muted-foreground")}>
+                        Enter the 6-digit code from your app to confirm
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]{6}"
+                        maxLength={6}
+                        value={enrollVerifyCode}
+                        onChange={(e) => setEnrollVerifyCode(e.target.value.replace(/\D/g, ""))}
+                        placeholder="123 456"
+                        className={cn(
+                          "w-full h-12 rounded-xl border px-4 text-center text-xl tracking-[0.3em] font-mono focus:outline-none focus:ring-2 focus:ring-primary/40",
+                          isLight ? "bg-white border-gray-200 text-gray-900" : "bg-black/20 border-white/10 text-foreground",
+                        )}
+                      />
+                    </div>
+                    {error && <p className="text-xs text-red-500">{error}</p>}
+                    <Button type="submit" disabled={enrollLoading || enrollVerifyCode.length !== 6} className="w-full h-11">
+                      {enrollLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirm and enable"}
+                    </Button>
+                  </form>
+                )}
+
+                {enrollStep === "backup" && (
+                  <div className="space-y-4">
+                    <div>
+                      <p className={cn("text-sm font-semibold", isLight ? "text-gray-900" : "text-foreground")}>Save your backup codes</p>
+                      <p className={cn("text-xs mt-1", isLight ? "text-gray-500" : "text-muted-foreground")}>
+                        Use these if you lose your phone or can't open your authenticator. Each code works <strong>once</strong>. Print them, save them in your password manager, or screenshot them <strong>now</strong> — they will not be shown again.
+                      </p>
+                    </div>
+                    <div className={cn("rounded-xl border p-4 grid grid-cols-2 gap-2 font-mono text-sm", isLight ? "border-gray-200 bg-gray-50 text-gray-900" : "border-white/10 bg-white/5 text-foreground")}>
+                      {issuedBackupCodes.map((c) => <code key={c} className="select-all">{c}</code>)}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(issuedBackupCodes.join("\n")).then(() => {
+                          toast({ title: "Copied", description: "Backup codes copied to clipboard." });
+                        });
+                      }}
+                      className={cn("w-full text-xs py-2 rounded-lg border", isLight ? "border-gray-200 text-gray-700 hover:bg-gray-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}
+                    >
+                      Copy all to clipboard
+                    </button>
+                    <Button onClick={handleFinishEnroll} className="w-full h-11">
+                      I've saved them — finish setup
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Backup-code fallback ────────────────────────────────── */}
+            {mode === "totp-backup-code" && (
+              <form onSubmit={handleBackupCodeVerify} className="space-y-5">
+                <div>
+                  <p className={cn("text-sm font-semibold", isLight ? "text-gray-900" : "text-foreground")}>Enter a backup code</p>
+                  <p className={cn("text-xs mt-1", isLight ? "text-gray-500" : "text-muted-foreground")}>
+                    Use one of the 10 codes you saved when you enrolled. Format: <code className="font-mono">XXXX-XXXX</code>. Each code works only once.
+                  </p>
+                </div>
+                <input
+                  autoFocus
+                  type="text"
+                  value={backupCodeInput}
+                  onChange={(e) => setBackupCodeInput(e.target.value.toUpperCase())}
+                  placeholder="XXXX-XXXX"
+                  className={cn(
+                    "w-full h-12 rounded-xl border px-4 text-center text-lg tracking-[0.2em] font-mono uppercase focus:outline-none focus:ring-2 focus:ring-primary/40",
+                    isLight ? "bg-white border-gray-200 text-gray-900" : "bg-black/20 border-white/10 text-foreground",
+                  )}
+                />
+                {error && <p className="text-xs text-red-500">{error}</p>}
+                <Button type="submit" disabled={loading || backupCodeInput.length < 8} className="w-full h-11">
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Sign in with backup code"}
+                </Button>
+                <button type="button" onClick={() => { goMode("totp-challenge"); setBackupCodeInput(""); }} className={cn("w-full text-xs", isLight ? "text-gray-400 hover:text-gray-700" : "text-muted-foreground hover:text-foreground")}>
+                  ← Back to authenticator code
                 </button>
               </form>
             )}

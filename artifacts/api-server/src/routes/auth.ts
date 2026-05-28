@@ -5,6 +5,7 @@ import { db } from "@workspace/db";
 import { usersTable, loginAttemptsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { signToken, signSuperadminToken, signMfaToken, verifyMfaToken, requireAuth, AuthRequest } from "../lib/auth";
+import { mfaRequiredForRole } from "./mfa";
 import { sendOtp, verifyOtp } from "../lib/otp";
 import { sendSmsOtp, sendVoiceOtp, verifySmsOtp, verifyVoiceOtp, maskPhone } from "../lib/sms";
 import { createAccessRequest, getRequest } from "../lib/access-requests";
@@ -136,33 +137,42 @@ router.post("/login", async (req, res) => {
       return;
     }
 
-    // SMS MFA check
-    if (smsVerifiedRecently(user)) {
-      const token = signToken({ userId: user.id, email: user.email, role: user.role });
-      await logLoginAttempt(req, { userId: user.id, email: user.email, success: true, reason: "ok" });
-      res.json({
-        token,
-        user: { id: user.id, email: user.email, name: user.name, role: user.role, department: user.department, avatar: user.avatar, isActive: user.isActive, createdAt: user.createdAt },
-      });
+    // ── Phase 1 MFA branching ─────────────────────────────────────────
+    //
+    // 1. User has TOTP enrolled    → issue mfaToken + mfaType "totp",
+    //                                frontend prompts for the 6-digit code.
+    // 2. Role mandates MFA but not yet enrolled → issue mfaToken +
+    //    mustEnrollMfa, frontend redirects to enrollment screen.
+    // 3. Optional-MFA role, not enrolled → log in directly. They can
+    //    opt into TOTP via Settings later.
+    //
+    // The legacy "smsVerifiedRecently" 12-hour shortcut is gone — TOTP
+    // is the only routine second factor going forward. SMS is reduced
+    // to a fallback after 3 failed TOTP attempts (wired in chunk 3).
+
+    const mfaEnrolled = !!user.mfaSecret && !!user.mfaEnrolledAt;
+    const mfaMandatory = mfaRequiredForRole(user.role);
+
+    if (mfaEnrolled) {
+      await logLoginAttempt(req, { userId: user.id, email: user.email, success: true, reason: "password_ok_totp_required" });
+      const mfaToken = signMfaToken({ userId: user.id, email: user.email, role: user.role });
+      res.json({ mfaPending: true, mfaType: "totp", mfaToken });
       return;
     }
-    await logLoginAttempt(req, { userId: user.id, email: user.email, success: true, reason: "mfa_required" });
 
-    const mfaToken = signMfaToken({ userId: user.id, email: user.email, role: user.role });
-
-    if (!user.phone) {
-      res.json({ mfaPending: true, requirePhone: true, mfaToken });
+    if (mfaMandatory) {
+      await logLoginAttempt(req, { userId: user.id, email: user.email, success: true, reason: "password_ok_must_enroll_mfa" });
+      const mfaToken = signMfaToken({ userId: user.id, email: user.email, role: user.role });
+      res.json({ mfaPending: true, mustEnrollMfa: true, mfaToken });
       return;
     }
 
-    const result = await sendSmsOtp(user.phone);
+    // Optional-MFA role, not enrolled — straight to a full session.
+    await logLoginAttempt(req, { userId: user.id, email: user.email, success: true, reason: "ok" });
+    const token = signToken({ userId: user.id, email: user.email, role: user.role });
     res.json({
-      mfaPending: true,
-      mfaToken,
-      phone: maskPhone(user.phone),
-      smsFailed: result.failed ?? false,
-      devMode: result.devMode,
-      ...(result.devMode ? { code: result.code } : {}),
+      token,
+      user: { id: user.id, email: user.email, name: user.name, role: user.role, department: user.department, avatar: user.avatar, isActive: user.isActive, createdAt: user.createdAt },
     });
   } catch (err) {
     console.error("Login error:", err);
