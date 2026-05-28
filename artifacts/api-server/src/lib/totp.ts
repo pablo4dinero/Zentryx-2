@@ -1,20 +1,17 @@
-import { authenticator } from "otplib";
+// otplib v13 ships as CommonJS with a flat functional API
+// (generateSecret / generateURI / generateSync / verifySync) rather
+// than the old `authenticator` singleton. We import the namespace and
+// pull the functions off it — this resolves correctly under both ESM
+// (tsx dev) and the esbuild CJS bundle (Render prod).
+import * as otplib from "otplib";
 import QRCode from "qrcode";
 import { randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
 
-// ── TOTP configuration ────────────────────────────────────────────────
-// 30s step, ±1 window tolerance (so a code accepted one tick early or
-// late still validates — common when phone clock is slightly off).
-// Issuer is the brand shown in the user's authenticator app — we agreed
-// it should always read "Zentryx".
-authenticator.options = {
-  step: 30,
-  window: 1,
-  digits: 6,
-};
-
 const ISSUER = "Zentryx";
+// ±1 step (30 s) tolerance so a slightly-skewed phone clock still
+// validates the current code.
+const VERIFY_WINDOW = 1;
 
 /**
  * Generate a fresh base32-encoded TOTP secret. Store this on the user
@@ -22,17 +19,16 @@ const ISSUER = "Zentryx";
  * so treat as a credential equivalent to a password.
  */
 export function generateTotpSecret(): string {
-  return authenticator.generateSecret();
+  return otplib.generateSecret();
 }
 
 /**
  * Build the standard otpauth:// URI that authenticator apps scan as a
  * QR code. `accountLabel` shows up as the entry's title in the app —
- * we use the user's email so they can distinguish between accounts if
- * they have multiple Zentryx tenants.
+ * we use the user's email so they can distinguish accounts.
  */
 export function buildOtpAuthUri(secret: string, accountLabel: string): string {
-  return authenticator.keyuri(accountLabel, ISSUER, secret);
+  return otplib.generateURI({ secret, label: accountLabel, issuer: ISSUER });
 }
 
 /**
@@ -50,14 +46,15 @@ export async function generateQrCodeDataUrl(otpAuthUri: string): Promise<string>
 /**
  * Verify a 6-digit user-submitted code against the stored secret. Returns
  * true if the code is valid for the current 30s window (or ±1 window
- * per the tolerance set above).
+ * per VERIFY_WINDOW).
  */
 export function verifyTotp(secret: string, code: string): boolean {
   // Strip whitespace, dashes, etc — users sometimes paste with separators.
   const cleaned = code.replace(/\D/g, "");
   if (cleaned.length !== 6) return false;
   try {
-    return authenticator.verify({ token: cleaned, secret });
+    const result = otplib.verifySync({ token: cleaned, secret, window: VERIFY_WINDOW });
+    return result?.valid === true;
   } catch {
     return false;
   }
