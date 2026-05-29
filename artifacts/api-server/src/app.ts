@@ -52,6 +52,11 @@ app.use(helmet({
         "https://api.exchangerate-api.com",
         "https://newsapi.org",
         "https://api.anthropic.com",
+        // WebSocket signaling for calls + typing. Some browsers don't treat
+        // 'self' as covering the wss: scheme, which silently blocks the
+        // realtime socket in production — list it explicitly.
+        "wss:",
+        "ws:",
       ],
       "frame-ancestors": ["'none'"],
       "object-src": ["'none'"],

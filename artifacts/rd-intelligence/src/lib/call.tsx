@@ -59,6 +59,10 @@ interface CallContextValue {
   endCall: () => void;
   toggleMute: () => void;
   toggleVideo: () => void;
+  // Generic realtime channel so other features (e.g. chat typing indicators)
+  // can ride the same WebSocket instead of opening a second one.
+  wsSend: (obj: Record<string, unknown>) => void;
+  onWsMessage: (handler: (msg: any) => void) => () => void;
 }
 
 const CallContext = createContext<CallContextValue | null>(null);
@@ -81,6 +85,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
+  const listenersRef = useRef<Set<(msg: any) => void>>(new Set());
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const callIdRef = useRef<string | null>(null);
@@ -96,6 +101,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
   }, []);
 
+  const onWsMessage = useCallback((handler: (msg: any) => void) => {
+    listenersRef.current.add(handler);
+    return () => { listenersRef.current.delete(handler); };
+  }, []);
+
   // ── Ringtone (Web Audio, no asset) ───────────────────────────────────────
   const stopRing = useCallback(() => {
     if (ringTimerRef.current) { clearInterval(ringTimerRef.current); ringTimerRef.current = null; }
@@ -109,23 +119,41 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       if (!Ctx) return;
       const ctx: AudioContext = new Ctx();
       ringCtxRef.current = ctx;
-      const beep = () => {
-        if (!ringCtxRef.current) return;
+      // Mobile browsers create the context suspended — resume so it's audible.
+      if (ctx.state === "suspended") ctx.resume().catch(() => { /* needs a gesture */ });
+
+      // One bell-like note: a sine fundamental plus a soft octave harmonic
+      // with a quick attack and smooth decay — a clean, modern timbre.
+      const note = (freq: number, startAt: number, dur: number, peak: number) => {
         const o = ctx.createOscillator();
+        const h = ctx.createOscillator();
         const g = ctx.createGain();
-        o.connect(g); g.connect(ctx.destination);
-        o.type = "sine";
-        o.frequency.value = mode === "incoming" ? 540 : 440;
-        const t = ctx.currentTime;
-        g.gain.setValueAtTime(0.0001, t);
-        g.gain.exponentialRampToValueAtTime(0.18, t + 0.05);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
-        o.start(t);
-        o.stop(t + 0.5);
+        const hg = ctx.createGain();
+        o.type = "sine"; h.type = "triangle";
+        o.frequency.value = freq; h.frequency.value = freq * 2;
+        hg.gain.value = 0.22;
+        o.connect(g); h.connect(hg); hg.connect(g); g.connect(ctx.destination);
+        g.gain.setValueAtTime(0.0001, startAt);
+        g.gain.exponentialRampToValueAtTime(peak, startAt + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, startAt + dur);
+        o.start(startAt); h.start(startAt);
+        o.stop(startAt + dur + 0.05); h.stop(startAt + dur + 0.05);
       };
-      beep();
-      // Incoming rings more insistently than the caller's ringback.
-      ringTimerRef.current = setInterval(beep, mode === "incoming" ? 1600 : 3200);
+
+      const phrase = () => {
+        if (!ringCtxRef.current) return;
+        const t = ctx.currentTime + 0.02;
+        if (mode === "incoming") {
+          // Bright ascending E-major arpeggio — attention-getting, modern.
+          [659.25, 830.61, 987.77, 1318.5].forEach((f, i) => note(f, t + i * 0.13, 0.5, 0.22));
+        } else {
+          // Caller ringback — calmer two-note pulse.
+          note(523.25, t, 0.45, 0.14);
+          note(659.25, t + 0.22, 0.5, 0.14);
+        }
+      };
+      phrase();
+      ringTimerRef.current = setInterval(phrase, mode === "incoming" ? 2200 : 3000);
     } catch { /* audio not available — visual ring still shows */ }
   }, [stopRing]);
 
@@ -398,7 +426,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       ws.onmessage = (ev) => {
         let msg: any;
         try { msg = JSON.parse(ev.data); } catch { return; }
-        if (msg?.type) handlerRef.current(msg);
+        if (!msg?.type) return;
+        handlerRef.current(msg);
+        // Fan out to any non-call subscribers (chat typing, etc.).
+        listenersRef.current.forEach(fn => { try { fn(msg); } catch { /* noop */ } });
       };
       ws.onclose = () => {
         wsRef.current = null;
@@ -419,6 +450,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const value: CallContextValue = {
     status, peerName, media, withVideo, muted, localStream, remoteStream,
     startCall, acceptCall, rejectCall, endCall, toggleMute, toggleVideo,
+    wsSend: send, onWsMessage,
   };
 
   return (

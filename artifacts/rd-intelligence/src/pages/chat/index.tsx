@@ -203,7 +203,7 @@ function MessageContextMenu({ msg, isOwn, isPinned, onDelete, onPin }: {
 export default function ChatRoom() {
   const api = useApi();
   const { toast } = useToast();
-  const { startCall } = useCall();
+  const { startCall, wsSend, onWsMessage } = useCall();
   const { theme } = useTheme();
   const isLight = theme === "light";
   const [rooms, setRooms] = useState<any[]>([]);
@@ -287,6 +287,61 @@ export default function ChatRoom() {
     if (isAtBottom) messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length]);
+
+  // ── Typing indicators (over the call WebSocket) ──────────────────────────
+  // typingByRoom[roomId] = { name, at } — who is currently typing in a room.
+  const [typingByRoom, setTypingByRoom] = useState<Record<number, { name: string; at: number }>>({});
+  const typingSentAtRef = useRef(0);
+  const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const off = onWsMessage((msg: any) => {
+      if (msg?.type !== "chat:typing" || typeof msg.roomId !== "number") return;
+      setTypingByRoom(prev => {
+        const next = { ...prev };
+        if (msg.typing) next[msg.roomId] = { name: msg.fromName || "Someone", at: Date.now() };
+        else delete next[msg.roomId];
+        return next;
+      });
+    });
+    return off;
+  }, [onWsMessage]);
+
+  // Expire stale "typing" flags in case a stop event was missed.
+  useEffect(() => {
+    const id = setInterval(() => {
+      setTypingByRoom(prev => {
+        const now = Date.now();
+        let changed = false;
+        const next: typeof prev = {};
+        for (const k in prev) {
+          if (now - prev[k].at < 6000) next[k] = prev[k]; else changed = true;
+        }
+        return changed ? next : prev;
+      });
+    }, 2500);
+    return () => clearInterval(id);
+  }, []);
+
+  // Tell the other member(s) of the active room that we're typing. Throttled,
+  // with an auto "stopped typing" after a short idle gap.
+  const notifyTyping = () => {
+    if (!activeRoom || !Array.isArray(activeRoom.memberUserIds)) return;
+    const recipients = activeRoom.memberUserIds.filter((id: number) => id !== currentUserId);
+    if (recipients.length === 0) return;
+    const now = Date.now();
+    if (now - typingSentAtRef.current > 1500) {
+      typingSentAtRef.current = now;
+      recipients.forEach((id: number) => wsSend({ type: "chat:typing", toUserId: id, roomId: activeRoom.id, typing: true }));
+    }
+    if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
+    typingStopTimerRef.current = setTimeout(() => {
+      typingSentAtRef.current = 0;
+      recipients.forEach((id: number) => wsSend({ type: "chat:typing", toUserId: id, roomId: activeRoom.id, typing: false }));
+    }, 2000);
+  };
+
+  const activeTyping = activeRoom ? typingByRoom[activeRoom.id] : null;
 
   const { isPinned: isRoomPinned, toggle: toggleRoomPin } = usePinnedRooms();
   const { isPinned: isMsgPinned, toggle: toggleMsgPin } = usePinnedMessages(activeRoom?.id || 0);
@@ -390,6 +445,14 @@ export default function ChatRoom() {
   const sendMessage = async () => {
     if (!newMsg.trim() || !activeRoom) return;
     const content = newMsg;
+    // Clear our "typing" flag for the other side immediately on send.
+    if (typingStopTimerRef.current) { clearTimeout(typingStopTimerRef.current); typingStopTimerRef.current = null; }
+    typingSentAtRef.current = 0;
+    if (Array.isArray(activeRoom.memberUserIds)) {
+      activeRoom.memberUserIds
+        .filter((id: number) => id !== currentUserId)
+        .forEach((id: number) => wsSend({ type: "chat:typing", toUserId: id, roomId: activeRoom.id, typing: false }));
+    }
     const tempId = `temp_${Date.now()}`;
     const optimistic = { _tempId: tempId, _sending: true, id: tempId, roomId: activeRoom.id, content, messageType: "text", senderId: currentUserId, senderName: "You", createdAt: new Date().toISOString(), seenBy: [] };
     setMessages(prev => [...prev, optimistic]);
@@ -536,6 +599,7 @@ export default function ChatRoom() {
   const handleMsgChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setNewMsg(val);
+    if (val.trim()) notifyTyping();
     const cursor = e.target.selectionStart || 0;
     const textBefore = val.slice(0, cursor);
     const atIdx = textBefore.lastIndexOf("@");
@@ -1201,6 +1265,19 @@ export default function ChatRoom() {
               )}
               <div ref={messagesEndRef} />
             </div>
+
+            {activeTyping && (
+              <div className="px-5 pb-1 shrink-0">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="flex gap-0.5 items-end">
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary/70 animate-bounce" style={{ animationDelay: "0ms" }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary/70 animate-bounce" style={{ animationDelay: "150ms" }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary/70 animate-bounce" style={{ animationDelay: "300ms" }} />
+                  </span>
+                  <span><span className="font-medium text-foreground">{activeTyping.name}</span> is typing…</span>
+                </div>
+              </div>
+            )}
 
             <div className="p-4 border-t border-white/5 shrink-0">
               <div className="relative">

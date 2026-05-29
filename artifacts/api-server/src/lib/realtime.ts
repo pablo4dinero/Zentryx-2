@@ -64,6 +64,7 @@ const RELAY_TYPES = new Set([
   "webrtc:offer",  // SDP offer           { toUserId, callId, sdp }
   "webrtc:answer", // SDP answer          { toUserId, callId, sdp }
   "webrtc:ice",    // ICE candidate       { toUserId, callId, candidate }
+  "chat:typing",   // typing indicator    { toUserId, roomId, typing }
 ]);
 
 export function attachRealtime(server: Server): void {
