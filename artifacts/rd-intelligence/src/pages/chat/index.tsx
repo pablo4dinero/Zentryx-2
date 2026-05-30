@@ -4,7 +4,7 @@ import {
   MoreVertical, StopCircle, Trash2, Pin, PinOff, LogOut, X,
   MessageSquare, AtSign, ChevronRight, ArrowLeft, FileText, Download, ZoomIn, Paperclip, ArrowDown,
   Check, CheckCheck, Clock, Search, Pencil, UserPlus, UserMinus,
-  UserCircle, Phone, Briefcase, Building2, Mail, ShieldCheck
+  UserCircle, Phone, Briefcase, Building2, Mail, ShieldCheck, Share2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -153,8 +153,8 @@ function RoomContextMenu({ room, isPinned, onPin, onDelete, onLeave, onEdit, isC
   );
 }
 
-function MessageContextMenu({ msg, isOwn, isPinned, onDelete, onPin }: {
-  msg: any; isOwn: boolean; isPinned: boolean; onDelete: () => void; onPin: () => void;
+function MessageContextMenu({ msg, isOwn, isPinned, onDelete, onPin, onSelect, onForward, isSelected }: {
+  msg: any; isOwn: boolean; isPinned: boolean; onDelete: () => void; onPin: () => void; onSelect?: () => void; onForward?: () => void; isSelected?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -184,6 +184,19 @@ function MessageContextMenu({ msg, isOwn, isPinned, onDelete, onPin }: {
               {isPinned ? <PinOff className="w-4 h-4 text-amber-400" /> : <Pin className="w-4 h-4 text-amber-400" />}
               {isPinned ? "Unpin Message" : "Pin Message"}
             </button>
+            <div className="border-t border-white/5" />
+            {onSelect && (
+              <button onClick={() => { onSelect(); setOpen(false); }}
+                className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left text-muted-foreground hover:bg-white/5 hover:text-foreground transition-colors">
+                <Check className="w-4 h-4" /> {isSelected ? "Deselect" : "Select"}
+              </button>
+            )}
+            {onForward && (
+              <button onClick={() => { onForward(); setOpen(false); }}
+                className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left text-muted-foreground hover:bg-white/5 hover:text-foreground transition-colors">
+                <Share2 className="w-4 h-4" /> Forward
+              </button>
+            )}
             {isOwn && (
               <>
                 <div className="border-t border-white/5" />
@@ -213,6 +226,10 @@ export default function ChatRoom() {
   const [adminContact, setAdminContact] = useState<{ id: number; name: string; avatar: string | null } | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
   const [activeRoom, setActiveRoom] = useState<any>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [forwardModalOpen, setForwardModalOpen] = useState(false);
+  const [forwardingMsg, setForwardingMsg] = useState<any>(null);
 
   // Below lg: (1024 px) we render either the sidebar (people + channels)
   // OR the chat panel — never both — so the chat feels like a phone chat
@@ -473,6 +490,31 @@ export default function ChatRoom() {
     await api.del(`/chat/rooms/${activeRoom.id}/messages/${msgId}`);
     setMessages(prev => prev.filter((m: any) => m.id !== msgId));
     toast({ title: "Message deleted" });
+  };
+
+  const bulkDeleteMessages = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Delete ${selectedIds.size} message(s)? This cannot be undone.`)) return;
+    try {
+      await api.del(`/chat/rooms/${activeRoom.id}/messages`, { messageIds: Array.from(selectedIds) });
+      setMessages(prev => prev.filter((m: any) => !selectedIds.has(m.id)));
+      setSelectedIds(new Set());
+      setSelectMode(false);
+      toast({ title: `Deleted ${selectedIds.size} message(s)` });
+    } catch {
+      toast({ title: "Failed to delete messages", variant: "destructive" });
+    }
+  };
+
+  const forwardMessage = async (msg: any, toRoomId: number) => {
+    try {
+      await api.post(`/chat/rooms/${activeRoom.id}/messages/${msg.id}/forward`, { toRoomId });
+      setForwardModalOpen(false);
+      setForwardingMsg(null);
+      toast({ title: "Message forwarded" });
+    } catch {
+      toast({ title: "Failed to forward message", variant: "destructive" });
+    }
   };
 
   const deleteRoom = async (room: any) => {
@@ -1142,6 +1184,22 @@ export default function ChatRoom() {
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg text-sm font-medium transition-colors">
                   <Video className="w-4 h-4" /> Meeting
                 </button>
+                {activeRoom.isGroup && activeRoom.createdById === currentUserId && (
+                  <button
+                    onClick={() => setEditingRoom(activeRoom)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-blue-500/10 text-muted-foreground hover:text-blue-400 rounded-lg text-sm font-medium transition-colors"
+                    title="Edit channel name and members"
+                  >
+                    <Pencil className="w-4 h-4" /> Edit
+                  </button>
+                )}
+                <button
+                  onClick={() => deleteRoom(activeRoom)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-red-500/10 text-muted-foreground hover:text-red-400 rounded-lg text-sm font-medium transition-colors"
+                  title={activeRoom.isGroup && activeRoom.createdById !== currentUserId ? "Leave this channel" : "Delete this conversation"}
+                >
+                  <Trash2 className="w-4 h-4" /> {activeRoom.isGroup && activeRoom.createdById !== currentUserId ? "Leave" : "Delete"}
+                </button>
               </div>
             </div>
               );
@@ -1186,8 +1244,32 @@ export default function ChatRoom() {
                 const isOwn = msg.senderId === currentUserId;
                 const showName = !isOwn && (i === 0 || visibleMessages[i - 1].senderId !== msg.senderId);
                 const pinned = isMsgPinned(msg.id);
+                const isUnread = !msg.seenBy?.includes(currentUserId) && !isOwn;
+                const isFirstUnread = isUnread && (i === 0 || visibleMessages[i - 1].seenBy?.includes(currentUserId) || visibleMessages[i - 1].senderId === currentUserId);
+                const isSelected = selectedIds.has(msg.id);
                 return (
-                  <div key={msg.id} className={`flex gap-3 group/msg py-0.5 ${isOwn ? "flex-row-reverse" : "flex-row"}`}>
+                  <>
+                    {isFirstUnread && (
+                      <div className="flex items-center gap-3 py-2 my-2">
+                        <div className="flex-1 h-px bg-gradient-to-r from-transparent via-blue-500/30 to-transparent" />
+                        <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider px-2">New Messages</span>
+                        <div className="flex-1 h-px bg-gradient-to-r from-transparent via-blue-500/30 to-transparent" />
+                      </div>
+                    )}
+                    <div key={msg.id} className={`flex gap-3 group/msg py-0.5 ${isOwn ? "flex-row-reverse" : "flex-row"} ${isSelected ? "bg-primary/10 rounded-lg px-2" : ""}`}>
+                    {selectMode && (
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => setSelectedIds(prev => {
+                          const next = new Set(prev);
+                          if (isSelected) next.delete(msg.id);
+                          else next.add(msg.id);
+                          return next;
+                        })}
+                        className="w-5 h-5 rounded border-white/30 bg-white/5 mt-1 shrink-0 cursor-pointer"
+                      />
+                    )}
                     {!isOwn && (
                       <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-secondary/50 to-primary/50 flex items-center justify-center text-white text-xs font-bold shrink-0 mt-1">
                         {msg.senderName?.charAt(0) || "?"}
@@ -1251,10 +1333,25 @@ export default function ChatRoom() {
                           isPinned={isMsgPinned(msg.id)}
                           onDelete={() => deleteMessage(msg.id)}
                           onPin={() => toggleMsgPin(msg.id)}
+                          isSelected={isSelected}
+                          onSelect={() => {
+                            setSelectMode(true);
+                            setSelectedIds(prev => {
+                              const next = new Set(prev);
+                              if (next.has(msg.id)) next.delete(msg.id);
+                              else next.add(msg.id);
+                              return next;
+                            });
+                          }}
+                          onForward={() => {
+                            setForwardingMsg(msg);
+                            setForwardModalOpen(true);
+                          }}
                         />
                       </div>
                     </div>
                   </div>
+                  </>
                 );
               })}
               {messages.length === 0 && (
@@ -1265,6 +1362,49 @@ export default function ChatRoom() {
               )}
               <div ref={messagesEndRef} />
             </div>
+
+            {selectMode && (
+              <div className="shrink-0 px-4 py-3 border-t border-white/5 bg-white/[0.02] flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    setSelectedIds(new Set(visibleMessages.map(m => m.id)));
+                  }}
+                  className="text-xs font-medium text-primary hover:text-primary/80"
+                >
+                  Select All
+                </button>
+                <span className="text-xs text-muted-foreground">
+                  {selectedIds.size} selected
+                </span>
+                <div className="flex-1" />
+                <button
+                  onClick={() => {
+                    setSelectMode(false);
+                    setSelectedIds(new Set());
+                  }}
+                  className="px-3 py-1.5 text-xs font-medium rounded-lg bg-white/5 hover:bg-white/10 text-muted-foreground"
+                >
+                  Cancel
+                </button>
+                {selectedIds.size === 1 && (
+                  <button
+                    onClick={() => {
+                      const msg = visibleMessages.find(m => selectedIds.has(m.id));
+                      if (msg) { setForwardingMsg(msg); setForwardModalOpen(true); }
+                    }}
+                    className="px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-400"
+                  >
+                    Forward
+                  </button>
+                )}
+                <button
+                  onClick={bulkDeleteMessages}
+                  className="px-3 py-1.5 text-xs font-medium rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400"
+                >
+                  Delete ({selectedIds.size})
+                </button>
+              </div>
+            )}
 
             {activeTyping && (
               <div className="px-5 pb-1 shrink-0">
@@ -1352,6 +1492,63 @@ export default function ChatRoom() {
         </div>
       </div>
     </div>
+
+    {/* Forward Message modal */}
+    <AnimatePresence>
+      {forwardModalOpen && forwardingMsg && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={() => { setForwardModalOpen(false); setForwardingMsg(null); }}
+          className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+        >
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.95, opacity: 0 }}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg glass-panel border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
+          >
+            <div className="p-6 border-b border-white/5">
+              <h2 className="text-xl font-semibold text-foreground">Forward Message</h2>
+              <p className="text-sm text-muted-foreground mt-1">Select where to send this message</p>
+            </div>
+            <div className="p-4 space-y-2 max-h-96 overflow-y-auto custom-scrollbar">
+              {rooms.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">No rooms available</p>
+              ) : (
+                rooms.map((room: any) => (
+                  <button
+                    key={room.id}
+                    onClick={() => {
+                      forwardMessage(forwardingMsg, room.id);
+                    }}
+                    className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 transition-colors text-left"
+                  >
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/50 to-accent/50 flex items-center justify-center text-white text-sm font-bold shrink-0">
+                      {room.isGroup ? "#" : room.memberUserIds?.length > 0 ? usersTable?.find((u: any) => u.id === room.memberUserIds[0])?.name?.charAt(0) : "?"}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{room.name}</p>
+                      <p className="text-xs text-muted-foreground">{room.isGroup ? "Channel" : "Direct message"}</p>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+            <div className="p-4 border-t border-white/5 flex gap-2">
+              <button
+                onClick={() => { setForwardModalOpen(false); setForwardingMsg(null); }}
+                className="flex-1 px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-foreground text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
 
     {/* Edit Channel modal — rename + add/remove members. Creator only. */}
     <EditGroupModal
