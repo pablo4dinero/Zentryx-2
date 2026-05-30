@@ -170,8 +170,15 @@ router.post("/", requireAuth, async (req: AuthRequest, res) => {
       customerType, productType, application, targetPrice, volume,
       urgencyLevel, competitorReference, sellingPrice, margin } = req.body;
     const creatorId = req.user!.userId;
-    // Use only the explicitly assigned account managers (no auto-tagging)
+    const userRole = req.user!.role;
+
+    // Auto-tag creator if they're NOT privileged (superadmin/executive/manager/ceo/etc)
+    // Privileged users can see all accounts anyway, so don't auto-tag them
     const mgrs: number[] = accountManagers || [];
+    if (!isPrivileged(userRole) && !mgrs.includes(creatorId)) {
+      mgrs.unshift(creatorId);
+    }
+
     const [account] = await db.insert(accountsTable).values({
       company, productName, accountManagers: mgrs,
       contactPerson: contactPerson || null, cpPhone: cpPhone || null, cpEmail: cpEmail || null,
@@ -382,6 +389,42 @@ router.delete("/:id/status-reports/:reportId", requireAuth, async (req, res) => 
     await db.delete(accountStatusReportsTable).where(eq(accountStatusReportsTable.id, reportId));
     res.status(204).send();
   } catch {
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+// Endpoint: Remove yourself from an account's managers list
+router.post("/:id/remove-me-as-manager", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const accountId = parseInt(String(req.params.id));
+    const userId = req.user!.userId;
+    const [account] = await db.select().from(accountsTable).where(eq(accountsTable.id, accountId)).limit(1);
+
+    if (!account) {
+      res.status(404).json({ error: "NotFound" });
+      return;
+    }
+
+    const managers = (account.accountManagers || []) as number[];
+    const filteredManagers = managers.filter((id: number) => id !== userId);
+
+    // Only update if the user was in the managers list
+    if (filteredManagers.length === managers.length) {
+      res.status(400).json({ error: "BadRequest: You are not a manager for this account" });
+      return;
+    }
+
+    await db.update(accountsTable).set({
+      accountManagers: filteredManagers,
+      updatedAt: new Date(),
+    }).where(eq(accountsTable.id, accountId));
+
+    res.json({
+      success: true,
+      message: `You have been removed from the managers list for this account`,
+    });
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "InternalServerError" });
   }
 });
