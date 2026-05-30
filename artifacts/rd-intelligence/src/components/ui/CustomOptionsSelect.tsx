@@ -15,10 +15,15 @@ interface CustomOptionsSelectProps {
    * inline use inside a table cell. Defaults to false (full-width input).
    */
   compact?: boolean;
+  /**
+   * Additional classes to apply to the trigger button. Useful for status pills
+   * to apply colored backgrounds inline.
+   */
+  triggerClassName?: string;
 }
 
 export function CustomOptionsSelect({
-  value, onChange, handle, displayFn = v => v, placeholder = "Select...", isLight, compact = false,
+  value, onChange, handle, displayFn = v => v, placeholder = "Select...", isLight, compact = false, triggerClassName = "",
 }: CustomOptionsSelectProps) {
   const { options, addOption, deleteOption, renameOption } = handle;
   const [open, setOpen] = useState(false);
@@ -65,9 +70,10 @@ export function CustomOptionsSelect({
           !compact && (isLight
             ? "border-gray-200 bg-white text-black hover:border-gray-300"
             : "border-white/10 bg-black/20 text-foreground hover:border-white/20"),
-          compact && (isLight
+          compact && !triggerClassName && (isLight
             ? "border border-transparent hover:border-slate-200 hover:bg-slate-50 text-slate-700"
-            : "border border-transparent hover:border-white/10 hover:bg-white/5 text-foreground")
+            : "border border-transparent hover:border-white/10 hover:bg-white/5 text-foreground"),
+          triggerClassName
         )}
       >
         <span className={cn("truncate capitalize", !value && (isLight ? "text-gray-400" : "text-muted-foreground"))}>

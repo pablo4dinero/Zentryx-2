@@ -85,6 +85,10 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
   useEffect(() => {
     try { localStorage.setItem(COL_WIDTH_KEY, JSON.stringify(colWidths)); } catch { /* silent */ }
   }, [colWidths]);
+
+  // Drag and drop for project status changes
+  const [draggingId, setDraggingId] = useState<number | null>(null);
+
   const resizeCol = (key: string, startEvt: React.MouseEvent) => {
     startEvt.stopPropagation();
     startEvt.preventDefault();
@@ -316,7 +320,15 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
                       animate={{ opacity: 1 }}
                       transition={{ delay: i * 0.025 }}
                       onContextMenu={(e) => handleRightClick(e, p)}
-                      className={cn("border-b transition-colors group cursor-context-menu", isLight ? "border-gray-100 hover:bg-gray-50" : "border-white/5 hover:bg-white/[0.03]")}
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("projectId", String(p.id));
+                        e.dataTransfer.effectAllowed = "move";
+                        setDraggingId(p.id);
+                      }}
+                      onDragEnd={() => setDraggingId(null)}
+                      style={{ opacity: draggingId === p.id ? 0.5 : 1 }}
+                      className={cn("border-b transition-colors group cursor-grab active:cursor-grabbing", isLight ? "border-gray-100 hover:bg-gray-50" : "border-white/5 hover:bg-white/[0.03]")}
                     >
                       <td className="px-4 py-3.5">
                         {editingNameId === p.id ? (
@@ -388,24 +400,19 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
                         </div>
                       </td>
                       <td className="px-4 py-3.5">
-                        {/* Status: colored pill stays as the visible chip; clicking the
-                            pencil opens the same status picker (search/add/rename). */}
-                        <div className="inline-flex items-center gap-1.5 group/status">
-                          <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium border capitalize ${statusColor}`}>
-                            {p.status.replace(/_/g, " ")}
-                          </span>
-                          <div className="opacity-0 group-hover/status:opacity-100 transition-opacity">
-                            <CustomOptionsSelect
-                              compact
-                              value={p.status || ""}
-                              onChange={v => updateField(p.id, "status", v)}
-                              handle={statusOpts}
-                              displayFn={() => ""}
-                              placeholder=""
-                              isLight={isLight}
-                            />
-                          </div>
-                        </div>
+                        <CustomOptionsSelect
+                          compact
+                          value={p.status || ""}
+                          onChange={v => updateField(p.id, "status", v)}
+                          handle={statusOpts}
+                          displayFn={v => v.replace(/_/g, " ")}
+                          placeholder="—"
+                          isLight={isLight}
+                          triggerClassName={cn(
+                            "px-2.5 py-1 rounded-full border text-[11px] font-medium capitalize",
+                            statusColor
+                          )}
+                        />
                       </td>
                       <td className="px-4 py-3.5">
                         <div className="relative inline-flex items-center gap-1.5 group/date">

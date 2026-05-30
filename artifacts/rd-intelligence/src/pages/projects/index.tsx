@@ -33,6 +33,7 @@ export default function ProjectsList() {
   const [groupByType, setGroupByType] = useState(false);
   const [statusManageOpen, setStatusManageOpen] = useState(false);
   const [statusEditingOption, setStatusEditingOption] = useState<string | null>(null);
+  const [dragOverStatus, setDragOverStatus] = useState<string | null>(null);
   // Mobile-only status dropdown (replaces the long pill row below lg).
   const [statusPickerOpen, setStatusPickerOpen] = useState(false);
   useEffect(() => {
@@ -101,6 +102,17 @@ export default function ProjectsList() {
         toast({ title: "Project deleted", description: `"${name}" was permanently deleted.` });
       },
     });
+  };
+
+  const handleDropOnStatus = (e: React.DragEvent, targetStatus: string) => {
+    e.preventDefault();
+    const projectId = Number(e.dataTransfer.getData("projectId"));
+    if (!projectId || isNaN(projectId)) return;
+    setDragOverStatus(null);
+    updateMutation.mutate(
+      { id: projectId, data: { status: targetStatus } as any },
+      { onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/projects"] }) }
+    );
   };
 
   const buildExportRows = (projs: any[]) => {
@@ -325,7 +337,7 @@ export default function ProjectsList() {
                 )}
               </div>
 
-              {/* Desktop pill row — unchanged behaviour from before. */}
+              {/* Desktop pill row — with drag-and-drop zones */}
               <div className="hidden lg:flex lg:flex-wrap gap-2 items-center">
                 <button
                   onClick={() => setStatusFilter("all")}
@@ -339,10 +351,14 @@ export default function ProjectsList() {
                   <button
                     key={s}
                     onClick={() => setStatusFilter(s === statusFilter ? "all" : s)}
+                    onDragOver={e => { e.preventDefault(); setDragOverStatus(s); }}
+                    onDragLeave={() => setDragOverStatus(null)}
+                    onDrop={e => handleDropOnStatus(e, s)}
                     className={cn("shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border capitalize whitespace-nowrap",
                       statusFilter === s
                         ? "bg-primary text-white border-primary"
-                        : isLight ? "border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5"
+                        : isLight ? "border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5",
+                      dragOverStatus === s && "ring-2 ring-primary ring-offset-2 scale-105"
                     )}
                   >{displayLabel(s)}</button>
                 ))}
