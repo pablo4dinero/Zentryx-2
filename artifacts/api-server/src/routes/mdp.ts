@@ -743,6 +743,55 @@ router.delete("/produced-orders", requireAuth, async (_req: AuthRequest, res) =>
   }
 });
 
+// Admin endpoint: Complete data sync for all production orders and assignments
+router.post("/admin/sync-all-data", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    // Fetch all data
+    const salesOrders = await db.select().from(accountProductionOrdersTable) as Array<Record<string, any>>;
+    const mdpOrders = await db.select().from(mdpProductionOrdersTable) as Array<Record<string, any>>;
+    const assignments = await db.select().from(mdpFloorAssignmentsTable) as Array<Record<string, any>>;
+    const accounts = await db.select().from(accountsTable) as Array<Record<string, any>>;
+
+    // Create lookup maps
+    const salesById = new Map(salesOrders.map((s: Record<string, any>) => [s.id, s]));
+    const accountById = new Map(accounts.map((a: Record<string, any>) => [a.id, a]));
+    const mdpBySalesId = new Map(mdpOrders.map((m: Record<string, any>) => [m.salesOrderId, m]));
+
+    // Log what we found
+    console.log(`Found: ${salesOrders.length} sales orders, ${mdpOrders.length} mdp orders, ${assignments.length} assignments, ${accounts.length} accounts`);
+
+    // Update any MDP orders missing accountId by getting it from sales order
+    let mdpUpdated = 0;
+    for (const mdpOrder of mdpOrders) {
+      if (!mdpOrder.accountId && mdpOrder.salesOrderId) {
+        const salesOrder = salesById.get(mdpOrder.salesOrderId);
+        if (salesOrder?.accountId) {
+          await db.update(mdpProductionOrdersTable).set({
+            accountId: salesOrder.accountId,
+            updatedAt: new Date(),
+          }).where(eq(mdpProductionOrdersTable.id, mdpOrder.id));
+          mdpUpdated++;
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Complete sync done. Updated ${mdpUpdated} production orders with account IDs.`,
+      stats: {
+        totalSalesOrders: salesOrders.length,
+        totalMdpOrders: mdpOrders.length,
+        totalAssignments: assignments.length,
+        updatedMdpOrders: mdpUpdated,
+        timestamp: new Date().toISOString()
+      }
+    });
+  } catch (err) {
+    console.error("Sync error:", err);
+    res.status(500).json({ error: "InternalServerError", details: (err as Error).message });
+  }
+});
+
 // Sync endpoint: enriches all production orders with account data for multi-user sync
 router.post("/sync-order-accounts", requireAuth, async (req: AuthRequest, res) => {
   try {
