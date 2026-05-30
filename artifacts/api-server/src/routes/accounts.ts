@@ -170,9 +170,8 @@ router.post("/", requireAuth, async (req: AuthRequest, res) => {
       customerType, productType, application, targetPrice, volume,
       urgencyLevel, competitorReference, sellingPrice, margin } = req.body;
     const creatorId = req.user!.userId;
-    // Ensure creator is always in the accountManagers list
+    // Use only the explicitly assigned account managers (no auto-tagging)
     const mgrs: number[] = accountManagers || [];
-    if (!mgrs.includes(creatorId)) mgrs.unshift(creatorId);
     const [account] = await db.insert(accountsTable).values({
       company, productName, accountManagers: mgrs,
       contactPerson: contactPerson || null, cpPhone: cpPhone || null, cpEmail: cpEmail || null,
