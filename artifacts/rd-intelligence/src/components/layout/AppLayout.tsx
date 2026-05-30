@@ -547,7 +547,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       } catch { /* silent */ }
     };
     poll();
-    const interval = setInterval(poll, 5000);
+    const interval = setInterval(poll, 15000);
     return () => clearInterval(interval);
   }, [isPrivileged]);
 
@@ -592,7 +592,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       } catch { /* silent */ }
     };
     poll();
-    const interval = setInterval(poll, 5000);
+    const interval = setInterval(poll, 20000);
     return () => clearInterval(interval);
   }, [isExportApprover]);
 
@@ -624,7 +624,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       } catch { /* silent */ }
     };
     poll();
-    const interval = setInterval(poll, 10000);
+    const interval = setInterval(poll, 20000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [user]);
 
@@ -771,7 +771,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       } catch { /* silent */ }
     };
     checkUnread();
-    const interval = setInterval(checkUnread, 8000);
+    const interval = setInterval(checkUnread, 15000);
     return () => clearInterval(interval);
   }, [location]);
 
