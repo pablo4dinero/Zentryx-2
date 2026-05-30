@@ -359,8 +359,30 @@ router.get("/floor-assignments", requireAuth, async (req: AuthRequest, res) => {
       ? baseQuery.where(eq(mdpFloorAssignmentsTable.weekLabel, weekLabel))
       : baseQuery;
 
-    const assignments = await query.orderBy(desc(mdpFloorAssignmentsTable.assignedAt));
-    res.json(assignments);
+    const assignments = await query.orderBy(desc(mdpFloorAssignmentsTable.assignedAt)) as Array<Record<string, any>>;
+
+    // Enrich assignments with sales order data (account info)
+    const mdpOrderIds = new Set(assignments.map((a: Record<string, any>) => a.order?.id).filter(Boolean));
+    const salesOrdersMap = new Map<number, Record<string, any>>();
+    if (mdpOrderIds.size > 0) {
+      const moreOrders = await db.select().from(mdpProductionOrdersTable).where(inArray(mdpProductionOrdersTable.id, Array.from(mdpOrderIds))) as Array<Record<string, any>>;
+      const salesIds = moreOrders.map((o: Record<string, any>) => o.salesOrderId).filter((id): id is number => typeof id === "number");
+      if (salesIds.length > 0) {
+        const salesOrders = await db.select().from(accountProductionOrdersTable).where(inArray(accountProductionOrdersTable.id, salesIds)) as Array<Record<string, any>>;
+        salesOrders.forEach((so: Record<string, any>) => salesOrdersMap.set(so.id, so));
+      }
+    }
+
+    // Merge sales order data into assignments
+    const enriched = assignments.map((a: Record<string, any>) => ({
+      ...a,
+      order: a.order ? {
+        ...a.order,
+        ...(a.order?.salesOrderId ? salesOrdersMap.get(a.order.salesOrderId) : {})
+      } : null
+    }));
+
+    res.json(enriched);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "InternalServerError" });
