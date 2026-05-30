@@ -93,7 +93,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const ringTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const incomingOfferRef = useRef<{ callId: string; from: number; fromName: string; media: "audio" | "video" } | null>(null);
-  const ringCtxRef = useRef<AudioContext | null>(null);
+  // One shared AudioContext, unlocked on the first user gesture so the ring
+  // can sound when a call later arrives (mobile blocks audio until then).
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const audioUnlockedRef = useRef(false);
   const ringTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const send = useCallback((obj: Record<string, unknown>) => {
@@ -107,55 +110,89 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // ── Ringtone (Web Audio, no asset) ───────────────────────────────────────
+  const ensureAudioCtx = useCallback((): AudioContext | null => {
+    if (!audioCtxRef.current) {
+      const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!Ctx) return null;
+      try { audioCtxRef.current = new Ctx(); } catch { return null; }
+    }
+    return audioCtxRef.current;
+  }, []);
+
   const stopRing = useCallback(() => {
     if (ringTimerRef.current) { clearInterval(ringTimerRef.current); ringTimerRef.current = null; }
-    if (ringCtxRef.current) { try { ringCtxRef.current.close(); } catch { /* noop */ } ringCtxRef.current = null; }
+    try { navigator.vibrate?.(0); } catch { /* noop */ }
+    // Keep the shared AudioContext alive (reused for the next call); only the
+    // ringing loop and vibration stop here.
   }, []);
 
   const startRing = useCallback((mode: "incoming" | "outgoing") => {
     stopRing();
-    try {
-      const Ctx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!Ctx) return;
-      const ctx: AudioContext = new Ctx();
-      ringCtxRef.current = ctx;
-      // Mobile browsers create the context suspended — resume so it's audible.
-      if (ctx.state === "suspended") ctx.resume().catch(() => { /* needs a gesture */ });
+    const ctx = ensureAudioCtx();
+    if (!ctx) return;
+    if (ctx.state === "suspended") ctx.resume().catch(() => { /* needs a gesture */ });
 
-      // One bell-like note: a sine fundamental plus a soft octave harmonic
-      // with a quick attack and smooth decay — a clean, modern timbre.
-      const note = (freq: number, startAt: number, dur: number, peak: number) => {
-        const o = ctx.createOscillator();
-        const h = ctx.createOscillator();
-        const g = ctx.createGain();
-        const hg = ctx.createGain();
-        o.type = "sine"; h.type = "triangle";
-        o.frequency.value = freq; h.frequency.value = freq * 2;
-        hg.gain.value = 0.22;
-        o.connect(g); h.connect(hg); hg.connect(g); g.connect(ctx.destination);
-        g.gain.setValueAtTime(0.0001, startAt);
-        g.gain.exponentialRampToValueAtTime(peak, startAt + 0.02);
-        g.gain.exponentialRampToValueAtTime(0.0001, startAt + dur);
-        o.start(startAt); h.start(startAt);
-        o.stop(startAt + dur + 0.05); h.stop(startAt + dur + 0.05);
-      };
+    // One bell-like note: a sine fundamental plus a soft octave harmonic
+    // with a quick attack and smooth decay — a clean, modern timbre.
+    const note = (freq: number, startAt: number, dur: number, peak: number) => {
+      const o = ctx.createOscillator();
+      const h = ctx.createOscillator();
+      const g = ctx.createGain();
+      const hg = ctx.createGain();
+      o.type = "sine"; h.type = "triangle";
+      o.frequency.value = freq; h.frequency.value = freq * 2;
+      hg.gain.value = 0.22;
+      o.connect(g); h.connect(hg); hg.connect(g); g.connect(ctx.destination);
+      g.gain.setValueAtTime(0.0001, startAt);
+      g.gain.exponentialRampToValueAtTime(peak, startAt + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, startAt + dur);
+      o.start(startAt); h.start(startAt);
+      o.stop(startAt + dur + 0.05); h.stop(startAt + dur + 0.05);
+    };
 
-      const phrase = () => {
-        if (!ringCtxRef.current) return;
-        const t = ctx.currentTime + 0.02;
-        if (mode === "incoming") {
-          // Bright ascending E-major arpeggio — attention-getting, modern.
-          [659.25, 830.61, 987.77, 1318.5].forEach((f, i) => note(f, t + i * 0.13, 0.5, 0.22));
-        } else {
-          // Caller ringback — calmer two-note pulse.
-          note(523.25, t, 0.45, 0.14);
-          note(659.25, t + 0.22, 0.5, 0.14);
-        }
-      };
-      phrase();
-      ringTimerRef.current = setInterval(phrase, mode === "incoming" ? 2200 : 3000);
-    } catch { /* audio not available — visual ring still shows */ }
-  }, [stopRing]);
+    const phrase = () => {
+      // Can't make sound while the context is still suspended (no gesture yet).
+      if (ctx.state !== "running") { ctx.resume().catch(() => {}); }
+      const t = ctx.currentTime + 0.02;
+      if (mode === "incoming") {
+        // Bright ascending E-major arpeggio — attention-getting, modern.
+        [659.25, 830.61, 987.77, 1318.5].forEach((f, i) => note(f, t + i * 0.13, 0.5, 0.22));
+        // Buzz the phone in time with the ring.
+        try { navigator.vibrate?.([300, 150, 300]); } catch { /* noop */ }
+      } else {
+        // Caller ringback — calmer two-note pulse.
+        note(523.25, t, 0.45, 0.14);
+        note(659.25, t + 0.22, 0.5, 0.14);
+      }
+    };
+    phrase();
+    ringTimerRef.current = setInterval(phrase, mode === "incoming" ? 2200 : 3000);
+  }, [stopRing, ensureAudioCtx]);
+
+  // Unlock audio on the first user interaction anywhere in the app, so the
+  // ring is allowed to play when an incoming call arrives later.
+  useEffect(() => {
+    const unlock = () => {
+      const ctx = ensureAudioCtx();
+      if (!ctx) return;
+      if (ctx.state === "suspended") ctx.resume().catch(() => { /* noop */ });
+      if (!audioUnlockedRef.current) {
+        audioUnlockedRef.current = true;
+        // iOS needs a sound played inside a gesture to fully unlock.
+        try {
+          const buf = ctx.createBuffer(1, 1, 22050);
+          const src = ctx.createBufferSource();
+          src.buffer = buf; src.connect(ctx.destination); src.start(0);
+        } catch { /* noop */ }
+      }
+    };
+    window.addEventListener("pointerdown", unlock, { passive: true });
+    window.addEventListener("keydown", unlock);
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, [ensureAudioCtx]);
 
   const stopLocalMedia = useCallback(() => {
     localStreamRef.current?.getTracks().forEach(t => t.stop());
