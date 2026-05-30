@@ -386,4 +386,50 @@ router.delete("/:id/status-reports/:reportId", requireAuth, async (req, res) => 
   }
 });
 
+// Admin endpoint: Remove a user from all accounts' managers lists
+router.post("/admin/remove-from-all-accounts", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    // Only admins can use this endpoint
+    if (!isPrivileged(req.user?.role)) {
+      res.status(403).json({ error: "Forbidden: Only admins can use this endpoint" });
+      return;
+    }
+
+    const userIdToRemove = req.body.userId || req.user?.userId;
+    if (!userIdToRemove) {
+      res.status(400).json({ error: "BadRequest: userId is required" });
+      return;
+    }
+
+    // Get all accounts
+    const allAccounts = await db.select().from(accountsTable);
+
+    let updatedCount = 0;
+
+    // Remove the user from each account's managers list
+    for (const account of allAccounts) {
+      const managers = (account.accountManagers || []) as number[];
+      const filteredManagers = managers.filter((id: number) => id !== userIdToRemove);
+
+      // Only update if the user was actually in the managers list
+      if (filteredManagers.length !== managers.length) {
+        await db.update(accountsTable).set({
+          accountManagers: filteredManagers,
+          updatedAt: new Date(),
+        }).where(eq(accountsTable.id, account.id));
+        updatedCount++;
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Removed user ${userIdToRemove} from ${updatedCount} accounts`,
+      accountsUpdated: updatedCount,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
 export default router;
