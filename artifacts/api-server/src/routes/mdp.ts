@@ -721,4 +721,45 @@ router.delete("/produced-orders", requireAuth, async (_req: AuthRequest, res) =>
   }
 });
 
+// Sync endpoint: enriches all production orders with account data for multi-user sync
+router.post("/sync-order-accounts", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    // Fetch all accounts and sales orders
+    const accounts = await db.select().from(accountsTable);
+    const salesOrders = await db.select().from(accountProductionOrdersTable);
+    const mdpOrders = await db.select().from(mdpProductionOrdersTable);
+    const assignments = await db.select().from(mdpFloorAssignmentsTable);
+
+    // Create maps for quick lookup
+    const accountById = new Map(accounts.map((a: any) => [a.id, a]));
+    const mdpBySalesId = new Map(mdpOrders.map((o: any) => [o.salesOrderId, o]));
+
+    // Match unlinked assignments with account data
+    let updatedCount = 0;
+    for (const assignment of assignments) {
+      const mdpOrder = mdpOrders.find((o: any) => o.id === assignment.productionOrderId);
+      if (!mdpOrder?.accountId && mdpOrder) {
+        const salesOrder = salesOrders.find((s: any) => s.id === mdpOrder.salesOrderId);
+        if (salesOrder?.accountId) {
+          // Update the MDP order with the account ID
+          await db.update(mdpProductionOrdersTable).set({
+            accountId: salesOrder.accountId,
+            updatedAt: new Date(),
+          }).where(eq(mdpProductionOrdersTable.id, mdpOrder.id));
+          updatedCount++;
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Synced ${updatedCount} production orders with account data`,
+      updated: updatedCount
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
 export default router;
