@@ -7,11 +7,13 @@ import { cn } from "@/lib/utils";
 // ── 1:1 WebRTC calling ───────────────────────────────────────────────────
 // Media (audio/video) flows peer-to-peer, encrypted, never touching our
 // server. The server only relays the ring + SDP/ICE signaling over the
-// /ws WebSocket. STUN-only for now (works on most networks); a TURN relay
-// can be added later for strict-NAT environments.
+// /ws WebSocket. STUN for most networks, TURN (OpenRelay) fallback for
+// strict NAT / firewalls.
 
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
+  // OpenRelay — free public TURN fallback for strict NAT / firewalls
+  { urls: ["turn:openrelay.metered.ca:80", "turn:openrelay.metered.ca:443"] },
 ];
 
 // Calls need a secure context (https) and the mediaDevices API. Installed
@@ -248,7 +250,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       if (s === "failed") {
         toast({
           title: "Couldn't connect the call",
-          description: "Your network blocked the direct path between the two devices. A TURN relay is needed for calls across different networks.",
+          description: "Your network blocked the direct path. The app tried a TURN relay, but it didn't work. Try again or check your firewall settings.",
         });
       }
     };
