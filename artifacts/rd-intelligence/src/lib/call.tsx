@@ -59,6 +59,9 @@ interface CallContextValue {
   endCall: () => void;
   toggleMute: () => void;
   toggleVideo: () => void;
+  // ICE connection state for in-call diagnostics ("checking", "connected",
+  // "failed", etc.) — surface it so the user sees where a call is stuck.
+  iceState: string;
   // Generic realtime channel so other features (e.g. chat typing indicators)
   // can ride the same WebSocket instead of opening a second one.
   wsSend: (obj: Record<string, unknown>) => void;
@@ -83,6 +86,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const [muted, setMuted] = useState(false);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [iceState, setIceState] = useState<string>("");
 
   const wsRef = useRef<WebSocket | null>(null);
   const listenersRef = useRef<Set<(msg: any) => void>>(new Set());
@@ -215,6 +219,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     setPeerName(null);
     setMuted(false);
     setWithVideo(false);
+    setIceState("");
   }, [stopLocalMedia, stopRing]);
 
   // Build a peer connection wired to send ICE + surface the remote stream.
@@ -222,12 +227,36 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
     pc.onicecandidate = (e) => {
       if (e.candidate && callIdRef.current) {
+        // Log the candidate "type" — host (LAN), srflx (STUN-discovered),
+        // prflx (peer-reflexive), relay (TURN). If you only ever see "host"
+        // across different networks, NAT is blocking the call and TURN is
+        // needed. Inspect with the browser's devtools console.
+        console.log("[call] local ICE", e.candidate.type, e.candidate.protocol, e.candidate.address);
         send({ type: "webrtc:ice", toUserId: peerId, callId: callIdRef.current, candidate: e.candidate.toJSON() });
+      } else {
+        console.log("[call] local ICE gathering complete");
       }
     };
-    pc.ontrack = (e) => { setRemoteStream(e.streams[0] ?? null); };
+    pc.ontrack = (e) => {
+      console.log("[call] remote track received:", e.track.kind);
+      setRemoteStream(e.streams[0] ?? null);
+    };
+    pc.oniceconnectionstatechange = () => {
+      const s = pc.iceConnectionState;
+      console.log("[call] iceConnectionState:", s);
+      setIceState(s);
+      if (s === "failed") {
+        toast({
+          title: "Couldn't connect the call",
+          description: "Your network blocked the direct path between the two devices. A TURN relay is needed for calls across different networks.",
+        });
+      }
+    };
+    pc.onicegatheringstatechange = () => console.log("[call] iceGatheringState:", pc.iceGatheringState);
+    pc.onsignalingstatechange = () => console.log("[call] signalingState:", pc.signalingState);
     pc.onconnectionstatechange = () => {
       const st = pc.connectionState;
+      console.log("[call] connectionState:", st);
       if (st === "connected") setStatus("active");
       else if (st === "failed" || st === "disconnected" || st === "closed") {
         if (callIdRef.current) toast({ title: "Call ended", description: "The connection dropped." });
@@ -404,8 +433,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       case "webrtc:ice": {
         const pc = pcRef.current;
         if (!pc || msg.callId !== callIdRef.current || !msg.candidate) return;
+        console.log("[call] remote ICE", msg.candidate.candidate?.split(" ")[7] ?? "?");
         if (pc.remoteDescription && pc.remoteDescription.type) {
-          try { await pc.addIceCandidate(msg.candidate); } catch { /* noop */ }
+          try { await pc.addIceCandidate(msg.candidate); } catch (e) { console.log("[call] addIceCandidate failed", e); }
         } else {
           pendingCandidatesRef.current.push(msg.candidate);
         }
@@ -487,7 +517,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const value: CallContextValue = {
     status, peerName, media, withVideo, muted, localStream, remoteStream,
     startCall, acceptCall, rejectCall, endCall, toggleMute, toggleVideo,
-    wsSend: send, onWsMessage,
+    iceState, wsSend: send, onWsMessage,
   };
 
   return (
@@ -500,7 +530,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
 // ── Overlay UI: incoming-call ring + in-call window ──────────────────────
 function CallOverlay() {
-  const { status, peerName, media, withVideo, muted, localStream, remoteStream, acceptCall, rejectCall, endCall, toggleMute, toggleVideo } = useCall();
+  const { status, peerName, media, withVideo, muted, localStream, remoteStream, iceState, acceptCall, rejectCall, endCall, toggleMute, toggleVideo } = useCall();
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
@@ -562,8 +592,19 @@ function CallOverlay() {
               <div className="text-center">
                 <p className="text-xl font-semibold text-white">{peerName}</p>
                 <p className="text-sm text-white/60 mt-1">
-                  {status === "outgoing" ? "Ringing…" : status === "connecting" ? "Connecting…" : media === "video" ? "Camera off" : "On call"}
+                  {status === "outgoing"
+                    ? "Ringing…"
+                    : status === "connecting"
+                      ? `Connecting…${iceState ? ` (${iceState})` : ""}`
+                      : media === "video" ? "Camera off" : "On call"}
                 </p>
+                {/* When the call is active but stuck, show ICE state so the
+                    cause is visible without opening devtools. "checking" =
+                    trying to find a network path; "failed" = no path (TURN
+                    needed); "disconnected" = lost the path mid-call. */}
+                {status === "active" && iceState && iceState !== "connected" && iceState !== "completed" && (
+                  <p className="text-xs text-amber-300/80 mt-1">Network: {iceState}</p>
+                )}
               </div>
             </div>
           )}
