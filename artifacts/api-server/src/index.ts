@@ -469,6 +469,23 @@ async function createTablesIfNotExist() {
   }
 }
 
+async function applyMigrations() {
+  try {
+    logger.info("Applying database migrations...");
+
+    // Add accountId column to mdp_production_orders if it doesn't exist
+    await db.execute(sql`
+      ALTER TABLE mdp_production_orders
+      ADD COLUMN IF NOT EXISTS account_id INTEGER;
+    `);
+
+    logger.info("Migrations applied successfully");
+  } catch (err) {
+    logger.error({ err }, "Failed to apply migrations");
+    throw err;
+  }
+}
+
 async function startServer() {
   try {
     // Test database connection
@@ -477,6 +494,9 @@ async function startServer() {
 
     // Create tables if they don't exist
     await createTablesIfNotExist();
+
+    // Apply migrations
+    await applyMigrations();
   } catch (err) {
     logger.error({ err }, "Database setup failed");
     throw err;
