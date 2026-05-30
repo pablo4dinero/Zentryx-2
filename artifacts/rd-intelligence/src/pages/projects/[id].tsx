@@ -45,11 +45,19 @@ function InlineEdit({ value, onSave, type = "text", options, placeholder, icon, 
 }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(value);
-  useEffect(() => { setVal(value); }, [value]);
+  const [displayVal, setDisplayVal] = useState(value);
+  useEffect(() => { setVal(value); setDisplayVal(value); }, [value]);
 
-  const save = () => { if (val !== value) onSave(val); setEditing(false); };
+  const save = () => {
+    if (val !== value) {
+      // Optimistic update: update display immediately
+      setDisplayVal(val);
+      onSave(val);
+    }
+    setEditing(false);
+  };
   const cancel = () => { setVal(value); setEditing(false); };
-  const cls = "flex h-9 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground";
+  const cls = "flex h-9 w-full rounded-lg border border-white/20 bg-black/50 px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground";
 
   return (
     <div className="glass-card rounded-xl p-4 group/field relative">
@@ -60,8 +68,12 @@ function InlineEdit({ value, onSave, type = "text", options, placeholder, icon, 
         <div className="flex items-center gap-2">
           {options ? (
             <select value={val} onChange={e => setVal(e.target.value)} className={cls} autoFocus>
-              <option value="" className="bg-card">— not set —</option>
-              {options.map(o => <option key={o} value={o} className="bg-white text-black capitalize">{o.replace(/_/g,' ')}</option>)}
+              <option value="" style={{ backgroundColor: "#1a1a2e", color: "#888888" }}>— not set —</option>
+              {options.map(o => (
+                <option key={o} value={o} style={{ backgroundColor: "#1a1a2e", color: "#e0e0e0" }}>
+                  {o.replace(/_/g,' ')}
+                </option>
+              ))}
             </select>
           ) : (
             <input type={type} value={val} onChange={e => setVal(e.target.value)}
@@ -73,8 +85,8 @@ function InlineEdit({ value, onSave, type = "text", options, placeholder, icon, 
         </div>
       ) : (
         <div className="flex items-center justify-between gap-2 group/val">
-          <span className={`text-sm font-medium ${!value ? "text-muted-foreground italic" : "text-foreground"}`}>
-            {type === "date" && value ? format(new Date(value), "MMMM d, yyyy") : (value || "Not set")}
+          <span className={`text-sm font-medium ${!displayVal ? "text-muted-foreground italic" : "text-foreground"}`}>
+            {type === "date" && displayVal ? format(new Date(displayVal), "MMMM d, yyyy") : (displayVal || "Not set")}
           </span>
           <button onClick={() => setEditing(true)}
             className="opacity-0 group-hover/field:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-opacity shrink-0">
