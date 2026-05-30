@@ -36,6 +36,7 @@ export const mdpProductionOrdersTable = pgTable("mdp_production_orders", {
   accountId: integer("account_id"),
   rawMaterialStatus: text("raw_material_status").default("Pending"),
   microbialAnalysis: text("microbial_analysis").default("Normal"),
+  blendSpeedId: text("blend_speed_id"),
   remarks: text("remarks").default(""),
   orderStatus: text("order_status").default("Ordered"),
   isPlanned: boolean("is_planned").default(false),

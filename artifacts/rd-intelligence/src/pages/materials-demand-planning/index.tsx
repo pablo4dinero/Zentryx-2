@@ -975,12 +975,18 @@ function ProductionOrdersTab() {
     catch { toast({ title: "Could not save", variant: "destructive" }); }
   };
 
-  const handleChangeBlendSpeed = (orderId: number, value: string) => {
+  const handleChangeBlendSpeed = async (orderId: number, value: string) => {
     setBlendSpeedById(c => {
       const next = { ...c, [orderId]: value };
       localStorage.setItem(LS_ORDER_BLENDSPEED, JSON.stringify(next));
       return next;
     });
+    // Also save to server so all users see the same blend speed
+    try {
+      await productionUpdate.mutateAsync({ orderId, changes: { blendSpeedId: value } });
+    } catch {
+      toast({ title: "Could not save blend speed", variant: "destructive" });
+    }
   };
 
   const handleSaveBlendSpeeds = (speeds: BlendSpeed[]) => {

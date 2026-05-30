@@ -154,6 +154,7 @@ router.put("/production-orders/:id", requireAuth, async (req: AuthRequest, res) 
     const [updated] = await db.update(mdpProductionOrdersTable).set({
       rawMaterialStatus: body.rawMaterialStatus,
       microbialAnalysis: body.microbialAnalysis,
+      blendSpeedId: body.blendSpeedId,
       remarks: body.remarks,
       orderStatus: body.orderStatus,
       isPlanned: body.isPlanned,

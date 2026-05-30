@@ -479,6 +479,12 @@ async function applyMigrations() {
       ADD COLUMN IF NOT EXISTS account_id INTEGER;
     `);
 
+    // Add blendSpeedId column to mdp_production_orders if it doesn't exist
+    await db.execute(sql`
+      ALTER TABLE mdp_production_orders
+      ADD COLUMN IF NOT EXISTS blend_speed_id TEXT;
+    `);
+
     logger.info("Migrations applied successfully");
   } catch (err) {
     logger.error({ err }, "Failed to apply migrations");
