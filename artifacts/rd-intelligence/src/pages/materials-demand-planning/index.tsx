@@ -838,7 +838,8 @@ function ProductionOrdersTab() {
       const res = await fetch(`${BASE}api/accounts`, { headers: authHeaders() });
       return res.json() as Promise<{id: number; company: string; productName: string | null; productType: string | null}[]>;
     },
-    staleTime: 1000 * 60 * 5,
+    staleTime: 1000 * 30, // 30s
+    refetchInterval: 1000 * 30, // Auto-poll every 30s
   });
   const orderAccounts = accountsForOrderQuery.data ?? [];
 
@@ -858,7 +859,8 @@ function ProductionOrdersTab() {
       }
       return res.json() as Promise<ProductionOrder[]>;
     },
-    staleTime: 1000 * 60 * 2,
+    staleTime: 1000 * 30, // 30s
+    refetchInterval: 1000 * 30, // Auto-poll every 30s
   }) as UseQueryResult<ProductionOrder[], Error>;
 
   const mdpOrderBySalesId = React.useMemo(() => {
@@ -879,7 +881,8 @@ function ProductionOrdersTab() {
       }
       return res.json() as Promise<SFOrder[]>;
     },
-    staleTime: 1000 * 60 * 2,
+    staleTime: 1000 * 30, // 30s
+    refetchInterval: 1000 * 30, // Auto-poll every 30s
   });
 
   const mergedOrders = React.useMemo((): MergedOrder[] => {
@@ -3981,7 +3984,8 @@ function ProductionHistoryTab() {
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || "Failed to load orders"); }
       return res.json() as Promise<ProductionOrder[]>;
     },
-    staleTime: 1000 * 60,
+    staleTime: 1000 * 30, // 30s
+    refetchInterval: 1000 * 30, // Auto-poll every 30s
   }) as UseQueryResult<ProductionOrder[], Error>;
 
   const historyAccountsQuery = useQuery({
@@ -3990,7 +3994,8 @@ function ProductionHistoryTab() {
       const res = await fetch(`${BASE}api/accounts`, { headers: authHeaders() });
       return res.json() as Promise<{id: number; company: string; productName: string | null; productType: string | null}[]>;
     },
-    staleTime: 1000 * 60 * 5,
+    staleTime: 1000 * 30, // 30s
+    refetchInterval: 1000 * 30, // Auto-poll every 30s
   });
 
   const historyAccountMap = React.useMemo(() => {
