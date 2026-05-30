@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
   // OpenRelay — free public TURN fallback for strict NAT / firewalls
-  { urls: ["turn:openrelay.metered.ca:80", "turn:openrelay.metered.ca:443"] },
+  { urls: ["turn:openrelay.metered.ca:80", "turn:openrelay.metered.ca:443"], username: "", password: "" },
 ];
 
 // Calls need a secure context (https) and the mediaDevices API. Installed
