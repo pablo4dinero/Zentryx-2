@@ -85,8 +85,8 @@ export function CustomOptionsSelect({
       {open && (
         <div className={cn(
           compact
-            ? "absolute top-[calc(100%+4px)] left-0 z-[200] w-56 rounded-xl border shadow-xl overflow-hidden"
-            : "absolute top-[calc(100%+4px)] left-0 right-0 z-[200] rounded-xl border shadow-xl overflow-hidden",
+            ? "absolute bottom-[calc(100%+4px)] left-0 z-50 w-56 rounded-xl border shadow-xl overflow-hidden"
+            : "absolute bottom-[calc(100%+4px)] left-0 right-0 z-50 rounded-xl border shadow-xl overflow-hidden",
           isLight ? "bg-white border-gray-200" : "bg-card border-white/10"
         )}>
           {/* Search */}
