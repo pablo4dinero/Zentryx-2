@@ -2866,9 +2866,10 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
             const makeOrderCard = (floorId: number) => (row: FloorAssignmentRow) => {
               const fullOrder = mdpOrderByMdpId.get(row.order.id);
               const acc = planningAccountMap[fullOrder?.accountId ?? 0];
-              const company = acc?.company ?? row.order.accountName ?? "Unknown";
-              const productName = acc?.productName ?? row.order.productName ?? null;
-              const productTypeLabel = acc?.productType ?? row.order.productType ?? "—";
+              // Use fullOrder data first (has merged account info from production orders API), then fallback to accountMap, then row data
+              const company = fullOrder?.accountName ?? fullOrder?.accountCompany ?? acc?.company ?? row.order.accountName ?? "Unknown";
+              const productName = fullOrder?.productName ?? acc?.productName ?? row.order.productName ?? null;
+              const productTypeLabel = fullOrder?.productType ?? acc?.productType ?? row.order.productType ?? "—";
               const totalVol = Number(fullOrder?.volume ?? row.order.volume ?? 0);
               const assignedVol = row.assignment.assignedVolume != null ? Number(row.assignment.assignedVolume) : totalVol;
               const runningBefore = assignmentRemainingMap[row.assignment.id]?.remainingBefore ?? totalVol;
@@ -3257,9 +3258,10 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                   <div className="space-y-2">
                     {assignedRightOrders.map(({ order, remainingVolume }) => {
                       const acc = planningAccountMap[order.accountId ?? 0];
-                      const company = acc?.company ?? order.accountName ?? "Unknown account";
-                      const productName = acc?.productName ?? order.productName ?? null;
-                      const productType = acc?.productType ?? order.productType ?? null;
+                      // Use order data directly first (has merged account info from API), then fallback to accountMap
+                      const company = order.accountName ?? order.accountCompany ?? acc?.company ?? "Unknown account";
+                      const productName = order.productName ?? acc?.productName ?? null;
+                      const productType = order.productType ?? acc?.productType ?? null;
                       const productTypeLabel = productType ?? "—";
                       const totalVol = Number(order.volume ?? 0);
                       const isPartial = remainingVolume < totalVol;
