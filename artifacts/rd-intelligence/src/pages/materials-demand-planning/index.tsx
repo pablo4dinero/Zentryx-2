@@ -4703,25 +4703,6 @@ function MaterialsDemandPlanningPage() {
     return <PageLoader />;
   }
 
-  // Sync all production orders with account data
-  const handleSyncData = async () => {
-    try {
-      const res = await fetch(`${BASE}api/mdp/sync-order-accounts`, {
-        method: "POST",
-        headers: authHeaders(),
-      });
-      if (!res.ok) throw new Error("Sync failed");
-      const result = await res.json();
-      toast({ title: "Data Synced", description: `${result.updated} orders updated. All users will see the changes within 30s.` });
-      // Refetch all data to show the changes immediately
-      queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/accounts"] });
-    } catch (err) {
-      toast({ title: "Sync failed", description: (err as Error)?.message, variant: "destructive" });
-    }
-  };
-
   return (
     <div className="space-y-0">
       <div className="mb-5 flex justify-between items-start">
@@ -4731,10 +4712,6 @@ function MaterialsDemandPlanningPage() {
           </h1>
           <p className="text-muted-foreground mt-1">Manage raw materials, demand forecasting, and procurement planning.</p>
         </div>
-        <button onClick={handleSyncData}
-          className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors">
-          🔄 Sync Data for All Users
-        </button>
       </div>
 
       <div className={cn("flex gap-1 p-1 rounded-2xl border mb-6 w-fit max-w-full overflow-x-auto",
