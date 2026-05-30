@@ -514,4 +514,83 @@ router.get("/users", requireAuth, async (_req, res) => {
   } catch { res.status(500).json({ error: "InternalServerError" }); }
 });
 
+// Bulk delete messages — only deletes messages sent by the current user
+router.delete("/rooms/:roomId/messages", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.userId;
+    const roomId = Number(req.params.roomId);
+    const { messageIds } = req.body as { messageIds: number[] };
+    if (!Array.isArray(messageIds) || messageIds.length === 0) {
+      res.status(400).json({ error: "BadRequest", message: "messageIds must be a non-empty array" });
+      return;
+    }
+    // Verify user is a member of this room
+    const membership = await db.select().from(chatRoomMembersTable)
+      .where(and(eq(chatRoomMembersTable.roomId, roomId), eq(chatRoomMembersTable.userId, userId)))
+      .limit(1);
+    if (!membership.length) { res.status(403).json({ error: "Forbidden" }); return; }
+    // Delete only messages where senderId = current user
+    await db.delete(chatMessagesTable).where(
+      and(inArray(chatMessagesTable.id, messageIds), eq(chatMessagesTable.senderId, userId))
+    );
+    res.json({ success: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: "InternalServerError" }); }
+});
+
+// Forward a message to another room — copies content/file to target room as a new message
+router.post("/rooms/:roomId/messages/:messageId/forward", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.userId;
+    const sourceRoomId = Number(req.params.roomId);
+    const messageId = Number(req.params.messageId);
+    const { toRoomId } = req.body as { toRoomId: number };
+    if (!toRoomId) { res.status(400).json({ error: "BadRequest", message: "toRoomId required" }); return; }
+    // Verify user is member of source room
+    const sourceMembership = await db.select().from(chatRoomMembersTable)
+      .where(and(eq(chatRoomMembersTable.roomId, sourceRoomId), eq(chatRoomMembersTable.userId, userId)))
+      .limit(1);
+    if (!sourceMembership.length) { res.status(403).json({ error: "Forbidden" }); return; }
+    // Verify user is member of target room
+    const targetMembership = await db.select().from(chatRoomMembersTable)
+      .where(and(eq(chatRoomMembersTable.roomId, toRoomId), eq(chatRoomMembersTable.userId, userId)))
+      .limit(1);
+    if (!targetMembership.length) { res.status(403).json({ error: "Forbidden" }); return; }
+    // Fetch source message
+    const [sourceMsg] = await db.select().from(chatMessagesTable)
+      .where(and(eq(chatMessagesTable.id, messageId), eq(chatMessagesTable.roomId, sourceRoomId)))
+      .limit(1);
+    if (!sourceMsg) { res.status(404).json({ error: "NotFound" }); return; }
+    // Create new message in target room with [Forwarded] prefix for text
+    const fwdContent = sourceMsg.messageType === "text"
+      ? `[Forwarded] ${sourceMsg.content}`
+      : sourceMsg.content;
+    const [newMsg] = await db.insert(chatMessagesTable).values({
+      roomId: toRoomId,
+      senderId: userId,
+      messageType: sourceMsg.messageType,
+      content: fwdContent,
+      fileUrl: sourceMsg.fileUrl,
+      fileName: sourceMsg.fileName,
+    }).returning();
+    // Fetch target room for notification
+    const [targetRoom] = await db.select().from(chatRoomsTable)
+      .where(eq(chatRoomsTable.id, toRoomId)).limit(1);
+    // Notify room members
+    const [user] = await db.select({ name: usersTable.name }).from(usersTable)
+      .where(eq(usersTable.id, userId)).limit(1);
+    await notifyRoomMembers({
+      roomId: toRoomId,
+      senderId: userId,
+      senderName: user?.name,
+      isGroup: targetRoom?.isGroup ?? true,
+      roomName: targetRoom?.name ?? "chat",
+    });
+    // Return the new message with seenBy (empty)
+    const [result] = await db.select(MSG_SELECT).from(chatMessagesTable)
+      .leftJoin(usersTable, eq(chatMessagesTable.senderId, usersTable.id))
+      .where(eq(chatMessagesTable.id, newMsg.id));
+    res.status(201).json({ ...result, seenBy: [] });
+  } catch (err) { console.error(err); res.status(500).json({ error: "InternalServerError" }); }
+});
+
 export default router;
