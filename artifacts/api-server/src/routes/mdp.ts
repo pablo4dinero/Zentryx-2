@@ -363,27 +363,27 @@ router.get("/floor-assignments", requireAuth, async (req: AuthRequest, res) => {
 
     const assignments = await query.orderBy(desc(mdpFloorAssignmentsTable.assignedAt)) as Array<Record<string, any>>;
 
-    // REAL FIX: Enrich from accountProductionOrdersTable (sales orders), not accountsTable
-    // Production orders has the actual product names, types, companies
-    const salesOrders = await db.select().from(accountProductionOrdersTable) as Array<Record<string, any>>;
-    const salesBySalesId = new Map(salesOrders.map((s: Record<string, any>) => [s.id, s]));
+    // Enrich from accountsTable using accountId (NOW available after migration)
+    // accountsTable has productName, productType, company for each account
+    const accounts = await db.select().from(accountsTable) as Array<Record<string, any>>;
+    const accountsById = new Map(accounts.map((a: Record<string, any>) => [a.id, a]));
 
-    // Enrich assignments by looking up sales order data
+    // Enrich assignments by looking up account data via accountId
     const enriched = assignments.map((a: Record<string, any>) => {
       if (!a.order) return a;
 
-      // Look up sales order by salesOrderId - this has productName, productType, company
-      const salesData = a.order.salesOrderId ? salesBySalesId.get(a.order.salesOrderId) : null;
+      // Look up account by accountId - this has productName, productType, company
+      const accountData = a.order.accountId ? accountsById.get(a.order.accountId) : null;
 
       return {
         ...a,
         order: {
           ...a.order,
-          // Inject sales order fields into order (these are the SOURCE OF TRUTH)
-          productName: salesData?.productName || a.order.productName,
-          productType: salesData?.productType || a.order.productType,
-          company: salesData?.company || a.order.accountName,
-          accountName: salesData?.accountName || a.order.accountName,
+          // Inject account fields into order (these are the SOURCE OF TRUTH)
+          productName: accountData?.productName || a.order.productName,
+          productType: accountData?.productType || a.order.productType,
+          company: accountData?.company || a.order.accountName,
+          accountName: accountData?.company || a.order.accountName,
         }
       };
     });
