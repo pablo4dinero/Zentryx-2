@@ -778,17 +778,41 @@ router.post("/admin/sync-all-data", requireAuth, async (req: AuthRequest, res) =
     const accountById = new Map(accounts.map((a: Record<string, any>) => [a.id, a]));
     const mdpBySalesId = new Map(mdpOrders.map((m: Record<string, any>) => [m.salesOrderId, m]));
 
+    // Create product name → account mapping for matching orders to accounts
+    const accountByProductName = new Map(accounts.map((a: Record<string, any>) => [
+      a.productName?.toLowerCase().trim(),
+      a
+    ]));
+
     // Log what we found
     console.log(`Found: ${salesOrders.length} sales orders, ${mdpOrders.length} mdp orders, ${assignments.length} assignments, ${accounts.length} accounts`);
 
-    // Update any MDP orders missing accountId by getting it from sales order
+    // Update any MDP orders missing accountId
+    // Strategy: 1) Try sales order accountId, 2) Try product name match, 3) Try company match
     let mdpUpdated = 0;
     for (const mdpOrder of mdpOrders) {
       if (!mdpOrder.accountId && mdpOrder.salesOrderId) {
+        let foundAccountId: number | null = null;
+
+        // Strategy 1: Check if sales order has accountId
         const salesOrder = salesById.get(mdpOrder.salesOrderId);
         if (salesOrder?.accountId) {
+          foundAccountId = salesOrder.accountId;
+        }
+
+        // Strategy 2: Match by product name from sales order
+        if (!foundAccountId && salesOrder?.productName) {
+          const productKey = salesOrder.productName.toLowerCase().trim();
+          const matchedAccount = accountByProductName.get(productKey);
+          if (matchedAccount) {
+            foundAccountId = matchedAccount.id;
+          }
+        }
+
+        // Update the order if we found an account
+        if (foundAccountId) {
           await db.update(mdpProductionOrdersTable).set({
-            accountId: salesOrder.accountId,
+            accountId: foundAccountId,
             updatedAt: new Date(),
           }).where(eq(mdpProductionOrdersTable.id, mdpOrder.id));
           mdpUpdated++;
