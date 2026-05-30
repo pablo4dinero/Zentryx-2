@@ -125,7 +125,22 @@ router.get("/production-orders", requireAuth, async (req: AuthRequest, res) => {
       ...mdpBySalesId.get(order.id as number),
     }));
 
-    res.json(merged);
+    // Enrich with account data using accountId from MDP orders
+    const accounts = await db.select().from(accountsTable) as Array<Record<string, any>>;
+    const accountsById = new Map(accounts.map((a: Record<string, any>) => [a.id, a]));
+
+    const enriched = merged.map((order: Record<string, any>) => {
+      const accountData = order.accountId ? accountsById.get(order.accountId) : null;
+      return {
+        ...order,
+        productName: accountData?.productName || order.productName,
+        productType: accountData?.productType || order.productType,
+        company: accountData?.company || order.company,
+        accountName: accountData?.company || order.accountName,
+      };
+    });
+
+    res.json(enriched);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "InternalServerError" });
