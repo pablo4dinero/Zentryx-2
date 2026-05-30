@@ -362,25 +362,35 @@ router.get("/floor-assignments", requireAuth, async (req: AuthRequest, res) => {
     const assignments = await query.orderBy(desc(mdpFloorAssignmentsTable.assignedAt)) as Array<Record<string, any>>;
 
     // Enrich assignments with sales order data (account info)
-    const mdpOrderIds = new Set(assignments.map((a: Record<string, any>) => a.order?.id).filter(Boolean));
-    const salesOrdersMap = new Map<number, Record<string, any>>();
-    if (mdpOrderIds.size > 0) {
-      const moreOrders = await db.select().from(mdpProductionOrdersTable).where(inArray(mdpProductionOrdersTable.id, Array.from(mdpOrderIds))) as Array<Record<string, any>>;
-      const salesIds = moreOrders.map((o: Record<string, any>) => o.salesOrderId).filter((id): id is number => typeof id === "number");
-      if (salesIds.length > 0) {
-        const salesOrders = await db.select().from(accountProductionOrdersTable).where(inArray(accountProductionOrdersTable.id, salesIds)) as Array<Record<string, any>>;
-        salesOrders.forEach((so: Record<string, any>) => salesOrdersMap.set(so.id, so));
+    // Extract all sales order IDs from the assignments' orders
+    const salesOrderIds = new Set<number>();
+    assignments.forEach((a: Record<string, any>) => {
+      if (a.order?.salesOrderId) {
+        salesOrderIds.add(a.order.salesOrderId);
       }
+    });
+
+    // Fetch all sales orders at once
+    const salesOrdersMap = new Map<number, Record<string, any>>();
+    if (salesOrderIds.size > 0) {
+      const salesOrders = await db.select().from(accountProductionOrdersTable)
+        .where(inArray(accountProductionOrdersTable.id, Array.from(salesOrderIds))) as Array<Record<string, any>>;
+      salesOrders.forEach((so: Record<string, any>) => {
+        salesOrdersMap.set(so.id, so);
+      });
     }
 
-    // Merge sales order data into assignments
-    const enriched = assignments.map((a: Record<string, any>) => ({
-      ...a,
-      order: a.order ? {
-        ...a.order,
-        ...(a.order?.salesOrderId ? salesOrdersMap.get(a.order.salesOrderId) : {})
-      } : null
-    }));
+    // Merge: spread sales order data FIRST (has productName, accountName), then MDP data OVERWRITES
+    const enriched = assignments.map((a: Record<string, any>) => {
+      const salesData = a.order?.salesOrderId ? salesOrdersMap.get(a.order.salesOrderId) : null;
+      return {
+        ...a,
+        order: a.order ? {
+          ...salesData,  // Sales order data FIRST (has productName, accountName)
+          ...a.order     // MDP data OVERWRITES (has salesOrderId, etc)
+        } : null
+      };
+    });
 
     res.json(enriched);
   } catch (err) {
