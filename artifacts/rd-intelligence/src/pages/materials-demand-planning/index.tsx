@@ -1611,7 +1611,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       }
       return res.json() as Promise<ProductionFloor[]>;
     },
-    staleTime: 1000 * 60 * 2,
+    staleTime: 1000 * 30, // 30s — faster than before
+    refetchInterval: 1000 * 30, // Auto-poll every 30s for multi-user sync
   }) as UseQueryResult<ProductionFloor[], Error>;
 
   const assignmentsQuery = useQuery({
@@ -1627,7 +1628,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       return res.json() as Promise<FloorAssignmentRow[]>;
     },
     enabled: !!selectedWeekLabel,
-    staleTime: 1000 * 60 * 1,
+    staleTime: 1000 * 30, // 30s
+    refetchInterval: 1000 * 30, // Auto-poll every 30s
   }) as UseQueryResult<FloorAssignmentRow[], Error>;
 
   // All assignments across all weeks — used to permanently hide ordered orders from Planned Orders list
@@ -1638,7 +1640,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       if (!res.ok) throw new Error("Failed to load all floor assignments");
       return res.json() as Promise<FloorAssignmentRow[]>;
     },
-    staleTime: 1000 * 60 * 1,
+    staleTime: 1000 * 30, // 30s
+    refetchInterval: 1000 * 30, // Auto-poll every 30s
   }) as UseQueryResult<FloorAssignmentRow[], Error>;
 
   const productionOrdersQuery = useQuery({
@@ -1651,7 +1654,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       }
       return res.json() as Promise<ProductionOrder[]>;
     },
-    staleTime: 1000 * 60 * 2,
+    staleTime: 1000 * 30, // 30s — faster than before
+    refetchInterval: 1000 * 30, // Auto-poll every 30s for multi-user sync
   }) as UseQueryResult<ProductionOrder[], Error>;
 
   const planningAccountsQuery = useQuery({
@@ -1660,7 +1664,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       const res = await fetch(`${BASE}api/accounts`, { headers: authHeaders() });
       return res.json() as Promise<{id: number; company: string; productName: string | null; productType: string | null}[]>;
     },
-    staleTime: 1000 * 60 * 5,
+    staleTime: 1000 * 30, // 30s — faster than before
+    refetchInterval: 1000 * 30, // Auto-poll every 30s so all users see product changes
   });
 
   const planningAccountMap = React.useMemo(() => {
@@ -1815,6 +1820,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     },
     enabled: Boolean(selectedWeekLabel),
     staleTime: 1000 * 30,
+    refetchInterval: 1000 * 30, // Auto-poll every 30s
   });
 
   const floorDayStatusMap = React.useMemo(() => {
@@ -1839,6 +1845,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     },
     enabled: Boolean(selectedWeekLabel),
     staleTime: 1000 * 30,
+    refetchInterval: 1000 * 30, // Auto-poll every 30s
   });
 
   const downtimeByAssignmentId = React.useMemo(() => {
@@ -4010,7 +4017,8 @@ function ProductionHistoryTab() {
       }
       return (await res.json()) as ProducedOrder[];
     },
-    staleTime: 1000 * 60,
+    staleTime: 1000 * 30, // 30s
+    refetchInterval: 1000 * 30, // Auto-poll every 30s
   }) as UseQueryResult<ProducedOrder[], Error>;
 
   const clearHistoryMutation = useMutation({
@@ -4448,7 +4456,8 @@ function MaterialsDemandPlanningPage() {
       }
       return res.json() as Promise<Account[]>;
     },
-    staleTime: 1000 * 60 * 2,
+    staleTime: 1000 * 30, // 30s
+    refetchInterval: 1000 * 30, // Auto-poll every 30s so all users see product changes
   }) as UseQueryResult<Account[], Error>;
   const products = productsQuery.data ?? [];
   const isLoading = productsQuery.isLoading;
