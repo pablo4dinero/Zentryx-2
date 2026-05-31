@@ -85,6 +85,38 @@ function checkFloorCompatibility(floor: string, productType: string, volume: num
   return true;
 }
 
+function generateWeeksForDateRange(startDate: Date, endDate: Date): string[] {
+  const weeks: string[] = [];
+  const current = new Date(startDate);
+  current.setDate(current.getDate() - current.getDay() + 1); // Start from Monday
+
+  while (current <= endDate) {
+    const weekStart = new Date(current);
+    const weekEnd = new Date(current);
+    weekEnd.setDate(weekEnd.getDate() + 4); // Friday of the same week
+
+    const startFormatted = weekStart.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+    const endFormatted = weekEnd.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+
+    // Get day name
+    const dayName = weekStart.toLocaleDateString("en-US", { weekday: "short" });
+    const endDayName = weekEnd.toLocaleDateString("en-US", { weekday: "short" });
+
+    weeks.push(`Week ${Math.ceil((current.getDate() + 6) / 7)}: ${dayName}, ${startFormatted} - ${endDayName}, ${endFormatted}`);
+    current.setDate(current.getDate() + 7); // Move to next week
+  }
+
+  return weeks;
+}
+
 export default function StrategyEvaluatorTab() {
   const { theme } = useTheme();
   const { toast } = useToast();
@@ -156,14 +188,12 @@ export default function StrategyEvaluatorTab() {
     setCustomProductTypes(productTypesQuery.data || []);
   }, [productTypesQuery.data]);
 
-  // Get unique weeks from all assignments
+  // Generate all weeks for date range (Jan 2026 to Dec 2026)
   const allWeeks = useMemo(() => {
-    const weeks = new Set<string>();
-    allAssignmentsQuery.data?.forEach((row: any) => {
-      if (row.assignment?.weekLabel) weeks.add(row.assignment.weekLabel);
-    });
-    return Array.from(weeks).sort();
-  }, [allAssignmentsQuery.data]);
+    const startDate = new Date("2026-01-01");
+    const endDate = new Date("2026-12-31");
+    return generateWeeksForDateRange(startDate, endDate);
+  }, []);
 
   // Auto-select first week if available
   React.useEffect(() => {
@@ -188,7 +218,7 @@ export default function StrategyEvaluatorTab() {
 
   // Organize confirmed products by day and floor
   const uploadedPlanByDay = useMemo(() => {
-    const dayMap = new Map<string, { date: string; isWeekend: boolean; floors: Map<string, { volume: number; productCount: number }> }>();
+    const dayMap = new Map<string, { date: string; isWeekend: boolean; floors: Map<string, { products: Array<{ name: string; volume: number; type: string }>; volume: number; productCount: number }> }>();
     confirmedProducts.forEach((product) => {
       if (!dayMap.has(product.dayName)) {
         dayMap.set(product.dayName, {
@@ -200,9 +230,10 @@ export default function StrategyEvaluatorTab() {
       const dayData = dayMap.get(product.dayName)!;
       const floorName = product.floorName;
       if (!dayData.floors.has(floorName)) {
-        dayData.floors.set(floorName, { volume: 0, productCount: 0 });
+        dayData.floors.set(floorName, { products: [], volume: 0, productCount: 0 });
       }
       const floorData = dayData.floors.get(floorName)!;
+      floorData.products.push({ name: product.productName, volume: product.volume, type: product.productType });
       floorData.volume += product.volume;
       floorData.productCount += 1;
     });
@@ -782,14 +813,22 @@ export default function StrategyEvaluatorTab() {
                   <div className="text-lg font-bold text-green-600 mb-2">
                     {Array.from(dayData.floors.values()).reduce((sum, f) => sum + f.volume, 0).toLocaleString()} kg
                   </div>
-                  <div className="space-y-1">
+                  <div className="space-y-2">
                     {Array.from(dayData.floors.entries()).map(([floorName, floorData]) => (
-                      <div key={floorName} className="flex justify-between text-xs">
-                        <div className="flex gap-2">
-                          <span className="font-medium text-foreground">{floorName}</span>
-                          <span className="text-muted-foreground">{floorData.productCount} product{floorData.productCount !== 1 ? 's' : ''}</span>
+                      <div key={floorName}>
+                        <div className="flex justify-between text-xs font-medium">
+                          <span className="text-foreground">{floorName}</span>
+                          <span className="text-muted-foreground">{floorData.volume.toLocaleString()} kg</span>
                         </div>
-                        <span className="text-foreground font-medium">{floorData.volume.toLocaleString()} kg</span>
+                        {floorData.products.length > 0 && (
+                          <div className="ml-2 space-y-0.5">
+                            {floorData.products.map((prod, idx) => (
+                              <div key={idx} className="text-xs text-muted-foreground">
+                                • {prod.name}: {prod.volume.toLocaleString()} kg
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
