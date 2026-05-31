@@ -11,6 +11,8 @@ import {
   projectsTable,
   adminMessagesTable,
   adminMessageRecipientsTable,
+  featureFlagsTable,
+  featureFlagHistoryTable,
 } from "@workspace/db";
 import { desc, eq, gte, and, sql, isNull, inArray } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../lib/auth";
@@ -440,6 +442,133 @@ router.delete("/messages/:id", async (req: AuthRequest, res) => {
     res.json({ deleted: true });
   } catch (err) {
     console.error("[admin] messages.delete failed", err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+// ── Feature Flags ──────────────────────────────────────────────────────
+// GET /feature-flags — list all feature flags
+router.get("/feature-flags", async (_req: AuthRequest, res) => {
+  try {
+    const flags = await db.select({
+      id: featureFlagsTable.id,
+      featureName: featureFlagsTable.featureName,
+      displayName: featureFlagsTable.displayName,
+      description: featureFlagsTable.description,
+      enabled: featureFlagsTable.enabled,
+      category: featureFlagsTable.category,
+      updatedByUserId: featureFlagsTable.updatedByUserId,
+      updatedAt: featureFlagsTable.updatedAt,
+    }).from(featureFlagsTable).orderBy(featureFlagsTable.category, featureFlagsTable.featureName);
+    res.json(flags);
+  } catch (err) {
+    console.error("[admin] feature-flags list failed", err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+// POST /feature-flags — initialize default feature flags
+router.post("/feature-flags/init", async (req: AuthRequest, res) => {
+  try {
+    const defaults = [
+      {
+        featureName: "floor_efficiency_dashboard",
+        displayName: "Floor Efficiency Dashboard",
+        description: "Show which floors are running at <80% capacity",
+        enabled: true,
+        category: "optimization",
+      },
+      {
+        featureName: "downtime_alerts",
+        displayName: "Downtime & Maintenance Alerts",
+        description: "Flag unavoidable idle time and suggest preventive maintenance windows",
+        enabled: true,
+        category: "optimization",
+      },
+      {
+        featureName: "efficiency_score",
+        displayName: "Efficiency Score",
+        description: "Show how far current plan is from theoretical max output",
+        enabled: true,
+        category: "optimization",
+      },
+      {
+        featureName: "production_analytics",
+        displayName: "Production Analytics",
+        description: "Learn from actual production data and optimize constraints",
+        enabled: true,
+        category: "analytics",
+      },
+    ];
+
+    for (const flag of defaults) {
+      await db.insert(featureFlagsTable).values(flag).onConflictDoNothing();
+    }
+
+    res.json({ ok: true, initialized: defaults.length });
+  } catch (err) {
+    console.error("[admin] feature-flags init failed", err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+// PATCH /feature-flags/:featureName — toggle a feature flag
+router.patch("/feature-flags/:featureName", async (req: AuthRequest, res) => {
+  try {
+    const { featureName } = req.params;
+    const { enabled, reason } = req.body as { enabled?: boolean; reason?: string };
+    const userId = req.user!.userId;
+
+    if (typeof enabled !== "boolean") {
+      res.status(400).json({ error: "BadRequest", message: "enabled must be boolean" });
+      return;
+    }
+
+    const [flag] = await db.select().from(featureFlagsTable).where(eq(featureFlagsTable.featureName, featureName));
+    if (!flag) {
+      res.status(404).json({ error: "NotFound" });
+      return;
+    }
+
+    const [me] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, userId));
+    if (!me) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    const [updated] = await db.update(featureFlagsTable)
+      .set({ enabled, updatedByUserId: userId, updatedAt: new Date() })
+      .where(eq(featureFlagsTable.featureName, featureName))
+      .returning();
+
+    await db.insert(featureFlagHistoryTable).values({
+      featureName,
+      previousValue: flag.enabled,
+      newValue: enabled,
+      changedByUserId: userId,
+      changedByName: me.name,
+      reason: reason || null,
+    });
+
+    res.json(updated);
+  } catch (err) {
+    console.error("[admin] feature-flags patch failed", err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+// GET /feature-flags/:featureName/history — view toggle history
+router.get("/feature-flags/:featureName/history", async (req: AuthRequest, res) => {
+  try {
+    const { featureName } = req.params;
+    const history = await db.select()
+      .from(featureFlagHistoryTable)
+      .where(eq(featureFlagHistoryTable.featureName, featureName))
+      .orderBy(desc(featureFlagHistoryTable.createdAt))
+      .limit(50);
+    res.json(history);
+  } catch (err) {
+    console.error("[admin] feature-flags history failed", err);
     res.status(500).json({ error: "InternalServerError" });
   }
 });

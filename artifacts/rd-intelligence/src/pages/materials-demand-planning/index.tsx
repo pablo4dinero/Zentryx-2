@@ -1,6 +1,7 @@
 import * as React from "react";
 import SalesForecastPage from "@/pages/sales-force/Forecast";
 import StrategyEvaluatorTab from "@/pages/strategy-evaluator";
+import { ProductionAnalyticsTab } from "./production-analytics";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { useQuery, useMutation, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
@@ -39,6 +40,10 @@ import { PlannedOrdersProvider, usePlannedOrders } from "./planned-orders-contex
 import { runAssistedPlanning, type ExistingCellUsage, type PlanningSummary } from "./ai-planner";
 import { useCustomOptions, DEFAULT_PRODUCT_TYPES, displayLabel, useServerProductTypes } from "@/lib/project-options";
 import { CustomOptionsSelect } from "@/components/ui/CustomOptionsSelect";
+import { calculateEfficiency, getEfficiencyColor, getEfficiencyLabel } from "./efficiency-calculator";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
+import { FloorEfficiencyDashboard, type FloorEfficiencyData } from "./floor-efficiency-dashboard";
+import { DowntimeAlerts, type IdleTimeAlert } from "./downtime-alerts";
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -2765,9 +2770,108 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     return <PageLoader />;
   }
 
+  const { flags } = useFeatureFlags();
+  const efficiencyScoreEnabled = flags.efficiency_score;
+  const floorEfficiencyEnabled = flags.floor_efficiency_dashboard;
+  const downtimeAlertsEnabled = flags.downtime_alerts;
+
+  // Calculate efficiency score for current week
+  const weekAssignments = (allAssignmentsQuery.data ?? []).filter(row => row.assignment.weekLabel === selectedWeekLabel);
+  const floorMap = (floorsQuery.data ?? []).reduce((acc: Record<number, any>, floor) => {
+    acc[floor.id] = { name: floor.floorName };
+    return acc;
+  }, {});
+  const { score: efficiencyScore, breakdown: efficiencyBreakdown } = weekAssignments.length > 0
+    ? calculateEfficiency(
+        weekAssignments.map(row => ({
+          id: row.assignment.id,
+          floorId: row.assignment.floorId,
+          day: row.assignment.assignedDay || "",
+          shiftType: (row.assignment.shiftType || "day") as "day" | "night" | "saturday",
+          assignedVolume: row.assignment.assignedVolume || 0,
+          order: { id: row.order.id, blendSpeedId: row.order.blendSpeedId },
+          isWeekend: false,
+        })),
+        floorMap
+      )
+    : { score: 0, breakdown: {} };
+
+  // Build floor efficiency data for dashboard
+  const floorEfficiencyData: FloorEfficiencyData[] = (floorsQuery.data ?? []).map(floor => {
+    const floorAssignments = weekAssignments.filter(row => row.assignment.floorId === floor.id);
+    const plannedKg = floorAssignments.reduce((sum, row) => sum + (row.assignment.assignedVolume || 0), 0);
+
+    // Simple capacity calculation (medium speed default)
+    const baseCapacity = floor.maxCapacityKg || 0;
+    const shifts = new Set(floorAssignments.map(row => row.assignment.shiftType || "day")).size;
+    const capacityKg = baseCapacity * Math.max(1, shifts);
+
+    const utilization = capacityKg > 0 ? Math.round((plannedKg / capacityKg) * 100) : 0;
+
+    return {
+      floorId: floor.id,
+      floorName: floor.floorName,
+      utilization: Math.min(100, utilization),
+      plannedKg,
+      capacityKg,
+    };
+  });
+
+  // Detect idle time periods (simplified: 4+ hour gap on same floor/day = idle)
+  const idleAlerts: IdleTimeAlert[] = [];
+  if (downtimeAlertsEnabled && selectedWeekLabel && weekAssignments.length > 0) {
+    const assignmentsByFloorDay = new Map<string, number[]>();
+    weekAssignments.forEach(row => {
+      const key = `${row.assignment.floorId}-${row.assignment.assignedDay}`;
+      if (!assignmentsByFloorDay.has(key)) assignmentsByFloorDay.set(key, []);
+      assignmentsByFloorDay.get(key)!.push(row.assignment.assignedVolume || 0);
+    });
+    // Simplified logic: if a floor has <50% capacity used on a day, flag as idle
+    assignmentsByFloorDay.forEach((volumes, key) => {
+      const [floorId, day] = key.split("-");
+      const floor = (floorsQuery.data ?? []).find(f => f.id === parseInt(floorId));
+      if (floor) {
+        const totalVol = volumes.reduce((a, b) => a + b, 0);
+        if (totalVol < (floor.maxCapacityKg || 0) * 0.5) {
+          idleAlerts.push({
+            day: day || "",
+            floorName: floor.floorName,
+            startHour: 14,
+            durationHours: 4,
+            suggestedMaintenance: "Schedule routine maintenance or calibration",
+          });
+        }
+      }
+    });
+  }
+
   return (
     <div className="space-y-5">
       <style>{printStyles}</style>
+      {downtimeAlertsEnabled && idleAlerts.length > 0 && (
+        <DowntimeAlerts alerts={idleAlerts.slice(0, 3)} isLight={isLight} />
+      )}
+      {efficiencyScoreEnabled && (
+        <>
+          <div className={cn("rounded-2xl border p-4 flex items-center justify-between", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5")}>
+            <div>
+              <p className={cn("text-xs font-semibold uppercase tracking-wider", isLight ? "text-slate-600" : "text-muted-foreground")}>Current Week Efficiency</p>
+              <p className={cn("text-sm mt-1", isLight ? "text-slate-700" : "text-foreground")}>
+                {selectedWeekLabel || "Select a week to see efficiency score"}
+              </p>
+            </div>
+            {selectedWeekLabel && (
+              <div className={cn("px-4 py-2 rounded-xl border font-semibold text-sm inline-flex items-center gap-2", getEfficiencyColor(efficiencyScore))}>
+                <span>{efficiencyScore}%</span>
+                <span className="text-xs opacity-75">{getEfficiencyLabel(efficiencyScore)}</span>
+              </div>
+            )}
+          </div>
+          {floorEfficiencyEnabled && selectedWeekLabel && (
+            <FloorEfficiencyDashboard floors={floorEfficiencyData} isLight={isLight} />
+          )}
+        </>
+      )}
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div className="space-y-2">
           {planningView === "monthly" ? (
@@ -5571,6 +5675,7 @@ function MaterialsDemandPlanningPage() {
     { value: "monthly-orders", label: "Monthly Orders" },
     { value: "strategy-evaluator", label: "Strategy Evaluator" },
     { value: "production-planning", label: "Production Planning" },
+    { value: "production-analytics", label: "Analytics", beta: true },
     { value: "production-history", label: "Production History" },
     { value: "forecast", label: "Forecast" },
   ] as const;
@@ -6003,6 +6108,8 @@ function MaterialsDemandPlanningPage() {
           {activeTab === "strategy-evaluator" && <StrategyEvaluatorTab />}
 
           {activeTab === "production-planning" && <ProductionPlanningTab />}
+
+          {activeTab === "production-analytics" && <ProductionAnalyticsTab isLight={isLight} />}
 
           {activeTab === "production-history" && <ProductionHistoryTab />}
 
