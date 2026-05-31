@@ -69,9 +69,9 @@ function NotificationBell({
   const [lastSeen, setLastSeen] = useState<number>(() => {
     try { return Number(localStorage.getItem(LAST_SEEN_NOTIFS_KEY) || "0"); } catch { return 0; }
   });
-  const hasNewSinceLastOpen = displayNotifs?.some?.(
+  const hasNewSinceLastOpen = (displayNotifs || []).some(
     n => !n.isRead && new Date(n.createdAt).getTime() > lastSeen,
-  ) ?? false;
+  );
 
   useEffect(() => {
     const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
