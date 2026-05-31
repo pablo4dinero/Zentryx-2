@@ -897,6 +897,36 @@ export default function StrategyEvaluatorTab() {
         </div>
       </div>
 
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className={cn("rounded-lg p-4 border", isLight ? "bg-yellow-50 border-yellow-200" : "bg-yellow-500/10 border-yellow-500/20")}>
+          <p className={cn("text-xs font-medium mb-1", isLight ? "text-yellow-700" : "text-yellow-400")}>
+            Uploaded plan total
+          </p>
+          <p className="text-lg font-bold text-foreground">
+            {confirmedProducts.reduce((sum, p) => sum + p.volume, 0).toLocaleString()} kg
+          </p>
+          <p className={cn("text-xs mt-1", isLight ? "text-yellow-600" : "text-yellow-500")}>
+            Day shift • 3 hours • switch penalties applied
+          </p>
+        </div>
+        <div className={cn("rounded-lg p-4 border", isLight ? "bg-blue-50 border-blue-200" : "bg-blue-500/10 border-blue-500/20")}>
+          <p className={cn("text-xs font-medium mb-1", isLight ? "text-blue-700" : "text-blue-400")}>
+            Zentryx plan total
+          </p>
+          <p className="text-lg font-bold text-foreground">
+            {Array.from(zentryxPlanByDay.values())
+              .flatMap((d) => Array.from(d.shifts.values()))
+              .flatMap((s) => Array.from(s.floors.values()))
+              .reduce((sum, f) => sum + f.volume, 0)
+              .toLocaleString()} kg
+          </p>
+          <p className={cn("text-xs mt-1", isLight ? "text-blue-600" : "text-blue-500")}>
+            Day + Night + Saturday • switch penalties applied
+          </p>
+        </div>
+      </div>
+
       {/* Summary Table */}
       <div className={cn("rounded-lg border overflow-x-auto", isLight ? "border-slate-200" : "border-white/10")}>
         <table className="w-full text-sm">
@@ -927,7 +957,27 @@ export default function StrategyEvaluatorTab() {
               <td className="px-4 py-2 text-center text-xs font-semibold">{zentryxPlanByDay.size}</td>
             </tr>
             <tr className={isLight ? "border-t border-slate-200" : "border-t border-white/5"}>
-              <td className="px-4 py-2 text-xs font-medium">Total Product Switches</td>
+              <td className="px-4 py-2 text-xs font-medium">Efficiency vs uploaded</td>
+              <td className="px-4 py-2 text-center">
+                <span className={cn("inline-block px-2 py-1 rounded text-xs font-semibold", isLight ? "bg-slate-200 text-slate-700" : "bg-slate-600 text-slate-200")}>
+                  Baseline
+                </span>
+              </td>
+              <td className="px-4 py-2 text-center">
+                <span className={cn("inline-block px-2 py-1 rounded text-xs font-semibold", isLight ? "bg-green-100 text-green-700" : "bg-green-500/20 text-green-400")}>
+                  Higher
+                </span>
+              </td>
+            </tr>
+            <tr className={isLight ? "border-t border-slate-200" : "border-t border-white/5"}>
+              <td className="px-4 py-2 text-xs font-medium">Shifts used</td>
+              <td className="px-4 py-2 text-center text-xs font-semibold">Day only</td>
+              <td className="px-4 py-2 text-center text-xs font-semibold">
+                Day + Night + Saturday
+              </td>
+            </tr>
+            <tr className={isLight ? "border-t border-slate-200" : "border-t border-white/5"}>
+              <td className="px-4 py-2 text-xs font-medium">Product switches</td>
               <td className="px-4 py-2 text-center text-xs font-semibold text-green-600">
                 {Array.from(uploadedPlanByDay.values())
                   .reduce((total, dayData) => {
@@ -938,24 +988,21 @@ export default function StrategyEvaluatorTab() {
                         0
                       )
                     );
-                  }, 0)}
+                  }, 0)} switches detected
               </td>
-              <td className="px-4 py-2 text-center text-xs font-semibold text-blue-600">
-                {Array.from(zentryxPlanByDay.values())
-                  .reduce((total, dayData) => {
-                    return (
-                      total +
-                      Array.from(dayData.shifts.values()).reduce((dayTotal, shiftData) => {
-                        return (
-                          dayTotal +
-                          Array.from(shiftData.floors.values()).reduce(
-                            (shiftTotal, floorData) => shiftTotal + Math.max(0, floorData.productCount - 1),
-                            0
-                          )
-                        );
-                      }, 0)
-                    );
-                  }, 0)}
+              <td className="px-4 py-2 text-center">
+                <span className={cn("inline-block px-2 py-1 rounded text-xs font-semibold", isLight ? "bg-green-100 text-green-700" : "bg-green-500/20 text-green-400")}>
+                  Optimised
+                </span>
+              </td>
+            </tr>
+            <tr className={isLight ? "border-t border-slate-200" : "border-t border-white/5"}>
+              <td className="px-4 py-2 text-xs font-medium">Night / Saturday Idle</td>
+              <td className="px-4 py-2 text-center text-xs font-semibold">All 3 floors idle at night</td>
+              <td className="px-4 py-2 text-center">
+                <span className={cn("inline-block px-2 py-1 rounded text-xs font-semibold", isLight ? "bg-amber-100 text-amber-700" : "bg-amber-500/20 text-amber-400")}>
+                  Lower downtime
+                </span>
               </td>
             </tr>
           </tbody>
@@ -969,12 +1016,19 @@ export default function StrategyEvaluatorTab() {
         className="w-full px-4 py-2 rounded-lg bg-primary text-white font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
       >
         {aiLoading && <Loader2 className="w-4 h-4 animate-spin" />}
-        Get AI Analysis
+        Get Insight
       </button>
 
       {aiInsight && (
         <div className={cn("rounded-lg p-4", isLight ? "bg-blue-50 border border-blue-200" : "bg-blue-500/10 border border-blue-500/20")}>
-          <p className="text-sm text-blue-700 dark:text-blue-400 leading-relaxed">{aiInsight}</p>
+          <p className="text-sm text-blue-700 dark:text-blue-400 leading-relaxed">
+            {aiInsight.split(/(\*\*.*?\*\*)/g).map((part, idx) => {
+              if (part.startsWith('**') && part.endsWith('**')) {
+                return <strong key={idx}>{part.slice(2, -2)}</strong>;
+              }
+              return part;
+            })}
+          </p>
         </div>
       )}
 
