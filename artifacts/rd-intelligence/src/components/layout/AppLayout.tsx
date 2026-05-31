@@ -58,7 +58,9 @@ function NotificationBell({
   const ref = useRef<HTMLDivElement>(null);
   const markRead = useMarkNotificationRead();
   const queryClient = useQueryClient();
-  const unreadCount = notifications.filter(n => !n.isRead).length;
+  const [optimisticNotifs, setOptimisticNotifs] = useState<any[] | null>(null);
+  const displayNotifs = optimisticNotifs ?? notifications;
+  const unreadCount = displayNotifs.filter(n => !n.isRead).length;
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
 
   // Smart blink — only animate when there's an unread notification newer
@@ -66,7 +68,7 @@ function NotificationBell({
   const [lastSeen, setLastSeen] = useState<number>(() => {
     try { return Number(localStorage.getItem(LAST_SEEN_NOTIFS_KEY) || "0"); } catch { return 0; }
   });
-  const hasNewSinceLastOpen = notifications.some(
+  const hasNewSinceLastOpen = displayNotifs.some(
     n => !n.isRead && new Date(n.createdAt).getTime() > lastSeen,
   );
 
@@ -75,6 +77,13 @@ function NotificationBell({
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
+
+  // Sync optimistic updates with server data
+  useEffect(() => {
+    if (optimisticNotifs && notifications) {
+      setOptimisticNotifs(null);
+    }
+  }, [notifications]);
 
   const openDropdown = () => {
     setOpen(o => {
@@ -95,8 +104,11 @@ function NotificationBell({
     markRead.mutate({ id }, { onSuccess: invalidate });
   };
   const markAllRead = async () => {
-    const unread = notifications.filter(n => !n.isRead);
+    const unread = displayNotifs.filter(n => !n.isRead);
     if (unread.length === 0) return;
+    // Optimistic update - mark all as read immediately in UI
+    setOptimisticNotifs(displayNotifs.map(n => ({ ...n, isRead: true })));
+    // Send to server in background
     await Promise.allSettled(
       unread.map(n => new Promise<void>(resolve => {
         markRead.mutate({ id: n.id }, { onSettled: () => resolve() });
@@ -165,12 +177,12 @@ function NotificationBell({
               </div>
             </div>
             <div className="max-h-80 overflow-y-auto custom-scrollbar">
-              {notifications.length === 0 ? (
+              {displayNotifs.length === 0 ? (
                 <div className={cn("py-10 text-center text-sm", isLight ? "text-slate-500" : "text-muted-foreground")}>
                   <Bell className="w-6 h-6 mx-auto mb-2 opacity-30" />
                   No notifications yet
                 </div>
-              ) : notifications.slice(0, 12).map((n: any) => (
+              ) : displayNotifs.slice(0, 12).map((n: any) => (
                 <div
                   key={n.id}
                   className={cn(

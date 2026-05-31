@@ -5,18 +5,28 @@ import { formatDistanceToNow } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
+import { useState, useEffect } from "react";
 
 export default function Notifications() {
   const { data: notifications, isLoading } = useListNotifications();
   const markReadMut = useMarkNotificationRead();
   const queryClient = useQueryClient();
   const { theme } = useTheme();
+  const [optimisticNotifs, setOptimisticNotifs] = useState<any[] | null>(null);
   const isLight = theme === "light";
 
-  if (isLoading) return <PageLoader />;
-
-  const list = notifications ?? [];
+  const displayNotifs = optimisticNotifs ?? (notifications ?? []);
+  const list = displayNotifs;
   const unread = list.filter(n => !n.isRead);
+
+  // Sync optimistic updates with server data
+  useEffect(() => {
+    if (optimisticNotifs && notifications) {
+      setOptimisticNotifs(null);
+    }
+  }, [notifications]);
+
+  if (isLoading) return <PageLoader />;
 
   const getIcon = (type: string) => {
     switch (type) {
@@ -33,6 +43,10 @@ export default function Notifications() {
   };
 
   const handleMarkAll = () => {
+    if (unread.length === 0) return;
+    // Optimistic update - mark all as read immediately in UI
+    setOptimisticNotifs(list.map(n => ({ ...n, isRead: true })));
+    // Send to server in background
     unread.forEach(n => markReadMut.mutate({ id: n.id }));
   };
 
