@@ -991,6 +991,7 @@ interface CustomProductType {
 const customProductTypes: Map<string, CustomProductType> = new Map();
 
 // Smart product type detection using database matching and keyword analysis
+// Updated: Matches by exact DB lookup, fuzzy match, then keyword analysis
 function detectProductType(productName: string, productOrders: any[]): string {
   const cleanName = (productName || "").toLowerCase().trim();
   if (!cleanName) return "Unknown";
