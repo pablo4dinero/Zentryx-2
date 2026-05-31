@@ -1,8 +1,6 @@
 import React, { useState, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Upload, AlertTriangle, AlertCircle, ChevronRight, ChevronLeft } from "lucide-react";
-import * as mammoth from "mammoth";
-import * as pdfjs from "pdfjs-dist";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
 import { PageLoader } from "@/components/ui/spinner";
@@ -50,21 +48,31 @@ const CAPACITY = {
 const SHIFT_HOURS = { day: 7.5, night: 6.5, sat: 6.5 };
 
 async function parsePdf(file: File): Promise<string> {
-  const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjs.getDocument(arrayBuffer).promise;
-  let text = "";
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    text += content.items.map((item: any) => item.str).join(" ");
+  try {
+    const pdfjs = await import("pdfjs-dist");
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjs.getDocument(arrayBuffer).promise;
+    let text = "";
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      text += content.items.map((item: any) => item.str).join(" ");
+    }
+    return text;
+  } catch (err) {
+    throw new Error("PDF parsing library not available. Please use DOCX format.");
   }
-  return text;
 }
 
 async function parseDocx(file: File): Promise<string> {
-  const arrayBuffer = await file.arrayBuffer();
-  const result = await mammoth.extractRawText({ arrayBuffer });
-  return result.value;
+  try {
+    const mammoth = await import("mammoth");
+    const arrayBuffer = await file.arrayBuffer();
+    const result = await mammoth.extractRawText({ arrayBuffer });
+    return result.value;
+  } catch (err) {
+    throw new Error("DOCX parsing library not available. Please use PDF format.");
+  }
 }
 
 function extractParsedEntries(text: string): ParsedEntry[] {
