@@ -1326,8 +1326,9 @@ Which plan is more efficient and why?`;
     const insight = await callModel(SONNET_MODEL, systemPrompt, userPrompt, 300);
     res.json({ insight });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to generate insight" });
+    console.error("Strategy insight error:", err);
+    const errorMsg = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: `AI insight failed: ${errorMsg}` });
   }
 });
 
