@@ -42,6 +42,7 @@ export const ZENTRYX_MODULES: { path: string; label: string }[] = [
   { path: "/business-dev", label: "Business Development" },
   { path: "/sales-force", label: "Sales Force" },
   { path: "/materials-demand-planning", label: "Materials & Demand Planning" },
+  { path: "/strategy-evaluator", label: "Strategy Evaluator" },
   { path: "/procurement", label: "Procurement" },
   { path: "/team", label: "Team Directory" },
   { path: "/events", label: "Events" },
@@ -211,7 +212,7 @@ export function useServerRoles() {
 export const ALL_MODULE_PATHS: string[] = ZENTRYX_MODULES.map(m => m.path);
 
 // The default viewer-level lockout used as the catch-all fallback.
-const RESTRICTED_PATHS = ["/sales-force", "/projects", "/weekly-activities", "/business-dev", "/procurement", "/materials-demand-planning"];
+const RESTRICTED_PATHS = ["/sales-force", "/projects", "/weekly-activities", "/business-dev", "/procurement", "/materials-demand-planning", "/strategy-evaluator"];
 
 /**
  * Module paths a role is NOT allowed to see. /admin is always blocked
@@ -253,10 +254,10 @@ export function getBlockedPaths(role: string, jobPos: string): string[] {
   if (r === "npd_team") return [...adminBlock, "/sales-force"];
   if (r === "operations_team") return [...adminBlock, "/sales-force", "/projects", "/business-dev"];
   if (r === "qc_team") return [...adminBlock, "/sales-force", "/business-dev"];
-  if (r === "support_staff") return [...adminBlock, "/sales-force", "/projects", "/business-dev", "/procurement", "/materials-demand-planning"];
+  if (r === "support_staff") return [...adminBlock, "/sales-force", "/projects", "/business-dev", "/procurement", "/materials-demand-planning", "/strategy-evaluator"];
 
   // ── Legacy values (migration-safety) ──────────────────────────────
-  if (r === "viewer") return [...adminBlock, "/sales-force", "/materials-demand-planning", "/projects", "/weekly-activities", "/business-dev", "/procurement"];
+  if (r === "viewer") return [...adminBlock, "/sales-force", "/materials-demand-planning", "/strategy-evaluator", "/projects", "/weekly-activities", "/business-dev", "/procurement"];
   if (r === "npd_technologist") return [...adminBlock, "/sales-force"];
   if (["key_account_manager", "senior_key_account_manager"].includes(r)) return [...adminBlock, "/projects", "/weekly-activities", "/business-dev", "/procurement"];
   if (r === "procurement" || jp.includes("procurement")) return [...adminBlock, "/sales-force", "/projects", "/business-dev"];

@@ -6,7 +6,7 @@ import {
   ChevronDown, User, FlaskConical as Flask, CheckSquare, Building2,
   ArrowRight, Loader2, CalendarDays, UserCircle, TrendingUp, ClipboardList,
   PanelLeftClose, PanelLeftOpen, Lock, Unlock, ShoppingCart, Package,
-  ShieldCheck, ShieldX, Mail, Rss, Brain, CheckCheck, Check, Download, Volume2, VolumeX, Megaphone
+  ShieldCheck, ShieldX, Mail, Rss, Brain, CheckCheck, Check, Download, Volume2, VolumeX, Megaphone, BarChart2
 } from "lucide-react";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { useNotificationSound } from "@/hooks/useNotificationSound";
@@ -33,6 +33,7 @@ const ALL_NAV_ITEMS = [
   { href: "/business-dev", label: "Business Development", icon: Briefcase },
   { href: "/sales-force", label: "Sales Force", icon: TrendingUp },
   { href: "/materials-demand-planning", label: "Materials & Demand Planning", icon: Package },
+  { href: "/strategy-evaluator", label: "Strategy Evaluator", icon: BarChart2 },
   { href: "/procurement", label: "Procurement", icon: ShoppingCart },
   { href: "/team", label: "Team Directory", icon: Users },
   { href: "/events", label: "Events", icon: CalendarDays },
