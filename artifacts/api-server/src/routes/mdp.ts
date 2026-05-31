@@ -1023,15 +1023,20 @@ function parseProductionPlan(text: string): ParsedDay[] {
 
   const floorMapping: Record<string, string> = {
     "MAIN PRODUCTION FLOOR": "Floor 1",
+    "MAIN PRODUCTION": "Floor 1",
     "SECOND LINE": "Floor 2",
+    "2ND LINE": "Floor 2",
     "NEW PRODUCTION FLOOR": "Floor 3",
+    "NEW FLOOR": "Floor 3",
   };
 
-  const dayPattern = /\b(MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY)\s+(\d{1,2}\/\d{1,2}\/\d{4})/i;
-  const floorPattern = /MAIN\s+PRODUCTION\s*FLOOR|SECOND\s+LINE|NEW\s+PRODUCTION\s*FLOOR/i;
-  const volumePattern = /(\d+(?:[.,]\d+)?)\s*(ton|kg)\b/i;
+  const dayPattern = /^(MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY)\s+(\d{1,2}\/\d{1,2}\/\d{4})/i;
+  const volumePattern = /(\d+(?:[.,]\d+)?)\s*(ton|tons|kg|kilograms?)\b/i;
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Check for day pattern at start of line
     const dayMatch = line.match(dayPattern);
     if (dayMatch) {
       const dayName = dayMatch[1].toUpperCase();
@@ -1043,35 +1048,50 @@ function parseProductionPlan(text: string): ParsedDay[] {
       continue;
     }
 
-    const floorMatch = line.match(floorPattern);
-    if (floorMatch) {
-      const floorKey = floorMatch[0];
-      const floorName = floorMapping[floorKey] || floorKey;
-      currentFloor = { floorName, products: [] };
-      if (currentDay) currentDay.floors.push(currentFloor);
-      continue;
+    // Check for floor pattern - case insensitive, more flexible
+    let isFloor = false;
+    for (const [floorKey, floorName] of Object.entries(floorMapping)) {
+      if (line.toUpperCase().includes(floorKey.toUpperCase())) {
+        currentFloor = { floorName, products: [] };
+        if (currentDay) currentDay.floors.push(currentFloor);
+        isFloor = true;
+        break;
+      }
     }
+    if (isFloor) continue;
 
+    // Look for volume pattern in line
     const volumeMatch = line.match(volumePattern);
-    if (volumeMatch && currentFloor && currentDay) {
+    if (volumeMatch && currentDay) {
       let volume = parseFloat(volumeMatch[1].replace(",", "."));
       const unit = volumeMatch[2].toLowerCase();
-      if (unit === "ton") volume *= 1000;
+      if (unit.includes("ton")) volume *= 1000;
 
-      const productName = line
+      // Extract product name by removing volume and status info
+      let productName = line
         .replace(volumeMatch[0], "")
-        .replace(/\b(NEW ORDER|order status|—|is not relevant)\b/i, "")
+        .replace(/\b(NEW ORDER|ORDER STATUS|STATUS|—|PENDING|ORDERED)\b/i, "")
         .trim();
 
-      if (productName && productName.length > 2) {
-        currentFloor.products.push({ name: productName, volume });
+      // If no floor assigned yet, assign to current floor or create one
+      if (!currentFloor && currentDay) {
+        currentFloor = { floorName: "Unknown Floor", products: [] };
+        currentDay.floors.push(currentFloor);
+      }
+
+      if (productName && productName.length > 1 && currentFloor) {
+        // Avoid duplicates and empty names
+        if (!currentFloor.products.find((p) => p.name.toLowerCase() === productName.toLowerCase())) {
+          currentFloor.products.push({ name: productName, volume });
+        }
       }
     }
   }
 
   if (currentDay) days.push(currentDay);
 
-  return days;
+  // Filter out empty days
+  return days.filter((d) => d.floors.some((f) => f.products.length > 0));
 }
 
 router.post("/strategy-insight", requireAuth, async (req: AuthRequest, res) => {
