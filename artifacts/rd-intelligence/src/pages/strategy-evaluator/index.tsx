@@ -221,7 +221,7 @@ export default function StrategyEvaluatorTab() {
     });
     setConfirmedProducts(products);
     setStep(3);
-  }, [parsedDays, productLookup]);
+  }, [parsedDays]);
 
   // Group products for display
   const uploadedDaySummaries = useMemo(() => {
