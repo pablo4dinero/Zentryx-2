@@ -767,25 +767,28 @@ export default function StrategyEvaluatorTab() {
         <p className="text-sm text-muted-foreground mt-1">Select Zentryx week to compare against your uploaded plan</p>
       </div>
 
-      <div className="flex gap-4 items-center">
-        <label className="text-xs text-muted-foreground">Choose a week:</label>
-        <select
-          value={selectedZentryxWeek || ""}
-          onChange={(e) => setSelectedZentryxWeek(e.target.value)}
-          className={cn(
-            "px-4 py-2 rounded-lg text-sm border transition-all",
-            isLight
-              ? "bg-white border-slate-200 text-foreground"
-              : "bg-black/20 border-white/10 text-foreground"
-          )}
-        >
-          <option value="">Select a week...</option>
-          {allWeeks.map((week) => (
-            <option key={week} value={week}>
+      <div className="flex gap-2 flex-wrap items-center">
+        <span className="text-xs text-muted-foreground">Zentryx week:</span>
+        {allWeeks.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No weeks available</p>
+        ) : (
+          allWeeks.map((week) => (
+            <button
+              key={week}
+              onClick={() => setSelectedZentryxWeek(week)}
+              className={cn(
+                "px-4 py-2 rounded-lg text-sm font-medium border transition-all",
+                selectedZentryxWeek === week
+                  ? "border-blue-500 bg-blue-500/10 text-blue-600"
+                  : isLight
+                  ? "border-slate-200 hover:bg-slate-50"
+                  : "border-white/10 hover:bg-white/5"
+              )}
+            >
               {week}
-            </option>
-          ))}
-        </select>
+            </button>
+          ))
+        )}
       </div>
 
       {/* Day-by-Day Comparison */}
