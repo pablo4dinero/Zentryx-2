@@ -188,12 +188,27 @@ export default function StrategyEvaluatorTab() {
     setCustomProductTypes(productTypesQuery.data || []);
   }, [productTypesQuery.data]);
 
-  // Generate all weeks for date range (Jan 2026 to Dec 2026)
+  // Generate weeks for 3-month range (previous, current, next month) with actual assignments
   const allWeeks = useMemo(() => {
-    const startDate = new Date("2026-01-01");
-    const endDate = new Date("2026-12-31");
-    return generateWeeksForDateRange(startDate, endDate);
-  }, []);
+    // Calculate 3-month range: previous month, current month, next month
+    const today = new Date();
+    const startDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const endDate = new Date(today.getFullYear(), today.getMonth() + 2, 0);
+
+    // Get all possible weeks for the 3-month range
+    const allPossibleWeeks = generateWeeksForDateRange(startDate, endDate);
+
+    // Filter to only weeks that have actual assignments
+    const weeksWithAssignments = new Set<string>();
+    allAssignmentsQuery.data?.forEach((row: any) => {
+      if (row.assignment?.weekLabel) {
+        weeksWithAssignments.add(row.assignment.weekLabel);
+      }
+    });
+
+    // Return only weeks that have assignments, sorted
+    return allPossibleWeeks.filter(week => weeksWithAssignments.has(week));
+  }, [allAssignmentsQuery.data]);
 
   // Auto-select first week if available
   React.useEffect(() => {
