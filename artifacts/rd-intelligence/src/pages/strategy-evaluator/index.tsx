@@ -164,15 +164,23 @@ export default function StrategyEvaluatorTab() {
       setUploading(true);
       try {
         const arrayBuffer = await file.arrayBuffer();
-        const fileData = Buffer.from(arrayBuffer).toString("base64");
+        const uint8Array = new Uint8Array(arrayBuffer);
+        let fileData = "";
+        for (let i = 0; i < uint8Array.length; i++) {
+          fileData += String.fromCharCode(uint8Array[i]);
+        }
+        const base64Data = btoa(fileData);
 
         const res = await fetch(`${BASE}api/mdp/parse-plan-document`, {
           method: "POST",
           headers: { ...authHeaders(), "Content-Type": "application/json" },
-          body: JSON.stringify({ fileData, fileName: file.name }),
+          body: JSON.stringify({ fileData: base64Data, fileName: file.name }),
         });
 
-        if (!res.ok) throw new Error("Parse failed");
+        if (!res.ok) {
+          const error = await res.json();
+          throw new Error(error.error || "Parse failed");
+        }
         const { days } = await res.json();
         setParsedDays(days);
         toast({ title: "Document uploaded", description: "Proceeding to confirm details" });
