@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Upload, AlertTriangle, ChevronDown, Loader2, Check } from "lucide-react";
+import { Upload, AlertTriangle, ChevronDown, Loader2, Check, Edit2, Trash2, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
 import { useToast } from "@/hooks/use-toast";
@@ -98,6 +98,13 @@ export default function StrategyEvaluatorTab() {
   const [aiLoading, setAiLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [floorOverrides, setFloorOverrides] = useState<Map<string, string>>(new Map());
+  const [dayRenames, setDayRenames] = useState<Map<string, string>>(new Map());
+  const [productRenames, setProductRenames] = useState<Map<string, string>>(new Map());
+  const [editingDayIdx, setEditingDayIdx] = useState<number | null>(null);
+  const [editingProductKey, setEditingProductKey] = useState<string | null>(null);
+  const [showProductTypeManager, setShowProductTypeManager] = useState(false);
+  const [customProductTypes, setCustomProductTypes] = useState<any[]>([]);
+  const [newTypeForm, setNewTypeForm] = useState({ name: "", keywords: "" });
 
   // Fetch production orders for blend speed lookup
   const ordersQuery = useQuery({
@@ -121,6 +128,20 @@ export default function StrategyEvaluatorTab() {
     },
     enabled: !!selectedZentryxWeek,
   });
+
+  // Fetch custom product types
+  const productTypesQuery = useQuery({
+    queryKey: ["/api/mdp/product-types"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}api/mdp/product-types`, { headers: authHeaders() });
+      if (!res.ok) return [];
+      return res.json() as Promise<any[]>;
+    },
+  });
+
+  React.useEffect(() => {
+    setCustomProductTypes(productTypesQuery.data || []);
+  }, [productTypesQuery.data]);
 
   // Get unique weeks from assignments
   const allWeeks = useMemo(() => {
@@ -386,21 +407,58 @@ export default function StrategyEvaluatorTab() {
   if (step === 2) {
     // Compute table rows inline
     const tableRows: Array<any> = [];
-    parsedDays.forEach((day) => {
+    parsedDays.forEach((day, dayIdx) => {
       day.floors.forEach((floor) => {
-        floor.products.forEach((product) => {
+        floor.products.forEach((product, prodIdx) => {
           tableRows.push({
-            dayName: day.dayName,
+            dayIdx,
+            prodIdx,
+            dayName: dayRenames.get(`day-${dayIdx}`) || day.dayName,
+            originalDayName: day.dayName,
             date: day.date,
             isWeekend: day.isWeekend,
             floorName: floor.floorName,
-            productName: product.name,
+            productName: productRenames.get(`product-${dayIdx}-${prodIdx}`) || product.name,
+            originalProductName: product.name,
             volume: product.volume,
             productType: product.detectedType,
           });
         });
       });
     });
+
+    const handleAddCustomType = async () => {
+      if (!newTypeForm.name.trim()) return;
+      const keywords = newTypeForm.keywords.split(",").map((k) => k.trim()).filter((k) => k);
+      try {
+        const res = await fetch(`${BASE}api/mdp/product-types`, {
+          method: "POST",
+          headers: { ...authHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({ name: newTypeForm.name, keywords }),
+        });
+        if (res.ok) {
+          await productTypesQuery.refetch();
+          setNewTypeForm({ name: "", keywords: "" });
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    };
+
+    const handleDeleteCustomType = async (id: string) => {
+      try {
+        const res = await fetch(`${BASE}api/mdp/product-types/${id}`, {
+          method: "DELETE",
+          headers: authHeaders(),
+        });
+        if (res.ok) {
+          await productTypesQuery.refetch();
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    };
+
     return (
       <div className="space-y-6">
         <div>
@@ -408,7 +466,63 @@ export default function StrategyEvaluatorTab() {
           <p className="text-sm text-muted-foreground mt-1">Review extracted products and confirm blend speeds and types</p>
         </div>
 
-        <div className={cn("rounded-lg overflow-hidden border", isLight ? "border-slate-200" : "border-white/10")}>
+        {/* Product Type Manager */}
+        <div className={cn("rounded-lg p-4 border", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/20")}>
+          <button
+            onClick={() => setShowProductTypeManager(!showProductTypeManager)}
+            className="flex items-center gap-2 text-sm font-semibold text-foreground mb-3"
+          >
+            <Plus className="w-4 h-4" /> Manage Product Types
+          </button>
+
+          {showProductTypeManager && (
+            <div className="space-y-4">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Type name"
+                  value={newTypeForm.name}
+                  onChange={(e) => setNewTypeForm({ ...newTypeForm, name: e.target.value })}
+                  className="flex-1 text-xs px-2 py-1 rounded border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
+                />
+                <input
+                  type="text"
+                  placeholder="Keywords (comma-separated)"
+                  value={newTypeForm.keywords}
+                  onChange={(e) => setNewTypeForm({ ...newTypeForm, keywords: e.target.value })}
+                  className="flex-1 text-xs px-2 py-1 rounded border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
+                />
+                <button
+                  onClick={handleAddCustomType}
+                  className="px-3 py-1 bg-primary text-white text-xs rounded hover:opacity-90"
+                >
+                  Add
+                </button>
+              </div>
+
+              {customProductTypes.length > 0 && (
+                <div className="space-y-2">
+                  {customProductTypes.map((type) => (
+                    <div key={type.id} className={cn("flex items-center justify-between p-2 rounded text-xs", isLight ? "bg-slate-50" : "bg-white/5")}>
+                      <div>
+                        <p className="font-semibold">{type.name}</p>
+                        <p className="text-muted-foreground">{type.keywords.join(", ")}</p>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteCustomType(type.id)}
+                        className="p-1 hover:bg-red-500/20 rounded text-red-600"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className={cn("rounded-lg overflow-hidden border", isLight ? "border-slate-200 bg-white" : "border-white/10")}>
           <table className="w-full text-sm">
             <thead className={cn("", isLight ? "bg-slate-100" : "bg-white/5")}>
               <tr>
@@ -432,9 +546,51 @@ export default function StrategyEvaluatorTab() {
                 const selectedFloor = floorOverrides.get(rowKey) || row.floorName;
                 const adjustedFloorWarning = !checkFloorCompatibility(selectedFloor, productType, row.volume);
 
+                const dayKey = `day-${row.dayIdx}`;
+                const productKey = `product-${row.dayIdx}-${row.prodIdx}`;
+                const isEditingDay = editingDayIdx === row.dayIdx;
+                const isEditingProduct = editingProductKey === productKey;
+
                 return (
                 <tr key={idx} className={isLight ? "border-t border-slate-200" : "border-t border-white/5"}>
-                  <td className="px-4 py-2 text-xs">{row.dayName}</td>
+                  <td className="px-4 py-2 text-xs">
+                    {isEditingDay ? (
+                      <div className="flex gap-1 items-center">
+                        <input
+                          autoFocus
+                          type="text"
+                          defaultValue={row.dayName}
+                          onBlur={(e) => {
+                            if (e.target.value.trim()) {
+                              setDayRenames(new Map(dayRenames).set(dayKey, e.target.value));
+                            }
+                            setEditingDayIdx(null);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              if (e.currentTarget.value.trim()) {
+                                setDayRenames(new Map(dayRenames).set(dayKey, e.currentTarget.value));
+                              }
+                              setEditingDayIdx(null);
+                            } else if (e.key === "Escape") {
+                              setEditingDayIdx(null);
+                            }
+                          }}
+                          className="text-xs px-2 py-1 rounded border border-slate-300 dark:border-white/20 bg-white dark:bg-black/30 w-20"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex gap-1 items-center group">
+                        <span>{row.dayName}</span>
+                        <button
+                          onClick={() => setEditingDayIdx(row.dayIdx)}
+                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-200 dark:hover:bg-white/10 rounded"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-2">
                     <select
                       value={selectedFloor}
@@ -450,7 +606,44 @@ export default function StrategyEvaluatorTab() {
                       <option value="Floor 3">Floor 3</option>
                     </select>
                   </td>
-                  <td className="px-4 py-2 text-xs font-medium">{row.productName}</td>
+                  <td className="px-4 py-2 text-xs font-medium">
+                    {isEditingProduct ? (
+                      <div className="flex gap-1 items-center">
+                        <input
+                          autoFocus
+                          type="text"
+                          defaultValue={row.productName}
+                          onBlur={(e) => {
+                            if (e.target.value.trim()) {
+                              setProductRenames(new Map(productRenames).set(productKey, e.target.value));
+                            }
+                            setEditingProductKey(null);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              if (e.currentTarget.value.trim()) {
+                                setProductRenames(new Map(productRenames).set(productKey, e.currentTarget.value));
+                              }
+                              setEditingProductKey(null);
+                            } else if (e.key === "Escape") {
+                              setEditingProductKey(null);
+                            }
+                          }}
+                          className="text-xs px-2 py-1 rounded border border-slate-300 dark:border-white/20 bg-white dark:bg-black/30 flex-1"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex gap-1 items-center group">
+                        <span>{row.productName}</span>
+                        <button
+                          onClick={() => setEditingProductKey(productKey)}
+                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-200 dark:hover:bg-white/10 rounded"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-2 text-xs text-right">{Math.round(row.volume).toLocaleString()}</td>
                   <td className="px-4 py-2">
                     <select

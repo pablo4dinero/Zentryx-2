@@ -1000,19 +1000,26 @@ function detectProductType(productName: string, productOrders: any[]): string {
 
   // Step 3: Use keyword analysis for type inference
   const keywordMap: Record<string, string[]> = {
-    "Gelato": ["gelato", "ice cream"],
-    "Sweet Flavour": ["sweet", "chocolate", "vanilla", "strawberry", "caramel", "coffee", "hazelnut"],
-    "Dairy Premix": ["dairy", "milk", "cream", "cheese", "butter", "yogurt", "condensed milk"],
-    "Bread Premix": ["bread", "bun", "dough", "flour mix", "bread mix"],
-    "Dough Premix": ["dough", "pizza", "pastry", "croissant"],
-    "Snack Dusting": ["dusting", "powder", "coating", "dust", "sprinkle"],
-    "Seasoning": ["seasoning", "salt", "pepper", "spice", "herb", "garlic"],
-    "Pasta Sauce": ["sauce", "pasta", "tomato", "marinara", "pesto", "carbonara"],
-    "Breading": ["breading", "crumb", "panko"],
-    "Savoury Flavour": ["savory", "savoury", "beef", "chicken", "meat", "fish", "crab"],
-    "Marinade": ["marinade", "marinate"],
-    "Spice Mix": ["spice", "cumin", "coriander", "paprika", "turmeric", "chili"]
+    "Dairy Premix": ["gelato", "ice cream", "dairy", "milk", "cream", "cheese", "butter", "strawberry", "chocolate", "ic"],
+    "Breading": ["breading"],
+    "Bread Premix": ["bread", "bun"],
+    "Dough Premix": ["dough"],
+    "Savoury Flavour": ["chicken flavour", "beef flavour", "concentrate", "tomato flavour", "fish flavour", "goat flavour", "stockfish flavour"],
+    "Sweet Flavour": ["chocolate flavour", "vanilla flavour", "strawberry", "caramel"],
+    "Seasoning": ["chicken", "beef", "tomato", "seas", "qsr", "jollof"],
+    "Snack Dusting": ["dusting", "cheese"],
+    "Marinade": ["marinade"],
+    "Spice Mix": ["spice"],
+    "Pasta Sauce": ["sauce", "pasta", "marinara", "pesto", "carbonara"],
+    "Unknown": []
   };
+
+  // Check custom product types first (highest priority)
+  for (const customType of customProductTypes.values()) {
+    if (customType.keywords.some(keyword => cleanName.includes(keyword))) {
+      return customType.name;
+    }
+  }
 
   for (const [type, keywords] of Object.entries(keywordMap)) {
     if (keywords.some(keyword => cleanName.includes(keyword))) {
@@ -1308,6 +1315,86 @@ Which plan is more efficient and why?`;
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to generate insight" });
+  }
+});
+
+// In-memory storage for custom product types (can be persisted to DB later)
+interface CustomProductType {
+  id: string;
+  name: string;
+  keywords: string[];
+  createdAt: Date;
+}
+
+const customProductTypes: Map<string, CustomProductType> = new Map();
+
+router.get("/product-types", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const types = Array.from(customProductTypes.values());
+    res.json(types);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+router.post("/product-types", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { name, keywords } = req.body as { name: string; keywords: string[] };
+    if (!name || !Array.isArray(keywords)) {
+      res.status(400).json({ error: "Missing name or keywords" });
+      return;
+    }
+
+    const id = `custom-${Date.now()}`;
+    const customType: CustomProductType = {
+      id,
+      name: name.trim(),
+      keywords: keywords.map((k: string) => k.toLowerCase().trim()).filter((k: string) => k.length > 0),
+      createdAt: new Date(),
+    };
+
+    customProductTypes.set(id, customType);
+    res.status(201).json(customType);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+router.put("/product-types/:id", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const { name, keywords } = req.body as { name?: string; keywords?: string[] };
+
+    const existing = customProductTypes.get(id);
+    if (!existing) {
+      res.status(404).json({ error: "NotFound" });
+      return;
+    }
+
+    if (name) existing.name = name.trim();
+    if (keywords) existing.keywords = keywords.map((k: string) => k.toLowerCase().trim()).filter((k: string) => k.length > 0);
+
+    res.json(existing);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+router.delete("/product-types/:id", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const deleted = customProductTypes.delete(id);
+    if (!deleted) {
+      res.status(404).json({ error: "NotFound" });
+      return;
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
   }
 });
 
