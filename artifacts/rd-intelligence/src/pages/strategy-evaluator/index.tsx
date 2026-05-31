@@ -251,92 +251,19 @@ export default function StrategyEvaluatorTab() {
     setStep(3);
   }, [parsedDays, floorOverrides]);
 
-  // Group products for display
-  const uploadedDaySummaries = useMemo(() => {
-    const summaries: DayProductionSummary[] = [];
-    parsedDays.forEach((day) => {
-      let totalVolume = 0;
-      const floorBreakdowns: { floorName: string; volume: number; switchCount: number }[] = [];
-
-      day.floors.forEach((floor) => {
-        const floorVolume = floor.products.reduce((sum, p) => sum + p.volume, 0);
-        totalVolume += floorVolume;
-        floorBreakdowns.push({
-          floorName: floor.floorName,
-          volume: floorVolume,
-          switchCount: Math.max(0, floor.products.length - 1),
-        });
-      });
-
-      summaries.push({
-        dayName: day.dayName,
-        totalVolume,
-        floorBreakdowns,
-        totalSwitches: floorBreakdowns.reduce((sum, fb) => sum + fb.switchCount, 0),
-      });
-    });
-    return summaries;
-  }, [parsedDays]);
-
-  // Group Zentryx assignments
-  const zentryxDaySummaries = useMemo(() => {
-    const summaries: DayProductionSummary[] = [];
-    const dayMap = new Map<string, { volume: number; floorProducts: Map<string, number> }>();
-
-    assignmentsQuery.data?.forEach((row: any) => {
-      if (row.assignment?.weekLabel === selectedZentryxWeek) {
-        const day = row.assignment.assignedDay || "Unknown";
-        const volume = Number(row.assignment.assignedVolume || 0);
-        const floor = row.floor?.floorName || "Unknown";
-
-        if (!dayMap.has(day)) {
-          dayMap.set(day, { volume: 0, floorProducts: new Map() });
-        }
-        const dayData = dayMap.get(day)!;
-        dayData.volume += volume;
-        const currentCount = dayData.floorProducts.get(floor) || 0;
-        dayData.floorProducts.set(floor, currentCount + 1);
-      }
-    });
-
-    Array.from(dayMap.entries()).forEach(([dayName, data]) => {
-      const floorBreakdowns: { floorName: string; volume: number; switchCount: number }[] = [];
-      Array.from(data.floorProducts.entries()).forEach(([floorName, productCount]) => {
-        const floorAssignments = assignmentsQuery.data?.filter(
-          (row: any) => row.assignment?.weekLabel === selectedZentryxWeek && row.assignment?.assignedDay === dayName && row.floor?.floorName === floorName
-        );
-        const floorVolume = floorAssignments?.reduce((sum: number, row: any) => sum + Number(row.assignment?.assignedVolume || 0), 0) || 0;
-        floorBreakdowns.push({
-          floorName,
-          volume: floorVolume,
-          switchCount: Math.max(0, productCount - 1),
-        });
-      });
-
-      summaries.push({
-        dayName,
-        totalVolume: data.volume,
-        floorBreakdowns,
-        totalSwitches: floorBreakdowns.reduce((sum, fb) => sum + fb.switchCount, 0),
-      });
-    });
-
-    return summaries.sort((a, b) => ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].indexOf(a.dayName) - ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].indexOf(b.dayName));
-  }, [assignmentsQuery.data, selectedZentryxWeek]);
-
-  // Calculate totals
-  const uploadedTotal = uploadedDaySummaries.reduce((sum, d) => sum + d.totalVolume, 0);
-  const zentryxTotal = zentryxDaySummaries.reduce((sum, d) => sum + d.totalVolume, 0);
-  const uploadedTotalSwitches = uploadedDaySummaries.reduce((sum, d) => sum + d.totalSwitches, 0);
-  const zentryxTotalSwitches = zentryxDaySummaries.reduce((sum, d) => sum + d.totalSwitches, 0);
-
   const getAIInsight = useCallback(async () => {
+    const uploadedTotal = confirmedProducts.reduce((sum, p) => sum + p.volume, 0);
+    const zentryxTotal = Array.from(zentryxPlanByDay.values())
+      .flatMap((d) => Array.from(d.shifts.values()))
+      .flatMap((s) => Array.from(s.floors.values()))
+      .reduce((sum, f) => sum + f.volume, 0);
+
     if (!selectedZentryxWeek || uploadedTotal === 0 || zentryxTotal === 0) return;
     setAiLoading(true);
 
     try {
-      const uploadedSummary = `${uploadedDaySummaries.length} days planned, ${uploadedTotalSwitches} total product switches`;
-      const zentryxSummary = `${zentryxDaySummaries.length} days planned, ${zentryxTotalSwitches} total product switches`;
+      const uploadedSummary = `${uploadedPlanByDay.size} days planned, ${uploadedTotal.toLocaleString()} KG total volume`;
+      const zentryxSummary = `${zentryxPlanByDay.size} days planned, ${zentryxTotal.toLocaleString()} KG total volume`;
 
       const res = await fetch(`${BASE}api/mdp/strategy-insight`, {
         method: "POST",
@@ -359,7 +286,7 @@ export default function StrategyEvaluatorTab() {
     } finally {
       setAiLoading(false);
     }
-  }, [selectedZentryxWeek, uploadedTotal, zentryxTotal, uploadedDaySummaries, zentryxDaySummaries, uploadedTotalSwitches, zentryxTotalSwitches, toast]);
+  }, [selectedZentryxWeek, confirmedProducts, uploadedPlanByDay, zentryxPlanByDay, toast]);
 
   if (step === 1) {
     return (
@@ -706,6 +633,60 @@ export default function StrategyEvaluatorTab() {
     );
   }
 
+  // Organize confirmed products by day and floor
+  const uploadedPlanByDay = useMemo(() => {
+    const dayMap = new Map<string, { date: string; isWeekend: boolean; floors: Map<string, { volume: number; productCount: number }> }>();
+    confirmedProducts.forEach((product) => {
+      if (!dayMap.has(product.dayName)) {
+        dayMap.set(product.dayName, {
+          date: product.date,
+          isWeekend: product.isWeekend,
+          floors: new Map(),
+        });
+      }
+      const dayData = dayMap.get(product.dayName)!;
+      const floorName = product.floorName;
+      if (!dayData.floors.has(floorName)) {
+        dayData.floors.set(floorName, { volume: 0, productCount: 0 });
+      }
+      const floorData = dayData.floors.get(floorName)!;
+      floorData.volume += product.volume;
+      floorData.productCount += 1;
+    });
+    return dayMap;
+  }, [confirmedProducts]);
+
+  // Organize Zentryx assignments by day and shift
+  const zentryxPlanByDay = useMemo(() => {
+    const dayMap = new Map<string, {
+      shifts: Map<string, { floors: Map<string, { volume: number; productCount: number }> }>
+    }>();
+    assignmentsQuery.data?.forEach((row: any) => {
+      if (row.assignment?.weekLabel === selectedZentryxWeek) {
+        const dayName = row.assignment.assignedDay || "Unknown";
+        const shift = row.assignment.assignedShift || "Day";
+        const floorName = row.floor?.floorName || "Unknown";
+        const volume = Number(row.assignment.assignedVolume || 0);
+
+        if (!dayMap.has(dayName)) {
+          dayMap.set(dayName, { shifts: new Map() });
+        }
+        const dayData = dayMap.get(dayName)!;
+        if (!dayData.shifts.has(shift)) {
+          dayData.shifts.set(shift, { floors: new Map() });
+        }
+        const shiftData = dayData.shifts.get(shift)!;
+        if (!shiftData.floors.has(floorName)) {
+          shiftData.floors.set(floorName, { volume: 0, productCount: 0 });
+        }
+        const floorData = shiftData.floors.get(floorName)!;
+        floorData.volume += volume;
+        floorData.productCount += 1;
+      }
+    });
+    return dayMap;
+  }, [assignmentsQuery.data, selectedZentryxWeek]);
+
   return (
     <div className="space-y-6">
       <div>
@@ -713,8 +694,8 @@ export default function StrategyEvaluatorTab() {
         <p className="text-sm text-muted-foreground mt-1">Select Zentryx week to compare against your uploaded plan</p>
       </div>
 
-      <div className="flex gap-2 flex-wrap">
-        <span className="text-xs text-muted-foreground py-2">Zentryx week:</span>
+      <div className="flex gap-2 flex-wrap items-center">
+        <span className="text-xs text-muted-foreground">Zentryx week:</span>
         {allWeeks.map((week) => (
           <button
             key={week}
@@ -733,47 +714,37 @@ export default function StrategyEvaluatorTab() {
         ))}
       </div>
 
-      {/* Comparison Grids */}
+      {/* Day-by-Day Comparison */}
       <div className="grid grid-cols-2 gap-6">
         {/* Uploaded Plan */}
-        <div className={cn("rounded-lg border p-4", isLight ? "bg-white border-slate-200" : "bg-black/20 border-white/10")}>
-          <h3 className="text-sm font-bold text-muted-foreground mb-4 uppercase tracking-wide">Uploaded Plan</h3>
-          <div className="space-y-3">
-            {uploadedDaySummaries.map((day) => (
-              <div key={day.dayName} className={cn("rounded p-3", isLight ? "bg-slate-50" : "bg-white/5")}>
-                <p className="text-xs text-muted-foreground mb-1">{day.dayName}</p>
-                <p className="text-lg font-bold text-foreground">{Math.round(day.totalVolume).toLocaleString()} kg</p>
-                <div className="text-xs text-muted-foreground mt-2 space-y-1">
-                  {day.floorBreakdowns.map((fb, idx) => (
-                    <div key={idx} className="flex justify-between">
-                      <span>{fb.floorName}</span>
-                      <span>{Math.round(fb.volume).toLocaleString()} kg</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Zentryx Plan */}
-        <div className={cn("rounded-lg border p-4", isLight ? "bg-white border-slate-200" : "bg-black/20 border-white/10")}>
-          <h3 className="text-sm font-bold text-muted-foreground mb-4 uppercase tracking-wide">Zentryx Plan — {selectedZentryxWeek}</h3>
-          <div className="space-y-3">
-            {assignmentsQuery.isLoading ? (
-              <p className="text-xs text-muted-foreground">Loading...</p>
-            ) : zentryxDaySummaries.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No assignments for this week</p>
+        <div className={cn("rounded-lg border p-4 space-y-4", isLight ? "bg-white border-slate-200" : "bg-black/20 border-white/10")}>
+          <h3 className="text-sm font-bold text-muted-foreground uppercase tracking-wide">Uploaded Plan — Day by Day</h3>
+          <div className="space-y-4 max-h-96 overflow-y-auto">
+            {confirmedProducts.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No products confirmed yet</p>
             ) : (
-              zentryxDaySummaries.map((day) => (
-                <div key={day.dayName} className={cn("rounded p-3", isLight ? "bg-slate-50" : "bg-white/5")}>
-                  <p className="text-xs text-muted-foreground mb-1">{day.dayName}</p>
-                  <p className="text-lg font-bold text-blue-600 dark:text-blue-400">{Math.round(day.totalVolume).toLocaleString()} kg</p>
-                  <div className="text-xs text-muted-foreground mt-2 space-y-1">
-                    {day.floorBreakdowns.map((fb, idx) => (
-                      <div key={idx} className="flex justify-between">
-                        <span>{fb.floorName}</span>
-                        <span>{Math.round(fb.volume).toLocaleString()} kg</span>
+              Array.from(
+                new Map([...uploadedPlanByDay.entries()].sort((a, b) => {
+                  const dayOrder = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+                  return dayOrder.indexOf(a[0]) - dayOrder.indexOf(b[0]);
+                }))
+              ).map(([dayName, dayData]) => (
+                <div key={dayName} className={cn("rounded p-3", isLight ? "bg-slate-50" : "bg-white/5")}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs font-semibold text-foreground">{dayName}</span>
+                    <span className="text-xs text-muted-foreground">{dayData.date}</span>
+                  </div>
+                  <div className="text-lg font-bold text-green-600 mb-2">
+                    {Array.from(dayData.floors.values()).reduce((sum, f) => sum + f.volume, 0).toLocaleString()} kg
+                  </div>
+                  <div className="space-y-1">
+                    {Array.from(dayData.floors.entries()).map(([floorName, floorData]) => (
+                      <div key={floorName} className="flex justify-between text-xs">
+                        <div className="flex gap-2">
+                          <span className="font-medium text-foreground">{floorName}</span>
+                          <span className="text-muted-foreground">{floorData.productCount} product{floorData.productCount !== 1 ? 's' : ''}</span>
+                        </div>
+                        <span className="text-foreground font-medium">{floorData.volume.toLocaleString()} kg</span>
                       </div>
                     ))}
                   </div>
@@ -782,53 +753,82 @@ export default function StrategyEvaluatorTab() {
             )}
           </div>
         </div>
-      </div>
 
-      {/* Comparison Summary */}
-      <div className={cn("rounded-lg border p-4", isLight ? "bg-white border-slate-200" : "bg-black/20 border-white/10")}>
-        <h3 className="text-sm font-bold text-muted-foreground mb-4 uppercase tracking-wide">Summary</h3>
-        <div className="space-y-2 text-sm">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Total Planned Output (KG)</span>
-            <div className="flex gap-12">
-              <span className="font-medium">{Math.round(uploadedTotal).toLocaleString()}</span>
-              <span className="font-medium text-blue-600">{Math.round(zentryxTotal).toLocaleString()}</span>
+        {/* Zentryx Plan */}
+        <div className={cn("rounded-lg border p-4 space-y-4", isLight ? "bg-white border-slate-200" : "bg-black/20 border-white/10")}>
+          <h3 className="text-sm font-bold text-blue-500 uppercase tracking-wide">Zentryx Plan — {selectedZentryxWeek || "Select Week"}</h3>
+          {selectedZentryxWeek && zentryxPlanByDay.size === 0 ? (
+            <p className="text-xs text-muted-foreground">No assignments for this week</p>
+          ) : !selectedZentryxWeek ? (
+            <p className="text-xs text-muted-foreground">Select a week to view assignments</p>
+          ) : (
+            <div className="space-y-4 max-h-96 overflow-y-auto">
+              {Array.from(
+                new Map([...zentryxPlanByDay.entries()].sort((a, b) => {
+                  const dayOrder = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+                  return dayOrder.indexOf(a[0]) - dayOrder.indexOf(b[0]);
+                }))
+              ).map(([dayName, dayData]) => (
+                <div key={dayName} className={cn("rounded p-3", isLight ? "bg-slate-50" : "bg-white/5")}>
+                  <div className="text-xs font-semibold text-foreground mb-2">{dayName}</div>
+                  <div className="space-y-1">
+                    {Array.from(dayData.shifts.entries()).map(([shift, shiftData]) => {
+                      const shiftVolume = Array.from(shiftData.floors.values()).reduce((sum, f) => sum + f.volume, 0);
+                      return (
+                        <div key={shift}>
+                          <div className="text-xs text-blue-600 font-medium mb-1">{shiftVolume.toLocaleString()} kg — {shift}</div>
+                          {Array.from(shiftData.floors.entries()).map(([floorName, floorData]) => (
+                            <div key={floorName} className="flex justify-between text-xs ml-2 text-muted-foreground">
+                              <div className="flex gap-2">
+                                <span className="font-medium">{floorName}</span>
+                                <span>{floorData.productCount} product{floorData.productCount !== 1 ? 's' : ''}</span>
+                              </div>
+                              <span className="font-medium">{floorData.volume.toLocaleString()} kg</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Product Switches</span>
-            <div className="flex gap-12">
-              <span className="font-medium">{uploadedTotalSwitches}</span>
-              <span className="font-medium text-blue-600">{zentryxTotalSwitches}</span>
-            </div>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Active Production Days</span>
-            <div className="flex gap-12">
-              <span className="font-medium">{uploadedDaySummaries.length}</span>
-              <span className="font-medium text-blue-600">{zentryxDaySummaries.length}</span>
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
-      {/* Verdict */}
-      {uploadedTotal > 0 && zentryxTotal > 0 && (
-        <div
-          className={cn("rounded-lg p-4 flex gap-3", zentryxTotal > uploadedTotal ? (isLight ? "bg-emerald-50 border border-emerald-200" : "bg-emerald-500/10 border border-emerald-500/20") : isLight ? "bg-amber-50 border border-amber-200" : "bg-amber-500/10 border border-amber-500/20")}
-        >
-          <Check className={cn("w-5 h-5 flex-shrink-0 mt-0.5", zentryxTotal > uploadedTotal ? "text-emerald-600" : "text-amber-600")} />
-          <div>
-            <p className={cn("text-sm font-medium", zentryxTotal > uploadedTotal ? "text-emerald-900 dark:text-emerald-200" : "text-amber-900 dark:text-amber-200")}>
-              {zentryxTotal > uploadedTotal ? "Zentryx plan is more efficient" : "Uploaded plan is more efficient"}
-            </p>
-            <p className={cn("text-xs mt-1", zentryxTotal > uploadedTotal ? "text-emerald-700 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300")}>
-              {((Math.abs(zentryxTotal - uploadedTotal) / Math.max(uploadedTotal, zentryxTotal)) * 100).toFixed(1)}% difference with{" "}
-              {Math.abs(zentryxTotalSwitches - uploadedTotalSwitches)} fewer switches
-            </p>
-          </div>
-        </div>
-      )}
+      {/* Summary Table */}
+      <div className={cn("rounded-lg border overflow-x-auto", isLight ? "border-slate-200" : "border-white/10")}>
+        <table className="w-full text-sm">
+          <thead className={cn("", isLight ? "bg-slate-100" : "bg-white/5")}>
+            <tr>
+              <th className="px-4 py-2 text-left font-semibold text-xs uppercase">Metric</th>
+              <th className="px-4 py-2 text-center font-semibold text-xs uppercase">Uploaded</th>
+              <th className="px-4 py-2 text-center font-semibold text-xs uppercase">Zentryx</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className={isLight ? "border-t border-slate-200" : "border-t border-white/5"}>
+              <td className="px-4 py-2 text-xs font-medium">Total Volume (KG)</td>
+              <td className="px-4 py-2 text-center text-xs font-semibold text-green-600">
+                {confirmedProducts.reduce((sum, p) => sum + p.volume, 0).toLocaleString()}
+              </td>
+              <td className="px-4 py-2 text-center text-xs font-semibold text-blue-600">
+                {Array.from(zentryxPlanByDay.values())
+                  .flatMap((d) => Array.from(d.shifts.values()))
+                  .flatMap((s) => Array.from(s.floors.values()))
+                  .reduce((sum, f) => sum + f.volume, 0)
+                  .toLocaleString()}
+              </td>
+            </tr>
+            <tr className={isLight ? "border-t border-slate-200" : "border-t border-white/5"}>
+              <td className="px-4 py-2 text-xs font-medium">Active Days</td>
+              <td className="px-4 py-2 text-center text-xs font-semibold">{uploadedPlanByDay.size}</td>
+              <td className="px-4 py-2 text-center text-xs font-semibold">{zentryxPlanByDay.size}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       {/* AI Insight */}
       <button
