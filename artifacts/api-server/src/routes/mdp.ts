@@ -997,14 +997,15 @@ function detectProductType(productName: string, productOrders: any[]): string {
   if (!cleanName) return "Unknown";
 
   // Step 1: Use keyword analysis FIRST (highest priority for accuracy)
+  // Note: More specific keywords must come first to avoid false matches
   const keywordMap: Record<string, string[]> = {
-    "Dairy Premix": ["gelato", "ice cream", "dairy", "milk", "cream", "cheese", "butter", "strawberry", "chocolate", "ic"],
+    "Seasoning": ["fmn", "mimee", "chicken", "beef", "tomato", "seas", "qsr", "jollof"],
     "Breading": ["breading"],
     "Bread Premix": ["bread", "bun"],
     "Dough Premix": ["dough"],
     "Savoury Flavour": ["chicken flavour", "beef flavour", "concentrate", "tomato flavour", "fish flavour", "goat flavour", "stockfish flavour"],
     "Sweet Flavour": ["chocolate flavour", "vanilla flavour", "strawberry", "caramel"],
-    "Seasoning": ["fmn", "mimee", "chicken", "beef", "tomato", "seas", "qsr", "jollof"],
+    "Dairy Premix": ["gelato", "ice cream", "dairy", "milk", "cream", "cheese", "butter", "strawberry", "chocolate"],
     "Snack Dusting": ["dusting", "cheese"],
     "Marinade": ["marinade"],
     "Spice Mix": ["spice"],
