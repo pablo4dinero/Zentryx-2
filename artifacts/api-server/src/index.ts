@@ -118,6 +118,24 @@ async function createTablesIfNotExist() {
     await db.execute(sql.raw(`ALTER TABLE mdp_produced_orders ADD COLUMN IF NOT EXISTS week_label TEXT;`));
     await db.execute(sql.raw(`ALTER TABLE mdp_produced_orders ADD COLUMN IF NOT EXISTS assigned_day TEXT;`));
     await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS mdp_monthly_orders (
+        id SERIAL PRIMARY KEY,
+        month TEXT NOT NULL,
+        account_id INTEGER,
+        customer_name TEXT NOT NULL DEFAULT '',
+        product_description TEXT NOT NULL DEFAULT '',
+        volume_kg NUMERIC(10,2),
+        date_ordered TEXT,
+        expected_delivery_date TEXT,
+        production_status TEXT DEFAULT 'Pending',
+        distribution_type TEXT DEFAULT 'Pick Up',
+        packing_status TEXT DEFAULT 'Not Packed',
+        delivery_status TEXT DEFAULT 'No',
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `));
+    await db.execute(sql.raw(`
       CREATE TABLE IF NOT EXISTS product_types (
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL UNIQUE,

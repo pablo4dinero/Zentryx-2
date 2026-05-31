@@ -8,6 +8,7 @@ import {
   mdpProducedOrdersTable,
   mdpFloorDayStatusesTable,
   mdpProductSwitchDowntimesTable,
+  mdpMonthlyOrdersTable,
   accountProductionOrdersTable,
   accountsTable,
   notificationsTable,
@@ -873,6 +874,92 @@ router.post("/sync-order-accounts", requireAuth, async (req: AuthRequest, res) =
       message: `Synced ${updatedCount} production orders with account data`,
       updated: updatedCount
     });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+// ──────────────────────────────────────────────────────
+// Monthly Orders Endpoints
+// ──────────────────────────────────────────────────────
+
+router.get("/monthly-orders", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const month = req.query.month as string | undefined;
+    let query = db.select().from(mdpMonthlyOrdersTable);
+    if (month) {
+      query = query.where(eq(mdpMonthlyOrdersTable.month, month));
+    }
+    const rows = await query.orderBy(mdpMonthlyOrdersTable.accountId, mdpMonthlyOrdersTable.createdAt);
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+router.post("/monthly-orders", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const body = req.body as any;
+    const [created] = await db.insert(mdpMonthlyOrdersTable).values({
+      month: body.month,
+      accountId: body.accountId,
+      customerName: body.customerName || "",
+      productDescription: body.productDescription || "",
+      volumeKg: body.volumeKg,
+      dateOrdered: body.dateOrdered,
+      expectedDeliveryDate: body.expectedDeliveryDate,
+      productionStatus: body.productionStatus || "Pending",
+      distributionType: body.distributionType || "Pick Up",
+      packingStatus: body.packingStatus || "Not Packed",
+      deliveryStatus: body.deliveryStatus || "No",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }).returning();
+    res.json(created);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+router.put("/monthly-orders/:id", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const id = Number(req.params.id);
+    const body = req.body as any;
+    const [updated] = await db.update(mdpMonthlyOrdersTable).set({
+      customerName: body.customerName,
+      productDescription: body.productDescription,
+      volumeKg: body.volumeKg,
+      dateOrdered: body.dateOrdered,
+      expectedDeliveryDate: body.expectedDeliveryDate,
+      productionStatus: body.productionStatus,
+      distributionType: body.distributionType,
+      packingStatus: body.packingStatus,
+      deliveryStatus: body.deliveryStatus,
+      updatedAt: new Date(),
+    }).where(eq(mdpMonthlyOrdersTable.id, id)).returning();
+    if (!updated) {
+      res.status(404).json({ error: "NotFound" });
+      return;
+    }
+    res.json(updated);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+router.delete("/monthly-orders/:id", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const id = Number(req.params.id);
+    const [deleted] = await db.delete(mdpMonthlyOrdersTable).where(eq(mdpMonthlyOrdersTable.id, id)).returning();
+    if (!deleted) {
+      res.status(404).json({ error: "NotFound" });
+      return;
+    }
+    res.json({ success: true });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "InternalServerError" });

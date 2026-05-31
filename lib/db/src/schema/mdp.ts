@@ -124,6 +124,27 @@ export const mdpProducedOrdersTable = pgTable("mdp_produced_orders", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+/**
+ * MDP Monthly Orders
+ * Tracks orders per month with inline status fields for production, distribution, packing, delivery
+ */
+export const mdpMonthlyOrdersTable = pgTable("mdp_monthly_orders", {
+  id: serial("id").primaryKey(),
+  month: text("month").notNull(),
+  accountId: integer("account_id"),
+  customerName: text("customer_name").notNull().default(""),
+  productDescription: text("product_description").notNull().default(""),
+  volumeKg: numeric("volume_kg", { precision: 10, scale: 2 }),
+  dateOrdered: text("date_ordered"),
+  expectedDeliveryDate: text("expected_delivery_date"),
+  productionStatus: text("production_status").default("Pending"),
+  distributionType: text("distribution_type").default("Pick Up"),
+  packingStatus: text("packing_status").default("Not Packed"),
+  deliveryStatus: text("delivery_status").default("No"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 // ──────────────────────────────────────────────────────
 // Exported Types (Drizzle $inferSelect)
 // ──────────────────────────────────────────────────────
@@ -135,3 +156,4 @@ export type MdpFloorAssignment = typeof mdpFloorAssignmentsTable.$inferSelect;
 export type MdpProducedOrder = typeof mdpProducedOrdersTable.$inferSelect;
 export type MdpFloorDayStatus = typeof mdpFloorDayStatusesTable.$inferSelect;
 export type MdpProductSwitchDowntime = typeof mdpProductSwitchDowntimesTable.$inferSelect;
+export type MdpMonthlyOrder = typeof mdpMonthlyOrdersTable.$inferSelect;
