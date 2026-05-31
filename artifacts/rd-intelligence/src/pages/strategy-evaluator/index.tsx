@@ -907,7 +907,7 @@ export default function StrategyEvaluatorTab() {
             {confirmedProducts.reduce((sum, p) => sum + p.volume, 0).toLocaleString()} kg
           </p>
           <p className={cn("text-xs mt-1", isLight ? "text-yellow-600" : "text-yellow-500")}>
-            Day shift • 3 hours • switch penalties applied
+            {confirmedProducts.some((p) => p.isWeekend) ? "Day + Saturday" : "Day only"} • switch penalties applied
           </p>
         </div>
         <div className={cn("rounded-lg p-4 border", isLight ? "bg-blue-50 border-blue-200" : "bg-blue-500/10 border-blue-500/20")}>
@@ -922,7 +922,21 @@ export default function StrategyEvaluatorTab() {
               .toLocaleString()} kg
           </p>
           <p className={cn("text-xs mt-1", isLight ? "text-blue-600" : "text-blue-500")}>
-            Day + Night + Saturday • switch penalties applied
+            {(() => {
+              const shifts = new Set<string>();
+              Array.from(zentryxPlanByDay.values()).forEach((dayData) => {
+                Array.from(dayData.shifts.keys()).forEach((shift) => {
+                  shifts.add(shift);
+                });
+              });
+              const hasDay = shifts.has("Day");
+              const hasNight = shifts.has("Night");
+              const hasSaturday = shifts.has("Saturday");
+              if (hasDay && hasNight && hasSaturday) return "Day + Night + Saturday";
+              if (hasDay && hasNight) return "Day + Night";
+              if (hasDay && hasSaturday) return "Day + Saturday";
+              return "Day only";
+            })()} • switch penalties applied
           </p>
         </div>
       </div>
@@ -964,16 +978,47 @@ export default function StrategyEvaluatorTab() {
                 </span>
               </td>
               <td className="px-4 py-2 text-center">
-                <span className={cn("inline-block px-2 py-1 rounded text-xs font-semibold", isLight ? "bg-green-100 text-green-700" : "bg-green-500/20 text-green-400")}>
-                  Higher
-                </span>
+                {(() => {
+                  const uploadedVol = confirmedProducts.reduce((sum, p) => sum + p.volume, 0);
+                  const zentryxVol = Array.from(zentryxPlanByDay.values())
+                    .flatMap((d) => Array.from(d.shifts.values()))
+                    .flatMap((s) => Array.from(s.floors.values()))
+                    .reduce((sum, f) => sum + f.volume, 0);
+                  const isHigher = zentryxVol > uploadedVol;
+                  const isLower = zentryxVol < uploadedVol;
+                  return (
+                    <span className={cn("inline-block px-2 py-1 rounded text-xs font-semibold",
+                      isHigher ? (isLight ? "bg-green-100 text-green-700" : "bg-green-500/20 text-green-400") :
+                      isLower ? (isLight ? "bg-red-100 text-red-700" : "bg-red-500/20 text-red-400") :
+                      (isLight ? "bg-slate-100 text-slate-700" : "bg-slate-500/20 text-slate-400")
+                    )}>
+                      {isHigher ? "Higher" : isLower ? "Lower" : "Same"}
+                    </span>
+                  );
+                })()}
               </td>
             </tr>
             <tr className={isLight ? "border-t border-slate-200" : "border-t border-white/5"}>
               <td className="px-4 py-2 text-xs font-medium">Shifts used</td>
-              <td className="px-4 py-2 text-center text-xs font-semibold">Day only</td>
               <td className="px-4 py-2 text-center text-xs font-semibold">
-                Day + Night + Saturday
+                {confirmedProducts.some((p) => p.isWeekend) ? "Day + Saturday" : "Day only"}
+              </td>
+              <td className="px-4 py-2 text-center text-xs font-semibold">
+                {(() => {
+                  const shifts = new Set<string>();
+                  Array.from(zentryxPlanByDay.values()).forEach((dayData) => {
+                    Array.from(dayData.shifts.keys()).forEach((shift) => {
+                      shifts.add(shift);
+                    });
+                  });
+                  const hasDay = shifts.has("Day");
+                  const hasNight = shifts.has("Night");
+                  const hasSaturday = shifts.has("Saturday");
+                  if (hasDay && hasNight && hasSaturday) return "Day + Night + Saturday";
+                  if (hasDay && hasNight) return "Day + Night";
+                  if (hasDay && hasSaturday) return "Day + Saturday";
+                  return "Day only";
+                })()}
               </td>
             </tr>
             <tr className={isLight ? "border-t border-slate-200" : "border-t border-white/5"}>
@@ -993,15 +1038,6 @@ export default function StrategyEvaluatorTab() {
               <td className="px-4 py-2 text-center">
                 <span className={cn("inline-block px-2 py-1 rounded text-xs font-semibold", isLight ? "bg-green-100 text-green-700" : "bg-green-500/20 text-green-400")}>
                   Optimised
-                </span>
-              </td>
-            </tr>
-            <tr className={isLight ? "border-t border-slate-200" : "border-t border-white/5"}>
-              <td className="px-4 py-2 text-xs font-medium">Night / Saturday Idle</td>
-              <td className="px-4 py-2 text-center text-xs font-semibold">All 3 floors idle at night</td>
-              <td className="px-4 py-2 text-center">
-                <span className={cn("inline-block px-2 py-1 rounded text-xs font-semibold", isLight ? "bg-amber-100 text-amber-700" : "bg-amber-500/20 text-amber-400")}>
-                  Lower downtime
                 </span>
               </td>
             </tr>
