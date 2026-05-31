@@ -379,12 +379,16 @@ export default function StrategyEvaluatorTab() {
         }),
       });
 
-      if (!res.ok) throw new Error("Insight generation failed");
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error.error || `HTTP ${res.status}: Insight generation failed`);
+      }
       const { insight } = await res.json();
       setAiInsight(insight);
     } catch (err) {
       console.error(err);
-      toast({ title: "AI analysis failed", description: "Could not generate insight", variant: "destructive" });
+      const errorMsg = err instanceof Error ? err.message : "Could not generate insight";
+      toast({ title: "AI analysis failed", description: errorMsg, variant: "destructive" });
     } finally {
       setAiLoading(false);
     }
