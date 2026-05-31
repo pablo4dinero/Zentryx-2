@@ -1007,7 +1007,10 @@ router.post("/parse-plan-document", requireAuth, async (req: AuthRequest, res) =
       return;
     }
 
+    console.log("Extracted text length:", extractedText.length);
+    console.log("First 500 chars:", extractedText.substring(0, 500));
     const days = parseProductionPlan(extractedText);
+    console.log("Parsed days:", days.length);
     res.json({ days });
   } catch (err) {
     console.error(err);
