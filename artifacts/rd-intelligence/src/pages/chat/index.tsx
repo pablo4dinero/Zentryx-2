@@ -512,12 +512,6 @@ export default function ChatRoom() {
         setLoading(false);
       }
     });
-    // Poll users every 10 seconds to refresh online status
-    pollRef.current = setInterval(() => {
-      api.get("/chat/users").then((u: any) => {
-        if (Array.isArray(u)) setUsers(u);
-      }).catch(() => {});
-    }, 10 * 1000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
 
@@ -577,8 +571,6 @@ export default function ChatRoom() {
     try {
       const msg = await api.post(`/chat/rooms/${activeRoom.id}/messages`, { content, messageType: "text" });
       setMessages(prev => prev.map((m: any) => m._tempId === tempId ? { ...msg, seenBy: msg.seenBy || [] } : m));
-      // Update user's online status
-      api.post("/chat/users/update-activity", {}).catch(() => {});
       refreshRooms();
     } catch {
       setMessages(prev => prev.filter((m: any) => m._tempId !== tempId));
@@ -796,14 +788,6 @@ export default function ChatRoom() {
     : null;
   const adminMeta = adminDmRoom ? roomMeta[adminDmRoom.id] : null;
 
-  // Helper: check if user is online (active within last 30 seconds)
-  const isUserOnline = (lastActiveAt: string | null | undefined) => {
-    if (!lastActiveAt) return false;
-    const lastActive = new Date(lastActiveAt).getTime();
-    const now = Date.now();
-    return now - lastActive < 30 * 1000; // 30 seconds
-  };
-
   // Build people list: all users with DM room info, sorted by chosen mode
   const peopleList = users.filter((u: any) => u.id !== currentUserId).map((u: any) => {
     // Match the DM room by membership (server now returns memberUserIds for
@@ -815,8 +799,7 @@ export default function ChatRoom() {
         : (r.name === u.name || r.name === u.name.split(" ")[0]),
     );
     const meta = dmRoom ? roomMeta[dmRoom.id] : null;
-    const isOnline = isUserOnline(u.lastActiveAt);
-    return { ...u, dmRoom, lastMessageAt: meta?.lastMessageAt ?? null, lastPreview: meta?.lastMessagePreview ?? null, lastPreviewType: meta?.lastMessageType ?? null, hasUnread: meta?.hasUnread ?? false, isOnline };
+    return { ...u, dmRoom, lastMessageAt: meta?.lastMessageAt ?? null, lastPreview: meta?.lastMessagePreview ?? null, lastPreviewType: meta?.lastMessageType ?? null, hasUnread: meta?.hasUnread ?? false };
   }).sort((a, b) => {
     if (peopleSort === "alpha") return a.name.localeCompare(b.name);
     if (peopleSort === "role") return (a.role ?? "").localeCompare(b.role ?? "") || a.name.localeCompare(b.name);
@@ -1084,7 +1067,7 @@ export default function ChatRoom() {
                   <div className={cn(
                     "absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border",
                     isActive && isLight ? "border-indigo-600" : isLight ? "border-white" : "border-background",
-                    person.isOnline ? "bg-green-400" : "bg-red-500",
+                    person.isActive ? "bg-green-400" : "bg-slate-500",
                   )} />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -1680,8 +1663,8 @@ export default function ChatRoom() {
                         <p className="text-sm font-medium truncate">{user.name}</p>
                         <p className={cn("text-xs truncate", isLight ? "text-slate-500" : "text-muted-foreground")}>{user.email}</p>
                       </div>
-                      {isUserOnline(user.lastActiveAt) && (
-                        <span className={cn("text-[8px] font-bold uppercase px-2 py-1 rounded-full", isLight ? "text-emerald-600 bg-emerald-50" : "text-emerald-400 bg-emerald-500/10")}>Online</span>
+                      {user.isActive && (
+                        <span className={cn("text-[8px] font-bold uppercase px-2 py-1 rounded-full", isLight ? "text-emerald-600 bg-emerald-50" : "text-emerald-400 bg-emerald-500/10")}>Active</span>
                       )}
                     </button>
                   ))
@@ -1771,13 +1754,13 @@ export default function ChatRoom() {
                   <p className={cn("text-sm font-semibold truncate", isLight ? "text-slate-900" : "text-foreground")}>{profileUser.name}</p>
                   <p className={cn(
                     "text-xs capitalize",
-                    isUserOnline(profileUser.lastActiveAt) ? (isLight ? "text-emerald-600" : "text-emerald-400") : "text-muted-foreground",
+                    profileUser.isActive ? (isLight ? "text-emerald-600" : "text-emerald-400") : "text-muted-foreground",
                   )}>
                     <span className={cn(
                       "inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle",
-                      isUserOnline(profileUser.lastActiveAt) ? "bg-emerald-400" : "bg-red-500",
+                      profileUser.isActive ? "bg-emerald-400" : "bg-slate-400",
                     )} />
-                    {isUserOnline(profileUser.lastActiveAt) ? "Active now" : "Offline"}
+                    {profileUser.isActive ? "Active now" : "Offline"}
                   </p>
                 </div>
               </div>

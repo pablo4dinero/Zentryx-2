@@ -92,9 +92,6 @@ export const usersTable = pgTable("users", {
   emergencyLoginTokenHash: text("emergency_login_token_hash"),
   emergencyLoginExpires: timestamp("emergency_login_expires"),
 
-  // Real-time presence tracking: updated whenever user sends messages or interacts
-  lastActiveAt: timestamp("last_active_at").notNull().defaultNow(),
-
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
