@@ -2861,7 +2861,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                 : "bg-primary/10 border-primary/30 text-primary hover:bg-primary hover:text-white"
             )}
           >
-            {assistedState === "optimizing" ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> AI Planning…</> : assistedState === "done" ? "✓ AI Plan Applied" : "🤖 AI Assisted Planning"}
+            {assistedState === "optimizing" ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Planning…</> : assistedState === "done" ? "✓ Plan Applied" : "Assisted Planning"}
           </button>
           <button
             onClick={() => setPrintOpen(true)}
