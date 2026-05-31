@@ -4,19 +4,31 @@ import { Bell, Check, CheckCheck, Clock, Info, AlertCircle } from "lucide-react"
 import { formatDistanceToNow } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "@/lib/theme";
+import { useRouter } from "wouter";
 import { cn } from "@/lib/utils";
+import { useState, useEffect } from "react";
 
 export default function Notifications() {
   const { data: notifications, isLoading } = useListNotifications();
   const markReadMut = useMarkNotificationRead();
   const queryClient = useQueryClient();
   const { theme } = useTheme();
+  const [, navigate] = useRouter();
+  const [optimisticNotifs, setOptimisticNotifs] = useState<any[]>([]);
   const isLight = theme === "light";
 
-  if (isLoading) return <PageLoader />;
-
-  const list = notifications ?? [];
+  const displayNotifs = optimisticNotifs.length > 0 ? optimisticNotifs : (notifications ?? []);
+  const list = displayNotifs;
   const unread = list.filter(n => !n.isRead);
+
+  // Sync optimistic updates with server data
+  useEffect(() => {
+    if (optimisticNotifs.length === 0 && notifications) {
+      setOptimisticNotifs(notifications);
+    }
+  }, [notifications]);
+
+  if (isLoading) return <PageLoader />;
 
   const getIcon = (type: string) => {
     switch (type) {
@@ -27,12 +39,25 @@ export default function Notifications() {
   };
 
   const handleMarkRead = (id: number) => {
+    // Optimistic update
+    setOptimisticNotifs(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
     markReadMut.mutate({ id }, {
       onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/notifications"] })
     });
   };
 
+  const handleNotificationClick = (notif: any) => {
+    // Mark as read
+    handleMarkRead(notif.id);
+    // Navigate if link is available
+    if (notif.link) {
+      navigate(notif.link);
+    }
+  };
+
   const handleMarkAll = () => {
+    // Optimistic update
+    setOptimisticNotifs(prev => prev.map(n => ({ ...n, isRead: true })));
     unread.forEach(n => markReadMut.mutate({ id: n.id }));
   };
 
@@ -69,13 +94,14 @@ export default function Notifications() {
           <p className={cn("text-center py-10", isLight ? "text-slate-500" : "text-muted-foreground")}>You're all caught up!</p>
         ) : (
           list.map(note => (
-            <div
+            <button
               key={note.id}
+              onClick={() => handleNotificationClick(note)}
               className={cn(
-                "p-4 rounded-xl flex gap-4 transition-all",
+                "w-full p-4 rounded-xl flex gap-4 transition-all text-left",
                 isLight
-                  ? cn("bg-white border", note.isRead ? "border-slate-200" : "border-l-4 border-l-primary border-slate-200 shadow-sm")
-                  : cn("glass-card", note.isRead ? "opacity-60" : "border-l-4 border-l-primary"),
+                  ? cn("bg-white border", note.isRead ? "border-slate-200" : "border-l-4 border-l-primary border-slate-200 shadow-sm hover:shadow-md")
+                  : cn("glass-card", note.isRead ? "opacity-60" : "border-l-4 border-l-primary hover:bg-white/10"),
               )}
             >
               <div className="mt-1">{getIcon(note.type)}</div>
@@ -101,10 +127,10 @@ export default function Notifications() {
                 </p>
               </div>
               {!note.isRead && (
-                <button
-                  onClick={() => handleMarkRead(note.id)}
+                <div
+                  onClick={(e) => { e.stopPropagation(); handleMarkRead(note.id); }}
                   className={cn(
-                    "p-2 rounded-lg h-fit transition-colors",
+                    "p-2 rounded-lg h-fit transition-colors cursor-pointer",
                     isLight
                       ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-100"
                       : "hover:bg-white/10 text-muted-foreground hover:text-emerald-400",
@@ -112,9 +138,9 @@ export default function Notifications() {
                   title="Mark as read"
                 >
                   <Check className="w-4 h-4" />
-                </button>
+                </div>
               )}
-            </div>
+            </button>
           ))
         )}
       </div>

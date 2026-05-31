@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useRouter } from "wouter";
 import {
   LayoutDashboard, FlaskConical, LineChart, Users, Bell, Activity,
   Search, LogOut, Menu, X, MessageSquare, Briefcase, Sun, Moon, Zap,
@@ -58,7 +58,10 @@ function NotificationBell({
   const ref = useRef<HTMLDivElement>(null);
   const markRead = useMarkNotificationRead();
   const queryClient = useQueryClient();
-  const unreadCount = notifications.filter(n => !n.isRead).length;
+  const [, navigate] = useRouter();
+  const [optimisticNotifs, setOptimisticNotifs] = useState<any[]>([]);
+  const displayNotifs = optimisticNotifs.length > 0 ? optimisticNotifs : notifications;
+  const unreadCount = displayNotifs.filter(n => !n.isRead).length;
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
 
   // Smart blink — only animate when there's an unread notification newer
@@ -76,6 +79,13 @@ function NotificationBell({
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  // Sync optimistic updates with server data
+  useEffect(() => {
+    if (optimisticNotifs.length === 0) {
+      setOptimisticNotifs(notifications);
+    }
+  }, [notifications]);
+
   const openDropdown = () => {
     setOpen(o => {
       if (!o) {
@@ -92,11 +102,24 @@ function NotificationBell({
   // the row was being marked read on the server but the badge count and the
   // dot indicator stayed put until the page was reloaded.
   const handleMark = (id: number) => {
+    // Optimistic update: mark as read immediately in UI
+    setOptimisticNotifs(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
     markRead.mutate({ id }, { onSuccess: invalidate });
   };
+  const handleNotificationClick = (notif: any) => {
+    // Mark as read
+    handleMark(notif.id);
+    // Navigate to the link if available
+    if (notif.link) {
+      navigate(notif.link);
+      setOpen(false);
+    }
+  };
   const markAllRead = async () => {
-    const unread = notifications.filter(n => !n.isRead);
+    const unread = displayNotifs.filter(n => !n.isRead);
     if (unread.length === 0) return;
+    // Optimistic update: mark all as read immediately in UI
+    setOptimisticNotifs(prev => prev.map(n => ({ ...n, isRead: true })));
     await Promise.allSettled(
       unread.map(n => new Promise<void>(resolve => {
         markRead.mutate({ id: n.id }, { onSettled: () => resolve() });
@@ -165,16 +188,17 @@ function NotificationBell({
               </div>
             </div>
             <div className="max-h-80 overflow-y-auto custom-scrollbar">
-              {notifications.length === 0 ? (
+              {displayNotifs.length === 0 ? (
                 <div className={cn("py-10 text-center text-sm", isLight ? "text-slate-500" : "text-muted-foreground")}>
                   <Bell className="w-6 h-6 mx-auto mb-2 opacity-30" />
                   No notifications yet
                 </div>
-              ) : notifications.slice(0, 12).map((n: any) => (
-                <div
+              ) : displayNotifs.slice(0, 12).map((n: any) => (
+                <button
                   key={n.id}
+                  onClick={() => handleNotificationClick(n)}
                   className={cn(
-                    "group flex items-start gap-3 px-4 py-3 border-b last:border-0 transition-colors",
+                    "w-full group flex items-start gap-3 px-4 py-3 border-b last:border-0 transition-colors text-left",
                     isLight ? "border-slate-100 hover:bg-slate-50" : "border-white/5 hover:bg-white/5",
                     !n.isRead && (isLight ? "bg-primary/[0.06]" : "bg-primary/10"),
                   )}
@@ -205,18 +229,18 @@ function NotificationBell({
                     )}
                   </div>
                   {!n.isRead && (
-                    <button
-                      onClick={() => handleMark(n.id)}
+                    <div
+                      onClick={(e) => { e.stopPropagation(); handleMark(n.id); }}
                       className={cn(
-                        "shrink-0 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all",
+                        "shrink-0 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all cursor-pointer",
                         isLight ? "hover:bg-emerald-100 text-slate-400 hover:text-emerald-600" : "hover:bg-emerald-500/10 text-muted-foreground hover:text-emerald-400",
                       )}
                       title="Mark as read"
                     >
                       <Check className="w-3.5 h-3.5" />
-                    </button>
+                    </div>
                   )}
-                </div>
+                </button>
               ))}
             </div>
           </motion.div>

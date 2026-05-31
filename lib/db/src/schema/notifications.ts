@@ -16,6 +16,7 @@ export const notificationsTable = pgTable("notifications", {
   message: text("message").notNull(),
   isRead: boolean("is_read").notNull().default(false),
   projectId: integer("project_id").references(() => projectsTable.id),
+  link: text("link"), // URL to navigate to when notification is clicked
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

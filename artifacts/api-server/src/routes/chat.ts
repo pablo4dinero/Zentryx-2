@@ -68,6 +68,7 @@ async function notifyRoomMembers(opts: { roomId: number; senderId: number; sende
       title,
       message,
       isRead: false,
+      link: "/chat",
     })));
   } catch (err) {
     console.error("[chat] notifyRoomMembers failed", err);
