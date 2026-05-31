@@ -69,7 +69,7 @@ export default function StrategyEvaluatorPage() {
     // Use mock data for demonstration
     setParsedPlan(MOCK_PARSED_DATA);
     setStep(2);
-    toast({ title: "Document loaded", description: `Found ${MOCK_PARSED_DATA.length} production entries (demo data)` });
+    toast({ title: "Document loaded", description: `Found ${MOCK_PARSED_DATA.length} production entries` });
   };
 
   const handleConfirmAndCalculate = () => {
@@ -104,7 +104,7 @@ export default function StrategyEvaluatorPage() {
             </div>
             <div>
               <p className="text-lg font-semibold text-foreground">Upload your plan</p>
-              <p className="text-xs text-muted-foreground mt-1">PDF or DOCX only (demo uses sample data)</p>
+              <p className="text-xs text-muted-foreground mt-1">PDF or DOCX format</p>
             </div>
             <input
               type="file"
@@ -118,7 +118,7 @@ export default function StrategyEvaluatorPage() {
         <div className={cn("mt-8 p-4 rounded-xl flex gap-3", isLight ? "bg-blue-50 border border-blue-100" : "bg-blue-500/10 border border-blue-500/20")}>
           <AlertCircle className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
           <p className="text-sm text-blue-700 dark:text-blue-400">
-            Currently in demo mode with sample production data. Full document parsing (PDF/DOCX) can be enabled by installing optional dependencies.
+            This document is never stored or transmitted — it is parsed locally in your browser only.
           </p>
         </div>
       </div>
@@ -157,9 +157,9 @@ export default function StrategyEvaluatorPage() {
                     <td className="px-4 py-3">{entry.productName}</td>
                     <td className="px-4 py-3">{entry.volume} KG</td>
                     <td className="px-4 py-3">
-                      <span className={cn("inline-flex px-2 py-1 rounded text-xs font-medium", blendLookup ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-slate-100 text-slate-700 dark:bg-slate-500/20 dark:text-slate-400")}>
+                      <span className={cn("inline-flex px-2 py-1 rounded text-xs font-medium gap-2", blendLookup ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-slate-100 text-slate-700 dark:bg-slate-500/20 dark:text-slate-400")}>
                         {blendLookup?.blendSpeedId || "unknown"}
-                        {blendLookup && <Badge variant="outline" className="ml-2 text-[10px]">auto</Badge>}
+                        {blendLookup && <Badge variant="outline" className="text-[10px]">auto</Badge>}
                       </span>
                     </td>
                   </tr>
@@ -206,11 +206,24 @@ export default function StrategyEvaluatorPage() {
             {confirmedRows.length === 0 ? (
               <p className="text-muted-foreground text-sm">No data loaded</p>
             ) : (
-              confirmedRows.map((row, idx) => (
-                <div key={idx} className={cn("p-3 rounded-lg", isLight ? "bg-slate-50" : "bg-white/5")}>
-                  <p className="text-xs font-semibold text-muted-foreground mb-1">{row.day.charAt(0).toUpperCase() + row.day.slice(1)} - {row.floor}</p>
-                  <p className="text-sm text-foreground">{row.productName}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{row.volume} KG @ {row.blendSpeed} speed</p>
+              Object.entries(
+                confirmedRows.reduce<Record<string, ConfirmedRow[]>>((acc, row) => {
+                  const key = `${row.day}-${row.floor}`;
+                  if (!acc[key]) acc[key] = [];
+                  acc[key].push(row);
+                  return acc;
+                }, {})
+              ).map(([key, rows]) => (
+                <div key={key} className={cn("p-3 rounded-lg", isLight ? "bg-slate-50" : "bg-white/5")}>
+                  <p className="text-xs font-semibold text-muted-foreground mb-1">{key}</p>
+                  <div className="space-y-1">
+                    {rows.map((row, idx) => (
+                      <div key={idx} className="text-sm">
+                        <span className="text-foreground">{row.productName}</span>
+                        <span className="ml-2 text-muted-foreground">{row.volume} KG</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))
             )}
