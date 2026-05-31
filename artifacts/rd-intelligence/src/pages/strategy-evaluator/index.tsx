@@ -188,14 +188,14 @@ export default function StrategyEvaluatorTab() {
     setCustomProductTypes(productTypesQuery.data || []);
   }, [productTypesQuery.data]);
 
-  // Generate weeks for 3-month range (previous, current, next month)
+  // Get unique weeks from all assignments
   const allWeeks = useMemo(() => {
-    // Calculate 3-month range: previous month, current month, next month
-    const today = new Date();
-    const startDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-    const endDate = new Date(today.getFullYear(), today.getMonth() + 2, 0);
-    return generateWeeksForDateRange(startDate, endDate);
-  }, []);
+    const weeks = new Set<string>();
+    allAssignmentsQuery.data?.forEach((row: any) => {
+      if (row.assignment?.weekLabel) weeks.add(row.assignment.weekLabel);
+    });
+    return Array.from(weeks).sort();
+  }, [allAssignmentsQuery.data]);
 
   // Auto-select first week if available
   React.useEffect(() => {
