@@ -376,6 +376,24 @@ export default function StrategyEvaluatorTab() {
     );
   }
 
+  // Convert parsed days to table rows for Step 2
+  const tableRows = useMemo(() => {
+    const rows: Array<ParsedDay & { floorName: string; productName: string; volume: number }> = [];
+    parsedDays.forEach((day) => {
+      day.floors.forEach((floor) => {
+        floor.products.forEach((product) => {
+          rows.push({
+            ...day,
+            floorName: floor.floorName,
+            productName: product.name,
+            volume: product.volume,
+          } as any);
+        });
+      });
+    });
+    return rows;
+  }, [parsedDays]);
+
   if (step === 2) {
     return (
       <div className="space-y-6">
@@ -398,20 +416,21 @@ export default function StrategyEvaluatorTab() {
               </tr>
             </thead>
             <tbody>
-              {confirmedProducts.map((product, idx) => (
+              {tableRows.map((row, idx) => {
+                const lookup = productLookup.get(row.productName.toLowerCase());
+                const blendSpeed = (lookup?.blendSpeedId || "medium") as "fast" | "medium" | "slow";
+                const productType = lookup?.productType || "Unknown";
+                const floorWarning = !checkFloorCompatibility(row.floorName, productType, row.volume);
+
+                return (
                 <tr key={idx} className={isLight ? "border-t border-slate-200" : "border-t border-white/5"}>
-                  <td className="px-4 py-2 text-xs">{product.dayName}</td>
-                  <td className="px-4 py-2 text-xs">{product.floorName}</td>
-                  <td className="px-4 py-2 text-xs font-medium">{product.productName}</td>
-                  <td className="px-4 py-2 text-xs text-right">{product.volume.toLocaleString()}</td>
+                  <td className="px-4 py-2 text-xs">{row.dayName}</td>
+                  <td className="px-4 py-2 text-xs">{row.floorName}</td>
+                  <td className="px-4 py-2 text-xs font-medium">{row.productName}</td>
+                  <td className="px-4 py-2 text-xs text-right">{Math.round(row.volume).toLocaleString()}</td>
                   <td className="px-4 py-2">
                     <select
-                      value={product.blendSpeed}
-                      onChange={(e) => {
-                        const updated = [...confirmedProducts];
-                        updated[idx].blendSpeed = e.target.value as any;
-                        setConfirmedProducts(updated);
-                      }}
+                      defaultValue={blendSpeed}
                       className="text-xs px-2 py-1 rounded border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
                     >
                       <option value="fast">Fast</option>
@@ -421,12 +440,7 @@ export default function StrategyEvaluatorTab() {
                   </td>
                   <td className="px-4 py-2">
                     <select
-                      value={product.productType}
-                      onChange={(e) => {
-                        const updated = [...confirmedProducts];
-                        updated[idx].productType = e.target.value;
-                        setConfirmedProducts(updated);
-                      }}
+                      defaultValue={productType}
                       className="text-xs px-2 py-1 rounded border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
                     >
                       <option value="Seasoning">Seasoning</option>
@@ -444,14 +458,15 @@ export default function StrategyEvaluatorTab() {
                     </select>
                   </td>
                   <td className="px-4 py-2 text-center">
-                    {product.floorWarning && (
+                    {floorWarning && (
                       <div title="Floor compatibility warning" className="inline-block">
                         <AlertTriangle className="w-4 h-4 text-amber-600" />
                       </div>
                     )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
