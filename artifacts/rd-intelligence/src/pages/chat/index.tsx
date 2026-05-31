@@ -256,6 +256,7 @@ export default function ChatRoom() {
   const [mentionStart, setMentionStart] = useState<number>(-1);
   const [lightboxImg, setLightboxImg] = useState<string | null>(null);
   const [sidebarSearch, setSidebarSearch] = useState("");
+  const [forwardSearch, setForwardSearch] = useState("");
   const [roomMeta, setRoomMeta] = useState<Record<number, { lastMessageAt: string; lastMessagePreview: string | null; lastMessageType: string | null; hasUnread: boolean }>>({});
   const [peopleSort, setPeopleSort] = useState<"recent" | "role" | "alpha">("recent");
   const [peopleSortOpen, setPeopleSortOpen] = useState(false);
@@ -1517,47 +1518,88 @@ export default function ChatRoom() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          onClick={() => { setForwardModalOpen(false); setForwardingMsg(null); }}
-          className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => { setForwardModalOpen(false); setForwardingMsg(null); setForwardSearch(""); }}
+          className="fixed inset-0 z-[999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
         >
           <motion.div
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.95, opacity: 0 }}
+            initial={{ scale: 0.95, opacity: 0, y: 20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.95, opacity: 0, y: 20 }}
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg glass-panel border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
+            className={cn("w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden", isLight ? "bg-white border border-slate-200" : "bg-card border border-white/10")}
           >
-            <div className="p-6 border-b border-white/5">
-              <h2 className="text-xl font-semibold text-foreground">Forward Message</h2>
-              <p className="text-sm text-muted-foreground mt-1">Select where to send this message</p>
+            <div className={cn("p-6 border-b", isLight ? "border-slate-200 bg-slate-50" : "border-white/5 bg-white/5")}>
+              <h2 className={cn("text-xl font-semibold", isLight ? "text-slate-900" : "text-foreground")}>Forward Message</h2>
+              <p className={cn("text-sm mt-1", isLight ? "text-slate-500" : "text-muted-foreground")}>Select a user to send this message</p>
             </div>
-            <div className="p-4 space-y-2 max-h-96 overflow-y-auto custom-scrollbar">
-              {rooms.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">No rooms available</p>
+            <div className={cn("p-4 border-b", isLight ? "border-slate-200" : "border-white/5")}>
+              <input
+                type="text"
+                placeholder="Search users..."
+                value={forwardSearch}
+                className={cn("w-full px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50", isLight ? "border border-slate-200 bg-white text-slate-900 placeholder:text-slate-400" : "border border-white/10 bg-black/20 text-foreground placeholder:text-muted-foreground")}
+                onChange={(e) => setForwardSearch(e.target.value)}
+              />
+            </div>
+            <div className="p-4 space-y-2 max-h-80 overflow-y-auto custom-scrollbar">
+              {users.filter((u: any) => {
+                const search = forwardSearch.toLowerCase();
+                return u.id !== currentUserId && (
+                  (u.name && u.name.toLowerCase().includes(search)) ||
+                  (u.email && u.email.toLowerCase().includes(search))
+                );
+              }).length === 0 ? (
+                <p className={cn("text-sm text-center py-8", isLight ? "text-slate-500" : "text-muted-foreground")}>
+                  {forwardSearch ? "No users found" : "No users available"}
+                </p>
               ) : (
-                rooms.map((room: any) => (
-                  <button
-                    key={room.id}
-                    onClick={() => {
-                      forwardMessage(forwardingMsg, room.id);
-                    }}
-                    className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 transition-colors text-left"
-                  >
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/50 to-accent/50 flex items-center justify-center text-white text-sm font-bold shrink-0">
-                      {room.isGroup ? "#" : room.memberUserIds?.length > 0 ? usersTable?.find((u: any) => u.id === room.memberUserIds[0])?.name?.charAt(0) : "?"}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">{room.name}</p>
-                      <p className="text-xs text-muted-foreground">{room.isGroup ? "Channel" : "Direct message"}</p>
-                    </div>
-                  </button>
+                users.filter((u: any) => {
+                  const search = forwardSearch.toLowerCase();
+                  return u.id !== currentUserId && (
+                    (u.name && u.name.toLowerCase().includes(search)) ||
+                    (u.email && u.email.toLowerCase().includes(search))
+                  );
+                }).map((user: any) => (
+                    <button
+                      key={user.id}
+                      onClick={() => {
+                        // Create a DM with the user if not exists, then forward
+                        createPrivateRoom(user.id, user.name);
+                        // Find the DM room and forward after it's created
+                        setTimeout(() => {
+                          const dmRoom = dmRooms.find((r: any) =>
+                            Array.isArray(r.memberUserIds)
+                              ? r.memberUserIds.includes(user.id) && r.memberUserIds.includes(currentUserId) && r.memberUserIds.length === 2
+                              : false,
+                          );
+                          if (dmRoom) {
+                            forwardMessage(forwardingMsg, dmRoom.id);
+                          }
+                        }, 300);
+                        setForwardModalOpen(false);
+                        setForwardingMsg(null);
+                      }}
+                      className={cn("w-full flex items-center gap-3 p-3 rounded-xl transition-colors text-left", isLight ? "hover:bg-slate-100 text-slate-900" : "hover:bg-white/5 text-foreground")}
+                    >
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/50 to-accent/50 flex items-center justify-center text-white text-sm font-bold shrink-0">
+                        {user.name?.charAt(0).toUpperCase() || "?"}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{user.name}</p>
+                        <p className={cn("text-xs truncate", isLight ? "text-slate-500" : "text-muted-foreground")}>{user.email}</p>
+                      </div>
+                      {isUserOnline(user.lastActiveAt) && (
+                        <span className={cn("text-[8px] font-bold uppercase px-2 py-1 rounded-full", isLight ? "text-emerald-600 bg-emerald-50" : "text-emerald-400 bg-emerald-500/10")}>Online</span>
+                      )}
+                    </button>
+                  )
                 ))
               )}
             </div>
-            <div className="p-4 border-t border-white/5 flex gap-2">
+            <div className={cn("p-4 border-t flex gap-2", isLight ? "border-slate-200" : "border-white/5")}>
               <button
-                onClick={() => { setForwardModalOpen(false); setForwardingMsg(null); }}
-                className="flex-1 px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-foreground text-sm font-medium transition-colors"
+                onClick={() => { setForwardModalOpen(false); setForwardingMsg(null); setForwardSearch(""); }}
+                className={cn("flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors", isLight ? "border border-slate-200 text-slate-600 hover:bg-slate-100" : "bg-white/5 hover:bg-white/10 text-foreground")}
               >
                 Cancel
               </button>
