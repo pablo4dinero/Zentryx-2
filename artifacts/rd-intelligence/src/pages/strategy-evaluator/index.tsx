@@ -756,7 +756,31 @@ export default function StrategyEvaluatorTab() {
 
         {/* Zentryx Plan */}
         <div className={cn("rounded-lg border p-4 space-y-4", isLight ? "bg-white border-slate-200" : "bg-black/20 border-white/10")}>
-          <h3 className="text-sm font-bold text-blue-500 uppercase tracking-wide">Zentryx Plan — {selectedZentryxWeek || "Select Week"}</h3>
+          <div>
+            <h3 className="text-sm font-bold text-blue-500 uppercase tracking-wide mb-2">Zentryx Plan — {selectedZentryxWeek || "Select Week"}</h3>
+            <div className="flex flex-wrap gap-2">
+              {allWeeks.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No weeks available</p>
+              ) : (
+                allWeeks.map((week) => (
+                  <button
+                    key={week}
+                    onClick={() => setSelectedZentryxWeek(week)}
+                    className={cn(
+                      "px-3 py-1 rounded text-xs font-medium border transition-all",
+                      selectedZentryxWeek === week
+                        ? "border-blue-500 bg-blue-500/10 text-blue-600"
+                        : isLight
+                        ? "border-slate-200 hover:bg-slate-50"
+                        : "border-white/10 hover:bg-white/5"
+                    )}
+                  >
+                    {week}
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
           {selectedZentryxWeek && zentryxPlanByDay.size === 0 ? (
             <p className="text-xs text-muted-foreground">No assignments for this week</p>
           ) : !selectedZentryxWeek ? (
@@ -825,6 +849,38 @@ export default function StrategyEvaluatorTab() {
               <td className="px-4 py-2 text-xs font-medium">Active Days</td>
               <td className="px-4 py-2 text-center text-xs font-semibold">{uploadedPlanByDay.size}</td>
               <td className="px-4 py-2 text-center text-xs font-semibold">{zentryxPlanByDay.size}</td>
+            </tr>
+            <tr className={isLight ? "border-t border-slate-200" : "border-t border-white/5"}>
+              <td className="px-4 py-2 text-xs font-medium">Total Product Switches</td>
+              <td className="px-4 py-2 text-center text-xs font-semibold text-green-600">
+                {Array.from(uploadedPlanByDay.values())
+                  .reduce((total, dayData) => {
+                    return (
+                      total +
+                      Array.from(dayData.floors.values()).reduce(
+                        (dayTotal, floorData) => dayTotal + Math.max(0, floorData.productCount - 1),
+                        0
+                      )
+                    );
+                  }, 0)}
+              </td>
+              <td className="px-4 py-2 text-center text-xs font-semibold text-blue-600">
+                {Array.from(zentryxPlanByDay.values())
+                  .reduce((total, dayData) => {
+                    return (
+                      total +
+                      Array.from(dayData.shifts.values()).reduce((dayTotal, shiftData) => {
+                        return (
+                          dayTotal +
+                          Array.from(shiftData.floors.values()).reduce(
+                            (shiftTotal, floorData) => shiftTotal + Math.max(0, floorData.productCount - 1),
+                            0
+                          )
+                        );
+                      }, 0)
+                    );
+                  }, 0)}
+              </td>
             </tr>
           </tbody>
         </table>

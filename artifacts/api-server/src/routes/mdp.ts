@@ -1016,7 +1016,7 @@ function detectProductType(productName: string, productOrders: any[]): string {
     "Dough Premix": ["dough"],
     "Savoury Flavour": ["chicken flavour", "beef flavour", "concentrate", "tomato flavour", "fish flavour", "goat flavour", "stockfish flavour"],
     "Sweet Flavour": ["chocolate flavour", "vanilla flavour", "strawberry", "caramel"],
-    "Seasoning": ["chicken", "beef", "tomato", "seas", "qsr", "jollof"],
+    "Seasoning": ["fmn", "mimee", "chicken", "beef", "tomato", "seas", "qsr", "jollof"],
     "Snack Dusting": ["dusting", "cheese"],
     "Marinade": ["marinade"],
     "Spice Mix": ["spice"],
