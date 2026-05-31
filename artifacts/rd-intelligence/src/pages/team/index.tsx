@@ -163,7 +163,7 @@ export default function Team() {
         <div className="flex gap-2 flex-wrap">
           <AddRoleModal onAdd={addRole} />
           <AddDepartmentModal onAdd={addDepartment} />
-          {isAdmin && <AddMemberModal departments={departments} roles={roles} onSuccess={() => queryClient.invalidateQueries({ queryKey: ["/api/users"] })} />}
+          {isAdmin && <AddMemberModal departments={departments} roles={roles} onAddDepartment={addDepartment} onSuccess={() => queryClient.invalidateQueries({ queryKey: ["/api/users"] })} />}
         </div>
       </div>
 
@@ -382,15 +382,30 @@ function ResetPwField({ value, onChange }: { value: string; onChange: (v: string
   );
 }
 
-function AddMemberModal({ departments, roles, onSuccess }: { departments: string[]; roles: { value: string; label: string }[]; onSuccess: () => void }) {
+function AddMemberModal({ departments, roles, onAddDepartment, onSuccess }: { departments: string[]; roles: { value: string; label: string }[]; onAddDepartment: (name: string) => Promise<void>; onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
   const [form, setForm] = useState({ name: "", email: "", password: "temp1234", role: "viewer", department: "", isActive: true });
+  const [addingDept, setAddingDept] = useState(false);
+  const [newDeptName, setNewDeptName] = useState("");
   const setF = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }));
   const { theme: _amTheme } = useTheme();
   const isLight = _amTheme === "light";
   const cls = cn("flex h-10 w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground", isLight ? "border-gray-200 bg-white" : "border-white/10 bg-black/20");
+
+  const handleAddDepartment = async () => {
+    if (!newDeptName.trim()) return;
+    try {
+      await onAddDepartment(newDeptName.trim());
+      setForm(f => ({ ...f, department: newDeptName.trim() }));
+      setNewDeptName("");
+      setAddingDept(false);
+      toast({ title: "Department added!", description: `${newDeptName} has been created.` });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -431,10 +446,41 @@ function AddMemberModal({ departments, roles, onSuccess }: { departments: string
             </div>
             <div className="space-y-1.5">
               <label className={cn("text-sm font-medium", isLight ? "text-gray-900" : "")}>Department</label>
-              <select value={form.department} onChange={e => setF("department", e.target.value)} className={cls}>
-                <option value="" className="bg-card">No Department</option>
-                {departments.map(d => <option key={d} value={d} className="bg-card">{d}</option>)}
-              </select>
+              {addingDept ? (
+                <div className="flex gap-2">
+                  <input
+                    autoFocus
+                    value={newDeptName}
+                    onChange={e => setNewDeptName(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") handleAddDepartment();
+                      if (e.key === "Escape") { setAddingDept(false); setNewDeptName(""); }
+                    }}
+                    placeholder="e.g. Quality Assurance"
+                    className={cn(cls, "flex-1")}
+                  />
+                  <button type="button" onClick={handleAddDepartment} className="px-3 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-sm font-medium">
+                    <Check className="w-4 h-4" />
+                  </button>
+                  <button type="button" onClick={() => { setAddingDept(false); setNewDeptName(""); }} className="px-3 py-2 rounded-lg border text-sm font-medium hover:bg-muted">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <select value={form.department} onChange={e => setF("department", e.target.value)} className={cls}>
+                    <option value="" className="bg-card">No Department</option>
+                    {departments.map(d => <option key={d} value={d} className="bg-card">{d}</option>)}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setAddingDept(true)}
+                    className="w-full py-2 text-xs text-primary hover:bg-primary/5 rounded-lg border border-primary/20 transition-colors"
+                  >
+                    + Add New Department
+                  </button>
+                </div>
+              )}
             </div>
             <div className="col-span-2 space-y-1.5">
               <label className={cn("text-sm font-medium", isLight ? "text-gray-900" : "")}>Status</label>
