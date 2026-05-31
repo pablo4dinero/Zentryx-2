@@ -507,10 +507,20 @@ router.get("/users", requireAuth, async (_req, res) => {
       phone: usersTable.phone,
       avatar: usersTable.avatar,
       isActive: usersTable.isActive,
+      lastActiveAt: usersTable.lastActiveAt,
     })
       .from(usersTable)
       .where(ne(usersTable.email, SUPERADMIN_EMAIL));
     res.json(users);
+  } catch { res.status(500).json({ error: "InternalServerError" }); }
+});
+
+// Update user's last active timestamp for online status tracking
+router.post("/users/update-activity", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.userId;
+    await db.update(usersTable).set({ lastActiveAt: new Date() }).where(eq(usersTable.id, userId));
+    res.json({ success: true });
   } catch { res.status(500).json({ error: "InternalServerError" }); }
 });
 
