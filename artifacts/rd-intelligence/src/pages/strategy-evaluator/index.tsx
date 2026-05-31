@@ -212,7 +212,7 @@ export default function StrategyEvaluatorTab() {
   // Organize Zentryx assignments by day and shift
   const zentryxPlanByDay = useMemo(() => {
     const dayMap = new Map<string, {
-      shifts: Map<string, { floors: Map<string, { volume: number; productCount: number }> }>
+      shifts: Map<string, { floors: Map<string, { products: Array<{ name: string; volume: number; type: string }>; volume: number; productCount: number }> }>
     }>();
     assignmentsQuery.data?.forEach((row: any) => {
       if (row.assignment?.weekLabel === selectedZentryxWeek) {
@@ -220,6 +220,8 @@ export default function StrategyEvaluatorTab() {
         const shift = row.assignment.assignedShift || "Day";
         const floorName = row.floor?.floorName || "Unknown";
         const volume = Number(row.assignment.assignedVolume || 0);
+        const productName = row.order?.productName || "Unknown Product";
+        const productType = row.order?.productType || "Unknown";
 
         if (!dayMap.has(dayName)) {
           dayMap.set(dayName, { shifts: new Map() });
@@ -230,9 +232,10 @@ export default function StrategyEvaluatorTab() {
         }
         const shiftData = dayData.shifts.get(shift)!;
         if (!shiftData.floors.has(floorName)) {
-          shiftData.floors.set(floorName, { volume: 0, productCount: 0 });
+          shiftData.floors.set(floorName, { products: [], volume: 0, productCount: 0 });
         }
         const floorData = shiftData.floors.get(floorName)!;
+        floorData.products.push({ name: productName, volume, type: productType });
         floorData.volume += volume;
         floorData.productCount += 1;
       }
@@ -735,24 +738,25 @@ export default function StrategyEvaluatorTab() {
         <p className="text-sm text-muted-foreground mt-1">Select Zentryx week to compare against your uploaded plan</p>
       </div>
 
-      <div className="flex gap-2 flex-wrap items-center">
-        <span className="text-xs text-muted-foreground">Zentryx week:</span>
-        {allWeeks.map((week) => (
-          <button
-            key={week}
-            onClick={() => setSelectedZentryxWeek(week)}
-            className={cn(
-              "px-4 py-2 rounded-lg text-sm font-medium border transition-all",
-              selectedZentryxWeek === week
-                ? "border-blue-500 bg-blue-500/10 text-blue-600"
-                : isLight
-                ? "border-slate-200 hover:bg-slate-50"
-                : "border-white/10 hover:bg-white/5"
-            )}
-          >
-            {week}
-          </button>
-        ))}
+      <div className="flex gap-4 items-center">
+        <label className="text-xs text-muted-foreground">Choose a week:</label>
+        <select
+          value={selectedZentryxWeek || ""}
+          onChange={(e) => setSelectedZentryxWeek(e.target.value)}
+          className={cn(
+            "px-4 py-2 rounded-lg text-sm border transition-all",
+            isLight
+              ? "bg-white border-slate-200 text-foreground"
+              : "bg-black/20 border-white/10 text-foreground"
+          )}
+        >
+          <option value="">Select a week...</option>
+          {allWeeks.map((week) => (
+            <option key={week} value={week}>
+              {week}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Day-by-Day Comparison */}
@@ -797,31 +801,7 @@ export default function StrategyEvaluatorTab() {
 
         {/* Zentryx Plan */}
         <div className={cn("rounded-lg border p-4 space-y-4", isLight ? "bg-white border-slate-200" : "bg-black/20 border-white/10")}>
-          <div>
-            <h3 className="text-sm font-bold text-blue-500 uppercase tracking-wide mb-2">Zentryx Plan — {selectedZentryxWeek || "Select Week"}</h3>
-            <div className="flex flex-wrap gap-2">
-              {allWeeks.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No weeks available</p>
-              ) : (
-                allWeeks.map((week) => (
-                  <button
-                    key={week}
-                    onClick={() => setSelectedZentryxWeek(week)}
-                    className={cn(
-                      "px-3 py-1 rounded text-xs font-medium border transition-all",
-                      selectedZentryxWeek === week
-                        ? "border-blue-500 bg-blue-500/10 text-blue-600"
-                        : isLight
-                        ? "border-slate-200 hover:bg-slate-50"
-                        : "border-white/10 hover:bg-white/5"
-                    )}
-                  >
-                    {week}
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
+          <h3 className="text-sm font-bold text-blue-500 uppercase tracking-wide">Zentryx Plan — {selectedZentryxWeek || "Select Week"}</h3>
           {selectedZentryxWeek && zentryxPlanByDay.size === 0 ? (
             <p className="text-xs text-muted-foreground">No assignments for this week</p>
           ) : !selectedZentryxWeek ? (
@@ -836,19 +816,30 @@ export default function StrategyEvaluatorTab() {
               ).map(([dayName, dayData]) => (
                 <div key={dayName} className={cn("rounded p-3", isLight ? "bg-slate-50" : "bg-white/5")}>
                   <div className="text-xs font-semibold text-foreground mb-2">{dayName}</div>
-                  <div className="space-y-1">
+                  <div className="text-lg font-bold text-blue-600 mb-2">
+                    {Array.from(dayData.shifts.values()).flatMap((s) => Array.from(s.floors.values())).reduce((sum, f) => sum + f.volume, 0).toLocaleString()} kg
+                  </div>
+                  <div className="space-y-2">
                     {Array.from(dayData.shifts.entries()).map(([shift, shiftData]) => {
                       const shiftVolume = Array.from(shiftData.floors.values()).reduce((sum, f) => sum + f.volume, 0);
                       return (
                         <div key={shift}>
-                          <div className="text-xs text-blue-600 font-medium mb-1">{shiftVolume.toLocaleString()} kg — {shift}</div>
+                          <div className="text-xs text-blue-600 font-medium">{shift}: {shiftVolume.toLocaleString()} kg</div>
                           {Array.from(shiftData.floors.entries()).map(([floorName, floorData]) => (
-                            <div key={floorName} className="flex justify-between text-xs ml-2 text-muted-foreground">
-                              <div className="flex gap-2">
-                                <span className="font-medium">{floorName}</span>
-                                <span>{floorData.productCount} product{floorData.productCount !== 1 ? 's' : ''}</span>
+                            <div key={floorName} className="ml-2 space-y-1">
+                              <div className="flex justify-between text-xs font-medium">
+                                <span>{floorName}</span>
+                                <span className="text-muted-foreground">{floorData.volume.toLocaleString()} kg</span>
                               </div>
-                              <span className="font-medium">{floorData.volume.toLocaleString()} kg</span>
+                              {floorData.products.length > 0 && (
+                                <div className="ml-2 space-y-0.5">
+                                  {floorData.products.map((prod, idx) => (
+                                    <div key={idx} className="text-xs text-muted-foreground">
+                                      • {prod.name}: {prod.volume.toLocaleString()} kg
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
