@@ -60,7 +60,7 @@ function NotificationBell({
   const queryClient = useQueryClient();
   const [, navigate] = useRouter();
   const [optimisticNotifs, setOptimisticNotifs] = useState<any[]>([]);
-  const displayNotifs = optimisticNotifs.length > 0 ? optimisticNotifs : notifications;
+  const displayNotifs = optimisticNotifs.length > 0 ? optimisticNotifs : (notifications || []);
   const unreadCount = displayNotifs.filter(n => !n.isRead).length;
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
 
