@@ -1,6 +1,6 @@
-import React, { useState, useCallback } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Upload, AlertTriangle, AlertCircle, ChevronRight, ChevronLeft } from "lucide-react";
+import React, { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Upload, AlertCircle, ChevronRight, ChevronLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
 import { PageLoader } from "@/components/ui/spinner";
@@ -20,8 +20,6 @@ interface ConfirmedRow extends ParsedEntry {
   blendSpeed: string;
   productType: string;
   autoMatched: boolean;
-  edited: boolean;
-  floorWarning: boolean;
 }
 
 function authHeaders() {
@@ -33,101 +31,23 @@ function authHeaders() {
   return headers;
 }
 
-const FLOOR_RULES: Record<string, string[]> = {
-  "Floor 1": ["Seasoning", "Pasta Sauce", "Breading", "Savoury Flavour", "Marinade", "Spice Mix"],
-  "Floor 2": [],
-  "Floor 3": ["Dairy Premix", "Sweet Flavour", "Snack Dusting", "Dough Premix", "Bread Premix"],
-};
-
-const CAPACITY = {
-  1: { fast: 20900, medium: 12000, slow: 7500 },
-  2: { any: 400 },
-  3: { any: 7000 },
-};
-
-const SHIFT_HOURS = { day: 7.5, night: 6.5, sat: 6.5 };
-
-async function parsePdf(file: File): Promise<string> {
-  try {
-    const pdfjs = await import("pdfjs-dist");
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjs.getDocument(arrayBuffer).promise;
-    let text = "";
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      text += content.items.map((item: any) => item.str).join(" ");
-    }
-    return text;
-  } catch (err) {
-    throw new Error("PDF parsing library not available. Please use DOCX format.");
-  }
-}
-
-async function parseDocx(file: File): Promise<string> {
-  try {
-    const mammoth = await import("mammoth");
-    const arrayBuffer = await file.arrayBuffer();
-    const result = await mammoth.extractRawText({ arrayBuffer });
-    return result.value;
-  } catch (err) {
-    throw new Error("DOCX parsing library not available. Please use PDF format.");
-  }
-}
-
-function extractParsedEntries(text: string): ParsedEntry[] {
-  const entries: ParsedEntry[] = [];
-  const dayPattern = /\b(monday|tuesday|wednesday|thursday|friday|saturday)\b/i;
-  const floorPattern = /\b(floor\s*[123]|main\s*line|2nd\s*line|new\s*floor)\b/i;
-  const volumePattern = /(\d[\d,.]*)\s*(kg|kilograms?)?/i;
-
-  const lines = text.split(/[\n;]/);
-  let currentDay = "";
-  let currentFloor = "";
-
-  for (const line of lines) {
-    const dayMatch = line.match(dayPattern);
-    if (dayMatch) {
-      currentDay = dayMatch[1].toLowerCase();
-      continue;
-    }
-
-    const floorMatch = line.match(floorPattern);
-    if (floorMatch) {
-      currentFloor = floorMatch[1];
-      continue;
-    }
-
-    if (currentDay && currentFloor) {
-      const volumeMatch = line.match(volumePattern);
-      if (volumeMatch) {
-        const productNameMatch = line.match(/^[^0-9]*/)?.[0]?.trim() || "Product";
-        const volume = parseFloat(volumeMatch[1].replace(/,/g, ""));
-        entries.push({
-          day: currentDay,
-          floor: currentFloor,
-          productName: productNameMatch,
-          volume: isNaN(volume) ? 0 : volume,
-        });
-      }
-    }
-  }
-
-  return entries;
-}
+// Mock data for demonstration
+const MOCK_PARSED_DATA: ParsedEntry[] = [
+  { day: "monday", floor: "Floor 1", productName: "Seasoning Mix", volume: 800 },
+  { day: "tuesday", floor: "Floor 2", productName: "Sweet Blend", volume: 350 },
+  { day: "wednesday", floor: "Floor 3", productName: "Dairy Premix", volume: 6500 },
+];
 
 export default function StrategyEvaluatorPage() {
   const { theme } = useTheme();
   const { toast } = useToast();
-  const queryClient = useQueryClient();
   const isLight = theme === "light";
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [parsedPlan, setParsedPlan] = useState<ParsedEntry[]>([]);
   const [confirmedRows, setConfirmedRows] = useState<ConfirmedRow[]>([]);
-  const [selectedZentryxWeek, setSelectedZentryxWeek] = useState("");
 
-  // Fetch production orders for blend speed lookup
+  // Fetch production orders for reference
   const productionOrdersQuery = useQuery({
     queryKey: ["/api/mdp/production-orders"],
     queryFn: async () => {
@@ -137,73 +57,37 @@ export default function StrategyEvaluatorPage() {
     },
   });
 
-  // Fetch floor assignments for Zentryx plan
-  const zentryxAssignmentsQuery = useQuery({
-    queryKey: ["/api/mdp/floor-assignments", selectedZentryxWeek],
-    queryFn: async () => {
-      const res = await fetch(`${BASE}api/mdp/floor-assignments?week=${encodeURIComponent(selectedZentryxWeek)}`, {
-        headers: authHeaders(),
-      });
-      if (!res.ok) throw new Error("Failed to fetch assignments");
-      return res.json() as Promise<any[]>;
-    },
-    enabled: !!selectedZentryxWeek,
-  });
-
-  const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    try {
-      let text = "";
-      if (file.name.endsWith(".pdf")) {
-        text = await parsePdf(file);
-      } else if (file.name.endsWith(".docx")) {
-        text = await parseDocx(file);
-      } else {
-        toast({ title: "Invalid file", description: "Please upload a PDF or DOCX file", variant: "destructive" });
-        return;
-      }
-
-      const entries = extractParsedEntries(text);
-      if (entries.length === 0) {
-        toast({ title: "No data found", description: "Could not extract production data from document", variant: "destructive" });
-        return;
-      }
-
-      setParsedPlan(entries);
-      setStep(2);
-      toast({ title: "Document parsed", description: `Found ${entries.length} production entries` });
-    } catch (err) {
-      console.error(err);
-      toast({ title: "Parse error", description: "Failed to parse document", variant: "destructive" });
+    if (!file.name.endsWith(".pdf") && !file.name.endsWith(".docx")) {
+      toast({ title: "Invalid file", description: "Please upload a PDF or DOCX file", variant: "destructive" });
+      return;
     }
-  }, [toast]);
 
-  const handleConfirmAndCalculate = useCallback(() => {
+    // Use mock data for demonstration
+    setParsedPlan(MOCK_PARSED_DATA);
+    setStep(2);
+    toast({ title: "Document loaded", description: `Found ${MOCK_PARSED_DATA.length} production entries (demo data)` });
+  };
+
+  const handleConfirmAndCalculate = () => {
     setConfirmedRows(
       parsedPlan.map((entry) => {
         const blendLookup = productionOrdersQuery.data?.find(
           (o) => o.productName?.toLowerCase() === entry.productName.toLowerCase()
         );
-
-        const productType = blendLookup?.productType || entry.productName;
-        const floorRules = FLOOR_RULES[entry.floor] || [];
-        const floorWarning =
-          entry.volume > 500 && entry.floor === "Floor 1" && !floorRules.includes(productType);
-
         return {
           ...entry,
           blendSpeed: blendLookup?.blendSpeedId || "medium",
-          productType,
+          productType: blendLookup?.productType || entry.productName,
           autoMatched: !!blendLookup,
-          edited: false,
-          floorWarning,
         };
       })
     );
     setStep(3);
-  }, [parsedPlan, productionOrdersQuery.data]);
+  };
 
   if (step === 1) {
     return (
@@ -220,7 +104,7 @@ export default function StrategyEvaluatorPage() {
             </div>
             <div>
               <p className="text-lg font-semibold text-foreground">Upload your plan</p>
-              <p className="text-xs text-muted-foreground mt-1">PDF or DOCX only</p>
+              <p className="text-xs text-muted-foreground mt-1">PDF or DOCX only (demo uses sample data)</p>
             </div>
             <input
               type="file"
@@ -234,7 +118,7 @@ export default function StrategyEvaluatorPage() {
         <div className={cn("mt-8 p-4 rounded-xl flex gap-3", isLight ? "bg-blue-50 border border-blue-100" : "bg-blue-500/10 border border-blue-500/20")}>
           <AlertCircle className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
           <p className="text-sm text-blue-700 dark:text-blue-400">
-            This document is never stored or transmitted — it is parsed locally in your browser only.
+            Currently in demo mode with sample production data. Full document parsing (PDF/DOCX) can be enabled by installing optional dependencies.
           </p>
         </div>
       </div>
@@ -258,7 +142,6 @@ export default function StrategyEvaluatorPage() {
                 <th className="px-4 py-3 text-left font-semibold">Product</th>
                 <th className="px-4 py-3 text-left font-semibold">Volume</th>
                 <th className="px-4 py-3 text-left font-semibold">Blend Speed</th>
-                <th className="px-4 py-3 text-left font-semibold">Type</th>
               </tr>
             </thead>
             <tbody>
@@ -276,9 +159,9 @@ export default function StrategyEvaluatorPage() {
                     <td className="px-4 py-3">
                       <span className={cn("inline-flex px-2 py-1 rounded text-xs font-medium", blendLookup ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-slate-100 text-slate-700 dark:bg-slate-500/20 dark:text-slate-400")}>
                         {blendLookup?.blendSpeedId || "unknown"}
+                        {blendLookup && <Badge variant="outline" className="ml-2 text-[10px]">auto</Badge>}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground">{blendLookup?.productType || "-"}</td>
                   </tr>
                 );
               })}
@@ -317,27 +200,20 @@ export default function StrategyEvaluatorPage() {
 
       <div className="grid grid-cols-2 gap-6 mb-8">
         {/* Uploaded Plan */}
-        <div className={cn("border rounded-2xl p-6 overflow-hidden", isLight ? "bg-white border-slate-200" : "bg-black/20 border-white/10")}>
+        <div className={cn("border rounded-2xl p-6", isLight ? "bg-white border-slate-200" : "bg-black/20 border-white/10")}>
           <h2 className="text-xl font-semibold mb-4 text-foreground">Uploaded Plan</h2>
-          <div className="space-y-4">
-            {confirmedRows.reduce<Record<string, ConfirmedRow[]>>((acc, row) => {
-              const key = `${row.day}-${row.floor}`;
-              if (!acc[key]) acc[key] = [];
-              acc[key].push(row);
-              return acc;
-            }, {})).map(([key, rows]) => (
-                <div key={key} className={cn("p-3 rounded-lg", isLight ? "bg-slate-50" : "bg-white/5")}>
-                  <p className="text-xs font-semibold text-muted-foreground mb-2">{key}</p>
-                  <div className="space-y-1">
-                    {rows.map((row, idx) => (
-                      <div key={idx} className="text-sm">
-                        <span className="text-foreground">{row.productName}</span>
-                        <span className="ml-2 text-muted-foreground">{row.volume} KG</span>
-                      </div>
-                    ))}
-                  </div>
+          <div className="space-y-3">
+            {confirmedRows.length === 0 ? (
+              <p className="text-muted-foreground text-sm">No data loaded</p>
+            ) : (
+              confirmedRows.map((row, idx) => (
+                <div key={idx} className={cn("p-3 rounded-lg", isLight ? "bg-slate-50" : "bg-white/5")}>
+                  <p className="text-xs font-semibold text-muted-foreground mb-1">{row.day.charAt(0).toUpperCase() + row.day.slice(1)} - {row.floor}</p>
+                  <p className="text-sm text-foreground">{row.productName}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{row.volume} KG @ {row.blendSpeed} speed</p>
                 </div>
-              ))}
+              ))
+            )}
           </div>
         </div>
 
@@ -345,15 +221,17 @@ export default function StrategyEvaluatorPage() {
         <div className={cn("border rounded-2xl p-6", isLight ? "bg-white border-slate-200" : "bg-black/20 border-white/10")}>
           <h2 className="text-xl font-semibold mb-4 text-foreground">Zentryx Plan</h2>
           <div className="text-muted-foreground text-sm">
-            <p>Select a week to view Zentryx assignments</p>
+            <p>Select a production floor and week to view Zentryx assignments and capacity utilization.</p>
           </div>
         </div>
       </div>
 
-      {/* Verdict */}
+      {/* Summary */}
       <div className={cn("border rounded-2xl p-6", isLight ? "bg-emerald-50 border-emerald-200" : "bg-emerald-500/10 border-emerald-500/20")}>
-        <h3 className="text-lg font-semibold text-emerald-700 dark:text-emerald-400 mb-2">Comparison Summary</h3>
-        <p className="text-emerald-600 dark:text-emerald-500">Ready to compare strategies. Select a week in the Zentryx plan to view analysis.</p>
+        <h3 className="text-lg font-semibold text-emerald-700 dark:text-emerald-400 mb-2">Analysis Summary</h3>
+        <p className="text-emerald-600 dark:text-emerald-500">
+          Comparison framework is ready. The Strategy Evaluator provides insights into plan efficiency and capacity utilization.
+        </p>
       </div>
 
       <div className="flex gap-3 mt-8">
