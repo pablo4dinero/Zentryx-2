@@ -17,6 +17,7 @@ import {
 import { eq, desc, inArray, gte, lte, and } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "../lib/auth";
 import { logActivity } from "../lib/activity";
+import { callModel, SONNET_MODEL } from "../oracle/claude";
 
 const router = Router();
 
@@ -1306,8 +1307,6 @@ router.post("/strategy-insight", requireAuth, async (req: AuthRequest, res) => {
       res.status(400).json({ error: "Missing required fields" });
       return;
     }
-
-    const { callModel, SONNET_MODEL } = await import("../../oracle/claude");
 
     const systemPrompt = `You are a production efficiency analyst. Given two weekly production plans, identify which is more efficient for total KG output with less downtime. Be specific: cite floors, product switches, and KG differences. Respond in 2-3 sentences maximum.`;
 
