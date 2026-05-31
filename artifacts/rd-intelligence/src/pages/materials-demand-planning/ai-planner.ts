@@ -154,6 +154,7 @@ function microbialBufferDays(microbial: string): number {
 //      doesn't silently accept Seasoning just because nobody filled the list.
 //   3. Mixed categories ("Sweet/Savory", "Savory/Sweet") and unknown values
 //      accept anything in the fallback.
+//   4. Special case: Floor 3 can accept Curry and Breading (but see scheduling logic).
 function isFloorEligible(floor: Floor, orderProductType: string | null): boolean {
   const allowed = floor.allowedProductTypes ?? [];
   if (allowed.length > 0) {
@@ -163,6 +164,12 @@ function isFloorEligible(floor: Floor, orderProductType: string | null): boolean
   }
   if (!orderProductType) return true;
   const t = normalizeType(orderProductType);
+
+  // Floor 3 special case: allow Curry and Breading
+  if (floor.floorName === "Floor 3" && (t.includes("curry") || t.includes("breading"))) {
+    return true;
+  }
+
   const cat = String(floor.blendCategory ?? "").trim().toLowerCase();
   const isSavoryProduct = t.includes("seasoning") || t.includes("savoury") || t.includes("savory");
   const isSweetProduct  = t.includes("dairy") || t.includes("bakery") || t.includes("bread") || t.includes("sweet");
@@ -325,6 +332,30 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
 
   for (const order of sortedOrders) {
     if (order.remainingQuantity <= 0) continue;
+
+    // Special handling for Curry and Breading: only assign when no more Floor 3 production orders remain
+    const isCurryOrBreading = (type: string | null) => {
+      if (!type) return false;
+      const norm = normalizeType(type);
+      return norm.includes("curry") || norm.includes("breading");
+    };
+
+    if (isCurryOrBreading(order.productType)) {
+      const floor3 = floors.find(f => f.floorName === "Floor 3");
+      if (floor3) {
+        // Check if there are any other non-Curry/Breading orders with remaining quantity that could go to Floor 3
+        const hasOtherFloor3Orders = sortedOrders.some(o =>
+          o.remainingQuantity > 0 &&
+          o.id !== order.id &&
+          !isCurryOrBreading(o.productType) &&
+          isFloorEligible(floor3, o.productType)
+        );
+        if (hasOtherFloor3Orders) {
+          // Skip this Curry/Breading order for now; it will be picked up later
+          continue;
+        }
+      }
+    }
 
     const candidates = floors.filter(f => isFloorEligible(f, order.productType));
     if (candidates.length === 0) {
