@@ -117,7 +117,19 @@ export default function StrategyEvaluatorTab() {
     },
   });
 
-  // Fetch floor assignments for Zentryx plan
+  // Fetch ALL floor assignments to get available weeks (always enabled)
+  const allAssignmentsQuery = useQuery({
+    queryKey: ["/api/mdp/floor-assignments/all"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}api/mdp/floor-assignments`, {
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error("Failed to fetch assignments");
+      return res.json() as Promise<any[]>;
+    },
+  });
+
+  // Fetch floor assignments filtered by selected week for detailed view
   const assignmentsQuery = useQuery({
     queryKey: ["/api/mdp/floor-assignments", selectedZentryxWeek],
     queryFn: async () => {
@@ -144,14 +156,14 @@ export default function StrategyEvaluatorTab() {
     setCustomProductTypes(productTypesQuery.data || []);
   }, [productTypesQuery.data]);
 
-  // Get unique weeks from assignments
+  // Get unique weeks from all assignments
   const allWeeks = useMemo(() => {
     const weeks = new Set<string>();
-    assignmentsQuery.data?.forEach((row: any) => {
+    allAssignmentsQuery.data?.forEach((row: any) => {
       if (row.assignment?.weekLabel) weeks.add(row.assignment.weekLabel);
     });
     return Array.from(weeks).sort();
-  }, [assignmentsQuery.data]);
+  }, [allAssignmentsQuery.data]);
 
   // Auto-select first week if available
   React.useEffect(() => {
