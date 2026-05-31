@@ -1046,9 +1046,12 @@ router.post("/parse-plan-document", requireAuth, async (req: AuthRequest, res) =
     }
 
     console.log("Extracted text length:", extractedText.length);
-    console.log("First 500 chars:", extractedText.substring(0, 500));
+    console.log("First 1000 chars:", extractedText.substring(0, 1000));
     const days = parseProductionPlan(extractedText, DEFAULT_FLOORS);
     console.log("Parsed days:", days.length);
+    days.forEach((day, i) => {
+      console.log(`Day ${i}: ${day.dayName}, Floors: ${day.floors.map(f => f.floorName + " (" + f.products.length + " products)").join(", ")}`);
+    });
     res.json({ days });
   } catch (err) {
     console.error(err);
