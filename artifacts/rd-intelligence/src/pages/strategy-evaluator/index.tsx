@@ -376,25 +376,23 @@ export default function StrategyEvaluatorTab() {
     );
   }
 
-  // Convert parsed days to table rows for Step 2
-  const tableRows = useMemo(() => {
-    const rows: Array<ParsedDay & { floorName: string; productName: string; volume: number }> = [];
+  if (step === 2) {
+    // Compute table rows inline
+    const tableRows: Array<any> = [];
     parsedDays.forEach((day) => {
       day.floors.forEach((floor) => {
         floor.products.forEach((product) => {
-          rows.push({
-            ...day,
+          tableRows.push({
+            dayName: day.dayName,
+            date: day.date,
+            isWeekend: day.isWeekend,
             floorName: floor.floorName,
             productName: product.name,
             volume: product.volume,
-          } as any);
+          });
         });
       });
     });
-    return rows;
-  }, [parsedDays]);
-
-  if (step === 2) {
     return (
       <div className="space-y-6">
         <div>
