@@ -1351,7 +1351,7 @@ function ProductionOrdersTab() {
   );
 }
 
-type PlanningViewMode = "weekly" | "daily";
+type PlanningViewMode = "weekly" | "daily" | "monthly";
 
 // Standalone hex/rgb CSS for the print template — used in html2canvas onclone to
 // replace Tailwind v4's oklch-based stylesheets (which html2canvas 1.4.1 cannot parse).
@@ -1574,6 +1574,11 @@ function ProductionPlanningTab() {
   const [includeSaturday, setIncludeSaturday] = React.useState(false);
   const [includeNightShift, setIncludeNightShift] = React.useState(false);
   const [planningView, setPlanningView] = React.useState<PlanningViewMode>("weekly");
+  const [selectedMonthView, setSelectedMonthView] = React.useState(() => {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [expandedWeeks, setExpandedWeeks] = React.useState<Set<string>>(new Set());
   const [assistedState, setAssistedState] = React.useState<"idle" | "optimizing" | "done">("idle");
   const [printOpen, setPrintOpen] = React.useState(false);
   const [isPdfGenerating, setIsPdfGenerating] = React.useState(false);
@@ -1671,6 +1676,18 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     () => weeks.find(w => w.weekLabel === selectedWeekLabel) ?? null,
     [weeks, selectedWeekLabel]
   );
+
+  const monthViewWeeks = React.useMemo(() => {
+    const [yr, mo] = selectedMonthView.split("-").map(Number);
+    const monthStart = new Date(yr, mo - 1, 1);
+    const monthEnd = new Date(yr, mo, 0);
+    return weeks.filter(week => {
+      const weekStart = new Date(week.startDate);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+      return weekStart <= monthEnd && weekEnd >= monthStart;
+    }).sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+  }, [weeks, selectedMonthView]);
 
   React.useEffect(() => {
     if (!selectedWeekLabel && defaultWeekLabel) {
@@ -2365,10 +2382,12 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     draggedSnapshot: DragSnapshot;
     productLabel: string;
     allowedLabels: string;
+    weekLabelOverride?: string;
   } | null>(null);
 
-  const proceedWithDrop = async (floor: ProductionFloor, order: ProductionOrder, day: string | undefined, draggedSnap: DragSnapshot) => {
+  const proceedWithDrop = async (floor: ProductionFloor, order: ProductionOrder, day: string | undefined, draggedSnap: DragSnapshot, weekLabelOverride?: string) => {
     setConfirmDrop(null);
+    const weekLabelToUse = weekLabelOverride ?? selectedWeekLabel;
     if (draggedSnap.type === "planned") {
       openPartialAssignModal(floor, order, day);
       return;
@@ -2381,7 +2400,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
         const targetDay = day ?? getAvailableDay(floor, assignmentsByFloor.get(floor.id) ?? [], Number(originalVol ?? order.volume ?? 0));
         await createAssignmentMutation.mutateAsync({
           floorId: floor.id, productionOrderId: order.id,
-          weekLabel: selectedWeekLabel, assignedDay: targetDay, planStatus: "Planned",
+          weekLabel: weekLabelToUse, assignedDay: targetDay, planStatus: "Planned",
           ...(originalVol != null ? { assignedVolume: Number(originalVol) } : {}),
         });
       }
@@ -2464,7 +2483,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     });
   };
 
-  const handleDropOnFloorDay = async (floor: ProductionFloor, day: string, event: React.DragEvent) => {
+  const handleDropOnFloorDay = async (floor: ProductionFloor, day: string, event: React.DragEvent, weekLabelOverride?: string) => {
     event.preventDefault();
     setDragOverFloorId(null);
     if (!dragged) return;
@@ -2478,10 +2497,11 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
         draggedSnapshot: { ...dragged },
         productLabel: mismatch.productLabel,
         allowedLabels: mismatch.allowedLabels,
+        weekLabelOverride,
       });
       return;
     }
-    await proceedWithDrop(floor, plannedOrder, day, dragged);
+    await proceedWithDrop(floor, plannedOrder, day, dragged, weekLabelOverride);
   };
 
   const [aiSummary, setAiSummary] = React.useState<PlanningSummary | null>(null);
@@ -2749,21 +2769,52 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       <style>{printStyles}</style>
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div className="space-y-2">
-          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide" htmlFor="week-selector">Choose a week</label>
-          <select
-            id="week-selector"
-            value={selectedWeekLabel}
-            onChange={(event) => setSelectedWeekLabel(event.target.value)}
-            className={cn("h-10 rounded-xl border px-4 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 cursor-pointer",
-              isLight ? "border-slate-200 bg-white text-slate-700" : "border-white/10 bg-black/20 text-foreground"
-            )}
-          >
-            {weeks.map((week) => (
-              <option key={week.weekLabel} value={week.weekLabel}>
-                {week.weekLabel}
-              </option>
-            ))}
-          </select>
+          {planningView === "monthly" ? (
+            <>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide" htmlFor="month-selector-plan">Choose a month</label>
+              <select
+                id="month-selector-plan"
+                value={selectedMonthView}
+                onChange={(event) => setSelectedMonthView(event.target.value)}
+                className={cn("h-10 rounded-xl border px-4 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 cursor-pointer",
+                  isLight ? "border-slate-200 bg-white text-slate-700" : "border-white/10 bg-black/20 text-foreground"
+                )}
+              >
+                {(() => {
+                  const options = [];
+                  const now = new Date();
+                  for (let y = now.getFullYear() - 1; y <= now.getFullYear() + 1; y++) {
+                    for (let m = 1; m <= 12; m++) {
+                      const month = String(m).padStart(2, "0");
+                      const label = new Date(y, m - 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+                      options.push({ value: `${y}-${month}`, label });
+                    }
+                  }
+                  return options.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ));
+                })()}
+              </select>
+            </>
+          ) : (
+            <>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide" htmlFor="week-selector">Choose a week</label>
+              <select
+                id="week-selector"
+                value={selectedWeekLabel}
+                onChange={(event) => setSelectedWeekLabel(event.target.value)}
+                className={cn("h-10 rounded-xl border px-4 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 cursor-pointer",
+                  isLight ? "border-slate-200 bg-white text-slate-700" : "border-white/10 bg-black/20 text-foreground"
+                )}
+              >
+                {weeks.map((week) => (
+                  <option key={week.weekLabel} value={week.weekLabel}>
+                    {week.weekLabel}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {planningView === "weekly" && (
@@ -3109,6 +3160,138 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                             : <div className="space-y-2">{interleaveDowntimes(assignedRows, makeOrderCard(floor.id))}</div>
                           }
                         </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            }
+
+            /* ── MONTHLY VIEW: collapsible weeks ── */
+            if (planningView === "monthly") {
+              return (
+                <div className="space-y-4">
+                  {monthViewWeeks.map((week, weekIdx) => {
+                    const isExpanded = expandedWeeks.has(week.weekLabel);
+                    const toggleWeek = () => {
+                      const newSet = new Set(expandedWeeks);
+                      if (isExpanded) {
+                        newSet.delete(week.weekLabel);
+                      } else {
+                        newSet.add(week.weekLabel);
+                      }
+                      setExpandedWeeks(newSet);
+                    };
+
+                    return (
+                      <div key={week.weekLabel} className={cn("rounded-2xl border overflow-hidden", isLight ? "bg-white border-slate-200" : "bg-black/20 border-white/10")}>
+                        <button
+                          onClick={toggleWeek}
+                          className={cn("w-full px-4 py-3 flex items-center justify-between transition-colors",
+                            isLight ? "hover:bg-slate-50" : "hover:bg-white/5"
+                          )}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="font-semibold text-sm text-foreground">Week {weekIdx + 1} — {week.weekLabel}</span>
+                          </div>
+                          <ChevronDown className={cn("w-4 h-4 transition-transform", isExpanded && "rotate-180")} />
+                        </button>
+
+                        {isExpanded && (
+                          <div className={cn("px-4 pb-4 pt-1 border-t", isLight ? "bg-slate-50 border-slate-100" : "bg-black/30 border-white/5")}>
+                            {/* Render weekly grid for this week */}
+                            <div className="space-y-5">
+                              {weekDays.map((day, dayIndex) => {
+                                const dayDate = week.days?.[dayIndex];
+                                const dayFull = dayDate
+                                  ? dayDate.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })
+                                  : day;
+
+                                // Get assignments for this week and day
+                                const weekAssignments = (allAssignmentsQuery.data ?? []).filter(
+                                  a => a.assignment.weekLabel === week.weekLabel
+                                );
+
+                                const floorOrder = (floorId: number) => {
+                                  const assigned = weekAssignments.filter(a => a.assignment.floorId === floorId);
+                                  const planned = (plannedOrdersByFloor.get(floorId) || []).filter(
+                                    id => !assigned.some(a => a.order.id === id)
+                                  );
+                                  return {
+                                    assigned: assigned.map(a => ({ type: "assigned" as const, ...a })),
+                                    planned: planned.map(id => ({ type: "planned" as const, orderId: id })),
+                                  };
+                                };
+
+                                const totalDayKg = floors.reduce((sum, floor) => {
+                                  const rows = weekAssignments.filter(a => a.assignment.floorId === floor.id && a.assignment.assignedDay === day);
+                                  return sum + rows.reduce((s, r) => s + (r.assignment.assignedVolume != null ? Number(r.assignment.assignedVolume) : Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0)), 0);
+                                }, 0);
+
+                                return (
+                                  <div key={day}>
+                                    <div className="flex items-center gap-3 mb-3">
+                                      <div className={cn("h-px flex-none w-2", isLight ? "bg-slate-300" : "bg-white/20")} />
+                                      <div className="flex items-center gap-2 shrink-0">
+                                        <span className={cn("text-xs font-bold uppercase tracking-widest", isLight ? "text-slate-700" : "text-foreground")}>{dayFull}</span>
+                                        {totalDayKg > 0 && (
+                                          <span className={cn("text-[10px] px-2 py-0.5 rounded-full border font-semibold",
+                                            isLight ? "border-slate-200 text-slate-500 bg-slate-50" : "border-white/10 text-muted-foreground bg-white/5"
+                                          )}>{totalDayKg.toLocaleString()} KG total</span>
+                                        )}
+                                      </div>
+                                      <div className={cn("h-px flex-1", isLight ? "bg-slate-200" : "bg-white/10")} />
+                                    </div>
+
+                                    <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${floors.length}, minmax(0, 1fr))` }}>
+                                      {floors.map(floor => {
+                                        const dayRows = weekAssignments.filter(r => r.assignment.floorId === floor.id && r.assignment.assignedDay === day);
+                                        const dayKg = dayRows.reduce((s, r) => s + (r.assignment.assignedVolume != null ? Number(r.assignment.assignedVolume) : Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0)), 0);
+                                        const dayUtil = Math.min(100, Math.round((dayKg / (floor.maxCapacityKg || 1)) * 100));
+                                        const utilBar = dayUtil > 90 ? "bg-red-500" : dayUtil > 70 ? "bg-amber-500" : "bg-emerald-500";
+
+                                        return (
+                                          <div key={floor.id}
+                                            className={cn("relative rounded-2xl border flex flex-col transition-colors",
+                                              dragOverFloorId === floor.id ? "border-primary/50 bg-primary/5" : isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5"
+                                            )}
+                                            onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOverFloorId(floor.id); }}
+                                            onDragLeave={() => setDragOverFloorId(c => c === floor.id ? null : c)}
+                                            onDrop={e => { e.stopPropagation(); handleDropOnFloorDay(floor, day, e, week.weekLabel); }}
+                                          >
+                                            <div className={cn("px-4 py-3 border-b rounded-t-2xl", isLight ? "bg-slate-100 border-slate-100" : "bg-black/40 border-white/5")}>
+                                              <div className="flex items-start justify-between gap-2">
+                                                <div className="min-w-0">
+                                                  <p className="text-sm font-bold text-foreground">{floor.floorName}</p>
+                                                  <p className="text-xs text-muted-foreground">{floor.blendCategory}</p>
+                                                </div>
+                                                <div className="text-right text-xs text-muted-foreground">
+                                                  <div className="font-medium">{(floor.maxCapacityKg - dayKg).toLocaleString()} KG left</div>
+                                                  <div className={cn("mt-1 h-1.5 w-16 overflow-hidden rounded-full", isLight ? "bg-slate-200" : "bg-white/10")}>
+                                                    <div className={`${utilBar} h-full transition-all`} style={{ width: `${dayUtil}%` }} />
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            </div>
+
+                                            <div className={cn("flex-1 px-3 py-2 min-h-[80px]",
+                                              isLight ? "bg-white" : "bg-black/20"
+                                            )}>
+                                              {dayRows.length === 0
+                                                ? <div className="flex h-full items-center justify-center text-xs text-muted-foreground/60">Drag to assign</div>
+                                                : <div className="space-y-1.5">{dayRows.map(row => makeOrderCard(floor.id)(row))}</div>
+                                              }
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -3614,7 +3797,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                   Cancel
                 </button>
                 <button
-                  onClick={() => proceedWithDrop(confirmDrop.floor, confirmDrop.order, confirmDrop.day, confirmDrop.draggedSnapshot)}
+                  onClick={() => proceedWithDrop(confirmDrop.floor, confirmDrop.order, confirmDrop.day, confirmDrop.draggedSnapshot, confirmDrop.weekLabelOverride)}
                   className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-sm font-semibold transition-colors"
                 >
                   Continue anyway
