@@ -173,6 +173,60 @@ export default function StrategyEvaluatorTab() {
     return map;
   }, [ordersQuery.data]);
 
+  // Organize confirmed products by day and floor
+  const uploadedPlanByDay = useMemo(() => {
+    const dayMap = new Map<string, { date: string; isWeekend: boolean; floors: Map<string, { volume: number; productCount: number }> }>();
+    confirmedProducts.forEach((product) => {
+      if (!dayMap.has(product.dayName)) {
+        dayMap.set(product.dayName, {
+          date: product.date,
+          isWeekend: product.isWeekend,
+          floors: new Map(),
+        });
+      }
+      const dayData = dayMap.get(product.dayName)!;
+      const floorName = product.floorName;
+      if (!dayData.floors.has(floorName)) {
+        dayData.floors.set(floorName, { volume: 0, productCount: 0 });
+      }
+      const floorData = dayData.floors.get(floorName)!;
+      floorData.volume += product.volume;
+      floorData.productCount += 1;
+    });
+    return dayMap;
+  }, [confirmedProducts]);
+
+  // Organize Zentryx assignments by day and shift
+  const zentryxPlanByDay = useMemo(() => {
+    const dayMap = new Map<string, {
+      shifts: Map<string, { floors: Map<string, { volume: number; productCount: number }> }>
+    }>();
+    assignmentsQuery.data?.forEach((row: any) => {
+      if (row.assignment?.weekLabel === selectedZentryxWeek) {
+        const dayName = row.assignment.assignedDay || "Unknown";
+        const shift = row.assignment.assignedShift || "Day";
+        const floorName = row.floor?.floorName || "Unknown";
+        const volume = Number(row.assignment.assignedVolume || 0);
+
+        if (!dayMap.has(dayName)) {
+          dayMap.set(dayName, { shifts: new Map() });
+        }
+        const dayData = dayMap.get(dayName)!;
+        if (!dayData.shifts.has(shift)) {
+          dayData.shifts.set(shift, { floors: new Map() });
+        }
+        const shiftData = dayData.shifts.get(shift)!;
+        if (!shiftData.floors.has(floorName)) {
+          shiftData.floors.set(floorName, { volume: 0, productCount: 0 });
+        }
+        const floorData = shiftData.floors.get(floorName)!;
+        floorData.volume += volume;
+        floorData.productCount += 1;
+      }
+    });
+    return dayMap;
+  }, [assignmentsQuery.data, selectedZentryxWeek]);
+
   const handleFileUpload = useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
@@ -632,60 +686,6 @@ export default function StrategyEvaluatorTab() {
       </div>
     );
   }
-
-  // Organize confirmed products by day and floor
-  const uploadedPlanByDay = useMemo(() => {
-    const dayMap = new Map<string, { date: string; isWeekend: boolean; floors: Map<string, { volume: number; productCount: number }> }>();
-    confirmedProducts.forEach((product) => {
-      if (!dayMap.has(product.dayName)) {
-        dayMap.set(product.dayName, {
-          date: product.date,
-          isWeekend: product.isWeekend,
-          floors: new Map(),
-        });
-      }
-      const dayData = dayMap.get(product.dayName)!;
-      const floorName = product.floorName;
-      if (!dayData.floors.has(floorName)) {
-        dayData.floors.set(floorName, { volume: 0, productCount: 0 });
-      }
-      const floorData = dayData.floors.get(floorName)!;
-      floorData.volume += product.volume;
-      floorData.productCount += 1;
-    });
-    return dayMap;
-  }, [confirmedProducts]);
-
-  // Organize Zentryx assignments by day and shift
-  const zentryxPlanByDay = useMemo(() => {
-    const dayMap = new Map<string, {
-      shifts: Map<string, { floors: Map<string, { volume: number; productCount: number }> }>
-    }>();
-    assignmentsQuery.data?.forEach((row: any) => {
-      if (row.assignment?.weekLabel === selectedZentryxWeek) {
-        const dayName = row.assignment.assignedDay || "Unknown";
-        const shift = row.assignment.assignedShift || "Day";
-        const floorName = row.floor?.floorName || "Unknown";
-        const volume = Number(row.assignment.assignedVolume || 0);
-
-        if (!dayMap.has(dayName)) {
-          dayMap.set(dayName, { shifts: new Map() });
-        }
-        const dayData = dayMap.get(dayName)!;
-        if (!dayData.shifts.has(shift)) {
-          dayData.shifts.set(shift, { floors: new Map() });
-        }
-        const shiftData = dayData.shifts.get(shift)!;
-        if (!shiftData.floors.has(floorName)) {
-          shiftData.floors.set(floorName, { volume: 0, productCount: 0 });
-        }
-        const floorData = shiftData.floors.get(floorName)!;
-        floorData.volume += volume;
-        floorData.productCount += 1;
-      }
-    });
-    return dayMap;
-  }, [assignmentsQuery.data, selectedZentryxWeek]);
 
   return (
     <div className="space-y-6">
