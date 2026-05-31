@@ -1021,79 +1021,87 @@ router.post("/parse-plan-document", requireAuth, async (req: AuthRequest, res) =
 function parseProductionPlan(text: string): ParsedDay[] {
   const lines = text.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
   const days: ParsedDay[] = [];
-  let currentDay: ParsedDay | null = null;
-  let currentFloor: { floorName: string; products: { name: string; volume: number }[] } | null = null;
 
   const floorMapping: Record<string, string> = {
-    "MAIN PRODUCTION FLOOR": "Floor 1",
     "MAIN PRODUCTION": "Floor 1",
+    "MAIN PRODUCTION FLOOR": "Floor 1",
     "SECOND LINE": "Floor 2",
     "2ND LINE": "Floor 2",
+    "NEW PRODUCTION": "Floor 3",
     "NEW PRODUCTION FLOOR": "Floor 3",
     "NEW FLOOR": "Floor 3",
   };
 
   const dayPattern = /^(MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY)\s+(\d{1,2}\/\d{1,2}\/\d{4})/i;
-  const volumePattern = /(\d+(?:[.,]\d+)?)\s*(ton|tons|kg|kilograms?)\b/i;
+  const volumePattern = /^(\d+(?:[.,]\d+)?)\s*(ton|tons|kg|kilograms?)\s*$/i;
+
+  let currentDay: ParsedDay | null = null;
+  let currentFloor: string = "";
+  let pendingProducts: string[] = [];
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    // Check for day pattern at start of line
-    const dayMatch = line.match(dayPattern);
-    if (dayMatch) {
-      const dayName = dayMatch[1].toUpperCase();
-      const date = dayMatch[2];
-      const isWeekend = dayName === "SATURDAY" || dayName === "SUNDAY";
-      if (currentDay) days.push(currentDay);
-      currentDay = { dayName, date, isWeekend, floors: [] };
-      currentFloor = null;
+    // Skip header and status lines
+    if (/^(PRODUCTION DAYS|PRODUCTS DESCRIPTION|REQUIRED QUANTITIES|ORDER STATUS|NEW ORDER)$/i.test(line)) {
       continue;
     }
 
-    // Check for floor pattern - case insensitive, more flexible
-    let isFloor = false;
+    // Check for day pattern
+    const dayMatch = line.match(dayPattern);
+    if (dayMatch) {
+      if (currentDay) days.push(currentDay);
+      const dayName = dayMatch[1].toUpperCase();
+      const date = dayMatch[2];
+      const isWeekend = dayName === "SATURDAY" || dayName === "SUNDAY";
+      currentDay = { dayName, date, isWeekend, floors: [] };
+      currentFloor = "";
+      pendingProducts = [];
+      continue;
+    }
+
+    // Check for floor pattern
+    let foundFloor = false;
     for (const [floorKey, floorName] of Object.entries(floorMapping)) {
       if (line.toUpperCase().includes(floorKey.toUpperCase())) {
-        currentFloor = { floorName, products: [] };
-        if (currentDay) currentDay.floors.push(currentFloor);
-        isFloor = true;
+        currentFloor = floorName;
+        foundFloor = true;
         break;
       }
     }
-    if (isFloor) continue;
+    if (foundFloor) {
+      pendingProducts = [];
+      continue;
+    }
 
-    // Look for volume pattern in line
+    // Check if line is a volume
     const volumeMatch = line.match(volumePattern);
-    if (volumeMatch && currentDay) {
+    if (volumeMatch) {
       let volume = parseFloat(volumeMatch[1].replace(",", "."));
       const unit = volumeMatch[2].toLowerCase();
       if (unit.includes("ton")) volume *= 1000;
 
-      // Extract product name by removing volume and status info
-      let productName = line
-        .replace(volumeMatch[0], "")
-        .replace(/\b(NEW ORDER|ORDER STATUS|STATUS|—|PENDING|ORDERED)\b/i, "")
-        .trim();
-
-      // If no floor assigned yet, assign to current floor or create one
-      if (!currentFloor && currentDay) {
-        currentFloor = { floorName: "Unknown Floor", products: [] };
-        currentDay.floors.push(currentFloor);
-      }
-
-      if (productName && productName.length > 1 && currentFloor) {
-        // Avoid duplicates and empty names
-        if (!currentFloor.products.find((p) => p.name.toLowerCase() === productName.toLowerCase())) {
-          currentFloor.products.push({ name: productName, volume });
+      // Match with pending product
+      if (pendingProducts.length > 0 && currentDay && currentFloor) {
+        const productName = pendingProducts.shift()!;
+        let floor = currentDay.floors.find((f) => f.floorName === currentFloor);
+        if (!floor) {
+          floor = { floorName: currentFloor, products: [] };
+          currentDay.floors.push(floor);
         }
+        floor.products.push({ name: productName, volume });
       }
+      continue;
+    }
+
+    // Otherwise, treat as product name (if it's not empty and reasonable length)
+    if (line.length > 2 && !line.toUpperCase().includes("FLOOR")) {
+      pendingProducts.push(line);
     }
   }
 
   if (currentDay) days.push(currentDay);
 
-  // Filter out empty days
   return days.filter((d) => d.floors.some((f) => f.products.length > 0));
 }
 
