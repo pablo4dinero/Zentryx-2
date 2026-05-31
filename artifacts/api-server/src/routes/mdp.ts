@@ -996,20 +996,7 @@ function detectProductType(productName: string, productOrders: any[]): string {
   const cleanName = (productName || "").toLowerCase().trim();
   if (!cleanName) return "Unknown";
 
-  // Step 1: Try exact match with database products
-  const exactMatch = productOrders.find((order: any) =>
-    order.productName?.toLowerCase() === cleanName
-  );
-  if (exactMatch?.productType) return exactMatch.productType;
-
-  // Step 2: Try fuzzy match (contains) with database products
-  const fuzzyMatch = productOrders.find((order: any) =>
-    cleanName.includes(order.productName?.toLowerCase() || "") ||
-    order.productName?.toLowerCase().includes(cleanName)
-  );
-  if (fuzzyMatch?.productType) return fuzzyMatch.productType;
-
-  // Step 3: Use keyword analysis for type inference
+  // Step 1: Use keyword analysis FIRST (highest priority for accuracy)
   const keywordMap: Record<string, string[]> = {
     "Dairy Premix": ["gelato", "ice cream", "dairy", "milk", "cream", "cheese", "butter", "strawberry", "chocolate", "ic"],
     "Breading": ["breading"],
@@ -1032,11 +1019,25 @@ function detectProductType(productName: string, productOrders: any[]): string {
     }
   }
 
+  // Check built-in keyword map
   for (const [type, keywords] of Object.entries(keywordMap)) {
     if (keywords.some(keyword => cleanName.includes(keyword))) {
       return type;
     }
   }
+
+  // Step 2: Try exact match with database products (fallback only)
+  const exactMatch = productOrders.find((order: any) =>
+    order.productName?.toLowerCase() === cleanName
+  );
+  if (exactMatch?.productType) return exactMatch.productType;
+
+  // Step 3: Try fuzzy match (contains) with database products (fallback only)
+  const fuzzyMatch = productOrders.find((order: any) =>
+    cleanName.includes(order.productName?.toLowerCase() || "") ||
+    order.productName?.toLowerCase().includes(cleanName)
+  );
+  if (fuzzyMatch?.productType) return fuzzyMatch.productType;
 
   // Step 4: Default to Unknown if no match found
   return "Unknown";
