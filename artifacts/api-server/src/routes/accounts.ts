@@ -20,6 +20,7 @@ function isPrivileged(role: string | null | undefined): boolean {
   if (r === "admin") return true;
   if (r === "executive") return true;
   if (r === "manager") return true;
+  if (r === "operations_team") return true;
   // Legacy aliases — kept temporarily for migration-safety
   if (r === "ceo") return true;
   if (r === "managing_director") return true;
