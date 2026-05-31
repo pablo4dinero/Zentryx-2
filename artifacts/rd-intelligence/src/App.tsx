@@ -22,7 +22,6 @@ import WeeklyActivities from "@/pages/weekly-activities";
 import SalesForce from "@/pages/sales-force";
 import AccountDetail from "@/pages/sales-force/[id]";
 import MaterialsDemandPlanning from "@/pages/materials-demand-planning";
-import StrategyEvaluator from "@/pages/strategy-evaluator";
 import Procurement from "@/pages/procurement";
 import NewsFeed from "@/pages/news-feed";
 import OraclePage from "@/pages/oracle";
@@ -61,7 +60,6 @@ function Router() {
       <Route path="/sales-force" component={() => <ProtectedRoute component={SalesForce} />} />
       <Route path="/sales-force/:id" component={() => <ProtectedRoute component={AccountDetail} />} />
       <Route path="/materials-demand-planning" component={() => <ProtectedRoute component={MaterialsDemandPlanning} />} />
-      <Route path="/strategy-evaluator" component={() => <ProtectedRoute component={StrategyEvaluator} />} />
       <Route path="/procurement" component={() => <ProtectedRoute component={Procurement} />} />
       <Route path="/news-feed" component={() => <ProtectedRoute component={NewsFeed} />} />
       <Route path="/oracle" component={() => <ProtectedRoute component={OraclePage} />} />

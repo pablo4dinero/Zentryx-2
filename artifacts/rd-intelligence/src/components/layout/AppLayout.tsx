@@ -33,7 +33,6 @@ const ALL_NAV_ITEMS = [
   { href: "/business-dev", label: "Business Development", icon: Briefcase },
   { href: "/sales-force", label: "Sales Force", icon: TrendingUp },
   { href: "/materials-demand-planning", label: "Materials & Demand Planning", icon: Package },
-  { href: "/strategy-evaluator", label: "Strategy Evaluator", icon: BarChart2 },
   { href: "/procurement", label: "Procurement", icon: ShoppingCart },
   { href: "/team", label: "Team Directory", icon: Users },
   { href: "/events", label: "Events", icon: CalendarDays },

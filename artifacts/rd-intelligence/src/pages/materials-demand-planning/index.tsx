@@ -1,5 +1,6 @@
 import * as React from "react";
 import SalesForecastPage from "@/pages/sales-force/Forecast";
+import StrategyEvaluatorTab from "@/pages/strategy-evaluator";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { useQuery, useMutation, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
@@ -5568,6 +5569,7 @@ function MaterialsDemandPlanningPage() {
     { value: "customer-products", label: "Customer Products" },
     { value: "production-orders", label: "Production Orders" },
     { value: "monthly-orders", label: "Monthly Orders" },
+    { value: "strategy-evaluator", label: "Strategy Evaluator" },
     { value: "production-planning", label: "Production Planning" },
     { value: "production-history", label: "Production History" },
     { value: "forecast", label: "Forecast" },
@@ -5997,6 +5999,8 @@ function MaterialsDemandPlanningPage() {
           {activeTab === "production-orders" && <ProductionOrdersTab />}
 
           {activeTab === "monthly-orders" && <MonthlyOrdersTab />}
+
+          {activeTab === "strategy-evaluator" && <StrategyEvaluatorTab />}
 
           {activeTab === "production-planning" && <ProductionPlanningTab />}
 

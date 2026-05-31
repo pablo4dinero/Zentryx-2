@@ -1,30 +1,36 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Upload, Download, Settings, BarChart3, CheckCircle2, ChevronDown } from "lucide-react";
+import { Upload, AlertTriangle, ChevronDown, Loader2, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
 import { useToast } from "@/hooks/use-toast";
 
 const BASE = import.meta.env.BASE_URL;
 
-interface DayProduction {
-  day: string;
+interface ParsedDay {
+  dayName: string;
   date: string;
-  floors: FloorAssignment[];
-  totalVolume: number;
+  isWeekend: boolean;
+  floors: { floorName: string; products: { name: string; volume: number }[] }[];
 }
 
-interface FloorAssignment {
-  floorId: number;
+interface ConfirmedProduct {
+  dayName: string;
+  date: string;
+  isWeekend: boolean;
   floorName: string;
-  shift: "Day" | "Night";
-  products: number;
+  productName: string;
   volume: number;
+  blendSpeed: "fast" | "medium" | "slow";
+  productType: string;
+  floorWarning: boolean;
 }
 
-interface WeekData {
-  weekLabel: string;
-  days: DayProduction[];
+interface DayProductionSummary {
+  dayName: string;
+  totalVolume: number;
+  floorBreakdowns: { floorName: string; volume: number; switchCount: number }[];
+  totalSwitches: number;
 }
 
 function authHeaders() {
@@ -36,116 +42,327 @@ function authHeaders() {
   return headers;
 }
 
-async function parseDocx(file: File): Promise<string> {
-  // For now, just accept the file - parsing will be enhanced later
-  return file.name;
+const FLOOR_RULES: Record<string, { allowed: string[]; maxVolume: number | null; minVolumeForType: Record<string, number> }> = {
+  "Floor 1": {
+    allowed: ["Seasoning", "Pasta Sauce", "Breading", "Savoury Flavour", "Marinade", "Spice Mix"],
+    maxVolume: null,
+    minVolumeForType: { "Savoury Flavour": 500, "Marinade": 500, "Spice Mix": 500 },
+  },
+  "Floor 2": {
+    allowed: [],
+    maxVolume: 400,
+    minVolumeForType: {},
+  },
+  "Floor 3": {
+    allowed: ["Dairy Premix", "Sweet Flavour", "Snack Dusting", "Dough Premix", "Bread Premix"],
+    maxVolume: null,
+    minVolumeForType: { "Sweet Flavour": 500 },
+  },
+};
+
+const CAPACITY = {
+  "Floor 1": { fast: 20900, medium: 12000, slow: 7500 },
+  "Floor 2": { fast: 400, medium: 400, slow: 400 },
+  "Floor 3": { fast: 7000, medium: 7000, slow: 7000 },
+};
+
+const SHIFT_HOURS = { day: 7.5, night: 6.5, saturday: 6.5 };
+
+function calcFloorOutput(floor: string, blendSpeed: string, shiftType: "day" | "night" | "saturday", switchCount: number): number {
+  const base = (CAPACITY as any)[floor]?.[blendSpeed] ?? 0;
+  if (switchCount === 0) return base;
+  const hours = SHIFT_HOURS[shiftType];
+  return (base / hours) * Math.max(0, hours - switchCount);
 }
 
-export default function StrategyEvaluatorPage() {
+function checkFloorCompatibility(floor: string, productType: string, volume: number): boolean {
+  const rule = FLOOR_RULES[floor];
+  if (!rule) return false;
+  if (rule.allowed.length > 0 && !rule.allowed.includes(productType)) return false;
+  if (rule.maxVolume && volume > rule.maxVolume) return false;
+  const minRequired = rule.minVolumeForType[productType];
+  if (minRequired && volume < minRequired) return false;
+  return true;
+}
+
+export default function StrategyEvaluatorTab() {
   const { theme } = useTheme();
   const { toast } = useToast();
   const isLight = theme === "light";
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [selectedWeek, setSelectedWeek] = useState("Week 1");
+  const [parsedDays, setParsedDays] = useState<ParsedDay[]>([]);
+  const [confirmedProducts, setConfirmedProducts] = useState<ConfirmedProduct[]>([]);
+  const [selectedZentryxWeek, setSelectedZentryxWeek] = useState<string>("");
+  const [aiInsight, setAiInsight] = useState<string>("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
-  // Fetch floor assignments for real data
-  const assignmentsQuery = useQuery({
-    queryKey: ["/api/mdp/floor-assignments"],
+  // Fetch production orders for blend speed lookup
+  const ordersQuery = useQuery({
+    queryKey: ["/api/mdp/production-orders"],
     queryFn: async () => {
-      const res = await fetch(`${BASE}api/mdp/floor-assignments`, { headers: authHeaders() });
+      const res = await fetch(`${BASE}api/mdp/production-orders`, { headers: authHeaders() });
+      if (!res.ok) throw new Error("Failed to fetch orders");
+      return res.json() as Promise<any[]>;
+    },
+  });
+
+  // Fetch floor assignments for Zentryx plan
+  const assignmentsQuery = useQuery({
+    queryKey: ["/api/mdp/floor-assignments", selectedZentryxWeek],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}api/mdp/floor-assignments${selectedZentryxWeek ? `?week=${selectedZentryxWeek}` : ""}`, {
+        headers: authHeaders(),
+      });
       if (!res.ok) throw new Error("Failed to fetch assignments");
       return res.json() as Promise<any[]>;
     },
+    enabled: !!selectedZentryxWeek,
   });
-
-  // Fetch production floors
-  const floorsQuery = useQuery({
-    queryKey: ["/api/mdp/production-floors"],
-    queryFn: async () => {
-      const res = await fetch(`${BASE}api/mdp/production-floors`, { headers: authHeaders() });
-      if (!res.ok) throw new Error("Failed to fetch floors");
-      return res.json() as Promise<any[]>;
-    },
-  });
-
-  const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    try {
-      if (file.name.endsWith(".docx")) {
-        const text = await parseDocx(file);
-        if (!text.trim()) {
-          toast({ title: "Empty document", description: "Please upload a document with content", variant: "destructive" });
-          return;
-        }
-        setStep(2);
-        toast({ title: "Document uploaded", description: "Ready to compare with Zentryx plan" });
-      } else {
-        toast({ title: "Unsupported format", description: "Please upload a DOCX file", variant: "destructive" });
-      }
-    } catch (err) {
-      console.error(err);
-      toast({ title: "Upload failed", description: "Could not parse document", variant: "destructive" });
-    }
-  }, [toast]);
 
   // Get unique weeks from assignments
-  const weeks = Array.from(new Set(assignmentsQuery.data?.map((a: any) => a.assignment?.weekLabel) || []))
-    .filter(Boolean)
-    .sort()
-    .slice(0, 4);
+  const allWeeks = useMemo(() => {
+    const weeks = new Set<string>();
+    assignmentsQuery.data?.forEach((row: any) => {
+      if (row.assignment?.weekLabel) weeks.add(row.assignment.weekLabel);
+    });
+    return Array.from(weeks).sort();
+  }, [assignmentsQuery.data]);
 
-  const weekKey = weeks[0] || "Week 1";
+  // Auto-select first week if available
+  React.useEffect(() => {
+    if (allWeeks.length > 0 && !selectedZentryxWeek) {
+      setSelectedZentryxWeek(allWeeks[0]);
+    }
+  }, [allWeeks, selectedZentryxWeek]);
 
-  // Group assignments by day for the selected week
-  const uploadedPlanDays: DayProduction[] = assignmentsQuery.data
-    ?.filter((a: any) => a.assignment?.weekLabel === weekKey)
-    .reduce((acc: DayProduction[], assignment: any) => {
-      const existing = acc.find((d) => d.day === assignment.assignment?.assignedDay);
-      const floor = floorsQuery.data?.find((f: any) => f.id === assignment.assignment?.floorId);
-
-      if (existing) {
-        existing.totalVolume += Number(assignment.assignment?.assignedVolume || assignment.order?.volume || 0);
-      } else {
-        acc.push({
-          day: assignment.assignment?.assignedDay || "Unknown",
-          date: "",
-          totalVolume: Number(assignment.assignment?.assignedVolume || assignment.order?.volume || 0),
-          floors: floor
-            ? [
-                {
-                  floorId: floor.id,
-                  floorName: floor.floorName,
-                  shift: assignment.assignment?.assignedDay?.includes("-NS") ? "Night" : "Day",
-                  products: 1,
-                  volume: Number(assignment.assignment?.assignedVolume || assignment.order?.volume || 0),
-                },
-              ]
-            : [],
+  // Build product lookup from orders
+  const productLookup = useMemo(() => {
+    const map = new Map<string, { blendSpeedId: string; productType: string }>();
+    ordersQuery.data?.forEach((order: any) => {
+      if (order.productName) {
+        map.set(order.productName.toLowerCase(), {
+          blendSpeedId: order.blendSpeedId || "medium",
+          productType: order.productType || "Unknown",
         });
       }
-      return acc;
-    }, []) || [];
+    });
+    return map;
+  }, [ordersQuery.data]);
+
+  const handleFileUpload = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      if (!file.name.endsWith(".docx") && !file.name.endsWith(".pdf")) {
+        toast({ title: "Unsupported format", description: "Please upload a DOCX or PDF file", variant: "destructive" });
+        return;
+      }
+
+      setUploading(true);
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const fileData = Buffer.from(arrayBuffer).toString("base64");
+
+        const res = await fetch(`${BASE}api/mdp/parse-plan-document`, {
+          method: "POST",
+          headers: { ...authHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({ fileData, fileName: file.name }),
+        });
+
+        if (!res.ok) throw new Error("Parse failed");
+        const { days } = await res.json();
+        setParsedDays(days);
+        toast({ title: "Document uploaded", description: "Proceeding to confirm details" });
+        setStep(2);
+      } catch (err) {
+        console.error(err);
+        toast({ title: "Upload failed", description: "Could not parse document", variant: "destructive" });
+      } finally {
+        setUploading(false);
+      }
+    },
+    [toast]
+  );
+
+  const handleConfirmProducts = useCallback(() => {
+    const products: ConfirmedProduct[] = [];
+    parsedDays.forEach((day) => {
+      day.floors.forEach((floor) => {
+        floor.products.forEach((product) => {
+          const lookup = productLookup.get(product.name.toLowerCase());
+          const blendSpeed = (lookup?.blendSpeedId || "medium") as "fast" | "medium" | "slow";
+          const productType = lookup?.productType || "Unknown";
+          const floorWarning = !checkFloorCompatibility(floor.floorName, productType, product.volume);
+
+          products.push({
+            dayName: day.dayName,
+            date: day.date,
+            isWeekend: day.isWeekend,
+            floorName: floor.floorName,
+            productName: product.name,
+            volume: product.volume,
+            blendSpeed,
+            productType,
+            floorWarning,
+          });
+        });
+      });
+    });
+    setConfirmedProducts(products);
+    setStep(3);
+  }, [parsedDays, productLookup]);
+
+  // Group products for display
+  const uploadedDaySummaries = useMemo(() => {
+    const summaries: DayProductionSummary[] = [];
+    parsedDays.forEach((day) => {
+      let totalVolume = 0;
+      const floorBreakdowns: { floorName: string; volume: number; switchCount: number }[] = [];
+
+      day.floors.forEach((floor) => {
+        const floorVolume = floor.products.reduce((sum, p) => sum + p.volume, 0);
+        totalVolume += floorVolume;
+        floorBreakdowns.push({
+          floorName: floor.floorName,
+          volume: floorVolume,
+          switchCount: Math.max(0, floor.products.length - 1),
+        });
+      });
+
+      summaries.push({
+        dayName: day.dayName,
+        totalVolume,
+        floorBreakdowns,
+        totalSwitches: floorBreakdowns.reduce((sum, fb) => sum + fb.switchCount, 0),
+      });
+    });
+    return summaries;
+  }, [parsedDays]);
+
+  // Group Zentryx assignments
+  const zentryxDaySummaries = useMemo(() => {
+    const summaries: DayProductionSummary[] = [];
+    const dayMap = new Map<string, { volume: number; floorProducts: Map<string, number> }>();
+
+    assignmentsQuery.data?.forEach((row: any) => {
+      if (row.assignment?.weekLabel === selectedZentryxWeek) {
+        const day = row.assignment.assignedDay || "Unknown";
+        const volume = Number(row.assignment.assignedVolume || 0);
+        const floor = row.floor?.floorName || "Unknown";
+
+        if (!dayMap.has(day)) {
+          dayMap.set(day, { volume: 0, floorProducts: new Map() });
+        }
+        const dayData = dayMap.get(day)!;
+        dayData.volume += volume;
+        const currentCount = dayData.floorProducts.get(floor) || 0;
+        dayData.floorProducts.set(floor, currentCount + 1);
+      }
+    });
+
+    Array.from(dayMap.entries()).forEach(([dayName, data]) => {
+      const floorBreakdowns: { floorName: string; volume: number; switchCount: number }[] = [];
+      Array.from(data.floorProducts.entries()).forEach(([floorName, productCount]) => {
+        const floorAssignments = assignmentsQuery.data?.filter(
+          (row: any) => row.assignment?.weekLabel === selectedZentryxWeek && row.assignment?.assignedDay === dayName && row.floor?.floorName === floorName
+        );
+        const floorVolume = floorAssignments?.reduce((sum: number, row: any) => sum + Number(row.assignment?.assignedVolume || 0), 0) || 0;
+        floorBreakdowns.push({
+          floorName,
+          volume: floorVolume,
+          switchCount: Math.max(0, productCount - 1),
+        });
+      });
+
+      summaries.push({
+        dayName,
+        totalVolume: data.volume,
+        floorBreakdowns,
+        totalSwitches: floorBreakdowns.reduce((sum, fb) => sum + fb.switchCount, 0),
+      });
+    });
+
+    return summaries.sort((a, b) => ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].indexOf(a.dayName) - ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].indexOf(b.dayName));
+  }, [assignmentsQuery.data, selectedZentryxWeek]);
+
+  // Calculate totals
+  const uploadedTotal = uploadedDaySummaries.reduce((sum, d) => sum + d.totalVolume, 0);
+  const zentryxTotal = zentryxDaySummaries.reduce((sum, d) => sum + d.totalVolume, 0);
+  const uploadedTotalSwitches = uploadedDaySummaries.reduce((sum, d) => sum + d.totalSwitches, 0);
+  const zentryxTotalSwitches = zentryxDaySummaries.reduce((sum, d) => sum + d.totalSwitches, 0);
+
+  const getAIInsight = useCallback(async () => {
+    if (!selectedZentryxWeek || uploadedTotal === 0 || zentryxTotal === 0) return;
+    setAiLoading(true);
+
+    try {
+      const uploadedSummary = `${uploadedDaySummaries.length} days planned, ${uploadedTotalSwitches} total product switches`;
+      const zentryxSummary = `${zentryxDaySummaries.length} days planned, ${zentryxTotalSwitches} total product switches`;
+
+      const res = await fetch(`${BASE}api/mdp/strategy-insight`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          uploadedSummary,
+          zentryxSummary,
+          uploadedTotal: Math.round(uploadedTotal),
+          zentryxTotal: Math.round(zentryxTotal),
+          weekLabel: selectedZentryxWeek,
+        }),
+      });
+
+      if (!res.ok) throw new Error("Insight generation failed");
+      const { insight } = await res.json();
+      setAiInsight(insight);
+    } catch (err) {
+      console.error(err);
+      toast({ title: "AI analysis failed", description: "Could not generate insight", variant: "destructive" });
+    } finally {
+      setAiLoading(false);
+    }
+  }, [selectedZentryxWeek, uploadedTotal, zentryxTotal, uploadedDaySummaries, zentryxDaySummaries, uploadedTotalSwitches, zentryxTotalSwitches, toast]);
 
   if (step === 1) {
     return (
-      <div className="max-w-4xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2">Strategy Evaluator</h1>
-          <p className="text-muted-foreground">Upload your production plan (DOCX) to compare with Zentryx assignments</p>
+      <div className="max-w-2xl mx-auto space-y-6">
+        <div>
+          <h2 className="text-2xl font-bold text-foreground">Upload Production Plan</h2>
+          <p className="text-sm text-muted-foreground mt-1">Upload your weekly production plan (PDF or DOCX format)</p>
         </div>
 
-        <div className={cn("border-2 border-dashed rounded-2xl p-16 text-center transition-colors", isLight ? "border-slate-300 bg-slate-50" : "border-white/20 bg-black/20")}>
-          <label className="cursor-pointer flex flex-col items-center gap-4">
-            <Upload className="w-12 h-12 text-primary" />
+        <div
+          className={cn(
+            "border-2 border-dashed rounded-2xl p-12 text-center transition-colors cursor-pointer hover:border-primary/50",
+            isLight ? "border-slate-300 bg-slate-50" : "border-white/20 bg-black/20"
+          )}
+        >
+          <label className="cursor-pointer flex flex-col items-center gap-3">
+            <Upload className="w-10 h-10 text-primary" />
             <div>
-              <p className="text-lg font-semibold text-foreground">Upload your plan</p>
-              <p className="text-sm text-muted-foreground mt-1">DOCX format only</p>
+              <p className="text-base font-semibold text-foreground">
+                {uploading ? "Parsing document..." : "Upload your plan"}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">PDF or DOCX format</p>
             </div>
-            <input type="file" accept=".docx" onChange={handleFileUpload} className="hidden" />
+            {uploading && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
+            <input
+              type="file"
+              accept=".docx,.pdf"
+              onChange={handleFileUpload}
+              disabled={uploading}
+              className="hidden"
+            />
           </label>
+        </div>
+
+        <div className={cn("rounded-lg p-3 flex gap-2", isLight ? "bg-blue-50 border border-blue-200" : "bg-blue-500/10 border border-blue-500/20")}>
+          <AlertTriangle className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-blue-700 dark:text-blue-400">
+            This document is processed server-side only and never stored on disk. It is used solely to extract production data for comparison.
+          </p>
         </div>
       </div>
     );
@@ -153,14 +370,82 @@ export default function StrategyEvaluatorPage() {
 
   if (step === 2) {
     return (
-      <div className="max-w-4xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2">Confirm plan details</h1>
-          <p className="text-muted-foreground">Review the uploaded production plan before comparison</p>
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-bold text-foreground">Confirm Product Details</h2>
+          <p className="text-sm text-muted-foreground mt-1">Review extracted products and confirm blend speeds and types</p>
         </div>
 
-        <div className={cn("border rounded-xl p-6 mb-6", isLight ? "bg-blue-50 border-blue-200" : "bg-blue-500/10 border-blue-500/20")}>
-          <p className="text-sm text-blue-700 dark:text-blue-400">Document uploaded successfully. Click below to proceed to comparison.</p>
+        <div className={cn("rounded-lg overflow-hidden border", isLight ? "border-slate-200" : "border-white/10")}>
+          <table className="w-full text-sm">
+            <thead className={cn("", isLight ? "bg-slate-100" : "bg-white/5")}>
+              <tr>
+                <th className="px-4 py-2 text-left font-semibold text-xs uppercase">Day</th>
+                <th className="px-4 py-2 text-left font-semibold text-xs uppercase">Floor</th>
+                <th className="px-4 py-2 text-left font-semibold text-xs uppercase">Product</th>
+                <th className="px-4 py-2 text-right font-semibold text-xs uppercase">Volume (kg)</th>
+                <th className="px-4 py-2 text-center font-semibold text-xs uppercase">Blend Speed</th>
+                <th className="px-4 py-2 text-center font-semibold text-xs uppercase">Product Type</th>
+                <th className="px-4 py-2 text-center font-semibold text-xs uppercase"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {confirmedProducts.map((product, idx) => (
+                <tr key={idx} className={isLight ? "border-t border-slate-200" : "border-t border-white/5"}>
+                  <td className="px-4 py-2 text-xs">{product.dayName}</td>
+                  <td className="px-4 py-2 text-xs">{product.floorName}</td>
+                  <td className="px-4 py-2 text-xs font-medium">{product.productName}</td>
+                  <td className="px-4 py-2 text-xs text-right">{product.volume.toLocaleString()}</td>
+                  <td className="px-4 py-2">
+                    <select
+                      value={product.blendSpeed}
+                      onChange={(e) => {
+                        const updated = [...confirmedProducts];
+                        updated[idx].blendSpeed = e.target.value as any;
+                        setConfirmedProducts(updated);
+                      }}
+                      className="text-xs px-2 py-1 rounded border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
+                    >
+                      <option value="fast">Fast</option>
+                      <option value="medium">Medium</option>
+                      <option value="slow">Slow</option>
+                    </select>
+                  </td>
+                  <td className="px-4 py-2">
+                    <select
+                      value={product.productType}
+                      onChange={(e) => {
+                        const updated = [...confirmedProducts];
+                        updated[idx].productType = e.target.value;
+                        setConfirmedProducts(updated);
+                      }}
+                      className="text-xs px-2 py-1 rounded border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
+                    >
+                      <option value="Seasoning">Seasoning</option>
+                      <option value="Pasta Sauce">Pasta Sauce</option>
+                      <option value="Breading">Breading</option>
+                      <option value="Savoury Flavour">Savoury Flavour</option>
+                      <option value="Marinade">Marinade</option>
+                      <option value="Spice Mix">Spice Mix</option>
+                      <option value="Dairy Premix">Dairy Premix</option>
+                      <option value="Sweet Flavour">Sweet Flavour</option>
+                      <option value="Snack Dusting">Snack Dusting</option>
+                      <option value="Dough Premix">Dough Premix</option>
+                      <option value="Bread Premix">Bread Premix</option>
+                      <option value="Unknown">Unknown</option>
+                    </select>
+                  </td>
+                  <td className="px-4 py-2 text-center">
+                    {product.floorWarning && (
+                      <div title="Floor compatibility warning" className="inline-block">
+                        <AlertTriangle className="w-4 h-4 text-amber-600" />
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
 
         <div className="flex gap-3">
@@ -171,10 +456,10 @@ export default function StrategyEvaluatorPage() {
             Back
           </button>
           <button
-            onClick={() => setStep(3)}
+            onClick={handleConfirmProducts}
             className="ml-auto px-6 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700"
           >
-            Compare Plans
+            Compare Plans →
           </button>
         </div>
       </div>
@@ -183,73 +468,46 @@ export default function StrategyEvaluatorPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-foreground">Strategy Evaluator</h1>
-        <div className="flex gap-2">
-          <button className={cn("px-3 py-1.5 rounded-lg text-xs font-medium border", isLight ? "border-slate-200 hover:bg-slate-50" : "border-white/10 hover:bg-white/5")}>
-            AI-assisted
-          </button>
-          <button className={cn("px-3 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5", isLight ? "border-slate-200 hover:bg-slate-50" : "border-white/10 hover:bg-white/5")}>
-            <Settings className="w-3 h-3" />
-            Edit blend speeds
-          </button>
-          <button className={cn("px-3 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5", isLight ? "border-slate-200 hover:bg-slate-50" : "border-white/10 hover:bg-white/5")}>
-            <Download className="w-3 h-3" />
-            Export report
-          </button>
-        </div>
+      <div>
+        <h2 className="text-2xl font-bold text-foreground">Comparison Results</h2>
+        <p className="text-sm text-muted-foreground mt-1">Select Zentryx week to compare against your uploaded plan</p>
       </div>
 
-      {/* Progress indicator */}
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-          <span className="text-sm text-muted-foreground">Upload document</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-          <span className="text-sm text-muted-foreground">Confirm blend speeds</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs">3</div>
-          <span className="text-sm font-medium text-foreground">View comparison</span>
-        </div>
-      </div>
-
-      {/* Week selector */}
-      <div className="flex gap-2">
-        <span className="text-xs text-muted-foreground py-2">Zentryx plan week:</span>
-        {weeks.map((week, idx) => (
+      <div className="flex gap-2 flex-wrap">
+        <span className="text-xs text-muted-foreground py-2">Zentryx week:</span>
+        {allWeeks.map((week) => (
           <button
             key={week}
-            onClick={() => setSelectedWeek(week)}
-            className={cn("px-4 py-2 rounded-lg text-sm font-medium border transition-all", selectedWeek === week ? "border-blue-500 bg-blue-500/10 text-blue-600" : isLight ? "border-slate-200 hover:bg-slate-50" : "border-white/10 hover:bg-white/5")}
+            onClick={() => setSelectedZentryxWeek(week)}
+            className={cn(
+              "px-4 py-2 rounded-lg text-sm font-medium border transition-all",
+              selectedZentryxWeek === week
+                ? "border-blue-500 bg-blue-500/10 text-blue-600"
+                : isLight
+                ? "border-slate-200 hover:bg-slate-50"
+                : "border-white/10 hover:bg-white/5"
+            )}
           >
-            Week {idx + 1}
+            {week}
           </button>
         ))}
       </div>
 
-      {/* Comparison grid */}
+      {/* Comparison Grids */}
       <div className="grid grid-cols-2 gap-6">
         {/* Uploaded Plan */}
-        <div className={cn("border rounded-xl p-6", isLight ? "bg-white border-slate-200" : "bg-black/20 border-white/10")}>
-          <h3 className="text-sm font-bold text-muted-foreground mb-4 uppercase tracking-wide">Uploaded Plan — Day by Day</h3>
-          <div className="space-y-4">
-            {uploadedPlanDays.map((day) => (
-              <div key={day.day} className={cn("rounded-lg p-3", isLight ? "bg-slate-50" : "bg-white/5")}>
-                <p className="text-xs text-muted-foreground mb-2">{day.day}</p>
-                <p className="text-lg font-bold text-foreground mb-3">{day.totalVolume.toLocaleString()} kg</p>
-                <div className="space-y-1.5">
-                  {day.floors.map((floor) => (
-                    <div key={`${day.day}-${floor.floorId}`} className="flex items-center justify-between">
-                      <div className="text-xs">
-                        <span className="inline-block bg-primary/10 text-primary px-2 py-1 rounded text-[10px] font-medium">{floor.floorName}</span>
-                        <span className="ml-2 text-muted-foreground">{floor.shift}</span>
-                        <span className="ml-2 text-muted-foreground">{floor.products} product</span>
-                      </div>
-                      <span className="text-xs font-semibold text-foreground">{floor.volume.toLocaleString()} kg</span>
+        <div className={cn("rounded-lg border p-4", isLight ? "bg-white border-slate-200" : "bg-black/20 border-white/10")}>
+          <h3 className="text-sm font-bold text-muted-foreground mb-4 uppercase tracking-wide">Uploaded Plan</h3>
+          <div className="space-y-3">
+            {uploadedDaySummaries.map((day) => (
+              <div key={day.dayName} className={cn("rounded p-3", isLight ? "bg-slate-50" : "bg-white/5")}>
+                <p className="text-xs text-muted-foreground mb-1">{day.dayName}</p>
+                <p className="text-lg font-bold text-foreground">{Math.round(day.totalVolume).toLocaleString()} kg</p>
+                <div className="text-xs text-muted-foreground mt-2 space-y-1">
+                  {day.floorBreakdowns.map((fb, idx) => (
+                    <div key={idx} className="flex justify-between">
+                      <span>{fb.floorName}</span>
+                      <span>{Math.round(fb.volume).toLocaleString()} kg</span>
                     </div>
                   ))}
                 </div>
@@ -259,27 +517,23 @@ export default function StrategyEvaluatorPage() {
         </div>
 
         {/* Zentryx Plan */}
-        <div className={cn("border rounded-xl p-6", isLight ? "bg-white border-slate-200" : "bg-black/20 border-white/10")}>
-          <h3 className="text-sm font-bold text-muted-foreground mb-4 uppercase tracking-wide">Zentryx Plan — {selectedWeek}</h3>
-          <div className="space-y-4">
+        <div className={cn("rounded-lg border p-4", isLight ? "bg-white border-slate-200" : "bg-black/20 border-white/10")}>
+          <h3 className="text-sm font-bold text-muted-foreground mb-4 uppercase tracking-wide">Zentryx Plan — {selectedZentryxWeek}</h3>
+          <div className="space-y-3">
             {assignmentsQuery.isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading assignments...</p>
-            ) : assignmentsQuery.data?.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No data available</p>
+              <p className="text-xs text-muted-foreground">Loading...</p>
+            ) : zentryxDaySummaries.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No assignments for this week</p>
             ) : (
-              uploadedPlanDays.map((day) => (
-                <div key={day.day} className={cn("rounded-lg p-3", isLight ? "bg-slate-50" : "bg-white/5")}>
-                  <p className="text-xs text-muted-foreground mb-2">{day.day}</p>
-                  <p className="text-lg font-bold text-blue-500 mb-3">{day.totalVolume.toLocaleString()} kg</p>
-                  <div className="space-y-1.5">
-                    {day.floors.map((floor) => (
-                      <div key={`zentryx-${day.day}-${floor.floorId}`} className="flex items-center justify-between">
-                        <div className="text-xs">
-                          <span className="inline-block bg-blue-500/10 text-blue-600 dark:text-blue-400 px-2 py-1 rounded text-[10px] font-medium">{floor.floorName}</span>
-                          <span className="ml-2 text-muted-foreground">{floor.shift}</span>
-                          <span className="ml-2 text-muted-foreground">{floor.products} product</span>
-                        </div>
-                        <span className="text-xs font-semibold text-blue-500">{floor.volume.toLocaleString()} kg</span>
+              zentryxDaySummaries.map((day) => (
+                <div key={day.dayName} className={cn("rounded p-3", isLight ? "bg-slate-50" : "bg-white/5")}>
+                  <p className="text-xs text-muted-foreground mb-1">{day.dayName}</p>
+                  <p className="text-lg font-bold text-blue-600 dark:text-blue-400">{Math.round(day.totalVolume).toLocaleString()} kg</p>
+                  <div className="text-xs text-muted-foreground mt-2 space-y-1">
+                    {day.floorBreakdowns.map((fb, idx) => (
+                      <div key={idx} className="flex justify-between">
+                        <span>{fb.floorName}</span>
+                        <span>{Math.round(fb.volume).toLocaleString()} kg</span>
                       </div>
                     ))}
                   </div>
@@ -288,6 +542,78 @@ export default function StrategyEvaluatorPage() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Comparison Summary */}
+      <div className={cn("rounded-lg border p-4", isLight ? "bg-white border-slate-200" : "bg-black/20 border-white/10")}>
+        <h3 className="text-sm font-bold text-muted-foreground mb-4 uppercase tracking-wide">Summary</h3>
+        <div className="space-y-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Total Planned Output (KG)</span>
+            <div className="flex gap-12">
+              <span className="font-medium">{Math.round(uploadedTotal).toLocaleString()}</span>
+              <span className="font-medium text-blue-600">{Math.round(zentryxTotal).toLocaleString()}</span>
+            </div>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Product Switches</span>
+            <div className="flex gap-12">
+              <span className="font-medium">{uploadedTotalSwitches}</span>
+              <span className="font-medium text-blue-600">{zentryxTotalSwitches}</span>
+            </div>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Active Production Days</span>
+            <div className="flex gap-12">
+              <span className="font-medium">{uploadedDaySummaries.length}</span>
+              <span className="font-medium text-blue-600">{zentryxDaySummaries.length}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Verdict */}
+      {uploadedTotal > 0 && zentryxTotal > 0 && (
+        <div
+          className={cn("rounded-lg p-4 flex gap-3", zentryxTotal > uploadedTotal ? (isLight ? "bg-emerald-50 border border-emerald-200" : "bg-emerald-500/10 border border-emerald-500/20") : isLight ? "bg-amber-50 border border-amber-200" : "bg-amber-500/10 border border-amber-500/20")}
+        >
+          <Check className={cn("w-5 h-5 flex-shrink-0 mt-0.5", zentryxTotal > uploadedTotal ? "text-emerald-600" : "text-amber-600")} />
+          <div>
+            <p className={cn("text-sm font-medium", zentryxTotal > uploadedTotal ? "text-emerald-900 dark:text-emerald-200" : "text-amber-900 dark:text-amber-200")}>
+              {zentryxTotal > uploadedTotal ? "Zentryx plan is more efficient" : "Uploaded plan is more efficient"}
+            </p>
+            <p className={cn("text-xs mt-1", zentryxTotal > uploadedTotal ? "text-emerald-700 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300")}>
+              {((Math.abs(zentryxTotal - uploadedTotal) / Math.max(uploadedTotal, zentryxTotal)) * 100).toFixed(1)}% difference with{" "}
+              {Math.abs(zentryxTotalSwitches - uploadedTotalSwitches)} fewer switches
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* AI Insight */}
+      <button
+        onClick={getAIInsight}
+        disabled={aiLoading || !selectedZentryxWeek}
+        className="w-full px-4 py-2 rounded-lg bg-primary text-white font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+      >
+        {aiLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+        Get AI Analysis
+      </button>
+
+      {aiInsight && (
+        <div className={cn("rounded-lg p-4", isLight ? "bg-blue-50 border border-blue-200" : "bg-blue-500/10 border border-blue-500/20")}>
+          <p className="text-sm text-blue-700 dark:text-blue-400 leading-relaxed">{aiInsight}</p>
+        </div>
+      )}
+
+      {/* Navigation */}
+      <div className="flex gap-3">
+        <button
+          onClick={() => setStep(2)}
+          className={cn("px-4 py-2 rounded-lg text-sm font-medium border", isLight ? "border-slate-200 hover:bg-slate-50" : "border-white/10 hover:bg-white/5")}
+        >
+          Back
+        </button>
       </div>
     </div>
   );

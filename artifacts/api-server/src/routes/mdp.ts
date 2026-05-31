@@ -966,4 +966,147 @@ router.delete("/monthly-orders/:id", requireAuth, async (req: AuthRequest, res) 
   }
 });
 
+interface ParsedDay {
+  dayName: string;
+  date: string;
+  isWeekend: boolean;
+  floors: { floorName: string; products: { name: string; volume: number }[] }[];
+}
+
+router.post("/parse-plan-document", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { fileData, fileName } = req.body as { fileData: string; fileName: string };
+    if (!fileData || !fileName) {
+      res.status(400).json({ error: "Missing fileData or fileName" });
+      return;
+    }
+
+    const buffer = Buffer.from(fileData, "base64");
+    let extractedText = "";
+
+    if (fileName.endsWith(".docx")) {
+      const mammoth = await import("mammoth");
+      const result = await mammoth.extractRawText({ buffer });
+      extractedText = result.value;
+    } else if (fileName.endsWith(".pdf")) {
+      const pdfParse = await import("pdf-parse");
+      const result = await pdfParse(buffer);
+      extractedText = result.text;
+    } else {
+      res.status(400).json({ error: "Unsupported file format. Use .docx or .pdf" });
+      return;
+    }
+
+    const days = parseProductionPlan(extractedText);
+    res.json({ days });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to parse document" });
+  }
+});
+
+function parseProductionPlan(text: string): ParsedDay[] {
+  const lines = text.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+  const days: ParsedDay[] = [];
+  let currentDay: ParsedDay | null = null;
+  let currentFloor: { floorName: string; products: { name: string; volume: number }[] } | null = null;
+
+  const floorMapping: Record<string, string> = {
+    "MAIN PRODUCTION FLOOR": "Floor 1",
+    "SECOND LINE": "Floor 2",
+    "NEW PRODUCTION FLOOR": "Floor 3",
+  };
+
+  const dayPattern = /\b(MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY)\s+(\d{1,2}\/\d{1,2}\/\d{4})/i;
+  const floorPattern = /MAIN\s+PRODUCTION\s*FLOOR|SECOND\s+LINE|NEW\s+PRODUCTION\s*FLOOR/i;
+  const volumePattern = /(\d+(?:[.,]\d+)?)\s*(ton|kg)\b/i;
+
+  for (const line of lines) {
+    const dayMatch = line.match(dayPattern);
+    if (dayMatch) {
+      const dayName = dayMatch[1].toUpperCase();
+      const date = dayMatch[2];
+      const isWeekend = dayName === "SATURDAY" || dayName === "SUNDAY";
+      if (currentDay) days.push(currentDay);
+      currentDay = { dayName, date, isWeekend, floors: [] };
+      currentFloor = null;
+      continue;
+    }
+
+    const floorMatch = line.match(floorPattern);
+    if (floorMatch) {
+      const floorKey = floorMatch[0];
+      const floorName = floorMapping[floorKey] || floorKey;
+      currentFloor = { floorName, products: [] };
+      if (currentDay) currentDay.floors.push(currentFloor);
+      continue;
+    }
+
+    const volumeMatch = line.match(volumePattern);
+    if (volumeMatch && currentFloor && currentDay) {
+      let volume = parseFloat(volumeMatch[1].replace(",", "."));
+      const unit = volumeMatch[2].toLowerCase();
+      if (unit === "ton") volume *= 1000;
+
+      const productName = line
+        .replace(volumeMatch[0], "")
+        .replace(/\b(NEW ORDER|order status|—|is not relevant)\b/i, "")
+        .trim();
+
+      if (productName && productName.length > 2) {
+        currentFloor.products.push({ name: productName, volume });
+      }
+    }
+  }
+
+  if (currentDay) days.push(currentDay);
+
+  return days;
+}
+
+router.post("/strategy-insight", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { uploadedSummary, zentryxSummary, uploadedTotal, zentryxTotal, weekLabel } = req.body as {
+      uploadedSummary: string;
+      zentryxSummary: string;
+      uploadedTotal: number;
+      zentryxTotal: number;
+      weekLabel: string;
+    };
+
+    if (
+      uploadedSummary === undefined ||
+      zentryxSummary === undefined ||
+      uploadedTotal === undefined ||
+      zentryxTotal === undefined ||
+      !weekLabel
+    ) {
+      res.status(400).json({ error: "Missing required fields" });
+      return;
+    }
+
+    const { callModel, SONNET_MODEL } = await import("../../oracle/claude");
+
+    const systemPrompt = `You are a production efficiency analyst. Given two weekly production plans, identify which is more efficient for total KG output with less downtime. Be specific: cite floors, product switches, and KG differences. Respond in 2-3 sentences maximum.`;
+
+    const userPrompt = `Week: ${weekLabel}
+
+Uploaded Plan:
+Total Output: ${uploadedTotal.toLocaleString()} KG
+Details: ${uploadedSummary}
+
+Zentryx Plan:
+Total Output: ${zentryxTotal.toLocaleString()} KG
+Details: ${zentryxSummary}
+
+Which plan is more efficient and why?`;
+
+    const insight = await callModel(SONNET_MODEL, systemPrompt, userPrompt, 300);
+    res.json({ insight });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to generate insight" });
+  }
+});
+
 export default router;
