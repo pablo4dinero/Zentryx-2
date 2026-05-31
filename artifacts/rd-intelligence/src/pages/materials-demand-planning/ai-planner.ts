@@ -146,6 +146,21 @@ function microbialBufferDays(microbial: string): number {
   return 0;
 }
 
+// Helper: Check if a product type is in the "savory" group (Seasoning, Marinade, Curry, Breading)
+function isSavoryGroup(productType: string | null): boolean {
+  if (!productType) return false;
+  const t = normalizeType(productType);
+  return t.includes("seasoning") || t.includes("marinade") || t.includes("curry") || t.includes("breading");
+}
+
+// Helper: Check if a product type is in the "sweet" group (Dairy Premix, Bread Premix, Snack Dusting, Sweet Flavour, Functional Blend, Dough Premix)
+function isSweetGroup(productType: string | null): boolean {
+  if (!productType) return false;
+  const t = normalizeType(productType);
+  return t.includes("dairy") || t.includes("bread") || t.includes("snack") || t.includes("sweet") ||
+         t.includes("functional") || t.includes("dough");
+}
+
 // Floor eligibility:
 //   1. If the floor has an explicit allowedProductTypes list, that wins —
 //      strict include match.
@@ -154,8 +169,8 @@ function microbialBufferDays(microbial: string): number {
 //      doesn't silently accept Seasoning just because nobody filled the list.
 //   3. Mixed categories ("Sweet/Savory", "Savory/Sweet") and unknown values
 //      accept anything in the fallback.
-//   4. Special case: Floor 3 can accept Curry and Breading (but see scheduling logic).
-function isFloorEligible(floor: Floor, orderProductType: string | null): boolean {
+//   4. Special cases: Floor 2 can accept Dairy Premix, Floor 3 can accept Curry/Breading/Seasoning/Marinade.
+function isFloorEligible(floor: Floor, orderProductType: string | null, volume?: number): boolean {
   const allowed = floor.allowedProductTypes ?? [];
   if (allowed.length > 0) {
     if (!orderProductType) return false;
@@ -165,9 +180,19 @@ function isFloorEligible(floor: Floor, orderProductType: string | null): boolean
   if (!orderProductType) return true;
   const t = normalizeType(orderProductType);
 
-  // Floor 3 special case: allow Curry and Breading
-  if (floor.floorName === "Floor 3" && (t.includes("curry") || t.includes("breading"))) {
-    return true;
+  // Floor 2 special case: allow Dairy Premix only if volume <= 500kg
+  if (floor.floorName === "Floor 2" && t.includes("dairy")) {
+    return !volume || volume <= 500;
+  }
+
+  // Floor 3 special cases
+  if (floor.floorName === "Floor 3") {
+    // Allow Curry and Breading
+    if (t.includes("curry") || t.includes("breading")) return true;
+    // Allow Seasoning and Marinade only if volume is 600-2000kg
+    if ((t.includes("seasoning") || t.includes("marinade")) && volume) {
+      return volume >= 600 && volume <= 2000;
+    }
   }
 
   const cat = String(floor.blendCategory ?? "").trim().toLowerCase();
@@ -295,8 +320,19 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
       let availableMin = cellMinutesRemaining.get(key) ?? 0;
       if (availableMin <= 0) continue;
 
-      // Switch cost if a different product is already on this cell
+      // Check day conflict: Savory group cannot be with Sweet group on same day
       const existingTypes = cellProductTypes.get(key) ?? new Set();
+      const currentIsSavory = isSavoryGroup(order.productType);
+      const currentIsSweet = isSweetGroup(order.productType);
+      const existingHasSavory = [...existingTypes].some(t => isSavoryGroup(t));
+      const existingHasSweet = [...existingTypes].some(t => isSweetGroup(t));
+
+      if ((currentIsSavory && existingHasSweet) || (currentIsSweet && existingHasSavory)) {
+        // Cannot blend on same day - skip this cell
+        continue;
+      }
+
+      // Switch cost if a different product is already on this cell
       const hasOtherType = orderType && [...existingTypes].some(t => t && t !== orderType);
       if (hasOtherType) {
         availableMin -= DEFAULT_SWITCH_MINUTES;
@@ -348,7 +384,7 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
           o.remainingQuantity > 0 &&
           o.id !== order.id &&
           !isCurryOrBreading(o.productType) &&
-          isFloorEligible(floor3, o.productType)
+          isFloorEligible(floor3, o.productType, o.remainingQuantity)
         );
         if (hasOtherFloor3Orders) {
           // Skip this Curry/Breading order for now; it will be picked up later
@@ -357,7 +393,7 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
       }
     }
 
-    const candidates = floors.filter(f => isFloorEligible(f, order.productType));
+    const candidates = floors.filter(f => isFloorEligible(f, order.productType, order.remainingQuantity));
     if (candidates.length === 0) {
       skipped.push({ orderId: order.id, label: order.productionLabel, reason: "No eligible floor for this product type" });
       continue;
@@ -411,7 +447,7 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
     for (const order of sortedOrders) {
       if (order.remainingQuantity <= 0) continue;
       if (normalizeType(order.productType) !== onlyType) continue;
-      if (!isFloorEligible(floor, order.productType)) continue;
+      if (!isFloorEligible(floor, order.productType, order.remainingQuantity)) continue;
 
       const blendMins = blendMinutesById(blendSpeeds, order.blendSpeedId || "fast");
       const dailyCap = dailyCapacityKg(floor, order.blendSpeedId || "fast", blendSpeeds);
