@@ -980,6 +980,31 @@ interface FloorDefinition {
   maxCapacityKg: number;
 }
 
+// Determine which floor a product should be assigned to based on type and volume
+function assignFloor(productType: string, volumeKg: number): string {
+  const type = (productType || "").toLowerCase();
+
+  // Floor 3: Dairy Premix, Sweet Flavours, Snack Dusting, Dough Premix, Bread Premix
+  if (
+    type.includes("gelato") ||
+    type.includes("sweet") ||
+    type.includes("dairy") ||
+    type.includes("snack dusting") ||
+    type.includes("dough premix") ||
+    type.includes("bread premix")
+  ) {
+    return "Floor 3";
+  }
+
+  // Floor 2: Any product ≤ 400kg
+  if (volumeKg <= 400) {
+    return "Floor 2";
+  }
+
+  // Floor 1: Default for larger products (Seasoning, Pasta Sauce, Breading, etc.)
+  return "Floor 1";
+}
+
 // Default floor definitions (can be customized per deployment)
 const DEFAULT_FLOORS: FloorDefinition[] = [
   {
@@ -1047,10 +1072,50 @@ router.post("/parse-plan-document", requireAuth, async (req: AuthRequest, res) =
 
     console.log("Extracted text length:", extractedText.length);
     console.log("First 1000 chars:", extractedText.substring(0, 1000));
-    const days = parseProductionPlan(extractedText, DEFAULT_FLOORS);
+
+    // Fetch production orders to get product types for floor assignment
+    const productOrders = await db.select().from(mdpProductionOrdersTable);
+
+    let days = parseProductionPlan(extractedText, DEFAULT_FLOORS);
+
+    // Reassign products to correct floors based on product type and volume
+    days = days.map(day => ({
+      ...day,
+      floors: day.floors.map(floor => ({
+        ...floor,
+        products: floor.products.map(product => {
+          const order = productOrders.find((o: any) =>
+            o.productName?.toLowerCase().includes(product.name.toLowerCase()) ||
+            product.name.toLowerCase().includes(o.productName?.toLowerCase() || '')
+          );
+          const productType = order?.productType || "Unknown";
+          const correctFloor = assignFloor(productType, product.volume);
+          return { ...product, assignedFloor: correctFloor };
+        })
+      })),
+    }));
+
+    // Consolidate products by their correct floors
+    days = days.map(day => {
+      const floorMap = new Map<string, { floorName: string; products: any[] }>();
+      day.floors.forEach(floor => {
+        floor.products.forEach(product => {
+          const floorName = product.assignedFloor;
+          if (!floorMap.has(floorName)) {
+            floorMap.set(floorName, { floorName, products: [] });
+          }
+          floorMap.get(floorName)!.products.push(product);
+        });
+      });
+      return {
+        ...day,
+        floors: Array.from(floorMap.values())
+      };
+    });
+
     console.log("Parsed days:", days.length);
-    days.forEach((day, i) => {
-      console.log(`Day ${i}: ${day.dayName}, Floors: ${day.floors.map(f => f.floorName + " (" + f.products.length + " products)").join(", ")}`);
+    days.forEach((day: any, i: number) => {
+      console.log(`Day ${i}: ${day.dayName}, Floors: ${day.floors.map((f: any) => f.floorName + " (" + f.products.length + " products)").join(", ")}`);
     });
     res.json({ days });
   } catch (err) {
