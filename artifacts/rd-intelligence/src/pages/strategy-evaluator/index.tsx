@@ -105,6 +105,7 @@ export default function StrategyEvaluatorTab() {
   const [showProductTypeManager, setShowProductTypeManager] = useState(false);
   const [customProductTypes, setCustomProductTypes] = useState<any[]>([]);
   const [newTypeForm, setNewTypeForm] = useState({ name: "", keywords: "" });
+  const [showTypeModal, setShowTypeModal] = useState(false);
 
   // Fetch production orders for blend speed lookup
   const ordersQuery = useQuery({
@@ -447,61 +448,79 @@ export default function StrategyEvaluatorTab() {
           <p className="text-sm text-muted-foreground mt-1">Review extracted products and confirm blend speeds and types</p>
         </div>
 
-        {/* Product Type Manager */}
-        <div className={cn("rounded-lg p-4 border", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/20")}>
+        {/* Custom Product Types Button */}
+        <div className="flex justify-end">
           <button
-            onClick={() => setShowProductTypeManager(!showProductTypeManager)}
-            className="flex items-center gap-2 text-sm font-semibold text-foreground mb-3"
+            onClick={() => setShowTypeModal(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-all"
+            style={isLight ? { borderColor: "#e2e8f0", backgroundColor: "#f8fafc", color: "#334155" } : { borderColor: "rgba(255,255,255,0.1)", backgroundColor: "rgba(255,255,255,0.05)", color: "#e2e8f0" }}
           >
-            <Plus className="w-4 h-4" /> Manage Product Types
+            <Plus className="w-4 h-4" /> Manage Product Types ({customProductTypes.length})
           </button>
+        </div>
 
-          {showProductTypeManager && (
-            <div className="space-y-4">
-              <div className="flex gap-2">
+        {/* Modal Overlay */}
+        {showTypeModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className={cn("rounded-lg p-6 max-w-md w-full mx-4 space-y-4", isLight ? "bg-white" : "bg-slate-900")}>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-bold text-foreground">Manage Product Types</h3>
+                <button
+                  onClick={() => setShowTypeModal(false)}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Add Form */}
+              <div className="space-y-3 pb-4 border-b" style={isLight ? { borderColor: "#e2e8f0" } : { borderColor: "rgba(255,255,255,0.1)" }}>
                 <input
                   type="text"
                   placeholder="Type name"
                   value={newTypeForm.name}
                   onChange={(e) => setNewTypeForm({ ...newTypeForm, name: e.target.value })}
-                  className="flex-1 text-xs px-2 py-1 rounded border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
+                  className="w-full text-sm px-3 py-2 rounded border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
                 />
                 <input
                   type="text"
                   placeholder="Keywords (comma-separated)"
                   value={newTypeForm.keywords}
                   onChange={(e) => setNewTypeForm({ ...newTypeForm, keywords: e.target.value })}
-                  className="flex-1 text-xs px-2 py-1 rounded border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
+                  className="w-full text-sm px-3 py-2 rounded border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
                 />
                 <button
                   onClick={handleAddCustomType}
-                  className="px-3 py-1 bg-primary text-white text-xs rounded hover:opacity-90"
+                  className="w-full px-4 py-2 bg-blue-600 text-white text-sm rounded font-medium hover:bg-blue-700"
                 >
-                  Add
+                  Add Custom Type
                 </button>
               </div>
 
-              {customProductTypes.length > 0 && (
-                <div className="space-y-2">
+              {/* List */}
+              {customProductTypes.length > 0 ? (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
                   {customProductTypes.map((type) => (
-                    <div key={type.id} className={cn("flex items-center justify-between p-2 rounded text-xs", isLight ? "bg-slate-50" : "bg-white/5")}>
-                      <div>
-                        <p className="font-semibold">{type.name}</p>
-                        <p className="text-muted-foreground">{type.keywords.join(", ")}</p>
+                    <div key={type.id} className={cn("flex items-center justify-between p-3 rounded", isLight ? "bg-slate-50" : "bg-white/5")}>
+                      <div className="flex-1">
+                        <p className="font-semibold text-sm">{type.name}</p>
+                        <p className="text-xs text-muted-foreground">{type.keywords.join(", ")}</p>
                       </div>
                       <button
                         onClick={() => handleDeleteCustomType(type.id)}
-                        className="p-1 hover:bg-red-500/20 rounded text-red-600"
+                        className="p-2 hover:bg-red-500/20 rounded text-red-600 ml-2"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   ))}
                 </div>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">No custom types yet</p>
               )}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         <div className={cn("rounded-lg overflow-hidden border", isLight ? "border-slate-200 bg-white" : "border-white/10")}>
           <table className="w-full text-sm">
@@ -653,6 +672,16 @@ export default function StrategyEvaluatorTab() {
                       <option value="Dough Premix">Dough Premix</option>
                       <option value="Bread Premix">Bread Premix</option>
                       <option value="Unknown">Unknown</option>
+                      {customProductTypes.length > 0 && (
+                        <>
+                          <option disabled>─ Custom ─</option>
+                          {customProductTypes.map((type) => (
+                            <option key={type.id} value={type.name}>
+                              {type.name}
+                            </option>
+                          ))}
+                        </>
+                      )}
                     </select>
                   </td>
                   <td className="px-4 py-2 text-center">
