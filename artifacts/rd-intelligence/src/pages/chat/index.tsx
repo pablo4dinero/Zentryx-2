@@ -1593,8 +1593,7 @@ export default function ChatRoom() {
                         <span className={cn("text-[8px] font-bold uppercase px-2 py-1 rounded-full", isLight ? "text-emerald-600 bg-emerald-50" : "text-emerald-400 bg-emerald-500/10")}>Online</span>
                       )}
                     </button>
-                  )
-                ))
+                  ))
               )}
             </div>
             <div className={cn("p-4 border-t flex gap-2", isLight ? "border-slate-200" : "border-white/5")}>
