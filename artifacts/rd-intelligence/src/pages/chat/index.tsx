@@ -32,7 +32,7 @@ function NeuralBackground({ isLight }: { isLight: boolean }) {
       y: Math.random() * canvas.height,
       vx: (Math.random() - 0.5) * 0.25,
       vy: (Math.random() - 0.5) * 0.25,
-      r: Math.random() * 1.5 + 0.6,
+      r: Math.random() * 1.8 + 0.72,
       phase: Math.random() * Math.PI * 2,
     }));
 
@@ -74,7 +74,7 @@ function NeuralBackground({ isLight }: { isLight: boolean }) {
         const pulse = a.r + Math.sin(a.phase) * 0.5;
         ctx.beginPath();
         ctx.arc(a.x, a.y, pulse, 0, Math.PI * 2);
-        ctx.fillStyle = `${nodeFill}${isLight ? 0.4 : 0.35})`;
+        ctx.fillStyle = `${nodeFill}${isLight ? 0.48 : 0.42})`;
         ctx.fill();
       }
 
@@ -94,7 +94,7 @@ function NeuralBackground({ isLight }: { isLight: boolean }) {
       ref={canvasRef}
       aria-hidden
       className="absolute inset-0 w-full h-full pointer-events-none"
-      style={{ opacity: isLight ? 0.35 : 0.22 }}
+      style={{ opacity: isLight ? 0.42 : 0.27 }}
     />
   );
 }
