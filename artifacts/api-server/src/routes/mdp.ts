@@ -973,6 +973,44 @@ interface ParsedDay {
   floors: { floorName: string; products: { name: string; volume: number }[] }[];
 }
 
+interface FloorDefinition {
+  id: number;
+  floorName: string;
+  aliases: string[];
+  maxCapacityKg: number;
+}
+
+// Default floor definitions (can be customized per deployment)
+const DEFAULT_FLOORS: FloorDefinition[] = [
+  {
+    id: 1,
+    floorName: "Floor 1",
+    aliases: ["MAIN PRODUCTION FLOOR", "MAIN PRODUCTION", "MAIN LINE", "PRODUCTION FLOOR"],
+    maxCapacityKg: 20900,
+  },
+  {
+    id: 2,
+    floorName: "Floor 2",
+    aliases: ["SECOND LINE", "2ND LINE", "SECOND FLOOR"],
+    maxCapacityKg: 400,
+  },
+  {
+    id: 3,
+    floorName: "Floor 3",
+    aliases: ["NEW PRODUCTION FLOOR", "NEW PRODUCTION", "NEW FLOOR", "NEW LINE"],
+    maxCapacityKg: 7000,
+  },
+];
+
+router.get("/floor-definitions", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    res.json(DEFAULT_FLOORS);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
 router.post("/parse-plan-document", requireAuth, async (req: AuthRequest, res) => {
   try {
     const { fileData, fileName } = req.body as { fileData: string; fileName: string };
@@ -1009,7 +1047,7 @@ router.post("/parse-plan-document", requireAuth, async (req: AuthRequest, res) =
 
     console.log("Extracted text length:", extractedText.length);
     console.log("First 500 chars:", extractedText.substring(0, 500));
-    const days = parseProductionPlan(extractedText);
+    const days = parseProductionPlan(extractedText, DEFAULT_FLOORS);
     console.log("Parsed days:", days.length);
     res.json({ days });
   } catch (err) {
@@ -1018,19 +1056,9 @@ router.post("/parse-plan-document", requireAuth, async (req: AuthRequest, res) =
   }
 });
 
-function parseProductionPlan(text: string): ParsedDay[] {
+function parseProductionPlan(text: string, floors: FloorDefinition[]): ParsedDay[] {
   const lines = text.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
   const days: ParsedDay[] = [];
-
-  const floorMapping: Record<string, string> = {
-    "MAIN PRODUCTION": "Floor 1",
-    "MAIN PRODUCTION FLOOR": "Floor 1",
-    "SECOND LINE": "Floor 2",
-    "2ND LINE": "Floor 2",
-    "NEW PRODUCTION": "Floor 3",
-    "NEW PRODUCTION FLOOR": "Floor 3",
-    "NEW FLOOR": "Floor 3",
-  };
 
   const dayPattern = /^(MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY)\s+(\d{1,2}\/\d{1,2}\/\d{4})/i;
   const volumePattern = /^(\d+(?:[.,]\d+)?)\s*(ton|tons|kg|kilograms?)\s*$/i;
@@ -1038,6 +1066,7 @@ function parseProductionPlan(text: string): ParsedDay[] {
   let currentDay: ParsedDay | null = null;
   let currentFloor: string = "";
   let pendingProducts: string[] = [];
+  let pendingFloorLines: string[] = [];
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -1057,26 +1086,46 @@ function parseProductionPlan(text: string): ParsedDay[] {
       currentDay = { dayName, date, isWeekend, floors: [] };
       currentFloor = "";
       pendingProducts = [];
+      pendingFloorLines = [];
       continue;
     }
 
-    // Check for floor pattern
-    let foundFloor = false;
-    for (const [floorKey, floorName] of Object.entries(floorMapping)) {
-      if (line.toUpperCase().includes(floorKey.toUpperCase())) {
-        currentFloor = floorName;
-        foundFloor = true;
-        break;
+    // Accumulate potential floor name lines and try to match
+    pendingFloorLines.push(line);
+    const combinedFloor = pendingFloorLines.join(" ").toUpperCase();
+
+    // Check for floor pattern - match longest alias first
+    let foundFloor: FloorDefinition | null = null;
+    let matchedAlias = "";
+
+    for (const floor of floors) {
+      for (const alias of floor.aliases) {
+        if (combinedFloor.includes(alias.toUpperCase()) && alias.length > matchedAlias.length) {
+          foundFloor = floor;
+          matchedAlias = alias;
+        }
       }
     }
+
     if (foundFloor) {
+      currentFloor = foundFloor.floorName;
       pendingProducts = [];
+      pendingFloorLines = [];
       continue;
+    }
+
+    // If accumulated lines are too long without matching, reset and treat as products
+    if (pendingFloorLines.length > 3) {
+      const unmatched = pendingFloorLines.shift()!;
+      if (unmatched.length > 2 && !unmatched.toUpperCase().includes("FLOOR")) {
+        pendingProducts.push(unmatched);
+      }
     }
 
     // Check if line is a volume
     const volumeMatch = line.match(volumePattern);
     if (volumeMatch) {
+      pendingFloorLines = [];
       let volume = parseFloat(volumeMatch[1].replace(",", "."));
       const unit = volumeMatch[2].toLowerCase();
       if (unit.includes("ton")) volume *= 1000;
@@ -1094,8 +1143,9 @@ function parseProductionPlan(text: string): ParsedDay[] {
       continue;
     }
 
-    // Otherwise, treat as product name (if it's not empty and reasonable length)
-    if (line.length > 2 && !line.toUpperCase().includes("FLOOR")) {
+    // Otherwise, treat as product name
+    if (!foundFloor && line.length > 2) {
+      pendingFloorLines = [];
       pendingProducts.push(line);
     }
   }
