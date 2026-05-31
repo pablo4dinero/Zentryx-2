@@ -985,13 +985,23 @@ router.post("/parse-plan-document", requireAuth, async (req: AuthRequest, res) =
     let extractedText = "";
 
     if (fileName.endsWith(".docx")) {
-      const mammoth = await import("mammoth");
-      const result = await mammoth.extractRawText({ buffer });
-      extractedText = result.value;
+      try {
+        const mammoth = await import("mammoth");
+        const result = await mammoth.extractRawText({ buffer });
+        extractedText = result.value;
+      } catch (docxErr) {
+        console.error("DOCX parse error:", docxErr);
+        throw new Error("Failed to parse DOCX document");
+      }
     } else if (fileName.endsWith(".pdf")) {
-      const pdfParse = await import("pdf-parse");
-      const result = await pdfParse(buffer);
-      extractedText = result.text;
+      try {
+        const pdfParse = (await import("pdf-parse")).default;
+        const result = await pdfParse(buffer);
+        extractedText = result.text;
+      } catch (pdfErr) {
+        console.error("PDF parse error:", pdfErr);
+        throw new Error("Failed to parse PDF document");
+      }
     } else {
       res.status(400).json({ error: "Unsupported file format. Use .docx or .pdf" });
       return;
