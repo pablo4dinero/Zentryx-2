@@ -11,7 +11,7 @@ interface ParsedDay {
   dayName: string;
   date: string;
   isWeekend: boolean;
-  floors: { floorName: string; products: { name: string; volume: number }[] }[];
+  floors: { floorName: string; products: { name: string; volume: number; detectedType?: string }[] }[];
 }
 
 interface ConfirmedProduct {
@@ -396,6 +396,7 @@ export default function StrategyEvaluatorTab() {
             floorName: floor.floorName,
             productName: product.name,
             volume: product.volume,
+            productType: product.detectedType,
           });
         });
       });
@@ -424,7 +425,7 @@ export default function StrategyEvaluatorTab() {
               {tableRows.map((row, idx) => {
                 const lookup = productLookup.get(row.productName.toLowerCase());
                 const blendSpeed = (lookup?.blendSpeedId || "medium") as "fast" | "medium" | "slow";
-                const productType = lookup?.productType || "Unknown";
+                const productType = row.productType || lookup?.productType || "Unknown";
                 const floorWarning = !checkFloorCompatibility(row.floorName, productType, row.volume);
 
                 const rowKey = `${idx}-${row.dayName}-${row.productName}`;

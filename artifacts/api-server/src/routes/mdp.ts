@@ -970,7 +970,7 @@ interface ParsedDay {
   dayName: string;
   date: string;
   isWeekend: boolean;
-  floors: { floorName: string; products: { name: string; volume: number }[] }[];
+  floors: { floorName: string; products: { name: string; volume: number; detectedType?: string }[] }[];
 }
 
 interface FloorDefinition {
@@ -978,6 +978,50 @@ interface FloorDefinition {
   floorName: string;
   aliases: string[];
   maxCapacityKg: number;
+}
+
+// Smart product type detection using database matching and keyword analysis
+function detectProductType(productName: string, productOrders: any[]): string {
+  const cleanName = (productName || "").toLowerCase().trim();
+  if (!cleanName) return "Unknown";
+
+  // Step 1: Try exact match with database products
+  const exactMatch = productOrders.find((order: any) =>
+    order.productName?.toLowerCase() === cleanName
+  );
+  if (exactMatch?.productType) return exactMatch.productType;
+
+  // Step 2: Try fuzzy match (contains) with database products
+  const fuzzyMatch = productOrders.find((order: any) =>
+    cleanName.includes(order.productName?.toLowerCase() || "") ||
+    order.productName?.toLowerCase().includes(cleanName)
+  );
+  if (fuzzyMatch?.productType) return fuzzyMatch.productType;
+
+  // Step 3: Use keyword analysis for type inference
+  const keywordMap: Record<string, string[]> = {
+    "Gelato": ["gelato", "ice cream"],
+    "Sweet Flavour": ["sweet", "chocolate", "vanilla", "strawberry", "caramel", "coffee", "hazelnut"],
+    "Dairy Premix": ["dairy", "milk", "cream", "cheese", "butter", "yogurt", "condensed milk"],
+    "Bread Premix": ["bread", "bun", "dough", "flour mix", "bread mix"],
+    "Dough Premix": ["dough", "pizza", "pastry", "croissant"],
+    "Snack Dusting": ["dusting", "powder", "coating", "dust", "sprinkle"],
+    "Seasoning": ["seasoning", "salt", "pepper", "spice", "herb", "garlic"],
+    "Pasta Sauce": ["sauce", "pasta", "tomato", "marinara", "pesto", "carbonara"],
+    "Breading": ["breading", "crumb", "panko"],
+    "Savoury Flavour": ["savory", "savoury", "beef", "chicken", "meat", "fish", "crab"],
+    "Marinade": ["marinade", "marinate"],
+    "Spice Mix": ["spice", "cumin", "coriander", "paprika", "turmeric", "chili"]
+  };
+
+  for (const [type, keywords] of Object.entries(keywordMap)) {
+    if (keywords.some(keyword => cleanName.includes(keyword))) {
+      return type;
+    }
+  }
+
+  // Step 4: Default to Unknown if no match found
+  return "Unknown";
 }
 
 // Determine which floor a product should be assigned to based on type and volume
@@ -1084,13 +1128,10 @@ router.post("/parse-plan-document", requireAuth, async (req: AuthRequest, res) =
       floors: day.floors.map(floor => ({
         ...floor,
         products: floor.products.map(product => {
-          const order = productOrders.find((o: any) =>
-            o.productName?.toLowerCase().includes(product.name.toLowerCase()) ||
-            product.name.toLowerCase().includes(o.productName?.toLowerCase() || '')
-          );
-          const productType = order?.productType || "Unknown";
+          // Smart product type detection
+          let productType = detectProductType(product.name, productOrders);
           const correctFloor = assignFloor(productType, product.volume);
-          return { ...product, assignedFloor: correctFloor };
+          return { ...product, assignedFloor: correctFloor, detectedType: productType };
         })
       })),
     }));
