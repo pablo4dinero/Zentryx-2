@@ -1094,13 +1094,15 @@ function parseProductionPlan(text: string, floors: FloorDefinition[]): ParsedDay
     pendingFloorLines.push(line);
     const combinedFloor = pendingFloorLines.join(" ").toUpperCase();
 
-    // Check for floor pattern - match longest alias first
+    // Check for floor pattern - match COMPLETE aliases only
     let foundFloor: FloorDefinition | null = null;
     let matchedAlias = "";
 
     for (const floor of floors) {
       for (const alias of floor.aliases) {
-        if (combinedFloor.includes(alias.toUpperCase()) && alias.length > matchedAlias.length) {
+        const aliasUpper = alias.toUpperCase();
+        // Only match if the combined text EQUALS or ENDS WITH the alias (for word boundaries)
+        if ((combinedFloor === aliasUpper || combinedFloor.endsWith(aliasUpper)) && alias.length > matchedAlias.length) {
           foundFloor = floor;
           matchedAlias = alias;
         }
@@ -1114,10 +1116,10 @@ function parseProductionPlan(text: string, floors: FloorDefinition[]): ParsedDay
       continue;
     }
 
-    // If accumulated lines are too long without matching, reset and treat as products
+    // If accumulated lines don't look like a floor after several attempts, treat first line as product
     if (pendingFloorLines.length > 3) {
       const unmatched = pendingFloorLines.shift()!;
-      if (unmatched.length > 2 && !unmatched.toUpperCase().includes("FLOOR")) {
+      if (unmatched.length > 2 && !unmatched.toUpperCase().includes("FLOOR") && !unmatched.toUpperCase().includes("PRODUCTION")) {
         pendingProducts.push(unmatched);
       }
     }
