@@ -571,8 +571,6 @@ export default function ChatRoom() {
     try {
       const msg = await api.post(`/chat/rooms/${activeRoom.id}/messages`, { content, messageType: "text" });
       setMessages(prev => prev.map((m: any) => m._tempId === tempId ? { ...msg, seenBy: msg.seenBy || [] } : m));
-      // Update user's online status
-      api.post("/chat/users/update-activity", {}).catch(() => {});
       refreshRooms();
     } catch {
       setMessages(prev => prev.filter((m: any) => m._tempId !== tempId));
