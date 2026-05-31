@@ -1364,6 +1364,7 @@ export default function ChatRoom() {
                           onForward={() => {
                             setForwardingMsg(msg);
                             setForwardModalOpen(true);
+                            setLightboxImg(null);
                           }}
                         />
                       </div>
@@ -1408,7 +1409,7 @@ export default function ChatRoom() {
                   <button
                     onClick={() => {
                       const msg = visibleMessages.find(m => selectedIds.has(m.id));
-                      if (msg) { setForwardingMsg(msg); setForwardModalOpen(true); }
+                      if (msg) { setForwardingMsg(msg); setForwardModalOpen(true); setLightboxImg(null); }
                     }}
                     className="px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-400"
                   >
