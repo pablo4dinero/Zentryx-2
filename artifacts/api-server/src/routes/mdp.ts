@@ -1401,3 +1401,4 @@ router.delete("/product-types/:id", requireAuth, async (req: AuthRequest, res) =
 });
 
 export default router;
+
