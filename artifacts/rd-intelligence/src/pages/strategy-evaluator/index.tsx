@@ -97,6 +97,7 @@ export default function StrategyEvaluatorTab() {
   const [aiInsight, setAiInsight] = useState<string>("");
   const [aiLoading, setAiLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [floorOverrides, setFloorOverrides] = useState<Map<string, string>>(new Map());
 
   // Fetch production orders for blend speed lookup
   const ordersQuery = useQuery({
@@ -197,31 +198,37 @@ export default function StrategyEvaluatorTab() {
 
   const handleConfirmProducts = useCallback(() => {
     const products: ConfirmedProduct[] = [];
+    let rowIdx = 0;
     parsedDays.forEach((day) => {
       day.floors.forEach((floor) => {
         floor.products.forEach((product) => {
           const lookup = productLookup.get(product.name.toLowerCase());
           const blendSpeed = (lookup?.blendSpeedId || "medium") as "fast" | "medium" | "slow";
           const productType = lookup?.productType || "Unknown";
-          const floorWarning = !checkFloorCompatibility(floor.floorName, productType, product.volume);
+
+          // Use overridden floor if available, otherwise use parsed floor
+          const rowKey = `${rowIdx}-${day.dayName}-${product.name}`;
+          const finalFloor = floorOverrides.get(rowKey) || floor.floorName;
+          const floorWarning = !checkFloorCompatibility(finalFloor, productType, product.volume);
 
           products.push({
             dayName: day.dayName,
             date: day.date,
             isWeekend: day.isWeekend,
-            floorName: floor.floorName,
+            floorName: finalFloor,
             productName: product.name,
             volume: product.volume,
             blendSpeed,
             productType,
             floorWarning,
           });
+          rowIdx++;
         });
       });
     });
     setConfirmedProducts(products);
     setStep(3);
-  }, [parsedDays]);
+  }, [parsedDays, floorOverrides]);
 
   // Group products for display
   const uploadedDaySummaries = useMemo(() => {
@@ -420,10 +427,28 @@ export default function StrategyEvaluatorTab() {
                 const productType = lookup?.productType || "Unknown";
                 const floorWarning = !checkFloorCompatibility(row.floorName, productType, row.volume);
 
+                const rowKey = `${idx}-${row.dayName}-${row.productName}`;
+                const selectedFloor = floorOverrides.get(rowKey) || row.floorName;
+                const adjustedFloorWarning = !checkFloorCompatibility(selectedFloor, productType, row.volume);
+
                 return (
                 <tr key={idx} className={isLight ? "border-t border-slate-200" : "border-t border-white/5"}>
                   <td className="px-4 py-2 text-xs">{row.dayName}</td>
-                  <td className="px-4 py-2 text-xs">{row.floorName}</td>
+                  <td className="px-4 py-2">
+                    <select
+                      value={selectedFloor}
+                      onChange={(e) => {
+                        const newMap = new Map(floorOverrides);
+                        newMap.set(rowKey, e.target.value);
+                        setFloorOverrides(newMap);
+                      }}
+                      className="text-xs px-2 py-1 rounded border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
+                    >
+                      <option value="Floor 1">Floor 1</option>
+                      <option value="Floor 2">Floor 2</option>
+                      <option value="Floor 3">Floor 3</option>
+                    </select>
+                  </td>
                   <td className="px-4 py-2 text-xs font-medium">{row.productName}</td>
                   <td className="px-4 py-2 text-xs text-right">{Math.round(row.volume).toLocaleString()}</td>
                   <td className="px-4 py-2">
@@ -456,7 +481,7 @@ export default function StrategyEvaluatorTab() {
                     </select>
                   </td>
                   <td className="px-4 py-2 text-center">
-                    {floorWarning && (
+                    {adjustedFloorWarning && (
                       <div title="Floor compatibility warning" className="inline-block">
                         <AlertTriangle className="w-4 h-4 text-amber-600" />
                       </div>
