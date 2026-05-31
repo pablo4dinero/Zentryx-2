@@ -122,7 +122,7 @@ export default function StrategyEvaluatorTab() {
   const { toast } = useToast();
   const isLight = theme === "light";
 
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2>(1);
   const [parsedDays, setParsedDays] = useState<ParsedDay[]>([]);
   const [confirmedProducts, setConfirmedProducts] = useState<ConfirmedProduct[]>([]);
   const [selectedZentryxWeek, setSelectedZentryxWeek] = useState<string>("");
@@ -306,8 +306,7 @@ export default function StrategyEvaluatorTab() {
         }
         const { days } = await res.json();
         setParsedDays(days);
-        toast({ title: "Document uploaded", description: "Proceeding to confirm details" });
-        setStep(2);
+        toast({ title: "Document uploaded", description: "Review and confirm details below" });
       } catch (err) {
         console.error(err);
         toast({ title: "Upload failed", description: "Could not parse document", variant: "destructive" });
@@ -349,7 +348,7 @@ export default function StrategyEvaluatorTab() {
       });
     });
     setConfirmedProducts(products);
-    setStep(3);
+    setStep(2);
   }, [parsedDays, floorOverrides]);
 
   const getAIInsight = useCallback(async () => {
@@ -390,49 +389,6 @@ export default function StrategyEvaluatorTab() {
   }, [selectedZentryxWeek, confirmedProducts, uploadedPlanByDay, zentryxPlanByDay, toast]);
 
   if (step === 1) {
-    return (
-      <div className="max-w-2xl mx-auto space-y-6">
-        <div>
-          <h2 className="text-2xl font-bold text-foreground">Upload Production Plan</h2>
-          <p className="text-sm text-muted-foreground mt-1">Upload your weekly production plan (PDF or DOCX format)</p>
-        </div>
-
-        <div
-          className={cn(
-            "border-2 border-dashed rounded-2xl p-12 text-center transition-colors cursor-pointer hover:border-primary/50",
-            isLight ? "border-slate-300 bg-slate-50" : "border-white/20 bg-black/20"
-          )}
-        >
-          <label className="cursor-pointer flex flex-col items-center gap-3">
-            <Upload className="w-10 h-10 text-primary" />
-            <div>
-              <p className="text-base font-semibold text-foreground">
-                {uploading ? "Parsing document..." : "Upload your plan"}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">PDF or DOCX format</p>
-            </div>
-            {uploading && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
-            <input
-              type="file"
-              accept=".docx,.pdf"
-              onChange={handleFileUpload}
-              disabled={uploading}
-              className="hidden"
-            />
-          </label>
-        </div>
-
-        <div className={cn("rounded-lg p-3 flex gap-2", isLight ? "bg-blue-50 border border-blue-200" : "bg-blue-500/10 border border-blue-500/20")}>
-          <AlertTriangle className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-blue-700 dark:text-blue-400">
-            This document is processed server-side only and never stored on disk. It is used solely to extract production data for comparison.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (step === 2) {
     // Compute table rows inline
     const tableRows: Array<any> = [];
     parsedDays.forEach((day, dayIdx) => {
@@ -489,280 +445,320 @@ export default function StrategyEvaluatorTab() {
 
     return (
       <div className="space-y-6">
+        {/* Upload Section */}
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Confirm Product Details</h2>
-          <p className="text-sm text-muted-foreground mt-1">Review extracted products and confirm blend speeds and types</p>
+          <h2 className="text-2xl font-bold text-foreground">Upload & Review Production Plan</h2>
+          <p className="text-sm text-muted-foreground mt-1">Upload your weekly production plan (PDF or DOCX format) and review extracted details</p>
         </div>
 
-        {/* Custom Product Types Button */}
-        <div className="flex justify-end">
-          <button
-            onClick={() => setShowTypeModal(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-all"
-            style={isLight ? { borderColor: "#e2e8f0", backgroundColor: "#f8fafc", color: "#334155" } : { borderColor: "rgba(255,255,255,0.1)", backgroundColor: "rgba(255,255,255,0.05)", color: "#e2e8f0" }}
-          >
-            <Plus className="w-4 h-4" /> Manage Product Types ({customProductTypes.length})
-          </button>
+        <div
+          className={cn(
+            "border-2 border-dashed rounded-2xl p-12 text-center transition-colors cursor-pointer hover:border-primary/50",
+            isLight ? "border-slate-300 bg-slate-50" : "border-white/20 bg-black/20"
+          )}
+        >
+          <label className="cursor-pointer flex flex-col items-center gap-3">
+            <Upload className="w-10 h-10 text-primary" />
+            <div>
+              <p className="text-base font-semibold text-foreground">
+                {uploading ? "Parsing document..." : "Upload your plan"}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">PDF or DOCX format</p>
+            </div>
+            {uploading && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
+            <input
+              type="file"
+              accept=".docx,.pdf"
+              onChange={handleFileUpload}
+              disabled={uploading}
+              className="hidden"
+            />
+          </label>
         </div>
 
-        {/* Modal Overlay */}
-        {showTypeModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className={cn("rounded-lg p-6 max-w-md w-full mx-4 space-y-4", isLight ? "bg-white" : "bg-slate-900")}>
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-bold text-foreground">Manage Product Types</h3>
+        <div className={cn("rounded-lg p-3 flex gap-2", isLight ? "bg-blue-50 border border-blue-200" : "bg-blue-500/10 border border-blue-500/20")}>
+          <AlertTriangle className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-blue-700 dark:text-blue-400">
+            This document is processed server-side only and never stored on disk. It is used solely to extract production data for comparison.
+          </p>
+        </div>
+
+        {/* Confirmation Section (shown only if document is uploaded) */}
+        {parsedDays.length > 0 && (
+          <>
+            <div className="border-t pt-6">
+              <div className="mb-4">
+                <h3 className="text-lg font-semibold text-foreground">Confirm Product Details</h3>
+                <p className="text-sm text-muted-foreground mt-1">Review extracted products and confirm blend speeds and types</p>
+              </div>
+
+              {/* Custom Product Types Button */}
+              <div className="flex justify-end mb-4">
                 <button
-                  onClick={() => setShowTypeModal(false)}
-                  className="text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowTypeModal(true)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-all"
+                  style={isLight ? { borderColor: "#e2e8f0", backgroundColor: "#f8fafc", color: "#334155" } : { borderColor: "rgba(255,255,255,0.1)", backgroundColor: "rgba(255,255,255,0.05)", color: "#e2e8f0" }}
                 >
-                  <X className="w-5 h-5" />
+                  <Plus className="w-4 h-4" /> Manage Product Types ({customProductTypes.length})
                 </button>
               </div>
 
-              {/* Add Form */}
-              <div className="space-y-3 pb-4 border-b" style={isLight ? { borderColor: "#e2e8f0" } : { borderColor: "rgba(255,255,255,0.1)" }}>
-                <input
-                  type="text"
-                  placeholder="Type name"
-                  value={newTypeForm.name}
-                  onChange={(e) => setNewTypeForm({ ...newTypeForm, name: e.target.value })}
-                  className="w-full text-sm px-3 py-2 rounded border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
-                />
-                <input
-                  type="text"
-                  placeholder="Keywords (comma-separated)"
-                  value={newTypeForm.keywords}
-                  onChange={(e) => setNewTypeForm({ ...newTypeForm, keywords: e.target.value })}
-                  className="w-full text-sm px-3 py-2 rounded border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
-                />
-                <button
-                  onClick={handleAddCustomType}
-                  className="w-full px-4 py-2 bg-blue-600 text-white text-sm rounded font-medium hover:bg-blue-700"
-                >
-                  Add Custom Type
-                </button>
-              </div>
-
-              {/* List */}
-              {customProductTypes.length > 0 ? (
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {customProductTypes.map((type) => (
-                    <div key={type.id} className={cn("flex items-center justify-between p-3 rounded", isLight ? "bg-slate-50" : "bg-white/5")}>
-                      <div className="flex-1">
-                        <p className="font-semibold text-sm">{type.name}</p>
-                        <p className="text-xs text-muted-foreground">{type.keywords.join(", ")}</p>
-                      </div>
+              {/* Modal Overlay */}
+              {showTypeModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                  <div className={cn("rounded-lg p-6 max-w-md w-full mx-4 space-y-4", isLight ? "bg-white" : "bg-slate-900")}>
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-lg font-bold text-foreground">Manage Product Types</h3>
                       <button
-                        onClick={() => handleDeleteCustomType(type.id)}
-                        className="p-2 hover:bg-red-500/20 rounded text-red-600 ml-2"
+                        onClick={() => setShowTypeModal(false)}
+                        className="text-muted-foreground hover:text-foreground"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <X className="w-5 h-5" />
                       </button>
                     </div>
-                  ))}
+
+                    {/* Add Form */}
+                    <div className="space-y-3 pb-4 border-b" style={isLight ? { borderColor: "#e2e8f0" } : { borderColor: "rgba(255,255,255,0.1)" }}>
+                      <input
+                        type="text"
+                        placeholder="Type name"
+                        value={newTypeForm.name}
+                        onChange={(e) => setNewTypeForm({ ...newTypeForm, name: e.target.value })}
+                        className="w-full text-sm px-3 py-2 rounded border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Keywords (comma-separated)"
+                        value={newTypeForm.keywords}
+                        onChange={(e) => setNewTypeForm({ ...newTypeForm, keywords: e.target.value })}
+                        className="w-full text-sm px-3 py-2 rounded border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
+                      />
+                      <button
+                        onClick={handleAddCustomType}
+                        className="w-full px-4 py-2 bg-blue-600 text-white text-sm rounded font-medium hover:bg-blue-700"
+                      >
+                        Add Custom Type
+                      </button>
+                    </div>
+
+                    {/* List */}
+                    {customProductTypes.length > 0 ? (
+                      <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {customProductTypes.map((type) => (
+                          <div key={type.id} className={cn("flex items-center justify-between p-3 rounded", isLight ? "bg-slate-50" : "bg-white/5")}>
+                            <div className="flex-1">
+                              <p className="font-semibold text-sm">{type.name}</p>
+                              <p className="text-xs text-muted-foreground">{type.keywords.join(", ")}</p>
+                            </div>
+                            <button
+                              onClick={() => handleDeleteCustomType(type.id)}
+                              className="p-2 hover:bg-red-500/20 rounded text-red-600 ml-2"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground text-center py-4">No custom types yet</p>
+                    )}
+                  </div>
                 </div>
-              ) : (
-                <p className="text-sm text-muted-foreground text-center py-4">No custom types yet</p>
               )}
+
+              <div className={cn("rounded-lg overflow-hidden border", isLight ? "border-slate-200 bg-white" : "border-white/10")}>
+                <table className="w-full text-sm">
+                  <thead className={cn("", isLight ? "bg-slate-100" : "bg-white/5")}>
+                    <tr>
+                      <th className="px-4 py-2 text-left font-semibold text-xs uppercase">Day</th>
+                      <th className="px-4 py-2 text-left font-semibold text-xs uppercase">Floor</th>
+                      <th className="px-4 py-2 text-left font-semibold text-xs uppercase">Product</th>
+                      <th className="px-4 py-2 text-right font-semibold text-xs uppercase">Volume (kg)</th>
+                      <th className="px-4 py-2 text-center font-semibold text-xs uppercase">Blend Speed</th>
+                      <th className="px-4 py-2 text-center font-semibold text-xs uppercase">Product Type</th>
+                      <th className="px-4 py-2 text-center font-semibold text-xs uppercase"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tableRows.map((row, idx) => {
+                      const lookup = productLookup.get(row.productName.toLowerCase());
+                      const blendSpeed = (lookup?.blendSpeedId || "medium") as "fast" | "medium" | "slow";
+                      const productType = row.productType || lookup?.productType || "Unknown";
+                      const floorWarning = !checkFloorCompatibility(row.floorName, productType, row.volume);
+
+                      const rowKey = `${idx}-${row.dayName}-${row.productName}`;
+                      const selectedFloor = floorOverrides.get(rowKey) || row.floorName;
+                      const adjustedFloorWarning = !checkFloorCompatibility(selectedFloor, productType, row.volume);
+
+                      const dayKey = `day-${row.dayIdx}`;
+                      const productKey = `product-${row.dayIdx}-${row.prodIdx}`;
+                      const isEditingDay = editingDayIdx === row.dayIdx;
+                      const isEditingProduct = editingProductKey === productKey;
+
+                      return (
+                      <tr key={idx} className={isLight ? "border-t border-slate-200" : "border-t border-white/5"}>
+                        <td className="px-4 py-2 text-xs">
+                          {isEditingDay ? (
+                            <div className="flex gap-1 items-center">
+                              <input
+                                autoFocus
+                                type="text"
+                                defaultValue={row.dayName}
+                                onBlur={(e) => {
+                                  if (e.target.value.trim()) {
+                                    setDayRenames(new Map(dayRenames).set(dayKey, e.target.value));
+                                  }
+                                  setEditingDayIdx(null);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    if (e.currentTarget.value.trim()) {
+                                      setDayRenames(new Map(dayRenames).set(dayKey, e.currentTarget.value));
+                                    }
+                                    setEditingDayIdx(null);
+                                  } else if (e.key === "Escape") {
+                                    setEditingDayIdx(null);
+                                  }
+                                }}
+                                className="text-xs px-2 py-1 rounded border border-slate-300 dark:border-white/20 bg-white dark:bg-black/30 w-20"
+                              />
+                            </div>
+                          ) : (
+                            <div className="flex gap-1 items-center group">
+                              <span>{row.dayName}</span>
+                              <button
+                                onClick={() => setEditingDayIdx(row.dayIdx)}
+                                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-200 dark:hover:bg-white/10 rounded"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-2">
+                          <select
+                            value={selectedFloor}
+                            onChange={(e) => {
+                              const newMap = new Map(floorOverrides);
+                              newMap.set(rowKey, e.target.value);
+                              setFloorOverrides(newMap);
+                            }}
+                            className="text-xs px-2 py-1 rounded border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
+                          >
+                            <option value="Floor 1">Floor 1</option>
+                            <option value="Floor 2">Floor 2</option>
+                            <option value="Floor 3">Floor 3</option>
+                          </select>
+                        </td>
+                        <td className="px-4 py-2 text-xs font-medium">
+                          {isEditingProduct ? (
+                            <div className="flex gap-1 items-center">
+                              <input
+                                autoFocus
+                                type="text"
+                                defaultValue={row.productName}
+                                onBlur={(e) => {
+                                  if (e.target.value.trim()) {
+                                    setProductRenames(new Map(productRenames).set(productKey, e.target.value));
+                                  }
+                                  setEditingProductKey(null);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    if (e.currentTarget.value.trim()) {
+                                      setProductRenames(new Map(productRenames).set(productKey, e.currentTarget.value));
+                                    }
+                                    setEditingProductKey(null);
+                                  } else if (e.key === "Escape") {
+                                    setEditingProductKey(null);
+                                  }
+                                }}
+                                className="text-xs px-2 py-1 rounded border border-slate-300 dark:border-white/20 bg-white dark:bg-black/30 flex-1"
+                              />
+                            </div>
+                          ) : (
+                            <div className="flex gap-1 items-center group">
+                              <span>{row.productName}</span>
+                              <button
+                                onClick={() => setEditingProductKey(productKey)}
+                                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-200 dark:hover:bg-white/10 rounded"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-2 text-xs text-right">{Math.round(row.volume).toLocaleString()}</td>
+                        <td className="px-4 py-2">
+                          <select
+                            defaultValue={blendSpeed}
+                            className="text-xs px-2 py-1 rounded border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
+                          >
+                            <option value="fast">Fast</option>
+                            <option value="medium">Medium</option>
+                            <option value="slow">Slow</option>
+                          </select>
+                        </td>
+                        <td className="px-4 py-2">
+                          <select
+                            defaultValue={productType}
+                            className="text-xs px-2 py-1 rounded border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
+                          >
+                            <option value="Seasoning">Seasoning</option>
+                            <option value="Pasta Sauce">Pasta Sauce</option>
+                            <option value="Breading">Breading</option>
+                            <option value="Savoury Flavour">Savoury Flavour</option>
+                            <option value="Marinade">Marinade</option>
+                            <option value="Spice Mix">Spice Mix</option>
+                            <option value="Dairy Premix">Dairy Premix</option>
+                            <option value="Sweet Flavour">Sweet Flavour</option>
+                            <option value="Snack Dusting">Snack Dusting</option>
+                            <option value="Dough Premix">Dough Premix</option>
+                            <option value="Bread Premix">Bread Premix</option>
+                            <option value="Unknown">Unknown</option>
+                            {customProductTypes.length > 0 && (
+                              <>
+                                <option disabled>─ Custom ─</option>
+                                {customProductTypes.map((type) => (
+                                  <option key={type.id} value={type.name}>
+                                    {type.name}
+                                  </option>
+                                ))}
+                              </>
+                            )}
+                          </select>
+                        </td>
+                        <td className="px-4 py-2 text-center">
+                          {adjustedFloorWarning && (
+                            <div title="Floor compatibility warning" className="inline-block">
+                              <AlertTriangle className="w-4 h-4 text-amber-600" />
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={handleConfirmProducts}
+                  className="px-6 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700"
+                >
+                  Compare Plans →
+                </button>
+              </div>
             </div>
-          </div>
+          </>
         )}
-
-        <div className={cn("rounded-lg overflow-hidden border", isLight ? "border-slate-200 bg-white" : "border-white/10")}>
-          <table className="w-full text-sm">
-            <thead className={cn("", isLight ? "bg-slate-100" : "bg-white/5")}>
-              <tr>
-                <th className="px-4 py-2 text-left font-semibold text-xs uppercase">Day</th>
-                <th className="px-4 py-2 text-left font-semibold text-xs uppercase">Floor</th>
-                <th className="px-4 py-2 text-left font-semibold text-xs uppercase">Product</th>
-                <th className="px-4 py-2 text-right font-semibold text-xs uppercase">Volume (kg)</th>
-                <th className="px-4 py-2 text-center font-semibold text-xs uppercase">Blend Speed</th>
-                <th className="px-4 py-2 text-center font-semibold text-xs uppercase">Product Type</th>
-                <th className="px-4 py-2 text-center font-semibold text-xs uppercase"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {tableRows.map((row, idx) => {
-                const lookup = productLookup.get(row.productName.toLowerCase());
-                const blendSpeed = (lookup?.blendSpeedId || "medium") as "fast" | "medium" | "slow";
-                const productType = row.productType || lookup?.productType || "Unknown";
-                const floorWarning = !checkFloorCompatibility(row.floorName, productType, row.volume);
-
-                const rowKey = `${idx}-${row.dayName}-${row.productName}`;
-                const selectedFloor = floorOverrides.get(rowKey) || row.floorName;
-                const adjustedFloorWarning = !checkFloorCompatibility(selectedFloor, productType, row.volume);
-
-                const dayKey = `day-${row.dayIdx}`;
-                const productKey = `product-${row.dayIdx}-${row.prodIdx}`;
-                const isEditingDay = editingDayIdx === row.dayIdx;
-                const isEditingProduct = editingProductKey === productKey;
-
-                return (
-                <tr key={idx} className={isLight ? "border-t border-slate-200" : "border-t border-white/5"}>
-                  <td className="px-4 py-2 text-xs">
-                    {isEditingDay ? (
-                      <div className="flex gap-1 items-center">
-                        <input
-                          autoFocus
-                          type="text"
-                          defaultValue={row.dayName}
-                          onBlur={(e) => {
-                            if (e.target.value.trim()) {
-                              setDayRenames(new Map(dayRenames).set(dayKey, e.target.value));
-                            }
-                            setEditingDayIdx(null);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              if (e.currentTarget.value.trim()) {
-                                setDayRenames(new Map(dayRenames).set(dayKey, e.currentTarget.value));
-                              }
-                              setEditingDayIdx(null);
-                            } else if (e.key === "Escape") {
-                              setEditingDayIdx(null);
-                            }
-                          }}
-                          className="text-xs px-2 py-1 rounded border border-slate-300 dark:border-white/20 bg-white dark:bg-black/30 w-20"
-                        />
-                      </div>
-                    ) : (
-                      <div className="flex gap-1 items-center group">
-                        <span>{row.dayName}</span>
-                        <button
-                          onClick={() => setEditingDayIdx(row.dayIdx)}
-                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-200 dark:hover:bg-white/10 rounded"
-                        >
-                          <Edit2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-4 py-2">
-                    <select
-                      value={selectedFloor}
-                      onChange={(e) => {
-                        const newMap = new Map(floorOverrides);
-                        newMap.set(rowKey, e.target.value);
-                        setFloorOverrides(newMap);
-                      }}
-                      className="text-xs px-2 py-1 rounded border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
-                    >
-                      <option value="Floor 1">Floor 1</option>
-                      <option value="Floor 2">Floor 2</option>
-                      <option value="Floor 3">Floor 3</option>
-                    </select>
-                  </td>
-                  <td className="px-4 py-2 text-xs font-medium">
-                    {isEditingProduct ? (
-                      <div className="flex gap-1 items-center">
-                        <input
-                          autoFocus
-                          type="text"
-                          defaultValue={row.productName}
-                          onBlur={(e) => {
-                            if (e.target.value.trim()) {
-                              setProductRenames(new Map(productRenames).set(productKey, e.target.value));
-                            }
-                            setEditingProductKey(null);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              if (e.currentTarget.value.trim()) {
-                                setProductRenames(new Map(productRenames).set(productKey, e.currentTarget.value));
-                              }
-                              setEditingProductKey(null);
-                            } else if (e.key === "Escape") {
-                              setEditingProductKey(null);
-                            }
-                          }}
-                          className="text-xs px-2 py-1 rounded border border-slate-300 dark:border-white/20 bg-white dark:bg-black/30 flex-1"
-                        />
-                      </div>
-                    ) : (
-                      <div className="flex gap-1 items-center group">
-                        <span>{row.productName}</span>
-                        <button
-                          onClick={() => setEditingProductKey(productKey)}
-                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-200 dark:hover:bg-white/10 rounded"
-                        >
-                          <Edit2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-xs text-right">{Math.round(row.volume).toLocaleString()}</td>
-                  <td className="px-4 py-2">
-                    <select
-                      defaultValue={blendSpeed}
-                      className="text-xs px-2 py-1 rounded border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
-                    >
-                      <option value="fast">Fast</option>
-                      <option value="medium">Medium</option>
-                      <option value="slow">Slow</option>
-                    </select>
-                  </td>
-                  <td className="px-4 py-2">
-                    <select
-                      defaultValue={productType}
-                      className="text-xs px-2 py-1 rounded border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
-                    >
-                      <option value="Seasoning">Seasoning</option>
-                      <option value="Pasta Sauce">Pasta Sauce</option>
-                      <option value="Breading">Breading</option>
-                      <option value="Savoury Flavour">Savoury Flavour</option>
-                      <option value="Marinade">Marinade</option>
-                      <option value="Spice Mix">Spice Mix</option>
-                      <option value="Dairy Premix">Dairy Premix</option>
-                      <option value="Sweet Flavour">Sweet Flavour</option>
-                      <option value="Snack Dusting">Snack Dusting</option>
-                      <option value="Dough Premix">Dough Premix</option>
-                      <option value="Bread Premix">Bread Premix</option>
-                      <option value="Unknown">Unknown</option>
-                      {customProductTypes.length > 0 && (
-                        <>
-                          <option disabled>─ Custom ─</option>
-                          {customProductTypes.map((type) => (
-                            <option key={type.id} value={type.name}>
-                              {type.name}
-                            </option>
-                          ))}
-                        </>
-                      )}
-                    </select>
-                  </td>
-                  <td className="px-4 py-2 text-center">
-                    {adjustedFloorWarning && (
-                      <div title="Floor compatibility warning" className="inline-block">
-                        <AlertTriangle className="w-4 h-4 text-amber-600" />
-                      </div>
-                    )}
-                  </td>
-                </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="flex gap-3">
-          <button
-            onClick={() => setStep(1)}
-            className={cn("px-4 py-2 rounded-lg text-sm font-medium border", isLight ? "border-slate-200 hover:bg-slate-50" : "border-white/10 hover:bg-white/5")}
-          >
-            Back
-          </button>
-          <button
-            onClick={handleConfirmProducts}
-            className="ml-auto px-6 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700"
-          >
-            Compare Plans →
-          </button>
-        </div>
       </div>
     );
   }
 
-  return (
+  if (step === 2) {
+    return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-foreground">Comparison Results</h2>
@@ -976,7 +972,7 @@ export default function StrategyEvaluatorTab() {
       {/* Navigation */}
       <div className="flex gap-3">
         <button
-          onClick={() => setStep(2)}
+          onClick={() => setStep(1)}
           className={cn("px-4 py-2 rounded-lg text-sm font-medium border", isLight ? "border-slate-200 hover:bg-slate-50" : "border-white/10 hover:bg-white/5")}
         >
           Back
