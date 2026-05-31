@@ -856,7 +856,18 @@ export default function StrategyEvaluatorTab() {
                 }))
               ).map(([dayName, dayData]) => (
                 <div key={dayName} className={cn("rounded p-3", isLight ? "bg-slate-50" : "bg-white/5")}>
-                  <div className="text-xs font-semibold text-foreground mb-2">{dayName}</div>
+                  <div className="text-xs font-semibold text-foreground mb-2">
+                    {dayName}
+                    {(() => {
+                      const assignment = assignmentsQuery.data?.find((row: any) => row.assignment?.assignedDay === dayName);
+                      if (assignment?.assignment?.assignmentDate) {
+                        const date = new Date(assignment.assignment.assignmentDate);
+                        const formatted = date.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" });
+                        return ` ${formatted}`;
+                      }
+                      return "";
+                    })()}
+                  </div>
                   <div className="text-lg font-bold text-blue-600 mb-2">
                     {Array.from(dayData.shifts.values()).flatMap((s) => Array.from(s.floors.values())).reduce((sum, f) => sum + f.volume, 0).toLocaleString()} kg
                   </div>
@@ -939,7 +950,7 @@ export default function StrategyEvaluatorTab() {
       </div>
 
       {/* Summary Table */}
-      <div className={cn("rounded-lg border overflow-x-auto", isLight ? "border-slate-200" : "border-white/10")}>
+      <div className={cn("rounded-lg border overflow-x-auto", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/20")}>
         <table className="w-full text-sm">
           <thead className={cn("", isLight ? "bg-slate-100" : "bg-white/5")}>
             <tr>
@@ -1032,10 +1043,22 @@ export default function StrategyEvaluatorTab() {
                     );
                   }, 0)} switches detected
               </td>
-              <td className="px-4 py-2 text-center">
-                <span className={cn("inline-block px-2 py-1 rounded text-xs font-semibold", isLight ? "bg-green-100 text-green-700" : "bg-green-500/20 text-green-400")}>
-                  Optimised
-                </span>
+              <td className="px-4 py-2 text-center text-xs font-semibold text-blue-600">
+                {Array.from(zentryxPlanByDay.values())
+                  .reduce((total, dayData) => {
+                    return (
+                      total +
+                      Array.from(dayData.shifts.values()).reduce((dayTotal, shiftData) => {
+                        return (
+                          dayTotal +
+                          Array.from(shiftData.floors.values()).reduce(
+                            (shiftTotal, floorData) => shiftTotal + Math.max(0, floorData.productCount - 1),
+                            0
+                          )
+                        );
+                      }, 0)
+                    );
+                  }, 0)} switches detected
               </td>
             </tr>
           </tbody>
