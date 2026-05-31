@@ -980,6 +980,16 @@ interface FloorDefinition {
   maxCapacityKg: number;
 }
 
+// In-memory storage for custom product types (can be persisted to DB later)
+interface CustomProductType {
+  id: string;
+  name: string;
+  keywords: string[];
+  createdAt: Date;
+}
+
+const customProductTypes: Map<string, CustomProductType> = new Map();
+
 // Smart product type detection using database matching and keyword analysis
 function detectProductType(productName: string, productOrders: any[]): string {
   const cleanName = (productName || "").toLowerCase().trim();
@@ -1317,16 +1327,6 @@ Which plan is more efficient and why?`;
     res.status(500).json({ error: "Failed to generate insight" });
   }
 });
-
-// In-memory storage for custom product types (can be persisted to DB later)
-interface CustomProductType {
-  id: string;
-  name: string;
-  keywords: string[];
-  createdAt: Date;
-}
-
-const customProductTypes: Map<string, CustomProductType> = new Map();
 
 router.get("/product-types", requireAuth, async (req: AuthRequest, res) => {
   try {
