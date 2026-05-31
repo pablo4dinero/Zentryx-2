@@ -97,6 +97,9 @@ async function createTablesIfNotExist() {
       await db.execute(sql.raw(tableSql));
     }
 
+    // Real-time online status tracking for chat
+    await db.execute(sql.raw(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMP NOT NULL DEFAULT NOW();`));
+
     // Ensure the expected delivery date column exists on existing production order tables
     await db.execute(sql.raw(`ALTER TABLE account_production_orders ADD COLUMN IF NOT EXISTS expected_delivery_date TEXT;`));
     await db.execute(sql.raw(`ALTER TABLE today_production_orders ADD COLUMN IF NOT EXISTS production_order_id INTEGER NOT NULL;`));
