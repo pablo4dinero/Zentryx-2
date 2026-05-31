@@ -2833,6 +2833,24 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
               Include Saturday
             </label>
           )}
+          <div className="flex gap-1 p-1 rounded-xl border" style={{background: isLight ? '#f1f5f9' : 'rgba(255,255,255,0.05)'}}>
+            {["weekly", "daily", "monthly"].map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setPlanningView(mode as PlanningViewMode)}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all",
+                  planningView === mode
+                    ? "bg-primary text-white shadow-sm"
+                    : isLight
+                    ? "text-slate-600 hover:text-slate-900"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {mode === "weekly" ? "Weekly" : mode === "daily" ? "Daily" : "Monthly"}
+              </button>
+            ))}
+          </div>
           <button
             onClick={handleAssistedPlanning}
             disabled={assistedState === "optimizing"}
