@@ -1560,12 +1560,20 @@ function SettingsTab({ isLight }: { isLight: boolean }) {
   const [flags, setFlags] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
+    setError(null);
     try {
       const data = await apiGet("/admin/feature-flags");
-      if (Array.isArray(data)) setFlags(data);
+      if (Array.isArray(data)) {
+        setFlags(data);
+      } else if (data?.error) {
+        setError("Database not initialized. Please run POST /api/admin/feature-flags/init first.");
+      }
+    } catch (err) {
+      setError("Failed to load feature flags. Database table may not exist yet.");
     } finally {
       setLoading(false);
     }
@@ -1666,7 +1674,18 @@ function SettingsTab({ isLight }: { isLight: boolean }) {
         </div>
       ))}
 
-      {flags.length === 0 && (
+      {error && (
+        <div className={cn("rounded-xl p-6 border", isLight ? "border-amber-200 bg-amber-50" : "border-amber-900/30 bg-amber-500/10")}>
+          <p className={cn("text-sm font-medium", isLight ? "text-amber-900" : "text-amber-200")}>
+            ⚠️ {error}
+          </p>
+          <p className={cn("text-xs mt-2", isLight ? "text-amber-800" : "text-amber-300")}>
+            The feature flags table hasn't been created yet. Contact your database administrator or wait for the database migrations to complete.
+          </p>
+        </div>
+      )}
+
+      {!error && flags.length === 0 && !loading && (
         <div className={cn("rounded-xl p-8 text-center border", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/[0.02]")}>
           <Settings className={cn("w-10 h-10 mx-auto mb-3", isLight ? "text-slate-400" : "text-muted-foreground")} />
           <p className={cn("text-sm", isLight ? "text-slate-500" : "text-muted-foreground")}>
