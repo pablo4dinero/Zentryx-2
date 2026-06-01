@@ -1177,8 +1177,8 @@ function ProductionOrdersTab() {
                       {order.productType ?? "—"}
                     </td>
                     <td className="px-4 py-3 text-right font-medium text-sm">{Number(order.volume ?? 0).toLocaleString()}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">{order.dateOrdered ?? "—"}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">{order.expectedDeliveryDateDate ?? "—"}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(order.dateOrdered)}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(order.expectedDeliveryDateDate)}</td>
                     <td className="px-4 py-3">
                       <select value={rawMaterial} onChange={e => handleChangeRawMaterial(order.id, e.target.value)}
                         className={cn("rounded-lg border px-2 py-1.5 text-xs font-semibold cursor-pointer focus:outline-none",
