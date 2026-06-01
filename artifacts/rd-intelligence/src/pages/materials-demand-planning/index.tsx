@@ -2546,12 +2546,6 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     });
 
     try {
-      // Optimistic update: immediately remove from cache (no re-fetch needed)
-      queryClient.setQueryData(["/api/mdp/floor-assignments", selectedWeekLabel], (old: any) => {
-        if (!Array.isArray(old)) return old;
-        return old.filter(row => !assignmentIds.includes(row.id));
-      });
-
       // Batch delete on server (single request, not N requests)
       const res = await fetch(`${BASE}api/mdp/floor-assignments/batch-delete`, {
         method: "POST",
@@ -2560,14 +2554,16 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       });
 
       if (!res.ok) {
-        throw new Error("Batch delete failed");
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error.error || "Batch delete failed");
       }
 
-      // No invalidation needed - cache is already updated
+      // After server confirms deletion, invalidate both queries to sync cache
+      // (don't await - let refetch happen in background for speed)
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments", selectedWeekLabel] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
     } catch (error) {
       console.error("Unassign all error:", error);
-      // Revert optimistic update on error
-      queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments", selectedWeekLabel] });
       toast({
         title: "Error unassigning",
         description: "Some assignments couldn't be removed. Try again.",
