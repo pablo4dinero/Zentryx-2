@@ -139,6 +139,54 @@ function sortOrders(orders: Order[]): Order[] {
   });
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PROACTIVE GROUPING & SMART SEQUENCING
+// Groups orders by product type, then sorts within groups by volume (desc)
+// and deadline (asc). This minimizes product switches by keeping similar
+// products together.
+// ─────────────────────────────────────────────────────────────────────────────
+
+type ProductGroup = {
+  productType: string;  // normalized type
+  orders: Order[];      // sorted by volume desc, deadline asc
+  totalVolume: number;  // sum of remainingQuantity
+};
+
+function createProductGroups(orders: Order[]): ProductGroup[] {
+  const groupMap = new Map<string, Order[]>();
+
+  // Group orders by normalized product type
+  for (const order of orders) {
+    const key = normalizeType(order.productType);
+    if (!groupMap.has(key)) {
+      groupMap.set(key, []);
+    }
+    groupMap.get(key)!.push(order);
+  }
+
+  // Convert to ProductGroup and sort within each group
+  const groups: ProductGroup[] = [];
+  for (const [productType, groupOrders] of groupMap.entries()) {
+    // Sort within group: Volume DESC (largest first), then Deadline ASC (urgent first)
+    const sorted = [...groupOrders].sort((a, b) => {
+      if (b.remainingQuantity !== a.remainingQuantity) {
+        return b.remainingQuantity - a.remainingQuantity;  // Volume DESC
+      }
+      const da = a.expectedDeliveryDate ? new Date(a.expectedDeliveryDate).getTime() : Infinity;
+      const db = b.expectedDeliveryDate ? new Date(b.expectedDeliveryDate).getTime() : Infinity;
+      return da - db;  // Deadline ASC
+    });
+
+    const totalVolume = sorted.reduce((sum, o) => sum + o.remainingQuantity, 0);
+    groups.push({ productType, orders: sorted, totalVolume });
+  }
+
+  // Sort groups by total volume DESC (largest product groups first)
+  groups.sort((a, b) => b.totalVolume - a.totalVolume);
+
+  return groups;
+}
+
 // Microbial buffer per spec
 function microbialBufferDays(microbial: string): number {
   if (microbial === "Critical") return 5;
@@ -265,6 +313,11 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
 
   // ── Step 3: sort by priority ──────────────────────────────────────────────
   const sortedOrders = sortOrders(eligibleOrders);
+
+  // ── Step 3a: create product groups for smart sequencing ───────────────────
+  // Group orders by product type, sort within groups by volume + deadline.
+  // This minimizes product switches by keeping similar products together.
+  const productGroups = createProductGroups(eligibleOrders);
 
   // ── Step 5: per-cell minute budget (Step 4 capacities computed inline) ────
   // We model day-shift and night-shift as separate cells (existing UI layout).
@@ -456,69 +509,73 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
     }
   }
 
-  for (const order of sortedOrders) {
-    if (order.remainingQuantity <= 0) continue;
+  // ── Step 6b: Group-based assignment (Proactive Grouping) ────────────────────
+  // Process product groups instead of individual orders. This ensures:
+  // 1. Similar products are assigned together (minimizes switches)
+  // 2. High-volume orders within each group get best slots
+  // 3. Urgent deadlines get early-week slots
 
-    // Special handling for Curry and Breading: only assign when no more Floor 3 production orders remain
-    const isCurryOrBreading = (type: string | null) => {
-      if (!type) return false;
-      const norm = normalizeType(type);
-      return norm.includes("curry") || norm.includes("breading");
-    };
+  for (const group of productGroups) {
+    if (group.orders.every(o => o.remainingQuantity <= 0)) continue;
 
-    if (isCurryOrBreading(order.productType)) {
-      const floor3 = floors.find(f => f.floorName === "Floor 3");
-      if (floor3) {
-        // Check if there are any other non-Curry/Breading orders with remaining quantity that could go to Floor 3
-        const hasOtherFloor3Orders = sortedOrders.some(o =>
-          o.remainingQuantity > 0 &&
-          o.id !== order.id &&
-          !isCurryOrBreading(o.productType) &&
-          isFloorEligible(floor3, o.productType, o.remainingQuantity)
-        );
-        if (hasOtherFloor3Orders) {
-          // Skip this Curry/Breading order for now; it will be picked up later
-          continue;
+    // Find eligible floors for this product group
+    const groupCandidates = floors.filter(f =>
+      group.orders.some(o => o.remainingQuantity > 0 && isFloorEligible(f, o.productType, o.remainingQuantity))
+    );
+
+    if (groupCandidates.length === 0) {
+      // All orders in this group are ineligible
+      for (const order of group.orders) {
+        if (order.remainingQuantity > 0) {
+          skipped.push({ orderId: order.id, label: order.productionLabel, reason: "No eligible floor for this product type" });
         }
       }
-    }
-
-    const candidates = floors.filter(f => isFloorEligible(f, order.productType, order.remainingQuantity));
-    if (candidates.length === 0) {
-      skipped.push({ orderId: order.id, label: order.productionLabel, reason: "No eligible floor for this product type" });
       continue;
     }
 
-    // Best-floor heuristic
-    candidates.sort((a, b) => {
-      if (order.remainingQuantity > 5_000) {
-        // Prefer largest floor
-        return b.maxCapacityKg - a.maxCapacityKg;
+    // Sort floor candidates by suitability for this group
+    groupCandidates.sort((a, b) => {
+      const groupSize = group.totalVolume;
+      if (groupSize > 5_000) {
+        return b.maxCapacityKg - a.maxCapacityKg;  // Prefer largest floor for big groups
       }
-      // Prefer floor with the most matching daily capacity but smaller overall
-      const aCap = dailyCapacityKg(a, order.blendSpeedId || "fast", blendSpeeds);
-      const bCap = dailyCapacityKg(b, order.blendSpeedId || "fast", blendSpeeds);
-      // Favour a floor whose capacity is closest above the remaining
-      const aFit = aCap >= order.remainingQuantity ? aCap - order.remainingQuantity : Infinity;
-      const bFit = bCap >= order.remainingQuantity ? bCap - order.remainingQuantity : Infinity;
+      const aCap = dailyCapacityKg(a, group.orders[0]?.blendSpeedId || "fast", blendSpeeds);
+      const bCap = dailyCapacityKg(b, group.orders[0]?.blendSpeedId || "fast", blendSpeeds);
+      const aFit = aCap >= groupSize ? aCap - groupSize : Infinity;
+      const bFit = bCap >= groupSize ? bCap - groupSize : Infinity;
       if (aFit !== bFit) return aFit - bFit;
       return a.maxCapacityKg - b.maxCapacityKg;
     });
 
-    const initialRemaining = order.remainingQuantity;
+    // Assign all orders in this group, trying to keep them on the same floor
+    for (const floor of groupCandidates) {
+      if (group.orders.every(o => o.remainingQuantity <= 0)) break;
 
-    // High-volume orders can spread across floors as well as days
-    for (const floor of candidates) {
-      if (order.remainingQuantity <= 0) break;
-      tryAssignOnFloor(order, floor);
+      for (const order of group.orders) {
+        if (order.remainingQuantity <= 0) continue;
+        tryAssignOnFloor(order, floor);
+      }
     }
 
-    if (order.remainingQuantity <= 0) {
-      fullyScheduled.push({ orderId: order.id, label: order.productionLabel });
-    } else if (order.remainingQuantity < initialRemaining) {
-      partiallyScheduled.push({ orderId: order.id, label: order.productionLabel, leftoverKg: Math.round(order.remainingQuantity) });
-    } else {
-      skipped.push({ orderId: order.id, label: order.productionLabel, reason: "No capacity before delivery date" });
+    // Update scheduled/skipped status for all orders in this group
+    for (const order of group.orders) {
+      if (order.remainingQuantity <= 0) {
+        const idx = fullyScheduled.findIndex(p => p.orderId === order.id);
+        if (idx < 0) fullyScheduled.push({ orderId: order.id, label: order.productionLabel });
+      } else {
+        const initialRemaining = eligibleOrders.find(o => o.id === order.id)?.remainingQuantity ?? 0;
+        if (order.remainingQuantity < initialRemaining) {
+          const idx = partiallyScheduled.findIndex(p => p.orderId === order.id);
+          if (idx < 0) {
+            partiallyScheduled.push({ orderId: order.id, label: order.productionLabel, leftoverKg: Math.round(order.remainingQuantity) });
+          }
+        } else {
+          const idx = skipped.findIndex(p => p.orderId === order.id);
+          if (idx < 0) {
+            skipped.push({ orderId: order.id, label: order.productionLabel, reason: "No capacity before delivery date" });
+          }
+        }
+      }
     }
   }
 
