@@ -161,6 +161,21 @@ function isSweetGroup(productType: string | null): boolean {
          t.includes("functional") || t.includes("dough");
 }
 
+// Helper: Check if product is in Floor 3 priority list (Dairy Premix, Bread Premix, Dough Premix, Snack Dusting, Functional Blend >500kg, Sweet Flavour >500kg)
+function isFloor3Priority(productType: string | null, volume?: number): boolean {
+  if (!productType) return false;
+  const t = normalizeType(productType);
+  // Always priority: Dairy Premix, Bread Premix, Dough Premix, Snack Dusting
+  if (t.includes("dairy") || t.includes("bread") || t.includes("snack") || t.includes("dough")) {
+    return true;
+  }
+  // Conditional priority: Functional Blend >500kg, Sweet Flavour >500kg
+  if ((t.includes("functional") || t.includes("sweet")) && volume && volume > 500) {
+    return true;
+  }
+  return false;
+}
+
 // Floor eligibility:
 //   1. If the floor has an explicit allowedProductTypes list, that wins —
 //      strict include match.
@@ -179,6 +194,11 @@ function isFloorEligible(floor: Floor, orderProductType: string | null, volume?:
   }
   if (!orderProductType) return true;
   const t = normalizeType(orderProductType);
+
+  // Floor 2 constraint: NEVER assign orders over 500kg (don't split)
+  if (floor.floorName === "Floor 2" && volume && volume > 500) {
+    return false;
+  }
 
   // Floor 2 special case: allow Dairy Premix only if volume <= 500kg
   if (floor.floorName === "Floor 2" && t.includes("dairy")) {
@@ -286,13 +306,18 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
   const partiallyScheduled: PlanningSummary["partiallyScheduled"] = [];
   const switchDays: PlanningSummary["switchDays"] = [];
 
+  // Track which orders have been assigned to Floor 3 Mon/Tue
+  const assignedToFloor3MonTue = new Set<number>();
+
   // Helper: ordered list of cells for a floor up to latestCompletion (or
   // through all workingDays if no deadline). Day-shift first, then NS.
-  const cellsForFloorByDeadline = (floorId: number, deadline: Date | null) => {
+  const cellsForFloorByDeadline = (floorId: number, deadline: Date | null, daysFilter?: string[]) => {
     const out: { day: string; dayIndex: number; isNS: boolean }[] = [];
     for (let i = 0; i < workingDays.length; i++) {
       const date = workingDates[i];
       if (deadline && date.getTime() > deadline.getTime()) break;
+      // Filter by day if daysFilter provided (e.g., ["Mon", "Tue"])
+      if (daysFilter && !daysFilter.includes(workingDays[i])) continue;
       if (!isFloorDayBlocked(floorId, workingDays[i])) {
         out.push({ day: workingDays[i], dayIndex: i, isNS: false });
       }
@@ -365,6 +390,71 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
 
     return order.remainingQuantity;
   };
+
+  // ── Step 6a: Floor 3 Monday/Tuesday Priority Assignment ──────────────────────
+  // Prioritize assigning Floor 3 priority products (Dairy Premix, Bread Premix,
+  // Dough Premix, Snack Dusting, Functional Blend >500kg, Sweet Flavour >500kg)
+  // to Floor 3 on Mon/Tue first, before allowing other product types on those days.
+  const floor3 = floors.find(f => f.floorName === "Floor 3");
+  if (floor3) {
+    // First pass: assign Floor 3 priority products to Mon/Tue
+    for (const order of sortedOrders) {
+      if (order.remainingQuantity <= 0) continue;
+      if (!isFloor3Priority(order.productType, order.remainingQuantity)) continue;
+      if (assignedToFloor3MonTue.has(order.id)) continue;
+
+      // Try to assign priority products to Floor 3 on Mon/Tue only
+      const deadline = latestCompletion.get(order.id) ?? null;
+      const blendMins = blendMinutesById(blendSpeeds, order.blendSpeedId || "fast");
+      const dailyCap = dailyCapacityKg(floor3, order.blendSpeedId || "fast", blendSpeeds);
+      const bSize = batchSizeKg(floor3, blendSpeeds);
+      const orderType = normalizeType(order.productType);
+
+      for (const cell of cellsForFloorByDeadline(floor3.id, deadline, ["Mon", "Tue"])) {
+        if (order.remainingQuantity <= 0) break;
+        const key = cellKey(floor3.id, cell.day);
+        let availableMin = cellMinutesRemaining.get(key) ?? 0;
+        if (availableMin <= 0) continue;
+
+        // Check day conflict: Savory group cannot be with Sweet group on same day
+        const existingTypes = cellProductTypes.get(key) ?? new Set();
+        const currentIsSavory = isSavoryGroup(order.productType);
+        const currentIsSweet = isSweetGroup(order.productType);
+        const existingHasSavory = [...existingTypes].some(t => isSavoryGroup(t));
+        const existingHasSweet = [...existingTypes].some(t => isSweetGroup(t));
+
+        if ((currentIsSavory && existingHasSweet) || (currentIsSweet && existingHasSavory)) {
+          continue;
+        }
+
+        // Switch cost if a different product is already on this cell
+        const hasOtherType = orderType && [...existingTypes].some(t => t && t !== orderType);
+        if (hasOtherType) {
+          availableMin -= DEFAULT_SWITCH_MINUTES;
+          if (availableMin <= 0) continue;
+          switchDays.push({ floorName: floor3.floorName, day: cell.day });
+        }
+
+        const batches = Math.floor(availableMin / blendMins);
+        if (batches <= 0) continue;
+        const assignable = Math.min(batches * bSize, order.remainingQuantity, dailyCap);
+        if (assignable <= 0) continue;
+
+        placements.push({
+          floorId: floor3.id,
+          productionOrderId: order.id,
+          assignedDay: cell.day,
+          assignedVolume: Math.round(assignable * 10) / 10,
+        });
+
+        const minutesUsed = Math.ceil(assignable / bSize) * blendMins + (hasOtherType ? DEFAULT_SWITCH_MINUTES : 0);
+        cellMinutesRemaining.set(key, Math.max(0, (cellMinutesRemaining.get(key) ?? 0) - minutesUsed));
+        if (orderType) cellProductTypes.set(key, new Set([...existingTypes, orderType]));
+        order.remainingQuantity -= assignable;
+        assignedToFloor3MonTue.set(order.id);
+      }
+    }
+  }
 
   for (const order of sortedOrders) {
     if (order.remainingQuantity <= 0) continue;
