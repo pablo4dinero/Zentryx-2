@@ -423,6 +423,42 @@ async function createTablesIfNotExist() {
         ADD COLUMN IF NOT EXISTS emergency_login_expires TIMESTAMP;
     `));
 
+    // Feature Flags — admin-controlled toggles for A/B testing features
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS feature_flags (
+        id SERIAL PRIMARY KEY,
+        feature_name TEXT NOT NULL UNIQUE,
+        display_name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        enabled BOOLEAN NOT NULL DEFAULT true,
+        category TEXT NOT NULL DEFAULT 'optimization',
+        updated_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `));
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS feature_flag_history (
+        id SERIAL PRIMARY KEY,
+        feature_name TEXT NOT NULL,
+        previous_value BOOLEAN NOT NULL,
+        new_value BOOLEAN NOT NULL,
+        changed_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        changed_by_name TEXT NOT NULL,
+        reason TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `));
+    await db.execute(sql.raw(`
+      INSERT INTO feature_flags (feature_name, display_name, description, enabled, category)
+      VALUES
+        ('floor_efficiency_dashboard', 'Floor Efficiency Dashboard', 'Show which floors are running at <80% capacity', true, 'optimization'),
+        ('downtime_alerts', 'Downtime & Maintenance Alerts', 'Flag unavoidable idle time and suggest preventive maintenance windows', true, 'optimization'),
+        ('efficiency_score', 'Efficiency Score', 'Show how far current plan is from theoretical max output', true, 'optimization'),
+        ('production_analytics', 'Production Analytics', 'Learn from actual production data and optimize constraints', true, 'analytics')
+      ON CONFLICT (feature_name) DO NOTHING;
+    `));
+
     // Convert users.role from the fixed `user_role` enum to free TEXT so
     // admins can assign custom roles beyond the 9 built-ins. Idempotent:
     // only converts if the column is still the enum type. Existing values
