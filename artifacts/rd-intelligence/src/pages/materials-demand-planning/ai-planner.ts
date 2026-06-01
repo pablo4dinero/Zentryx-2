@@ -439,7 +439,7 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
   // Prioritize assigning Floor 3 priority products (Dairy Premix, Bread Premix,
   // Dough Premix, Snack Dusting, Functional Blend >500kg, Sweet Flavour >500kg)
   // to Floor 3 on Mon/Tue first, before allowing other product types on those days.
-  const floor3 = floors.find(f => f.floorName === "Floor 3");
+  const floor3 = floors.find(f => f.floorName.toLowerCase() === "floor 3");
   if (floor3) {
     // First pass: assign Floor 3 priority products to Mon/Tue
     for (const order of sortedOrders) {
@@ -507,7 +507,7 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
 
   // PHASE 1: Assign ALL ≤500kg orders to Floor 2 (MANDATORY - all of them, no exceptions)
   // This is the ONLY place ≤500kg orders can go. Mark them so Phase 2/3 skip them.
-  const floor2 = floors.find(f => f.floorName === "Floor 2");
+  const floor2 = floors.find(f => f.floorName.toLowerCase() === "floor 2");
   const floor2AssignedOrders = new Set<number>();  // Track which orders Phase 1 assigns
 
   if (!floor2) {
@@ -727,7 +727,7 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
     }
 
     // Phase 3 Fallback: If still remaining, try Floor 1
-    const floor1 = floors.find(f => f.floorName === "Floor 1");
+    const floor1 = floors.find(f => f.floorName.toLowerCase() === "floor 1");
     if (floor1) {
       for (const order of group.orders) {
         if (order.remainingQuantity <= 0) continue;
