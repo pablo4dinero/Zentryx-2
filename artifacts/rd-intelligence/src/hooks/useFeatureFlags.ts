@@ -35,7 +35,8 @@ export function useFeatureFlags() {
     queryKey: ["featureFlags"],
     queryFn: fetchFeatureFlags,
     staleTime: 1000 * 60 * 5,
-    refetchInterval: 1000 * 60 * 5,
+    refetchInterval: 1000 * 60 * 10, // 10 min to reduce server load
+    retry: 1,
   });
 
   return {
@@ -43,6 +44,9 @@ export function useFeatureFlags() {
     isLoading,
     error,
     refetch,
-    isEnabled: (featureName: string) => data[featureName] ?? false,
+    isEnabled: (featureName: string) => {
+      if (!data || typeof data !== "object") return false;
+      return data[featureName] === true;
+    },
   };
 }
