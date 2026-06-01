@@ -532,8 +532,15 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
       const bSize = batchSizeKg(floor2, blendSpeeds);
       const orderType = normalizeType(order.productType);
 
+      // Get cells: deadline-based first, then ALL days if deadline cells are empty
+      let cells = cellsForFloorByDeadline(floor2.id, deadline);
+      if (cells.length === 0 && deadline) {
+        // If deadline-restricted cells are empty, try ALL days as fallback
+        cells = cellsForFloorByDeadline(floor2.id, null);
+      }
+
       // Try to assign to ANY available cell (no Savory/Sweet conflict restriction)
-      for (const cell of cellsForFloorByDeadline(floor2.id, deadline)) {
+      for (const cell of cells) {
         if (order.remainingQuantity <= 0) break;
         const key = cellKey(floor2.id, cell.day);
         let availableMin = cellMinutesRemaining.get(key) ?? 0;
