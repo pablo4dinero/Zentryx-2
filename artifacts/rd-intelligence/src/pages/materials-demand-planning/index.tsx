@@ -5781,12 +5781,12 @@ function MaterialsDemandPlanningPage() {
 
   const MDP_TABS = [
     { value: "customer-products", label: "Customer Products" },
-    { value: "production-orders", label: "Production Orders" },
     { value: "monthly-orders", label: "Monthly Orders" },
-    { value: "strategy-evaluator", label: "Strategy Evaluator" },
+    { value: "production-orders", label: "Production Orders" },
     { value: "production-planning", label: "Production Planning" },
-    { value: "production-analytics", label: "Analytics", beta: true },
     { value: "production-history", label: "Production History" },
+    { value: "strategy-evaluator", label: "Strategy Evaluator" },
+    { value: "production-analytics", label: "Analytics", beta: true },
     { value: "forecast", label: "Forecast" },
   ] as const;
   type MdpTab = typeof MDP_TABS[number]["value"];
