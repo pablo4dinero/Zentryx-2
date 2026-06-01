@@ -505,27 +505,38 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
   // Phase 2: Assign Mon-Tue exclusive products to Floor 3 Mon-Tue
   // Phase 3: Assign remaining orders (>500kg + other products) to Floor 3 Wed-Fri+
 
-  // PHASE 1: Assign all ≤500kg orders to Floor 2 (STRICT: no Savory/Sweet conflict for ≤500kg)
+  // PHASE 1: Assign ALL ≤500kg orders to Floor 2 (MANDATORY - all of them, no exceptions)
+  // This is the ONLY place ≤500kg orders can go. Mark them so Phase 2/3 skip them.
   const floor2 = floors.find(f => f.floorName === "Floor 2");
-  if (floor2) {
-    for (const order of sortedOrders) {
-      if (order.remainingQuantity <= 0) continue;
-      if (order.remainingQuantity > 500) continue;  // Skip orders >500kg for Phase 1
+  const floor2AssignedOrders = new Set<number>();  // Track which orders Phase 1 assigns
 
-      // Phase 1 special: Ignore Savory/Sweet conflict (user requirement: assign ALL ≤500kg irrespective of type)
+  if (floor2) {
+    // Collect ALL ≤500kg orders first (before processing)
+    const smallOrders = sortedOrders.filter(o => o.remainingQuantity <= 500);
+
+    // Assign them in deadline-priority order (earliest deadline first)
+    const smallByDeadline = smallOrders.sort((a, b) => {
+      const da = a.expectedDeliveryDate ? new Date(a.expectedDeliveryDate).getTime() : Infinity;
+      const db = b.expectedDeliveryDate ? new Date(b.expectedDeliveryDate).getTime() : Infinity;
+      return da - db;
+    });
+
+    for (const order of smallByDeadline) {
+      if (order.remainingQuantity <= 0) continue;
+
       const deadline = latestCompletion.get(order.id) ?? null;
       const blendMins = blendMinutesById(blendSpeeds, order.blendSpeedId || "fast");
       const dailyCap = dailyCapacityKg(floor2, order.blendSpeedId || "fast", blendSpeeds);
       const bSize = batchSizeKg(floor2, blendSpeeds);
       const orderType = normalizeType(order.productType);
 
+      // Try to assign to ANY available cell (no Savory/Sweet conflict restriction)
       for (const cell of cellsForFloorByDeadline(floor2.id, deadline)) {
         if (order.remainingQuantity <= 0) break;
         const key = cellKey(floor2.id, cell.day);
         let availableMin = cellMinutesRemaining.get(key) ?? 0;
         if (availableMin <= 0) continue;
 
-        // Minimal conflict check (skip product type switching but allow Savory/Sweet mix for ≤500kg)
         const existingTypes = cellProductTypes.get(key) ?? new Set();
         const hasOtherType = orderType && [...existingTypes].some(t => t && t !== orderType);
         if (hasOtherType) {
@@ -553,14 +564,9 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
       }
 
       if (order.remainingQuantity <= 0) {
+        floor2AssignedOrders.add(order.id);  // Mark as fully assigned by Phase 1
         const idx = fullyScheduled.findIndex(p => p.orderId === order.id);
         if (idx < 0) fullyScheduled.push({ orderId: order.id, label: order.productionLabel });
-      } else if (order.remainingQuantity < (eligibleOrders.find(o => o.id === order.id)?.remainingQuantity ?? 0)) {
-        const initialRemaining = eligibleOrders.find(o => o.id === order.id)?.remainingQuantity ?? 0;
-        const idx = partiallyScheduled.findIndex(p => p.orderId === order.id);
-        if (idx < 0) {
-          partiallyScheduled.push({ orderId: order.id, label: order.productionLabel, leftoverKg: Math.round(order.remainingQuantity) });
-        }
       }
     }
   }
@@ -625,12 +631,24 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
   }
 
   // PHASE 3: Assign remaining orders (>500kg + other products)
-  // STRICT RULE: Non-exclusive products CANNOT use Floor 3 Mon-Tue (those are reserved)
+  // STRICT RULE 1: Non-exclusive products CANNOT use Floor 3 Mon-Tue (those are reserved)
+  // STRICT RULE 2: ≤500kg orders CANNOT be in Phase 3 (they are Phase 1 only)
   for (const group of productGroups) {
     if (group.orders.every(o => o.remainingQuantity <= 0)) continue;
     if (group.orders.every(o => isMonTueExclusiveProduct(o.productType))) continue;  // Skip exclusive products (handled in Phase 2)
 
-    // Find eligible floors for this product group
+    // Skip groups with any ≤500kg orders (they belong to Phase 1 only)
+    if (group.orders.some(o => o.remainingQuantity > 0 && o.remainingQuantity <= 500)) {
+      for (const order of group.orders) {
+        if (order.remainingQuantity > 0 && order.remainingQuantity <= 500) {
+          skipped.push({ orderId: order.id, label: order.productionLabel, reason: "≤500kg orders must use Floor 2 (Phase 1)" });
+          order.remainingQuantity = 0;  // Mark as skipped
+        }
+      }
+      continue;
+    }
+
+    // Find eligible floors for this product group (now only >500kg orders)
     const groupCandidates = floors.filter(f =>
       group.orders.some(o => o.remainingQuantity > 0 && isFloorEligible(f, o.productType, o.remainingQuantity))
     );
