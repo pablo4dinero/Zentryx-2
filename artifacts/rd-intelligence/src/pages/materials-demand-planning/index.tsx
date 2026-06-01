@@ -5598,24 +5598,8 @@ function ProductionHistoryTab() {
   );
 }
 
-function MaterialsDemandPlanningPage() {
-  const productsQuery = useQuery({
-    queryKey: ["/api/accounts"],
-    queryFn: async () => {
-      const res = await fetch(`${BASE}api/accounts`, { headers: authHeaders() });
-      if (!res.ok) {
-        const error = await res.json().catch(() => ({}));
-        throw new Error(error.error || "Failed to load accounts");
-      }
-      return res.json() as Promise<Account[]>;
-    },
-    staleTime: 1000 * 30, // 30s
-    refetchInterval: 1000 * 30, // Auto-poll every 30s so all users see product changes
-  }) as UseQueryResult<Account[], Error>;
-  const isLoading = productsQuery.isLoading;
-
-  if (isLoading) return <PageLoader />;
-
+function MaterialsDemandPlanningPageContent(props: { productsQuery: UseQueryResult<Account[], Error> }) {
+  const { productsQuery } = props;
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = React.useState("customer-products");
@@ -6299,6 +6283,26 @@ function MaterialsDemandPlanningPage() {
       </AnimatePresence>
     </div>
   );
+}
+
+function MaterialsDemandPlanningPage() {
+  const productsQuery = useQuery({
+    queryKey: ["/api/accounts"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}api/accounts`, { headers: authHeaders() });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error.error || "Failed to load accounts");
+      }
+      return res.json() as Promise<Account[]>;
+    },
+    staleTime: 1000 * 30,
+    refetchInterval: 1000 * 30,
+  }) as UseQueryResult<Account[], Error>;
+
+  if (productsQuery.isLoading) return <PageLoader />;
+
+  return <MaterialsDemandPlanningPageContent productsQuery={productsQuery} />;
 }
 
 export default function MaterialsDemandPlanning() {
