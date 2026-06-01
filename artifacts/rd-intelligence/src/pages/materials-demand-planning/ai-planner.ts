@@ -514,14 +514,16 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
     // Collect ALL ≤500kg orders first (before processing)
     const smallOrders = sortedOrders.filter(o => o.remainingQuantity <= 500);
 
-    // Assign them in deadline-priority order (earliest deadline first)
-    const smallByDeadline = smallOrders.sort((a, b) => {
+    // Sort by volume DESC (largest first), then deadline ASC (earliest second)
+    // This fills Floor 2 capacity efficiently and respects delivery dates
+    const smallByVolume = smallOrders.sort((a, b) => {
+      if (b.remainingQuantity !== a.remainingQuantity) return b.remainingQuantity - a.remainingQuantity;  // Volume DESC
       const da = a.expectedDeliveryDate ? new Date(a.expectedDeliveryDate).getTime() : Infinity;
       const db = b.expectedDeliveryDate ? new Date(b.expectedDeliveryDate).getTime() : Infinity;
-      return da - db;
+      return da - db;  // Deadline ASC
     });
 
-    for (const order of smallByDeadline) {
+    for (const order of smallByVolume) {
       if (order.remainingQuantity <= 0) continue;
 
       const deadline = latestCompletion.get(order.id) ?? null;
