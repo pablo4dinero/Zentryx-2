@@ -2536,32 +2536,38 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     if (!ok) return;
 
     const assignmentCount = assignments.length;
+    const assignmentIds = assignments.map(row => row.assignment.id);
     setUnassigning(true);
 
-    // Optimistic update: immediately clear from UI
+    // Show immediate feedback
     toast({
-      title: "Unassigning…",
-      description: `Clearing ${assignmentCount} assignment${assignmentCount === 1 ? "" : "s"}`,
+      title: "✓ Cleared",
+      description: `Unassigned ${assignmentCount} assignment${assignmentCount === 1 ? "" : "s"}.`,
     });
 
     try {
-      // Delete all assignments in parallel (fast)
-      const deletePromises = assignments.map(row =>
-        deleteAssignmentMutation.mutateAsync(row.assignment.id).catch(() => null)
-      );
-      await Promise.all(deletePromises);
-
-      // Single batch invalidation (faster than 3 separate calls)
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments"], exact: false }),
-        queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"], exact: false }),
-      ]);
-
-      toast({
-        title: "✓ Week cleared",
-        description: `Unassigned ${assignmentCount} assignment${assignmentCount === 1 ? "" : "s"}.`,
+      // Optimistic update: immediately remove from cache (no re-fetch needed)
+      queryClient.setQueryData(["/api/mdp/floor-assignments", selectedWeekLabel], (old: any) => {
+        if (!Array.isArray(old)) return old;
+        return old.filter(row => !assignmentIds.includes(row.id));
       });
+
+      // Batch delete on server (single request, not N requests)
+      const res = await fetch(`${BASE}api/mdp/floor-assignments/batch-delete`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: assignmentIds }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Batch delete failed");
+      }
+
+      // No invalidation needed - cache is already updated
     } catch (error) {
+      console.error("Unassign all error:", error);
+      // Revert optimistic update on error
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments", selectedWeekLabel] });
       toast({
         title: "Error unassigning",
         description: "Some assignments couldn't be removed. Try again.",
