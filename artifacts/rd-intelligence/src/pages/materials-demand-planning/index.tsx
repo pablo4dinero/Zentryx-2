@@ -2510,22 +2510,22 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
   };
 
   const [aiSummary, setAiSummary] = React.useState<PlanningSummary | null>(null);
-  const [unplanning, setUnplanning] = React.useState(false);
+  const [unassigning, setUnassigning] = React.useState(false);
 
-  // Unplan every assignment in the currently selected week. The `assignments`
+  // Unassign every assignment in the currently selected week. The `assignments`
   // array is sourced from the week-scoped query (key includes
   // selectedWeekLabel), so this can't touch other weeks. Behind a confirm
   // dialog because it can't be undone.
-  const handleUnplanAll = async () => {
+  const handleUnassignAll = async () => {
     if (assignments.length === 0) {
-      toast({ title: "Nothing to unplan", description: "This week has no assignments." });
+      toast({ title: "Nothing to unassign", description: "This week has no assignments." });
       return;
     }
     const ok = window.confirm(
-      `Unplan all ${assignments.length} assignment${assignments.length === 1 ? "" : "s"} for ${selectedWeekLabel || "this week"}? This cannot be undone.`,
+      `Unassign all ${assignments.length} assignment${assignments.length === 1 ? "" : "s"} for ${selectedWeekLabel || "this week"}? This cannot be undone.`,
     );
     if (!ok) return;
-    setUnplanning(true);
+    setUnassigning(true);
     try {
       const results = await Promise.allSettled(
         assignments.map(row => deleteAssignmentMutation.mutateAsync(row.assignment.id)),
@@ -2536,18 +2536,18 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/product-switch-downtimes"] });
       if (failed > 0) {
         toast({
-          title: `Unplanned ${assignments.length - failed} of ${assignments.length}`,
+          title: `Unassigned ${assignments.length - failed} of ${assignments.length}`,
           description: `${failed} could not be removed. Try again.`,
           variant: "destructive",
         });
       } else {
         toast({
           title: "Week cleared",
-          description: `Unplanned ${assignments.length} assignment${assignments.length === 1 ? "" : "s"} from ${selectedWeekLabel}.`,
+          description: `Unassigned ${assignments.length} assignment${assignments.length === 1 ? "" : "s"} from ${selectedWeekLabel}.`,
         });
       }
     } finally {
-      setUnplanning(false);
+      setUnassigning(false);
     }
   };
 
@@ -3062,11 +3062,11 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
             </Dialog>
             <button
               type="button"
-              onClick={handleUnplanAll}
-              disabled={unplanning || assignments.length === 0}
+              onClick={handleUnassignAll}
+              disabled={unassigning || assignments.length === 0}
               title={assignments.length === 0
                 ? "No assignments in this week"
-                : `Unplan all ${assignments.length} assignment${assignments.length === 1 ? "" : "s"} in ${selectedWeekLabel}`}
+                : `Unassign all ${assignments.length} assignment${assignments.length === 1 ? "" : "s"} in ${selectedWeekLabel}`}
               className={cn(
                 "inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
                 isLight
@@ -3074,8 +3074,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                   : "bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20",
               )}
             >
-              {unplanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-              {unplanning ? "Unplanning…" : "Unplan all"}
+              {unassigning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+              {unassigning ? "Unassigning…" : "Unassign all"}
             </button>
           </div>
           </div>
@@ -3152,7 +3152,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                     </div>
                   </div>
                   <div className="flex gap-1.5">
-                    <button onClick={() => handleUnassign(row.assignment.id)} className={cn("flex-1 py-1 rounded-lg text-[10px] font-semibold border transition-colors", isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}>Unplan</button>
+                    <button onClick={() => handleUnassign(row.assignment.id)} className={cn("flex-1 py-1 rounded-lg text-[10px] font-semibold border transition-colors", isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}>Unassign</button>
                     {(() => {
                       const alreadyProduced = row.assignment.planStatus === "Produced";
                       const isPending = producingIds.has(row.assignment.id);
