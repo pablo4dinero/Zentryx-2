@@ -42,7 +42,6 @@ import { useCustomOptions, DEFAULT_PRODUCT_TYPES, displayLabel, useServerProduct
 import { CustomOptionsSelect } from "@/components/ui/CustomOptionsSelect";
 import { calculateEfficiency, getEfficiencyColor, getEfficiencyLabel } from "./efficiency-calculator";
 import { useFeatureFlagsContext, FeatureFlagsProvider } from "@/contexts/FeatureFlagsContext";
-import { FloorEfficiencyDashboard, type FloorEfficiencyData } from "./floor-efficiency-dashboard";
 import { DowntimeAlerts, type IdleTimeAlert } from "./downtime-alerts";
 
 const BASE = import.meta.env.BASE_URL;
@@ -2771,7 +2770,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
   }
 
   // Get feature flags from context (safe hook pattern)
-  const { efficiencyScoreEnabled, floorEfficiencyEnabled, downtimeAlertsEnabled } = useFeatureFlagsContext();
+  const { efficiencyScoreEnabled, downtimeAlertsEnabled } = useFeatureFlagsContext();
 
   // Calculate efficiency score for current week
   const weekAssignments = (allAssignmentsQuery.data ?? []).filter(row => row.assignment.weekLabel === selectedWeekLabel);
@@ -2793,27 +2792,6 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
         floorMap
       )
     : { score: 0, breakdown: {} };
-
-  // Build floor efficiency data for dashboard
-  const floorEfficiencyData: FloorEfficiencyData[] = (floorsQuery.data ?? []).map(floor => {
-    const floorAssignments = weekAssignments.filter(row => row.assignment.floorId === floor.id);
-    const plannedKg = floorAssignments.reduce((sum, row) => sum + (row.assignment.assignedVolume || 0), 0);
-
-    // Simple capacity calculation (medium speed default)
-    const baseCapacity = floor.maxCapacityKg || 0;
-    const shifts = new Set(floorAssignments.map(row => row.assignment.shiftType || "day")).size;
-    const capacityKg = baseCapacity * Math.max(1, shifts);
-
-    const utilization = capacityKg > 0 ? Math.round((plannedKg / capacityKg) * 100) : 0;
-
-    return {
-      floorId: floor.id,
-      floorName: floor.floorName,
-      utilization: Math.min(100, utilization),
-      plannedKg,
-      capacityKg,
-    };
-  });
 
   // Detect idle time periods (simplified: 4+ hour gap on same floor/day = idle)
   const idleAlerts: IdleTimeAlert[] = [];
@@ -2865,9 +2843,6 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
               </div>
             )}
           </div>
-          {floorEfficiencyEnabled && selectedWeekLabel && (
-            <FloorEfficiencyDashboard floors={floorEfficiencyData} isLight={isLight} />
-          )}
         </>
       )}
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -2919,9 +2894,9 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
             </>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
           {planningView === "weekly" && (
-            <label className={cn("flex items-center gap-2 px-3 h-9 rounded-xl border text-xs font-medium cursor-pointer transition-all",
+            <label className={cn("flex items-center gap-2 px-3 h-9 rounded-xl border text-xs font-medium cursor-pointer transition-all whitespace-nowrap",
               isLight ? "border-slate-200 text-slate-700 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5"
             )}>
               <input type="checkbox" checked={includeNightShift} onChange={e => setIncludeNightShift(e.target.checked)} className="accent-primary" />
@@ -2937,7 +2912,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
             </label>
           )}
           <div className="flex gap-1 p-1 rounded-xl border" style={{background: isLight ? '#f1f5f9' : 'rgba(255,255,255,0.05)'}}>
-            {["weekly", "daily", "monthly"].map((mode) => (
+            {["weekly", "monthly"].map((mode) => (
               <button
                 key={mode}
                 onClick={() => setPlanningView(mode as PlanningViewMode)}
@@ -2950,7 +2925,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
-                {mode === "weekly" ? "Weekly" : mode === "daily" ? "Daily" : "Monthly"}
+                {mode === "weekly" ? "Weekly" : "Monthly"}
               </button>
             ))}
           </div>
