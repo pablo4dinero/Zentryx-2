@@ -5599,6 +5599,23 @@ function ProductionHistoryTab() {
 }
 
 function MaterialsDemandPlanningPage() {
+  const productsQuery = useQuery({
+    queryKey: ["/api/accounts"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}api/accounts`, { headers: authHeaders() });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error.error || "Failed to load accounts");
+      }
+      return res.json() as Promise<Account[]>;
+    },
+    staleTime: 1000 * 30, // 30s
+    refetchInterval: 1000 * 30, // Auto-poll every 30s so all users see product changes
+  }) as UseQueryResult<Account[], Error>;
+  const isLoading = productsQuery.isLoading;
+
+  if (isLoading) return <PageLoader />;
+
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = React.useState("customer-products");
@@ -5613,21 +5630,7 @@ function MaterialsDemandPlanningPage() {
 
   const { data: users } = useListUsers();
 
-  const productsQuery = useQuery({
-    queryKey: ["/api/accounts"],
-    queryFn: async () => {
-      const res = await fetch(`${BASE}api/accounts`, { headers: authHeaders() });
-      if (!res.ok) {
-        const error = await res.json().catch(() => ({}));
-        throw new Error(error.error || "Failed to load accounts");
-      }
-      return res.json() as Promise<Account[]>;
-    },
-    staleTime: 1000 * 30, // 30s
-    refetchInterval: 1000 * 30, // Auto-poll every 30s so all users see product changes
-  }) as UseQueryResult<Account[], Error>;
   const products = productsQuery.data ?? [];
-  const isLoading = productsQuery.isLoading;
 
   const createMutation = useMutation({
     mutationFn: async (payload: Record<string, unknown>) => {
@@ -5861,8 +5864,6 @@ function MaterialsDemandPlanningPage() {
     { value: "forecast", label: "Forecast" },
   ] as const;
   type MdpTab = typeof MDP_TABS[number]["value"];
-
-  if (isLoading) return <PageLoader />;
 
   return (
     <div className="space-y-0">
