@@ -41,6 +41,7 @@ import { runAssistedPlanning, type ExistingCellUsage, type PlanningSummary } fro
 import { useCustomOptions, DEFAULT_PRODUCT_TYPES, displayLabel, useServerProductTypes } from "@/lib/project-options";
 import { CustomOptionsSelect } from "@/components/ui/CustomOptionsSelect";
 import { calculateEfficiency, getEfficiencyColor, getEfficiencyLabel } from "./efficiency-calculator";
+import { useFeatureFlagsContext, FeatureFlagsProvider } from "@/contexts/FeatureFlagsContext";
 import { FloorEfficiencyDashboard, type FloorEfficiencyData } from "./floor-efficiency-dashboard";
 import { DowntimeAlerts, type IdleTimeAlert } from "./downtime-alerts";
 
@@ -2769,11 +2770,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     return <PageLoader />;
   }
 
-  // Features disabled temporarily due to React hooks issue with useFeatureFlags
-  // They can be toggled via Admin → Feature Flags, but don't render in Production Planning yet
-  const efficiencyScoreEnabled = false;
-  const floorEfficiencyEnabled = false;
-  const downtimeAlertsEnabled = false;
+  // Get feature flags from context (safe hook pattern)
+  const { efficiencyScoreEnabled, floorEfficiencyEnabled, downtimeAlertsEnabled } = useFeatureFlagsContext();
 
   // Calculate efficiency score for current week
   const weekAssignments = (allAssignmentsQuery.data ?? []).filter(row => row.assignment.weekLabel === selectedWeekLabel);
@@ -6123,8 +6121,10 @@ function MaterialsDemandPlanningPage() {
 
 export default function MaterialsDemandPlanning() {
   return (
-    <PlannedOrdersProvider>
-      <MaterialsDemandPlanningPage />
-    </PlannedOrdersProvider>
+    <FeatureFlagsProvider>
+      <PlannedOrdersProvider>
+        <MaterialsDemandPlanningPage />
+      </PlannedOrdersProvider>
+    </FeatureFlagsProvider>
   );
 }
