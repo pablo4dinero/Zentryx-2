@@ -505,14 +505,52 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
   // Phase 2: Assign Mon-Tue exclusive products to Floor 3 Mon-Tue
   // Phase 3: Assign remaining orders (>500kg + other products) to Floor 3 Wed-Fri+
 
-  // PHASE 1: Assign all ≤500kg orders to Floor 2
+  // PHASE 1: Assign all ≤500kg orders to Floor 2 (STRICT: no Savory/Sweet conflict for ≤500kg)
   const floor2 = floors.find(f => f.floorName === "Floor 2");
   if (floor2) {
     for (const order of sortedOrders) {
       if (order.remainingQuantity <= 0) continue;
       if (order.remainingQuantity > 500) continue;  // Skip orders >500kg for Phase 1
 
-      tryAssignOnFloor(order, floor2);
+      // Phase 1 special: Ignore Savory/Sweet conflict (user requirement: assign ALL ≤500kg irrespective of type)
+      const deadline = latestCompletion.get(order.id) ?? null;
+      const blendMins = blendMinutesById(blendSpeeds, order.blendSpeedId || "fast");
+      const dailyCap = dailyCapacityKg(floor2, order.blendSpeedId || "fast", blendSpeeds);
+      const bSize = batchSizeKg(floor2, blendSpeeds);
+      const orderType = normalizeType(order.productType);
+
+      for (const cell of cellsForFloorByDeadline(floor2.id, deadline)) {
+        if (order.remainingQuantity <= 0) break;
+        const key = cellKey(floor2.id, cell.day);
+        let availableMin = cellMinutesRemaining.get(key) ?? 0;
+        if (availableMin <= 0) continue;
+
+        // Minimal conflict check (skip product type switching but allow Savory/Sweet mix for ≤500kg)
+        const existingTypes = cellProductTypes.get(key) ?? new Set();
+        const hasOtherType = orderType && [...existingTypes].some(t => t && t !== orderType);
+        if (hasOtherType) {
+          availableMin -= DEFAULT_SWITCH_MINUTES;
+          if (availableMin <= 0) continue;
+          switchDays.push({ floorName: floor2.floorName, day: cell.day });
+        }
+
+        const batches = Math.floor(availableMin / blendMins);
+        if (batches <= 0) continue;
+        const assignable = Math.min(batches * bSize, order.remainingQuantity, dailyCap);
+        if (assignable <= 0) continue;
+
+        placements.push({
+          floorId: floor2.id,
+          productionOrderId: order.id,
+          assignedDay: cell.day,
+          assignedVolume: Math.round(assignable * 10) / 10,
+        });
+
+        const minutesUsed = Math.ceil(assignable / bSize) * blendMins + (hasOtherType ? DEFAULT_SWITCH_MINUTES : 0);
+        cellMinutesRemaining.set(key, Math.max(0, (cellMinutesRemaining.get(key) ?? 0) - minutesUsed));
+        if (orderType) cellProductTypes.set(key, new Set([...existingTypes, orderType]));
+        order.remainingQuantity -= assignable;
+      }
 
       if (order.remainingQuantity <= 0) {
         const idx = fullyScheduled.findIndex(p => p.orderId === order.id);
@@ -586,9 +624,11 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
     }
   }
 
-  // PHASE 3: Assign remaining orders (>500kg + other products) using group-based assignment
+  // PHASE 3: Assign remaining orders (>500kg + other products)
+  // STRICT RULE: Non-exclusive products CANNOT use Floor 3 Mon-Tue (those are reserved)
   for (const group of productGroups) {
     if (group.orders.every(o => o.remainingQuantity <= 0)) continue;
+    if (group.orders.every(o => isMonTueExclusiveProduct(o.productType))) continue;  // Skip exclusive products (handled in Phase 2)
 
     // Find eligible floors for this product group
     const groupCandidates = floors.filter(f =>
@@ -625,7 +665,67 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
 
       for (const order of group.orders) {
         if (order.remainingQuantity <= 0) continue;
-        tryAssignOnFloor(order, floor);
+
+        // STRICT RULE: For Floor 3, Phase 3 products CANNOT use Mon-Tue
+        if (floor.floorName === "Floor 3") {
+          // Only assign to Wed-Fri for Phase 3 products
+          const deadline = latestCompletion.get(order.id) ?? null;
+          const blendMins = blendMinutesById(blendSpeeds, order.blendSpeedId || "fast");
+          const dailyCap = dailyCapacityKg(floor, order.blendSpeedId || "fast", blendSpeeds);
+          const bSize = batchSizeKg(floor, blendSpeeds);
+          const orderType = normalizeType(order.productType);
+
+          // Use Wed-Fri only (exclude Mon-Tue)
+          const wednesdayIndex = workingDays.indexOf("Wed");
+          const startFrom = wednesdayIndex >= 0 ? wednesdayIndex : 0;
+
+          for (let i = startFrom; i < workingDays.length; i++) {
+            if (order.remainingQuantity <= 0) break;
+            const day = workingDays[i];
+            const cell = { day, dayIndex: i, isNS: false };
+
+            if (isFloorDayBlocked(floor.id, cell.day)) continue;
+
+            const key = cellKey(floor.id, cell.day);
+            let availableMin = cellMinutesRemaining.get(key) ?? 0;
+            if (availableMin <= 0) continue;
+
+            const existingTypes = cellProductTypes.get(key) ?? new Set();
+            const currentIsSavory = isSavoryGroup(order.productType);
+            const currentIsSweet = isSweetGroup(order.productType);
+            const existingHasSavory = [...existingTypes].some(t => isSavoryGroup(t));
+            const existingHasSweet = [...existingTypes].some(t => isSweetGroup(t));
+
+            if ((currentIsSavory && existingHasSweet) || (currentIsSweet && existingHasSavory)) continue;
+
+            const hasOtherType = orderType && [...existingTypes].some(t => t && t !== orderType);
+            if (hasOtherType) {
+              availableMin -= DEFAULT_SWITCH_MINUTES;
+              if (availableMin <= 0) continue;
+              switchDays.push({ floorName: floor.floorName, day: cell.day });
+            }
+
+            const batches = Math.floor(availableMin / blendMins);
+            if (batches <= 0) continue;
+            const assignable = Math.min(batches * bSize, order.remainingQuantity, dailyCap);
+            if (assignable <= 0) continue;
+
+            placements.push({
+              floorId: floor.id,
+              productionOrderId: order.id,
+              assignedDay: cell.day,
+              assignedVolume: Math.round(assignable * 10) / 10,
+            });
+
+            const minutesUsed = Math.ceil(assignable / bSize) * blendMins + (hasOtherType ? DEFAULT_SWITCH_MINUTES : 0);
+            cellMinutesRemaining.set(key, Math.max(0, (cellMinutesRemaining.get(key) ?? 0) - minutesUsed));
+            if (orderType) cellProductTypes.set(key, new Set([...existingTypes, orderType]));
+            order.remainingQuantity -= assignable;
+          }
+        } else {
+          // For other floors, use normal assignment
+          tryAssignOnFloor(order, floor);
+        }
       }
     }
 
