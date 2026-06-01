@@ -2889,11 +2889,11 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                 value={selectedWeekLabel}
                 onChange={(event) => setSelectedWeekLabel(event.target.value)}
                 className={cn("h-10 rounded-xl border px-4 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 cursor-pointer",
-                  isLight ? "border-slate-200 bg-white text-slate-700" : "border-white/10 bg-black/20 text-foreground"
+                  isLight ? "border-slate-200 bg-white text-slate-700" : "border-white/10 bg-black/80 text-foreground"
                 )}
               >
                 {weeks.map((week) => (
-                  <option key={week.weekLabel} value={week.weekLabel}>
+                  <option key={week.weekLabel} value={week.weekLabel} className={isLight ? "bg-white text-slate-700" : "bg-black/90 text-white"}>
                     {week.weekLabel}
                   </option>
                 ))}
