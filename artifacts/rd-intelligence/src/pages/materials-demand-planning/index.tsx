@@ -134,7 +134,7 @@ type SFOrder = {
   price: string | null;
   volume: string | null;
   dateOrdered: string | null;
-  expectedDeliveryDateDate: string | null;
+  expectedDeliveryDate: string | null;
   dateDelivered: string | null;
   createdAt: string;
 };
@@ -143,7 +143,7 @@ type MergedOrder = ProductionOrder & {
   sfId: number;
   accountId: number;
   dateOrdered: string | null;
-  expectedDeliveryDateDate: string | null;
+  expectedDeliveryDate: string | null;
   createdAt: string;
 };
 
@@ -973,7 +973,7 @@ function ProductionOrdersTab() {
           volume: sf.volume,
           productType: mdpOrder.productType ?? accountTypeMap[sf.accountId] ?? null,
           dateOrdered: sf.dateOrdered,
-          expectedDeliveryDateDate: sf.expectedDeliveryDateDate,
+          expectedDeliveryDate: sf.expectedDeliveryDate,
           createdAt: sf.createdAt,
         } as MergedOrder;
       })
@@ -1177,8 +1177,8 @@ function ProductionOrdersTab() {
                       {order.productType ?? "—"}
                     </td>
                     <td className="px-4 py-3 text-right font-medium text-sm">{Number(order.volume ?? 0).toLocaleString()}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(order.dateOrdered)}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(order.expectedDeliveryDateDate)}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{order.dateOrdered ?? "—"}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{order.expectedDeliveryDate ?? "—"}</td>
                     <td className="px-4 py-3">
                       <select value={rawMaterial} onChange={e => handleChangeRawMaterial(order.id, e.target.value)}
                         className={cn("rounded-lg border px-2 py-1.5 text-xs font-semibold cursor-pointer focus:outline-none",
@@ -1220,7 +1220,7 @@ function ProductionOrdersTab() {
                           microbial,
                           blendSpeedId,
                           Number(order.volume ?? 0),
-                          order.expectedDeliveryDateDate,
+                          order.expectedDeliveryDate,
                         );
                         return (
                           <span className={cn("inline-flex items-center px-2.5 py-1 rounded-lg border text-xs font-bold tabular-nums", priorityScoreStyle(ps))}>
