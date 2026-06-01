@@ -42,7 +42,6 @@ import { useCustomOptions, DEFAULT_PRODUCT_TYPES, displayLabel, useServerProduct
 import { CustomOptionsSelect } from "@/components/ui/CustomOptionsSelect";
 import { calculateEfficiency, getEfficiencyColor, getEfficiencyLabel } from "./efficiency-calculator";
 import { useFeatureFlagsContext, FeatureFlagsProvider } from "@/contexts/FeatureFlagsContext";
-import { FloorEfficiencyDashboard, type FloorEfficiencyData } from "./floor-efficiency-dashboard";
 import { DowntimeAlerts, type IdleTimeAlert } from "./downtime-alerts";
 
 const BASE = import.meta.env.BASE_URL;
@@ -2771,7 +2770,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
   }
 
   // Get feature flags from context (safe hook pattern)
-  const { efficiencyScoreEnabled, floorEfficiencyEnabled, downtimeAlertsEnabled } = useFeatureFlagsContext();
+  const { efficiencyScoreEnabled, downtimeAlertsEnabled } = useFeatureFlagsContext();
 
   // Calculate efficiency score for current week
   const weekAssignments = (allAssignmentsQuery.data ?? []).filter(row => row.assignment.weekLabel === selectedWeekLabel);
@@ -2793,27 +2792,6 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
         floorMap
       )
     : { score: 0, breakdown: {} };
-
-  // Build floor efficiency data for dashboard
-  const floorEfficiencyData: FloorEfficiencyData[] = (floorsQuery.data ?? []).map(floor => {
-    const floorAssignments = weekAssignments.filter(row => row.assignment.floorId === floor.id);
-    const plannedKg = floorAssignments.reduce((sum, row) => sum + (row.assignment.assignedVolume || 0), 0);
-
-    // Simple capacity calculation (medium speed default)
-    const baseCapacity = floor.maxCapacityKg || 0;
-    const shifts = new Set(floorAssignments.map(row => row.assignment.shiftType || "day")).size;
-    const capacityKg = baseCapacity * Math.max(1, shifts);
-
-    const utilization = capacityKg > 0 ? Math.round((plannedKg / capacityKg) * 100) : 0;
-
-    return {
-      floorId: floor.id,
-      floorName: floor.floorName,
-      utilization: Math.min(100, utilization),
-      plannedKg,
-      capacityKg,
-    };
-  });
 
   // Detect idle time periods (simplified: 4+ hour gap on same floor/day = idle)
   const idleAlerts: IdleTimeAlert[] = [];
@@ -2865,9 +2843,6 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
               </div>
             )}
           </div>
-          {floorEfficiencyEnabled && selectedWeekLabel && (
-            <FloorEfficiencyDashboard floors={floorEfficiencyData} isLight={isLight} />
-          )}
         </>
       )}
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
