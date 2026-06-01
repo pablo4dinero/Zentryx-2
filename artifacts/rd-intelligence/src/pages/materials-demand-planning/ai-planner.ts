@@ -460,6 +460,7 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
   // Prioritize assigning Floor 3 priority products (Dairy Premix, Bread Premix,
   // Dough Premix, Snack Dusting, Functional Blend >500kg, Sweet Flavour >500kg)
   // to Floor 3 on Mon/Tue first, before allowing other product types on those days.
+  const assignedToFloor3MonTue = new Set<number>();
   const floor3 = floors.find(f => f.floorName.toLowerCase() === "floor 3");
   if (floor3) {
     // First pass: assign Floor 3 priority products to Mon/Tue
