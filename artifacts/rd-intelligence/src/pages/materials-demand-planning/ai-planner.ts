@@ -218,6 +218,27 @@ function isMonTueExclusiveProduct(productType: string | null): boolean {
          t.includes("dough") || t.includes("sweet");
 }
 
+// Helper: Check if product is a Floor 3 priority product
+// (Dairy Premix, Bread Premix, Dough Premix, Snack Dusting, Functional Blend >500kg, Sweet Flavour >500kg)
+function isFloor3Priority(productType: string | null, volume?: number): boolean {
+  if (!productType) return false;
+  const t = normalizeType(productType);
+
+  // Always prioritize these
+  if (t.includes("dairy") || t.includes("bread") || t.includes("snack") || t.includes("dough")) {
+    return true;
+  }
+
+  // Sweet Flavour and Functional Blend only if > 500kg
+  if (volume !== undefined && volume > 500) {
+    if (t.includes("sweet") || t.includes("functional")) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 // Floor eligibility:
 //   1. If the floor has an explicit allowedProductTypes list, that wins —
 //      strict include match.
