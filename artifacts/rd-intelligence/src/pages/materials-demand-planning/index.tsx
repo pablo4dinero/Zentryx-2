@@ -988,14 +988,21 @@ function ProductionOrdersTab() {
     setMicrobialById((current) => {
       const next = { ...current };
       mergedOrders.forEach((order) => {
-        if (!(order.id in next)) next[order.id] = order.microbialAnalysis ?? "Normal";
+        next[order.id] = order.microbialAnalysis ?? "Normal";
       });
       return next;
     });
     setRawMaterialById((current) => {
       const next = { ...current };
       mergedOrders.forEach((order) => {
-        if (!(order.id in next)) next[order.id] = order.rawMaterialStatus ?? "Pending";
+        next[order.id] = order.rawMaterialStatus ?? "Pending";
+      });
+      return next;
+    });
+    setBlendSpeedById((current) => {
+      const next = { ...current };
+      mergedOrders.forEach((order) => {
+        if (order.blendSpeedId) next[order.id] = order.blendSpeedId;
       });
       return next;
     });
@@ -1170,8 +1177,8 @@ function ProductionOrdersTab() {
                       {order.productType ?? "—"}
                     </td>
                     <td className="px-4 py-3 text-right font-medium text-sm">{Number(order.volume ?? 0).toLocaleString()}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">{order.dateOrdered ?? "—"}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">{order.expectedDeliveryDateDate ?? "—"}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(order.dateOrdered)}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(order.expectedDeliveryDateDate)}</td>
                     <td className="px-4 py-3">
                       <select value={rawMaterial} onChange={e => handleChangeRawMaterial(order.id, e.target.value)}
                         className={cn("rounded-lg border px-2 py-1.5 text-xs font-semibold cursor-pointer focus:outline-none",
@@ -2882,11 +2889,11 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                 value={selectedWeekLabel}
                 onChange={(event) => setSelectedWeekLabel(event.target.value)}
                 className={cn("h-10 rounded-xl border px-4 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 cursor-pointer",
-                  isLight ? "border-slate-200 bg-white text-slate-700" : "border-white/10 bg-black/20 text-foreground"
+                  isLight ? "border-slate-200 bg-white text-slate-700" : "border-white/10 bg-black/80 text-foreground"
                 )}
               >
                 {weeks.map((week) => (
-                  <option key={week.weekLabel} value={week.weekLabel}>
+                  <option key={week.weekLabel} value={week.weekLabel} className={isLight ? "bg-white text-slate-700" : "bg-black/90 text-white"}>
                     {week.weekLabel}
                   </option>
                 ))}
@@ -4328,6 +4335,8 @@ function MonthlyOrdersTab() {
 
   const [selectedMonth, setSelectedMonth] = React.useState(defaultMonth);
   const [isAddRowOpen, setIsAddRowOpen] = React.useState(false);
+  const [editingOrderId, setEditingOrderId] = React.useState<number | null>(null);
+  const [editingOrder, setEditingOrder] = React.useState<Partial<MonthlyOrder> | null>(null);
   const [addRowForm, setAddRowForm] = React.useState({
     accountId: "",
     productDescription: "",
@@ -4776,8 +4785,17 @@ function MonthlyOrdersTab() {
                         </select>
                       </td>
 
-                      {/* Delete Button */}
-                      <td className="px-4 py-3">
+                      {/* Action Buttons */}
+                      <td className="px-4 py-3 flex gap-1">
+                        <button
+                          onClick={() => {
+                            setEditingOrderId(order.id);
+                            setEditingOrder({ ...order });
+                          }}
+                          className="p-1.5 rounded-lg text-blue-400 hover:bg-blue-500/10 transition-colors disabled:opacity-50"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
                         <button
                           onClick={() => deleteRowMutation.mutate(order.id)}
                           disabled={deleteRowMutation.isPending}
@@ -4903,6 +4921,125 @@ function MonthlyOrdersTab() {
                   className="px-4 h-9 rounded-xl bg-primary/10 border border-primary/30 text-primary hover:bg-primary hover:text-white text-xs font-semibold transition-all disabled:opacity-50"
                 >
                   {addRowMutation.isPending ? "Adding..." : "Add Order"}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {editingOrderId !== null && editingOrder && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className={cn(
+                "border rounded-2xl shadow-2xl w-full max-w-lg flex flex-col",
+                isLight ? "bg-white border-gray-200" : "glass-panel border-white/10"
+              )}
+            >
+              <div className={cn("flex items-center justify-between px-6 py-4 border-b", isLight ? "border-gray-100" : "border-white/5")}>
+                <div>
+                  <h2 className="text-lg font-bold text-foreground">Edit Monthly Order</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">Update order details</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setEditingOrderId(null);
+                    setEditingOrder(null);
+                  }}
+                  className={cn(
+                    "p-1.5 rounded-lg transition-colors",
+                    isLight ? "hover:bg-gray-100 text-gray-500" : "hover:bg-white/10 text-muted-foreground"
+                  )}
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className={lCls}>Product Description</label>
+                  <input
+                    value={editingOrder.productDescription || ""}
+                    onChange={(e) => setEditingOrder(p => ({ ...p, productDescription: e.target.value }))}
+                    placeholder="e.g., Premium Blend Mix"
+                    className={iCls}
+                  />
+                </div>
+                <div>
+                  <label className={lCls}>Volume (KG)</label>
+                  <input
+                    value={editingOrder.volumeKg || ""}
+                    onChange={(e) => setEditingOrder(p => ({ ...p, volumeKg: Number(e.target.value) }))}
+                    placeholder="0"
+                    type="number"
+                    min="0"
+                    className={iCls}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className={lCls}>Date Ordered</label>
+                    <input
+                      value={editingOrder.dateOrdered?.slice(0, 10) || ""}
+                      onChange={(e) => setEditingOrder(p => ({ ...p, dateOrdered: e.target.value }))}
+                      type="date"
+                      className={iCls}
+                    />
+                  </div>
+                  <div>
+                    <label className={lCls}>Expected Delivery *</label>
+                    <input
+                      value={editingOrder.expectedDeliveryDateDate?.slice(0, 10) || ""}
+                      onChange={(e) => setEditingOrder(p => ({ ...p, expectedDeliveryDateDate: e.target.value }))}
+                      type="date"
+                      className={iCls}
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className={cn("flex justify-end gap-3 px-6 py-4 border-t", isLight ? "border-gray-100" : "border-white/5")}>
+                <button
+                  onClick={() => {
+                    setEditingOrderId(null);
+                    setEditingOrder(null);
+                  }}
+                  className={cn(
+                    "px-4 h-9 rounded-xl text-xs font-semibold border transition-all",
+                    isLight
+                      ? "border-gray-200 text-gray-700 hover:bg-gray-100"
+                      : "border-white/10 text-muted-foreground hover:bg-white/10"
+                  )}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (!editingOrder.expectedDeliveryDateDate) {
+                      toast({
+                        title: "Missing fields",
+                        description: "Expected Delivery date is required",
+                        variant: "destructive",
+                      });
+                      return;
+                    }
+                    updateOrderMutation.mutate({
+                      id: editingOrderId,
+                      updates: {
+                        productDescription: editingOrder.productDescription,
+                        volumeKg: editingOrder.volumeKg,
+                        dateOrdered: editingOrder.dateOrdered,
+                        expectedDeliveryDateDate: editingOrder.expectedDeliveryDateDate,
+                      },
+                    });
+                    setEditingOrderId(null);
+                    setEditingOrder(null);
+                  }}
+                  disabled={updateOrderMutation.isPending}
+                  className="px-4 h-9 rounded-xl bg-primary/10 border border-primary/30 text-primary hover:bg-primary hover:text-white text-xs font-semibold transition-all disabled:opacity-50"
+                >
+                  {updateOrderMutation.isPending ? "Saving..." : "Save Changes"}
                 </button>
               </div>
             </motion.div>
