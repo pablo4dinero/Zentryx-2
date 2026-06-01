@@ -517,7 +517,7 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
         cellMinutesRemaining.set(key, Math.max(0, (cellMinutesRemaining.get(key) ?? 0) - minutesUsed));
         if (orderType) cellProductTypes.set(key, new Set([...existingTypes, orderType]));
         order.remainingQuantity -= assignable;
-        assignedToFloor3MonTue.set(order.id);
+        assignedToFloor3MonTue.add(order.id);
       }
     }
   }
