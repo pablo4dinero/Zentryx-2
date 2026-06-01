@@ -1783,6 +1783,13 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
   const floors = floorsQuery.data ?? [];
   const assignments = assignmentsQuery.data ?? [];
 
+  // Debug logging
+  React.useEffect(() => {
+    if (floors.length > 0) {
+      console.log("Production Floors loaded:", floors.map(f => ({ id: f.id, name: f.floorName, capacity: f.maxCapacityKg })));
+    }
+  }, [floors]);
+
   // Sum of assignedVolume across ALL weeks per order (null assignedVolume = legacy full assignment)
   const assignedVolumeByOrderId = React.useMemo(() => {
     const map: Record<number, number> = {};
@@ -2585,6 +2592,10 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       toast({ title: "Pick a week first", variant: "destructive" });
       return;
     }
+    if (floors.length === 0) {
+      toast({ title: "No production floors configured", description: "Please set up production floors first.", variant: "destructive" });
+      return;
+    }
     setAssistedState("optimizing");
 
     // Build the input shape the planner expects from the existing reactive
@@ -2960,7 +2971,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
           </div>
           <button
             onClick={handleAssistedPlanning}
-            disabled={assistedState === "optimizing"}
+            disabled={assistedState === "optimizing" || floors.length === 0}
+            title={floors.length === 0 ? "No production floors configured" : undefined}
             className={cn("flex items-center gap-1.5 h-9 px-4 rounded-xl text-xs font-semibold border transition-all disabled:opacity-50",
               assistedState === "done"
                 ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
