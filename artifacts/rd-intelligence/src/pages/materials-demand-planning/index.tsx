@@ -5862,9 +5862,7 @@ function MaterialsDemandPlanningPage() {
   ] as const;
   type MdpTab = typeof MDP_TABS[number]["value"];
 
-  if (isLoading) {
-    return <PageLoader />;
-  }
+  if (isLoading) return <PageLoader />;
 
   return (
     <div className="space-y-0">
