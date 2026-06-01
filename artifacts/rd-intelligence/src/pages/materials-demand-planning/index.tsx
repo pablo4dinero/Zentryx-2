@@ -41,6 +41,7 @@ import { runAssistedPlanning, type ExistingCellUsage, type PlanningSummary } fro
 import { useCustomOptions, DEFAULT_PRODUCT_TYPES, displayLabel, useServerProductTypes } from "@/lib/project-options";
 import { CustomOptionsSelect } from "@/components/ui/CustomOptionsSelect";
 import { calculateEfficiency, getEfficiencyColor, getEfficiencyLabel } from "./efficiency-calculator";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { FloorEfficiencyDashboard, type FloorEfficiencyData } from "./floor-efficiency-dashboard";
 import { DowntimeAlerts, type IdleTimeAlert } from "./downtime-alerts";
 
@@ -2769,11 +2770,11 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     return <PageLoader />;
   }
 
-  // TODO: Feature flags will be enabled once database is initialized
-  // For now, keep features disabled until database schema is applied
-  const efficiencyScoreEnabled = false;
-  const floorEfficiencyEnabled = false;
-  const downtimeAlertsEnabled = false;
+  // Fetch feature flags from database
+  const { flags = {} } = useFeatureFlags() || { flags: {} };
+  const efficiencyScoreEnabled = flags?.efficiency_score ?? true;
+  const floorEfficiencyEnabled = flags?.floor_efficiency_dashboard ?? true;
+  const downtimeAlertsEnabled = flags?.downtime_alerts ?? true;
 
   // Calculate efficiency score for current week
   const weekAssignments = (allAssignmentsQuery.data ?? []).filter(row => row.assignment.weekLabel === selectedWeekLabel);
