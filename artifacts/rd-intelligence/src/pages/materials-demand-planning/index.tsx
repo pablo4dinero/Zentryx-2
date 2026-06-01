@@ -3807,22 +3807,38 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <div className="p-4 space-y-2 text-xs">
+              <div className="p-4 space-y-3 text-xs">
+                {/* Planning Strategy Explanation */}
+                <div className={cn("rounded-lg p-2.5", isLight ? "bg-blue-50" : "bg-blue-500/10")}>
+                  <p className={cn("text-[11px] font-semibold mb-1", isLight ? "text-blue-700" : "text-blue-400")}>
+                    Algorithm: Proactive Grouping
+                  </p>
+                  <p className={cn("text-[10px] leading-relaxed", isLight ? "text-blue-600" : "text-blue-300/90")}>
+                    Orders grouped by product type, sorted by volume (largest first) + deadline (urgent first). Similar products assigned together to minimize product switches.
+                  </p>
+                </div>
+
+                {/* Metrics */}
                 {(() => {
-                  const rows: { label: string; value: number; tone: string }[] = [
-                    { label: "Fully scheduled", value: aiSummary.fullyScheduled.length, tone: "text-emerald-500" },
-                    { label: "Partially scheduled", value: aiSummary.partiallyScheduled.length, tone: "text-amber-500" },
-                    { label: "Skipped (no floor / no capacity)", value: aiSummary.skipped.length, tone: "text-rose-500" },
-                    { label: "Switching days created", value: aiSummary.switchDays.length, tone: isLight ? "text-slate-700" : "text-foreground" },
-                    { label: "At-risk (past buffer)", value: aiSummary.atRisk.length, tone: "text-rose-500" },
+                  const rows: { label: string; value: number; tone: string; description: string }[] = [
+                    { label: "Fully scheduled", value: aiSummary.fullyScheduled.length, tone: "text-emerald-500", description: "Complete volume assigned before delivery date" },
+                    { label: "Partially scheduled", value: aiSummary.partiallyScheduled.length, tone: "text-amber-500", description: "Assigned but with remaining volume — may need spillover to next week" },
+                    { label: "Skipped (no floor / no capacity)", value: aiSummary.skipped.length, tone: "text-rose-500", description: "No capacity available before deadline, or no eligible floor for product type" },
+                    { label: "Switching days created", value: aiSummary.switchDays.length, tone: isLight ? "text-slate-700" : "text-foreground", description: "Product transitions between types on same floor — unavoidable, but grouped to minimize" },
+                    { label: "At-risk (past buffer)", value: aiSummary.atRisk.length, tone: "text-rose-500", description: "Critical orders with tight deadlines — assigned to earliest available slots" },
                   ];
                   return rows.map(r => (
-                    <div key={r.label} className={cn(
-                      "flex items-center justify-between rounded-lg px-2.5 py-1.5",
-                      isLight ? "bg-slate-50" : "bg-white/5",
-                    )}>
-                      <span className={cn(isLight ? "text-slate-600" : "text-muted-foreground")}>{r.label}</span>
-                      <span className={cn("font-bold tabular-nums", r.tone)}>{r.value}</span>
+                    <div key={r.label} className="group">
+                      <div className={cn(
+                        "flex items-center justify-between rounded-lg px-2.5 py-1.5 transition-colors",
+                        isLight ? "bg-slate-50 group-hover:bg-slate-100" : "bg-white/5 group-hover:bg-white/10",
+                      )}>
+                        <span className={cn(isLight ? "text-slate-600" : "text-muted-foreground")}>{r.label}</span>
+                        <span className={cn("font-bold tabular-nums", r.tone)}>{r.value}</span>
+                      </div>
+                      <p className={cn("text-[9px] px-2.5 py-1 leading-relaxed", isLight ? "text-slate-500" : "text-muted-foreground/70")}>
+                        {r.description}
+                      </p>
                     </div>
                   ));
                 })()}
@@ -3842,18 +3858,51 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                 {aiSummary.skipped.length > 0 && (
                   <details className={cn("mt-1 rounded-lg p-2", isLight ? "bg-rose-50" : "bg-rose-500/10")}>
                     <summary className="cursor-pointer text-[11px] font-semibold text-rose-500">
-                      Skipped — {aiSummary.skipped.length}
+                      ⚠️ Skipped — {aiSummary.skipped.length}
                     </summary>
-                    <ul className="mt-1.5 space-y-0.5 text-[10px] text-rose-500/90">
+                    <div className={cn("mt-2 text-[9px] p-1.5 rounded mb-2", isLight ? "bg-rose-100/50" : "bg-rose-500/20")}>
+                      <p className={cn(isLight ? "text-rose-700" : "text-rose-300")}>
+                        These orders couldn't fit before their delivery deadline, or have product type constraints preventing assignment.
+                      </p>
+                    </div>
+                    <ul className="space-y-0.75 text-[10px] text-rose-500/90">
                       {aiSummary.skipped.slice(0, 6).map(p => (
-                        <li key={p.orderId} className="truncate">{p.label} · {p.reason}</li>
+                        <li key={p.orderId} className="flex items-start gap-1">
+                          <span className="shrink-0 mt-0.5">•</span>
+                          <div className="truncate">
+                            <p className="font-medium truncate">{p.label}</p>
+                            <p className={cn("text-[9px]", isLight ? "text-rose-600" : "text-rose-400/70")}>{p.reason}</p>
+                          </div>
+                        </li>
                       ))}
-                      {aiSummary.skipped.length > 6 && <li>… and {aiSummary.skipped.length - 6} more</li>}
+                      {aiSummary.skipped.length > 6 && (
+                        <li className={cn("italic", isLight ? "text-rose-600" : "text-rose-400/70")}>
+                          … and {aiSummary.skipped.length - 6} more
+                        </li>
+                      )}
                     </ul>
+                    <p className={cn("mt-2 text-[9px] italic", isLight ? "text-rose-600" : "text-rose-400/60")}>
+                      💡 Suggestion: Adjust delivery dates or allocate additional capacity to accommodate these orders.
+                    </p>
                   </details>
                 )}
+                {/* Key Insights */}
+                <div className={cn("mt-3 pt-3 border-t", isLight ? "border-slate-200" : "border-white/10")}>
+                  <div className={cn("rounded-lg p-2", isLight ? "bg-slate-50" : "bg-white/5")}>
+                    <p className={cn("text-[10px] font-semibold mb-1", isLight ? "text-slate-700" : "text-slate-300")}>
+                      🎯 Planning Insights
+                    </p>
+                    <ul className={cn("space-y-1 text-[9px]", isLight ? "text-slate-600" : "text-slate-400")}>
+                      <li>✓ Product groups kept together to reduce context switching</li>
+                      <li>✓ Largest orders in each group assigned first for priority</li>
+                      <li>✓ Urgent deadlines (Critical/Important) assigned to early week</li>
+                      <li>✓ {aiSummary.switchDays.length} product transitions (minimal after grouping)</li>
+                    </ul>
+                  </div>
+                </div>
+
                 <p className={cn("mt-2 text-[10px] italic", isLight ? "text-slate-400" : "text-muted-foreground/70")}>
-                  Adjust any placement by dragging — the AI plan is just a starting point.
+                  💡 Adjust any placement by dragging — the AI plan is a smart starting point, but your expertise matters.
                 </p>
               </div>
             </div>
