@@ -639,15 +639,13 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
     if (group.orders.every(o => o.remainingQuantity <= 0)) continue;
     if (group.orders.every(o => isMonTueExclusiveProduct(o.productType))) continue;  // Skip exclusive products (handled in Phase 2)
 
-    // Skip groups with any ≤500kg orders (they belong to Phase 1 only)
-    if (group.orders.some(o => o.remainingQuantity > 0 && o.remainingQuantity <= 500)) {
-      for (const order of group.orders) {
-        if (order.remainingQuantity > 0 && order.remainingQuantity <= 500) {
-          skipped.push({ orderId: order.id, label: order.productionLabel, reason: "≤500kg orders must use Floor 2 (Phase 1)" });
-          order.remainingQuantity = 0;  // Mark as skipped
-        }
+    // Mark any ≤500kg orders in this group as skipped (they belong to Phase 1 only)
+    // But continue processing the >500kg orders in the group
+    for (const order of group.orders) {
+      if (order.remainingQuantity > 0 && order.remainingQuantity <= 500) {
+        skipped.push({ orderId: order.id, label: order.productionLabel, reason: "≤500kg orders must use Floor 2 (Phase 1)" });
+        order.remainingQuantity = 0;  // Mark as skipped
       }
-      continue;
     }
 
     // Find eligible floors for this product group (now only >500kg orders)
