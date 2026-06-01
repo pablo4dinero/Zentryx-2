@@ -691,7 +691,12 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
       for (const order of group.orders) {
         if (order.remainingQuantity <= 0) continue;
 
-        // Try to assign to Floor 3 Wed-Fri ONLY (all product types allowed here in Phase 3)
+        // Check if this product type is allowed on Floor 3
+        if (!isFloorEligible(floor3, order.productType, order.remainingQuantity)) {
+          continue; // Skip to Floor 1 fallback instead
+        }
+
+        // Try to assign to Floor 3 Wed-Fri ONLY (must pass eligibility check)
         const blendMins = blendMinutesById(blendSpeeds, order.blendSpeedId || "fast");
         const dailyCap = dailyCapacityKg(floor3, order.blendSpeedId || "fast", blendSpeeds);
         const bSize = batchSizeKg(floor3, blendSpeeds);
@@ -753,6 +758,10 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
     if (floor1) {
       for (const order of group.orders) {
         if (order.remainingQuantity <= 0) continue;
+        // Only try Floor 1 if product is eligible for it
+        if (!isFloorEligible(floor1, order.productType, order.remainingQuantity)) {
+          continue;
+        }
         tryAssignOnFloor(order, floor1);
       }
     }
