@@ -504,6 +504,23 @@ router.delete("/floor-assignments/:id", requireAuth, async (req: AuthRequest, re
   }
 });
 
+router.post("/floor-assignments/batch-delete", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const body = req.body as { ids: number[] };
+    const ids = body.ids || [];
+    if (!Array.isArray(ids) || ids.length === 0) {
+      res.status(400).json({ error: "ids array required and non-empty" });
+      return;
+    }
+    await db.delete(mdpProductSwitchDowntimesTable).where(inArray(mdpProductSwitchDowntimesTable.afterAssignmentId, ids));
+    await db.delete(mdpFloorAssignmentsTable).where(inArray(mdpFloorAssignmentsTable.id, ids));
+    res.json({ success: true, deleted: ids.length });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
 router.get("/product-switch-downtimes", requireAuth, async (req: AuthRequest, res) => {
   try {
     const weekLabel = String(req.query.week || "");
