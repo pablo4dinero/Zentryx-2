@@ -209,19 +209,13 @@ function isSweetGroup(productType: string | null): boolean {
          t.includes("functional") || t.includes("dough");
 }
 
-// Helper: Check if product is in Floor 3 priority list (Dairy Premix, Bread Premix, Dough Premix, Snack Dusting, Functional Blend >500kg, Sweet Flavour >500kg)
-function isFloor3Priority(productType: string | null, volume?: number): boolean {
+// Helper: Check if product is in Floor 3 Mon-Tue exclusive group
+// (Dairy Premix, Bread Premix, Dough Premix, Snack Dusting, Sweet Flavour)
+function isMonTueExclusiveProduct(productType: string | null): boolean {
   if (!productType) return false;
   const t = normalizeType(productType);
-  // Always priority: Dairy Premix, Bread Premix, Dough Premix, Snack Dusting
-  if (t.includes("dairy") || t.includes("bread") || t.includes("snack") || t.includes("dough")) {
-    return true;
-  }
-  // Conditional priority: Functional Blend >500kg, Sweet Flavour >500kg
-  if ((t.includes("functional") || t.includes("sweet")) && volume && volume > 500) {
-    return true;
-  }
-  return false;
+  return t.includes("dairy") || t.includes("bread") || t.includes("snack") ||
+         t.includes("dough") || t.includes("sweet");
 }
 
 // Floor eligibility:
@@ -243,14 +237,14 @@ function isFloorEligible(floor: Floor, orderProductType: string | null, volume?:
   if (!orderProductType) return true;
   const t = normalizeType(orderProductType);
 
-  // Floor 2 constraint: NEVER assign orders over 500kg (don't split)
-  if (floor.floorName === "Floor 2" && volume && volume > 500) {
-    return false;
-  }
-
-  // Floor 2 special case: allow Dairy Premix only if volume <= 500kg
-  if (floor.floorName === "Floor 2" && t.includes("dairy")) {
-    return !volume || volume <= 500;
+  // Floor 2 Strategy: Accept ALL orders ≤500kg (primary destination for small orders)
+  // NEVER assign orders over 500kg to Floor 2
+  if (floor.floorName === "Floor 2") {
+    if (volume && volume > 500) {
+      return false;  // Reject orders >500kg
+    }
+    // Accept all products ≤500kg
+    return true;
   }
 
   // Floor 3 special cases
@@ -358,9 +352,6 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
   const fullyScheduled: PlanningSummary["fullyScheduled"] = [];
   const partiallyScheduled: PlanningSummary["partiallyScheduled"] = [];
   const switchDays: PlanningSummary["switchDays"] = [];
-
-  // Track which orders have been assigned to Floor 3 Mon/Tue
-  const assignedToFloor3MonTue = new Set<number>();
 
   // Helper: ordered list of cells for a floor up to latestCompletion (or
   // through all workingDays if no deadline). Day-shift first, then NS.
@@ -509,12 +500,93 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
     }
   }
 
-  // ── Step 6b: Group-based assignment (Proactive Grouping) ────────────────────
-  // Process product groups instead of individual orders. This ensures:
-  // 1. Similar products are assigned together (minimizes switches)
-  // 2. High-volume orders within each group get best slots
-  // 3. Urgent deadlines get early-week slots
+  // ── Step 6b: Three-Phase Strategic Assignment ────────────────────────────────
+  // Phase 1: Route all ≤500kg orders to Floor 2 (maximize Floor 2 utilization)
+  // Phase 2: Assign Mon-Tue exclusive products to Floor 3 Mon-Tue
+  // Phase 3: Assign remaining orders (>500kg + other products) to Floor 3 Wed-Fri+
 
+  // PHASE 1: Assign all ≤500kg orders to Floor 2
+  const floor2 = floors.find(f => f.floorName === "Floor 2");
+  if (floor2) {
+    for (const order of sortedOrders) {
+      if (order.remainingQuantity <= 0) continue;
+      if (order.remainingQuantity > 500) continue;  // Skip orders >500kg for Phase 1
+
+      tryAssignOnFloor(order, floor2);
+
+      if (order.remainingQuantity <= 0) {
+        const idx = fullyScheduled.findIndex(p => p.orderId === order.id);
+        if (idx < 0) fullyScheduled.push({ orderId: order.id, label: order.productionLabel });
+      } else if (order.remainingQuantity < (eligibleOrders.find(o => o.id === order.id)?.remainingQuantity ?? 0)) {
+        const initialRemaining = eligibleOrders.find(o => o.id === order.id)?.remainingQuantity ?? 0;
+        const idx = partiallyScheduled.findIndex(p => p.orderId === order.id);
+        if (idx < 0) {
+          partiallyScheduled.push({ orderId: order.id, label: order.productionLabel, leftoverKg: Math.round(order.remainingQuantity) });
+        }
+      }
+    }
+  }
+
+  // PHASE 2: Assign Mon-Tue exclusive products to Floor 3 Mon-Tue
+  if (floor3) {
+    for (const order of sortedOrders) {
+      if (order.remainingQuantity <= 0) continue;
+      if (!isMonTueExclusiveProduct(order.productType)) continue;  // Only Phase 2 products
+
+      // Assign only to Mon-Tue
+      const deadline = latestCompletion.get(order.id) ?? null;
+      const blendMins = blendMinutesById(blendSpeeds, order.blendSpeedId || "fast");
+      const dailyCap = dailyCapacityKg(floor3, order.blendSpeedId || "fast", blendSpeeds);
+      const bSize = batchSizeKg(floor3, blendSpeeds);
+      const orderType = normalizeType(order.productType);
+
+      for (const cell of cellsForFloorByDeadline(floor3.id, deadline, ["Mon", "Tue"])) {
+        if (order.remainingQuantity <= 0) break;
+        const key = cellKey(floor3.id, cell.day);
+        let availableMin = cellMinutesRemaining.get(key) ?? 0;
+        if (availableMin <= 0) continue;
+
+        const existingTypes = cellProductTypes.get(key) ?? new Set();
+        const currentIsSavory = isSavoryGroup(order.productType);
+        const currentIsSweet = isSweetGroup(order.productType);
+        const existingHasSavory = [...existingTypes].some(t => isSavoryGroup(t));
+        const existingHasSweet = [...existingTypes].some(t => isSweetGroup(t));
+
+        if ((currentIsSavory && existingHasSweet) || (currentIsSweet && existingHasSavory)) continue;
+
+        const hasOtherType = orderType && [...existingTypes].some(t => t && t !== orderType);
+        if (hasOtherType) {
+          availableMin -= DEFAULT_SWITCH_MINUTES;
+          if (availableMin <= 0) continue;
+          switchDays.push({ floorName: floor3.floorName, day: cell.day });
+        }
+
+        const batches = Math.floor(availableMin / blendMins);
+        if (batches <= 0) continue;
+        const assignable = Math.min(batches * bSize, order.remainingQuantity, dailyCap);
+        if (assignable <= 0) continue;
+
+        placements.push({
+          floorId: floor3.id,
+          productionOrderId: order.id,
+          assignedDay: cell.day,
+          assignedVolume: Math.round(assignable * 10) / 10,
+        });
+
+        const minutesUsed = Math.ceil(assignable / bSize) * blendMins + (hasOtherType ? DEFAULT_SWITCH_MINUTES : 0);
+        cellMinutesRemaining.set(key, Math.max(0, (cellMinutesRemaining.get(key) ?? 0) - minutesUsed));
+        if (orderType) cellProductTypes.set(key, new Set([...existingTypes, orderType]));
+        order.remainingQuantity -= assignable;
+      }
+
+      if (order.remainingQuantity <= 0) {
+        const idx = fullyScheduled.findIndex(p => p.orderId === order.id);
+        if (idx < 0) fullyScheduled.push({ orderId: order.id, label: order.productionLabel });
+      }
+    }
+  }
+
+  // PHASE 3: Assign remaining orders (>500kg + other products) using group-based assignment
   for (const group of productGroups) {
     if (group.orders.every(o => o.remainingQuantity <= 0)) continue;
 

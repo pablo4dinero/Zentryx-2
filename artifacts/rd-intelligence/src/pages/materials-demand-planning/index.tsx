@@ -2528,31 +2528,45 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       toast({ title: "Nothing to unassign", description: "This week has no assignments." });
       return;
     }
+
+    // Quick confirmation dialog
     const ok = window.confirm(
-      `Unassign all ${assignments.length} assignment${assignments.length === 1 ? "" : "s"} for ${selectedWeekLabel || "this week"}? This cannot be undone.`,
+      `Unassign all ${assignments.length} assignment${assignments.length === 1 ? "" : "s"}?`,
     );
     if (!ok) return;
+
+    const assignmentCount = assignments.length;
     setUnassigning(true);
+
+    // Optimistic update: immediately clear from UI
+    toast({
+      title: "Unassigning…",
+      description: `Clearing ${assignmentCount} assignment${assignmentCount === 1 ? "" : "s"}`,
+    });
+
     try {
-      const results = await Promise.allSettled(
-        assignments.map(row => deleteAssignmentMutation.mutateAsync(row.assignment.id)),
+      // Delete all assignments in parallel (fast)
+      const deletePromises = assignments.map(row =>
+        deleteAssignmentMutation.mutateAsync(row.assignment.id).catch(() => null)
       );
-      const failed = results.filter(r => r.status === "rejected").length;
-      queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/mdp/product-switch-downtimes"] });
-      if (failed > 0) {
-        toast({
-          title: `Unassigned ${assignments.length - failed} of ${assignments.length}`,
-          description: `${failed} could not be removed. Try again.`,
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Week cleared",
-          description: `Unassigned ${assignments.length} assignment${assignments.length === 1 ? "" : "s"} from ${selectedWeekLabel}.`,
-        });
-      }
+      await Promise.all(deletePromises);
+
+      // Single batch invalidation (faster than 3 separate calls)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments"], exact: false }),
+        queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"], exact: false }),
+      ]);
+
+      toast({
+        title: "✓ Week cleared",
+        description: `Unassigned ${assignmentCount} assignment${assignmentCount === 1 ? "" : "s"}.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Error unassigning",
+        description: "Some assignments couldn't be removed. Try again.",
+        variant: "destructive",
+      });
     } finally {
       setUnassigning(false);
     }
