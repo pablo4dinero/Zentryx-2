@@ -2539,39 +2539,45 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     const assignmentIds = assignments.map(row => row.assignment.id);
     setUnassigning(true);
 
-    // Show immediate feedback
+    // IMMEDIATE: Update cache optimistically before server request
+    queryClient.setQueryData(["/api/mdp/floor-assignments", selectedWeekLabel], (old: any) => {
+      if (!Array.isArray(old)) return old;
+      return old.filter(row => !assignmentIds.includes(row.id));
+    });
+
+    // IMMEDIATE: Invalidate production-orders to force refetch (syncs cache)
+    queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
+
+    // Show success immediately (UI is responsive now)
     toast({
       title: "✓ Cleared",
       description: `Unassigned ${assignmentCount} assignment${assignmentCount === 1 ? "" : "s"}.`,
     });
 
-    try {
-      // Batch delete on server (single request, not N requests)
-      const res = await fetch(`${BASE}api/mdp/floor-assignments/batch-delete`, {
-        method: "POST",
-        headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: assignmentIds }),
-      });
+    setUnassigning(false);
 
-      if (!res.ok) {
-        const error = await res.json().catch(() => ({}));
-        throw new Error(error.error || "Batch delete failed");
-      }
-
-      // After server confirms deletion, invalidate both queries to sync cache
-      // (don't await - let refetch happen in background for speed)
-      queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments", selectedWeekLabel] });
-      queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
-    } catch (error) {
-      console.error("Unassign all error:", error);
-      toast({
-        title: "Error unassigning",
-        description: "Some assignments couldn't be removed. Try again.",
-        variant: "destructive",
+    // BACKGROUND: Delete on server asynchronously (don't block UI)
+    // User won't wait for this - UI is already responsive
+    fetch(`${BASE}api/mdp/floor-assignments/batch-delete`, {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: assignmentIds }),
+    })
+      .then(res => {
+        if (!res.ok) throw new Error("Batch delete failed");
+        return res.json();
+      })
+      .catch((error) => {
+        console.error("Background unassign error:", error);
+        // On error, refetch to resync
+        queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments", selectedWeekLabel] });
+        queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
+        toast({
+          title: "Background sync error",
+          description: "Please refresh page to ensure data consistency.",
+          variant: "destructive",
+        });
       });
-    } finally {
-      setUnassigning(false);
-    }
   };
 
   const handleAssistedPlanning = async () => {

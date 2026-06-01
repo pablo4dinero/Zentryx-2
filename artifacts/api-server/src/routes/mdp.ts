@@ -512,9 +512,30 @@ router.post("/floor-assignments/batch-delete", requireAuth, async (req: AuthRequ
       res.status(400).json({ error: "ids array required and non-empty" });
       return;
     }
+    // Delete in correct order: dependent records first
     await db.delete(mdpProductSwitchDowntimesTable).where(inArray(mdpProductSwitchDowntimesTable.afterAssignmentId, ids));
     await db.delete(mdpFloorAssignmentsTable).where(inArray(mdpFloorAssignmentsTable.id, ids));
     res.json({ success: true, deleted: ids.length });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+router.post("/floor-assignments/cleanup-orphaned", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    // Clean up orphaned product switch downtime records (references deleted assignments)
+    const orphaned = await db.select({ id: mdpProductSwitchDowntimesTable.id })
+      .from(mdpProductSwitchDowntimesTable)
+      .leftJoin(mdpFloorAssignmentsTable, eq(mdpFloorAssignmentsTable.id, mdpProductSwitchDowntimesTable.afterAssignmentId))
+      .where(eq(mdpFloorAssignmentsTable.id, null));
+
+    const orphanedIds = orphaned.map((row: any) => row.id);
+    if (orphanedIds.length > 0) {
+      await db.delete(mdpProductSwitchDowntimesTable).where(inArray(mdpProductSwitchDowntimesTable.id, orphanedIds));
+    }
+
+    res.json({ success: true, cleaned: orphanedIds.length });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "InternalServerError" });
