@@ -510,6 +510,15 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
   const floor2 = floors.find(f => f.floorName === "Floor 2");
   const floor2AssignedOrders = new Set<number>();  // Track which orders Phase 1 assigns
 
+  if (!floor2) {
+    // Floor 2 is missing! Add all ≤500kg to skipped with helpful message
+    for (const order of sortedOrders) {
+      if (order.remainingQuantity > 0 && order.remainingQuantity <= 500) {
+        skipped.push({ orderId: order.id, label: order.productionLabel, reason: "Floor 2 not configured in system" });
+      }
+    }
+  }
+
   if (floor2) {
     // Collect ALL ≤500kg orders first (before processing)
     const smallOrders = sortedOrders.filter(o => o.remainingQuantity <= 500);
