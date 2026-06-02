@@ -4,6 +4,8 @@ import { Upload, AlertTriangle, ChevronDown, Loader2, Check, Edit2, Trash2, Plus
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
 import { useToast } from "@/hooks/use-toast";
+import { useServerProductTypes, displayLabel } from "@/lib/project-options";
+import { CustomOptionsSelect } from "@/components/ui/CustomOptionsSelect";
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -134,10 +136,10 @@ export default function StrategyEvaluatorTab() {
   const [productRenames, setProductRenames] = useState<Map<string, string>>(new Map());
   const [editingDayIdx, setEditingDayIdx] = useState<number | null>(null);
   const [editingProductKey, setEditingProductKey] = useState<string | null>(null);
-  const [showProductTypeManager, setShowProductTypeManager] = useState(false);
-  const [customProductTypes, setCustomProductTypes] = useState<any[]>([]);
-  const [newTypeForm, setNewTypeForm] = useState({ name: "", keywords: "" });
-  const [showTypeModal, setShowTypeModal] = useState(false);
+  const [rowTypeOverrides, setRowTypeOverrides] = useState<Map<string, string>>(new Map());
+
+  // Server-synced product types — same list used by MDP Add Product and Sales Force
+  const typeOpts = useServerProductTypes();
 
   // Fetch production orders for blend speed lookup
   const ordersQuery = useQuery({
@@ -174,19 +176,6 @@ export default function StrategyEvaluatorTab() {
     enabled: !!selectedZentryxWeek,
   });
 
-  // Fetch custom product types
-  const productTypesQuery = useQuery({
-    queryKey: ["/api/mdp/product-types"],
-    queryFn: async () => {
-      const res = await fetch(`${BASE}api/mdp/product-types`, { headers: authHeaders() });
-      if (!res.ok) return [];
-      return res.json() as Promise<any[]>;
-    },
-  });
-
-  React.useEffect(() => {
-    setCustomProductTypes(productTypesQuery.data || []);
-  }, [productTypesQuery.data]);
 
   // Get unique weeks from all assignments
   const allWeeks = useMemo(() => {
@@ -328,12 +317,11 @@ export default function StrategyEvaluatorTab() {
         floor.products.forEach((product) => {
           const lookup = productLookup.get(product.name.toLowerCase());
           const blendSpeed = (lookup?.blendSpeedId || "medium") as "fast" | "medium" | "slow";
-          const productType = lookup?.productType || "Unknown";
-
-          // Use overridden floor if available, otherwise use parsed floor
           const rowKey = `${rowIdx}-${day.dayName}-${product.name}`;
+          // Use user-selected type from dropdown first, then auto-detected, then lookup
+          const productType = rowTypeOverrides.get(rowKey) || product.detectedType || lookup?.productType || "";
           const finalFloor = floorOverrides.get(rowKey) || floor.floorName;
-          const floorWarning = !checkFloorCompatibility(finalFloor, productType, product.volume);
+          const floorWarning = productType ? !checkFloorCompatibility(finalFloor, productType, product.volume) : false;
 
           products.push({
             dayName: day.dayName,
@@ -352,7 +340,7 @@ export default function StrategyEvaluatorTab() {
     });
     setConfirmedProducts(products);
     setStep(2);
-  }, [parsedDays, floorOverrides]);
+  }, [parsedDays, floorOverrides, rowTypeOverrides]);
 
   const getAIInsight = useCallback(async () => {
     const uploadedTotal = confirmedProducts.reduce((sum, p) => sum + p.volume, 0);
@@ -418,37 +406,6 @@ export default function StrategyEvaluatorTab() {
       });
     });
 
-    const handleAddCustomType = async () => {
-      if (!newTypeForm.name.trim()) return;
-      const keywords = newTypeForm.keywords.split(",").map((k) => k.trim()).filter((k) => k);
-      try {
-        const res = await fetch(`${BASE}api/mdp/product-types`, {
-          method: "POST",
-          headers: { ...authHeaders(), "Content-Type": "application/json" },
-          body: JSON.stringify({ name: newTypeForm.name, keywords }),
-        });
-        if (res.ok) {
-          await productTypesQuery.refetch();
-          setNewTypeForm({ name: "", keywords: "" });
-        }
-      } catch (err) {
-        console.error(err);
-      }
-    };
-
-    const handleDeleteCustomType = async (id: string) => {
-      try {
-        const res = await fetch(`${BASE}api/mdp/product-types/${id}`, {
-          method: "DELETE",
-          headers: authHeaders(),
-        });
-        if (res.ok) {
-          await productTypesQuery.refetch();
-        }
-      } catch (err) {
-        console.error(err);
-      }
-    };
 
     return (
       <div className="space-y-6">
@@ -554,79 +511,14 @@ export default function StrategyEvaluatorTab() {
                 <p className="text-sm text-muted-foreground mt-1">Review extracted products and confirm blend speeds and types</p>
               </div>
 
-              {/* Custom Product Types Button */}
+              {/* Product Types managed via shared server-synced list */}
               <div className="flex justify-end mb-4">
-                <button
-                  onClick={() => setShowTypeModal(true)}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-all"
-                  style={isLight ? { borderColor: "#e2e8f0", backgroundColor: "#f8fafc", color: "#334155" } : { borderColor: "rgba(255,255,255,0.1)", backgroundColor: "rgba(255,255,255,0.05)", color: "#e2e8f0" }}
-                >
-                  <Plus className="w-4 h-4" /> Manage Product Types ({customProductTypes.length})
-                </button>
-              </div>
-
-              {/* Modal Overlay */}
-              {showTypeModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                  <div className={cn("rounded-lg p-6 max-w-md w-full mx-4 space-y-4", isLight ? "bg-white" : "bg-slate-900")}>
-                    <div className="flex justify-between items-center mb-4">
-                      <h3 className="text-lg font-bold text-foreground">Manage Product Types</h3>
-                      <button
-                        onClick={() => setShowTypeModal(false)}
-                        className="text-muted-foreground hover:text-foreground"
-                      >
-                        <X className="w-5 h-5" />
-                      </button>
-                    </div>
-
-                    {/* Add Form */}
-                    <div className="space-y-3 pb-4 border-b" style={isLight ? { borderColor: "#e2e8f0" } : { borderColor: "rgba(255,255,255,0.1)" }}>
-                      <input
-                        type="text"
-                        placeholder="Type name"
-                        value={newTypeForm.name}
-                        onChange={(e) => setNewTypeForm({ ...newTypeForm, name: e.target.value })}
-                        className="w-full text-sm px-3 py-2 rounded border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Keywords (comma-separated)"
-                        value={newTypeForm.keywords}
-                        onChange={(e) => setNewTypeForm({ ...newTypeForm, keywords: e.target.value })}
-                        className="w-full text-sm px-3 py-2 rounded border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
-                      />
-                      <button
-                        onClick={handleAddCustomType}
-                        className="w-full px-4 py-2 bg-blue-600 text-white text-sm rounded font-medium hover:bg-blue-700"
-                      >
-                        Add Custom Type
-                      </button>
-                    </div>
-
-                    {/* List */}
-                    {customProductTypes.length > 0 ? (
-                      <div className="space-y-2 max-h-64 overflow-y-auto">
-                        {customProductTypes.map((type) => (
-                          <div key={type.id} className={cn("flex items-center justify-between p-3 rounded", isLight ? "bg-slate-50" : "bg-white/5")}>
-                            <div className="flex-1">
-                              <p className="font-semibold text-sm">{type.name}</p>
-                              <p className="text-xs text-muted-foreground">{type.keywords.join(", ")}</p>
-                            </div>
-                            <button
-                              onClick={() => handleDeleteCustomType(type.id)}
-                              className="p-2 hover:bg-red-500/20 rounded text-red-600 ml-2"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground text-center py-4">No custom types yet</p>
-                    )}
-                  </div>
+                <div className="text-xs text-muted-foreground flex items-center gap-1.5 px-3 py-2 rounded-lg border"
+                  style={isLight ? { borderColor: "#e2e8f0", backgroundColor: "#f8fafc" } : { borderColor: "rgba(255,255,255,0.1)", backgroundColor: "rgba(255,255,255,0.05)" }}>
+                  <Plus className="w-3 h-3" />
+                  <span>Add new types via <strong>MDP → Add Product</strong> — synced here automatically</span>
                 </div>
-              )}
+              </div>
 
               <div className={cn("rounded-lg overflow-hidden border", isLight ? "border-slate-200 bg-white" : "border-white/10")}>
                 <table className="w-full text-sm">
@@ -645,12 +537,10 @@ export default function StrategyEvaluatorTab() {
                     {tableRows.map((row, idx) => {
                       const lookup = productLookup.get(row.productName.toLowerCase());
                       const blendSpeed = (lookup?.blendSpeedId || "medium") as "fast" | "medium" | "slow";
-                      const productType = row.productType || lookup?.productType || "Unknown";
-                      const floorWarning = !checkFloorCompatibility(row.floorName, productType, row.volume);
-
                       const rowKey = `${idx}-${row.dayName}-${row.productName}`;
+                      const productType = rowTypeOverrides.get(rowKey) || row.productType || lookup?.productType || "";
                       const selectedFloor = floorOverrides.get(rowKey) || row.floorName;
-                      const adjustedFloorWarning = !checkFloorCompatibility(selectedFloor, productType, row.volume);
+                      const adjustedFloorWarning = productType ? !checkFloorCompatibility(selectedFloor, productType, row.volume) : false;
 
                       const dayKey = `day-${row.dayIdx}`;
                       const productKey = `product-${row.dayIdx}-${row.prodIdx}`;
@@ -761,34 +651,15 @@ export default function StrategyEvaluatorTab() {
                             <option value="slow">Slow</option>
                           </select>
                         </td>
-                        <td className="px-4 py-2">
-                          <select
-                            defaultValue={productType}
-                            className="text-xs px-2 py-1 rounded border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
-                          >
-                            <option value="Seasoning">Seasoning</option>
-                            <option value="Pasta Sauce">Pasta Sauce</option>
-                            <option value="Breading">Breading</option>
-                            <option value="Savoury Flavour">Savoury Flavour</option>
-                            <option value="Marinade">Marinade</option>
-                            <option value="Spice Mix">Spice Mix</option>
-                            <option value="Dairy Premix">Dairy Premix</option>
-                            <option value="Sweet Flavour">Sweet Flavour</option>
-                            <option value="Snack Dusting">Snack Dusting</option>
-                            <option value="Dough Premix">Dough Premix</option>
-                            <option value="Bread Premix">Bread Premix</option>
-                            <option value="Unknown">Unknown</option>
-                            {customProductTypes.length > 0 && (
-                              <>
-                                <option disabled>─ Custom ─</option>
-                                {customProductTypes.map((type) => (
-                                  <option key={type.id} value={type.name}>
-                                    {type.name}
-                                  </option>
-                                ))}
-                              </>
-                            )}
-                          </select>
+                        <td className="px-4 py-2 min-w-[160px]">
+                          <CustomOptionsSelect
+                            value={productType}
+                            onChange={(v) => setRowTypeOverrides(prev => new Map(prev).set(rowKey, v))}
+                            handle={typeOpts}
+                            displayFn={displayLabel}
+                            placeholder="Select type…"
+                            isLight={isLight}
+                          />
                         </td>
                         <td className="px-4 py-2 text-center">
                           {adjustedFloorWarning && (
