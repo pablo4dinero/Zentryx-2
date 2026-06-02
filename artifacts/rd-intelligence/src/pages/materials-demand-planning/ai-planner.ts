@@ -406,6 +406,13 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
 
     for (const cell of cellsForFloorByDeadline(floor.id, deadline)) {
       if (order.remainingQuantity <= 0) break;
+
+      // Floor 3 Mon-Tue is EXCLUSIVELY reserved for priority products (Phase 2).
+      // Non-priority products must never be placed there via tryAssignOnFloor.
+      if (floor.floorName.toLowerCase() === "floor 3" && (cell.day === "Mon" || cell.day === "Tue")) {
+        if (!isFloor3Priority(order.productType, order.remainingQuantity)) continue;
+      }
+
       const key = cellKey(floor.id, cell.day);
       let availableMin = cellMinutesRemaining.get(key) ?? 0;
       if (availableMin <= 0) continue;
@@ -790,6 +797,10 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
 
   // ── Step 7: gap-fill pass (zero-switch top-ups for same product type) ─────
   for (const cell of eligibleCells) {
+    // Floor 3 Mon-Tue is exclusively for priority products — never gap-fill with others
+    const cellFloor = floors.find(f => f.id === cell.floorId);
+    if (cellFloor?.floorName.toLowerCase() === "floor 3" && (cell.day === "Mon" || cell.day === "Tue")) continue;
+
     const key = cellKey(cell.floorId, cell.day);
     let availableMin = cellMinutesRemaining.get(key) ?? 0;
     const types = cellProductTypes.get(key) ?? new Set();
