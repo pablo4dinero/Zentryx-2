@@ -454,7 +454,13 @@ export default function StrategyEvaluatorTab() {
           const numDays = parsedDays.length;
           const totalVolume = allProducts.reduce((sum, p) => sum + (p.volume || 0), 0);
           const totalProducts = allProducts.length;
-          const uniqueTypes = new Set(allProducts.map(p => (p.type || p.productType || "").toLowerCase()).filter(Boolean)).size;
+          // Count unique types from user-selected dropdowns (reactive to rowTypeOverrides)
+          const uniqueTypes = new Set(
+            tableRows.map((row, idx) => {
+              const rowKey = `${idx}-${row.dayName}-${row.productName}`;
+              return (rowTypeOverrides.get(rowKey) || row.productType || productLookup.get(row.productName.toLowerCase())?.productType || "").toLowerCase();
+            }).filter(Boolean)
+          ).size;
           return (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
