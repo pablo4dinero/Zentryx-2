@@ -371,9 +371,13 @@ router.get("/floor-assignments", requireAuth, async (req: AuthRequest, res) => {
       assignment: mdpFloorAssignmentsTable,
       floor: mdpProductionFloorsTable,
       order: mdpProductionOrdersTable,
+      salesOrder: accountProductionOrdersTable,
+      account: accountsTable,
     }).from(mdpFloorAssignmentsTable)
       .leftJoin(mdpProductionFloorsTable, eq(mdpFloorAssignmentsTable.floorId, mdpProductionFloorsTable.id))
-      .leftJoin(mdpProductionOrdersTable, eq(mdpFloorAssignmentsTable.productionOrderId, mdpProductionOrdersTable.id));
+      .leftJoin(mdpProductionOrdersTable, eq(mdpFloorAssignmentsTable.productionOrderId, mdpProductionOrdersTable.id))
+      .leftJoin(accountProductionOrdersTable, eq(mdpProductionOrdersTable.salesOrderId, accountProductionOrdersTable.id))
+      .leftJoin(accountsTable, eq(accountProductionOrdersTable.accountId, accountsTable.id));
 
     const query = weekLabel
       ? baseQuery.where(eq(mdpFloorAssignmentsTable.weekLabel, weekLabel))
@@ -381,27 +385,20 @@ router.get("/floor-assignments", requireAuth, async (req: AuthRequest, res) => {
 
     const assignments = await query.orderBy(desc(mdpFloorAssignmentsTable.assignedAt)) as Array<Record<string, any>>;
 
-    // Enrich from accountsTable using accountId (NOW available after migration)
-    // accountsTable has productName, productType, company for each account
-    const accounts = await db.select().from(accountsTable) as Array<Record<string, any>>;
-    const accountsById = new Map(accounts.map((a: Record<string, any>) => [a.id, a]));
-
-    // Enrich assignments by looking up account data via accountId
+    // Enrich with company, productName, productType from the joined account
     const enriched = assignments.map((a: Record<string, any>) => {
       if (!a.order) return a;
-
-      // Look up account by accountId - this has productName, productType, company
-      const accountData = a.order.accountId ? accountsById.get(a.order.accountId) : null;
-
+      const account = a.account;
+      const salesOrder = a.salesOrder;
       return {
-        ...a,
+        assignment: a.assignment,
+        floor: a.floor,
         order: {
           ...a.order,
-          // Inject account fields into order (these are the SOURCE OF TRUTH)
-          productName: accountData?.productName || a.order.productName,
-          productType: accountData?.productType || a.order.productType,
-          company: accountData?.company || a.order.accountName,
-          accountName: accountData?.company || a.order.accountName,
+          productName: account?.productName || salesOrder?.productName || a.order.productName,
+          productType: account?.productType || salesOrder?.productType || a.order.productType,
+          company: account?.company || a.order.accountName || "",
+          accountName: account?.company || a.order.accountName || "",
         }
       };
     });
