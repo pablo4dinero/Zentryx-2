@@ -245,7 +245,7 @@ export default function StrategyEvaluatorTab() {
   // Organize Zentryx assignments by day and shift
   const zentryxPlanByDay = useMemo(() => {
     const dayMap = new Map<string, {
-      shifts: Map<string, { floors: Map<string, { products: Array<{ name: string; volume: number; type: string }>; volume: number; productCount: number }> }>
+      shifts: Map<string, { floors: Map<string, { products: Array<{ name: string; volume: number; type: string; company: string }>; volume: number; productCount: number }> }>
     }>();
     assignmentsQuery.data?.forEach((row: any) => {
       if (row.assignment?.weekLabel === selectedZentryxWeek) {
@@ -255,6 +255,7 @@ export default function StrategyEvaluatorTab() {
         const volume = Number(row.assignment.assignedVolume || 0);
         const productName = row.order?.productName || "Unknown Product";
         const productType = row.order?.productType || "Unknown";
+        const company = row.order?.company || row.order?.accountName || "";
 
         if (!dayMap.has(dayName)) {
           dayMap.set(dayName, { shifts: new Map() });
@@ -268,7 +269,7 @@ export default function StrategyEvaluatorTab() {
           shiftData.floors.set(floorName, { products: [], volume: 0, productCount: 0 });
         }
         const floorData = shiftData.floors.get(floorName)!;
-        floorData.products.push({ name: productName, volume, type: productType });
+        floorData.products.push({ name: productName, volume, type: productType, company });
         floorData.volume += volume;
         floorData.productCount += 1;
       }
@@ -854,7 +855,7 @@ export default function StrategyEvaluatorTab() {
             <div className="space-y-4 max-h-96 overflow-y-auto">
               {Array.from(
                 new Map([...zentryxPlanByDay.entries()].sort((a, b) => {
-                  const dayOrder = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+                  const dayOrder = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
                   return dayOrder.indexOf(a[0]) - dayOrder.indexOf(b[0]);
                 }))
               ).map(([dayName, dayData]) => (
@@ -890,7 +891,7 @@ export default function StrategyEvaluatorTab() {
                                 <div className="ml-2 space-y-0.5">
                                   {floorData.products.map((prod, idx) => (
                                     <div key={idx} className="text-xs text-muted-foreground">
-                                      • {prod.name}: {prod.volume.toLocaleString()} kg
+                                      • {prod.company ? `${prod.company} ` : ""}{prod.name}: {prod.volume.toLocaleString()} kg
                                     </div>
                                   ))}
                                 </div>
