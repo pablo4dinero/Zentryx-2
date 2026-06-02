@@ -209,33 +209,32 @@ function isSweetGroup(productType: string | null): boolean {
          t.includes("functional") || t.includes("dough");
 }
 
+// Exact-match set for Floor 3 Mon-Tue exclusive products.
+// MUST use exact normalized names — never substring includes() because
+// "breading".includes("bread") === true which would wrongly classify Breading.
+const MON_TUE_EXCLUSIVE_TYPES = new Set([
+  "dairy_premix",
+  "bread_premix",
+  "dough_premix",
+  "snack_dusting",
+  "sweet_flavour",
+  "sweet_flavor",
+]);
+
 // Helper: Check if product is in Floor 3 Mon-Tue exclusive group
-// (Dairy Premix, Bread Premix, Dough Premix, Snack Dusting, Sweet Flavour)
 function isMonTueExclusiveProduct(productType: string | null): boolean {
   if (!productType) return false;
-  const t = normalizeType(productType);
-  return t.includes("dairy") || t.includes("bread") || t.includes("snack") ||
-         t.includes("dough") || t.includes("sweet");
+  return MON_TUE_EXCLUSIVE_TYPES.has(normalizeType(productType));
 }
 
 // Helper: Check if product is a Floor 3 priority product
-// (Dairy Premix, Bread Premix, Dough Premix, Snack Dusting, Functional Blend >500kg, Sweet Flavour >500kg)
+// (same set as exclusive, plus Functional Blend >500kg)
 function isFloor3Priority(productType: string | null, volume?: number): boolean {
   if (!productType) return false;
   const t = normalizeType(productType);
-
-  // Always prioritize these
-  if (t.includes("dairy") || t.includes("bread") || t.includes("snack") || t.includes("dough")) {
-    return true;
-  }
-
-  // Sweet Flavour and Functional Blend only if > 500kg
-  if (volume !== undefined && volume > 500) {
-    if (t.includes("sweet") || t.includes("functional")) {
-      return true;
-    }
-  }
-
+  if (MON_TUE_EXCLUSIVE_TYPES.has(t)) return true;
+  // Functional Blend only if > 500kg
+  if (volume !== undefined && volume > 500 && t === "functional_blend") return true;
   return false;
 }
 
