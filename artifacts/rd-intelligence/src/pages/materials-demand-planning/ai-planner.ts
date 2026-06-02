@@ -474,6 +474,8 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
       if (order.remainingQuantity <= 0) continue;
       if (!isFloor3Priority(order.productType, order.remainingQuantity)) continue;
       if (assignedToFloor3MonTue.has(order.id)) continue;
+      // ≤500kg orders ALWAYS go to Floor 2 (Phase 1), never Floor 3
+      if (order.remainingQuantity <= 500) continue;
 
       // Try to assign priority products to Floor 3 on Mon/Tue only
       const deadline = latestCompletion.get(order.id) ?? null;
@@ -617,11 +619,13 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
     }
   }
 
-  // PHASE 2: Assign Mon-Tue exclusive products to Floor 3 Mon-Tue
+  // PHASE 2: Assign Mon-Tue exclusive products to Floor 3 Mon-Tue (>500kg only)
   if (floor3) {
     for (const order of sortedOrders) {
       if (order.remainingQuantity <= 0) continue;
       if (!isMonTueExclusiveProduct(order.productType)) continue;  // Only Phase 2 products
+      // ≤500kg orders ALWAYS go to Floor 2 (Phase 1), irrespective of product type
+      if (order.remainingQuantity <= 500) continue;
 
       // Assign only to Mon-Tue
       const deadline = latestCompletion.get(order.id) ?? null;
