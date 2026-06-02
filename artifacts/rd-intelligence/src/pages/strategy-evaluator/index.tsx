@@ -490,6 +490,61 @@ export default function StrategyEvaluatorTab() {
           </p>
         </div>
 
+        {/* Upload Summary Cards */}
+        {(() => {
+          const allProducts = parsedDays.flatMap(d => d.floors.flatMap(f => f.products));
+          const hasSaturday = parsedDays.some(d => d.isWeekend);
+          const numDays = parsedDays.length;
+          const totalVolume = allProducts.reduce((sum, p) => sum + (p.volume || 0), 0);
+          const totalProducts = allProducts.length;
+          const uniqueTypes = new Set(allProducts.map(p => (p.type || p.productType || "").toLowerCase()).filter(Boolean)).size;
+          return (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                {
+                  label: "Days",
+                  value: parsedDays.length > 0 ? `${numDays} day${numDays !== 1 ? "s" : ""}` : null,
+                  sub: parsedDays.length > 0 ? (hasSaturday ? "Mon – Sat" : "Mon – Fri") : null,
+                  icon: "📅",
+                },
+                {
+                  label: "Total Volume",
+                  value: parsedDays.length > 0 ? `${totalVolume.toLocaleString()} kg` : null,
+                  sub: parsedDays.length > 0 ? "across all floors" : null,
+                  icon: "⚖️",
+                },
+                {
+                  label: "Total Products",
+                  value: parsedDays.length > 0 ? totalProducts.toString() : null,
+                  sub: parsedDays.length > 0 ? "product lines" : null,
+                  icon: "📦",
+                },
+                {
+                  label: "Product Types",
+                  value: parsedDays.length > 0 ? uniqueTypes.toString() : null,
+                  sub: parsedDays.length > 0 ? "unique types" : null,
+                  icon: "🏷️",
+                },
+              ].map(card => (
+                <div key={card.label} className={cn("rounded-lg border p-4 flex flex-col gap-1", isLight ? "bg-white border-slate-200" : "bg-white/5 border-white/10")}>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium uppercase tracking-wide">
+                    <span>{card.icon}</span>
+                    <span>{card.label}</span>
+                  </div>
+                  {card.value ? (
+                    <>
+                      <p className="text-xl font-bold text-foreground">{card.value}</p>
+                      <p className="text-xs text-muted-foreground">{card.sub}</p>
+                    </>
+                  ) : (
+                    <p className="text-sm text-muted-foreground italic mt-1">Upload a plan to see</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+
         {/* Confirmation Section (shown only if document is uploaded) */}
         {parsedDays.length > 0 && (
           <>
