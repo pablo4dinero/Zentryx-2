@@ -2598,15 +2598,31 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     }
     setAssistedState("optimizing");
 
+    // AUTO-CLEAR: Delete all existing assignments for this week before running.
+    // This ensures the algorithm always starts from a clean state and previous
+    // wrong placements (e.g. Breading on Floor 3 Mon-Tue) don't persist.
+    const existingIds = assignments.map((row: any) => row.assignment.id).filter(Boolean);
+    if (existingIds.length > 0) {
+      try {
+        await fetch(`${BASE}api/mdp/floor-assignments/batch-delete`, {
+          method: "POST",
+          headers: { ...authHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: existingIds }),
+        });
+      } catch (err) {
+        console.error("Failed to clear existing assignments before planning:", err);
+      }
+    }
+
     // Build the input shape the planner expects from the existing reactive
     // state. Everything is read live — nothing hardcoded.
     const fastMin = blendSpeeds.find(b => b.id === "fast")?.timeTakenMinutes ?? 40;
     const FAST_BATCHES_PER_DAY = Math.max(1, Math.floor(450 / fastMin));
 
-    // Compute minutes already burned on each (floor, day) cell from manual
-    // assignments. assignedVolume → minutes = ceil(vol / batchSize) × blendMins.
+    // existingUsage is now always empty since we cleared above — no stale
+    // manual assignments can pollute the algorithm's capacity calculations.
     const existingUsage = new Map<string, ExistingCellUsage>();
-    for (const row of assignments) {
+    for (const row of ([] as typeof assignments)) {
       const floorId = row.assignment.floorId;
       const day = row.assignment.assignedDay;
       const key = `${floorId}|${day}`;
