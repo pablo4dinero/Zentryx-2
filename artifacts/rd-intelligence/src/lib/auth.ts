@@ -56,7 +56,8 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     localStorage.setItem("rd_token", refreshed);
   }
 
-  if (response.status === 401 && !input.toString().includes("/api/auth/login")) {
+  const alreadyOnLogin = window.location.pathname.startsWith("/login");
+  if (response.status === 401 && !input.toString().includes("/api/auth/login") && !alreadyOnLogin) {
     // Try to read the structured reason so the login screen can show a
     // friendly notice ("Signed out due to inactivity" vs "Session
     // reached 12-hour limit"). Falls back to a generic message.
