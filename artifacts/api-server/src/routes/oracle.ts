@@ -1,10 +1,58 @@
-import { Router } from "express";
+import { Router, type Request, type Response, type NextFunction } from "express";
+import rateLimit from "express-rate-limit";
 import { requireAuth, AuthRequest } from "../lib/auth";
 import { classifyIntent, type AgentId } from "../oracle/intent";
 import { runAgent } from "../oracle/agents";
 import { streamModel, SONNET_MODEL } from "../oracle/claude";
 
 const router = Router();
+
+// ── Oracle rate limit: 20 requests per user per 10 minutes ────────────────────
+// Keyed on user ID (from JWT) so limits are per-user, not per-IP.
+// This prevents one heavy user from exhausting the Anthropic quota for everyone.
+const oracleLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, // 10 minutes
+  max: 20,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => (req as AuthRequest).user?.id?.toString() ?? req.ip ?? "unknown",
+  message: { error: "TooManyRequests", message: "Oracle limit reached — 20 requests per 10 minutes. Try again shortly." },
+});
+
+// ── Concurrency queue: max 5 simultaneous Anthropic calls ─────────────────────
+// Prevents pile-ups that cause Anthropic to throttle (529 overloaded errors).
+// Requests beyond the limit wait in queue rather than failing immediately.
+let activeOracleCalls = 0;
+const MAX_CONCURRENT = 5;
+const oracleQueue: Array<() => void> = [];
+
+function acquireOracleSlot(): Promise<void> {
+  return new Promise(resolve => {
+    if (activeOracleCalls < MAX_CONCURRENT) {
+      activeOracleCalls++;
+      resolve();
+    } else {
+      oracleQueue.push(() => { activeOracleCalls++; resolve(); });
+    }
+  });
+}
+
+function releaseOracleSlot() {
+  activeOracleCalls--;
+  const next = oracleQueue.shift();
+  if (next) next();
+}
+
+function withOracleQueue(_req: Request, res: Response, next: NextFunction) {
+  acquireOracleSlot().then(next).catch(() => {
+    res.status(503).json({ error: "Oracle queue full — try again in a moment." });
+  });
+  // Release slot exactly once — whichever event fires first
+  let released = false;
+  const release = () => { if (!released) { released = true; releaseOracleSlot(); } };
+  res.on("finish", release);
+  res.on("close",  release);
+}
 
 function hasContent(agentId: AgentId, data: unknown): boolean {
   if (!data || typeof data !== "object") return false;
@@ -55,7 +103,7 @@ Rules:
 - The conversation history may contain earlier product details or formulations — reference them if relevant
 - NEVER generate ASCII, text-based, or pseudo-graphical charts, spider diagrams, radar profiles, or bar graphs made of characters. Sensory profile data from the Sensory agent is already rendered as an interactive radar chart above — reference its scores by name and number in your prose instead of redrawing them.`;
 
-router.post("/analyze", requireAuth, async (req: AuthRequest, res) => {
+router.post("/analyze", requireAuth, oracleLimiter, withOracleQueue, async (req: AuthRequest, res) => {
   const { query, history = [], forceAgents } = req.body as {
     query?: string;
     history?: { role: string; content: string }[];
