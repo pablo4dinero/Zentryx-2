@@ -3,9 +3,10 @@ import { requireAuth, AuthRequest } from "../lib/auth";
 
 const router = Router();
 
-const NEWS_API_KEY    = process.env.NEWS_API_KEY    || "e01cc0072e714204bb9eb8768c5f0424";
-const GNEWS_API_KEY   = process.env.GNEWS_API_KEY   || "6d39b3dbbf98e01bc1b77b60231e1f2f";
+const NEWS_API_KEY     = process.env.NEWS_API_KEY    || "e01cc0072e714204bb9eb8768c5f0424";
+const GNEWS_API_KEY    = process.env.GNEWS_API_KEY   || "6d39b3dbbf98e01bc1b77b60231e1f2f";
 const GUARDIAN_API_KEY = process.env.GUARDIAN_API_KEY;
+const ELSEVIER_API_KEY = process.env.ELSEVIER_API_KEY;
 
 const CACHE_MS = 3 * 60 * 60 * 1000; // 3 hours
 
@@ -24,7 +25,7 @@ export interface NewsItem {
 }
 
 export interface NewsSection {
-  id: "newsapi" | "ift" | "guardian" | "gnews";
+  id: "newsapi" | "ift" | "guardian" | "gnews" | "elsevier";
   label: string;
   subtitle: string;
   items: NewsItem[];
@@ -97,10 +98,11 @@ function parseRssItems(xml: string) {
 
 // ─── Caches ───────────────────────────────────────────────────────────────────
 
-let newsApiCache:  { items: NewsItem[]; fetchedAt: number } | null = null;
-let iftCache:      { items: NewsItem[]; fetchedAt: number } | null = null;
-let guardianCache: { items: NewsItem[]; fetchedAt: number } | null = null;
-let gnewsCache:    { items: NewsItem[]; fetchedAt: number } | null = null;
+let newsApiCache:   { items: NewsItem[]; fetchedAt: number } | null = null;
+let iftCache:       { items: NewsItem[]; fetchedAt: number } | null = null;
+let guardianCache:  { items: NewsItem[]; fetchedAt: number } | null = null;
+let gnewsCache:     { items: NewsItem[]; fetchedAt: number } | null = null;
+let elsevierCache:  { items: NewsItem[]; fetchedAt: number } | null = null;
 
 // ─── NewsAPI (carousel primary) ───────────────────────────────────────────────
 
@@ -312,6 +314,72 @@ async function fetchFromGNews(): Promise<NewsItem[]> {
     });
 }
 
+// ─── Elsevier ScienceDirect API ───────────────────────────────────────────────
+
+interface ElsevierEntry {
+  "dc:title"?: string;
+  "dc:description"?: string;
+  "prism:url"?: string;
+  "prism:coverDate"?: string;
+  "prism:publicationName"?: string;
+  "dc:creator"?: string;
+  "openaccess"?: string | boolean;
+}
+
+async function fetchFromElsevier(customQ?: string): Promise<NewsItem[]> {
+  const query = customQ ||
+    `food flavour seasoning ingredient innovation food technology Nigeria`;
+
+  const url =
+    `https://api.elsevier.com/content/search/sciencedirect` +
+    `?query=${encodeURIComponent(query)}&count=10&sort=date`;
+
+  const res = await fetch(url, {
+    headers: {
+      "X-ELS-APIKey": ELSEVIER_API_KEY!,
+      "Accept": "application/json",
+      "User-Agent": "Zentryx-RD/1.0",
+    },
+    signal: AbortSignal.timeout(10000),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Elsevier API ${res.status}: ${body.slice(0, 200)}`);
+  }
+
+  const data = await res.json() as {
+    "search-results"?: { entry?: ElsevierEntry[] };
+  };
+
+  const entries = data["search-results"]?.entry ?? [];
+  if (!entries.length) throw new Error("Elsevier: no entries in response");
+
+  return entries
+    .filter(e => e["dc:title"])
+    .slice(0, 10)
+    .map((entry, idx): NewsItem => {
+      const title = entry["dc:title"] || "";
+      const desc = entry["dc:description"] || "";
+      const journal = entry["prism:publicationName"] || "Elsevier";
+      const category = mapToAppCategory(title, desc);
+      const keyword = category.toLowerCase() + " science";
+      return {
+        id: `elsevier-${idx}`,
+        headline: title,
+        summary: desc.length > 220 ? desc.slice(0, 220).trimEnd() + "…" : desc || title,
+        category,
+        source: journal,
+        publishedAt: parsePubDate(entry["prism:coverDate"]),
+        sentiment: "neutral",
+        imageKeyword: keyword,
+        imageUrl: buildFallbackImageUrl(keyword),
+        readMoreUrl: entry["prism:url"] || undefined,
+        readTime: readTimeFromText(desc),
+      };
+    });
+}
+
 // ─── Route ────────────────────────────────────────────────────────────────────
 
 router.get("/", requireAuth, async (req: AuthRequest, res) => {
@@ -385,6 +453,25 @@ router.get("/", requireAuth, async (req: AuthRequest, res) => {
     console.error("[GNews] Failed:", err);
     if (gnewsCache && gnewsCache.items.length > 0) {
       sections.push({ id: "gnews", label: "Flavour Technology", subtitle: "GNews · Global Flavour & Food Innovation", items: gnewsCache.items });
+    }
+  }
+
+  // 4. Elsevier ScienceDirect (research journals — only if key configured) ──────
+  if (ELSEVIER_API_KEY) {
+    try {
+      if (useCache && elsevierCache && now - elsevierCache.fetchedAt < CACHE_MS) {
+        sections.push({ id: "elsevier", label: "Research & Science", subtitle: "Elsevier ScienceDirect · Peer-reviewed journals", items: elsevierCache.items });
+      } else {
+        const items = await fetchFromElsevier(customQ || undefined);
+        if (useCache) elsevierCache = { items, fetchedAt: now };
+        sections.push({ id: "elsevier", label: "Research & Science", subtitle: "Elsevier ScienceDirect · Peer-reviewed journals", items });
+        console.log(`[Elsevier] Fetched ${items.length} articles${customQ ? ` (query: "${customQ}")` : ""}`);
+      }
+    } catch (err) {
+      console.error("[Elsevier] Failed:", err);
+      if (elsevierCache && elsevierCache.items.length > 0) {
+        sections.push({ id: "elsevier", label: "Research & Science", subtitle: "Elsevier ScienceDirect · Peer-reviewed journals", items: elsevierCache.items });
+      }
     }
   }
 
