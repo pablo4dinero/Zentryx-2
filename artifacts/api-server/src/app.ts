@@ -49,7 +49,6 @@ app.use(helmet({
       "media-src": ["'self'", "blob:"],
       "connect-src": [
         "'self'",
-        "https://api.exchangerate-api.com",
         "https://newsapi.org",
         "https://api.anthropic.com",
         // WebSocket signaling for calls + typing. Some browsers don't treat

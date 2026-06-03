@@ -911,8 +911,8 @@ function ProductionOrdersTab() {
       const res = await fetch(`${BASE}api/accounts`, { headers: authHeaders() });
       return res.json() as Promise<{id: number; company: string; productName: string | null; productType: string | null}[]>;
     },
-    staleTime: 1000 * 30, // 30s
-    refetchInterval: 1000 * 30, // Auto-poll every 30s
+    staleTime: 1000 * 60 * 5, // 5 min
+    refetchInterval: 1000 * 60 * 5, // Poll every 5 min
   });
   const orderAccounts = accountsForOrderQuery.data ?? [];
 
@@ -932,8 +932,8 @@ function ProductionOrdersTab() {
       }
       return res.json() as Promise<ProductionOrder[]>;
     },
-    staleTime: 1000 * 30, // 30s
-    refetchInterval: 1000 * 30, // Auto-poll every 30s
+    staleTime: 1000 * 60 * 5, // 5 min
+    refetchInterval: 1000 * 60 * 5, // Poll every 5 min
   }) as UseQueryResult<ProductionOrder[], Error>;
 
   const mdpOrderBySalesId = React.useMemo(() => {
@@ -954,8 +954,8 @@ function ProductionOrdersTab() {
       }
       return res.json() as Promise<SFOrder[]>;
     },
-    staleTime: 1000 * 30, // 30s
-    refetchInterval: 1000 * 30, // Auto-poll every 30s
+    staleTime: 1000 * 60 * 5, // 5 min
+    refetchInterval: 1000 * 60 * 5, // Poll every 5 min
   });
 
   const mergedOrders = React.useMemo((): MergedOrder[] => {
@@ -1717,8 +1717,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       }
       return res.json() as Promise<ProductionFloor[]>;
     },
-    staleTime: 1000 * 30, // 30s — faster than before
-    refetchInterval: 1000 * 30, // Auto-poll every 30s for multi-user sync
+    staleTime: 1000 * 60 * 5,
+    refetchInterval: 1000 * 60 * 5,
   }) as UseQueryResult<ProductionFloor[], Error>;
 
   const assignmentsQuery = useQuery({
@@ -1734,8 +1734,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       return res.json() as Promise<FloorAssignmentRow[]>;
     },
     enabled: !!selectedWeekLabel,
-    staleTime: 1000 * 30, // 30s
-    refetchInterval: 1000 * 30, // Auto-poll every 30s
+    staleTime: 1000 * 60 * 5, // 5 min
+    refetchInterval: 1000 * 60 * 5, // Poll every 5 min
   }) as UseQueryResult<FloorAssignmentRow[], Error>;
 
   // All assignments across all weeks — used to permanently hide ordered orders from Planned Orders list
@@ -1746,8 +1746,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       if (!res.ok) throw new Error("Failed to load all floor assignments");
       return res.json() as Promise<FloorAssignmentRow[]>;
     },
-    staleTime: 1000 * 30, // 30s
-    refetchInterval: 1000 * 30, // Auto-poll every 30s
+    staleTime: 1000 * 60 * 5, // 5 min
+    refetchInterval: 1000 * 60 * 5, // Poll every 5 min
   }) as UseQueryResult<FloorAssignmentRow[], Error>;
 
   const productionOrdersQuery = useQuery({
@@ -1760,8 +1760,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       }
       return res.json() as Promise<ProductionOrder[]>;
     },
-    staleTime: 1000 * 30, // 30s — faster than before
-    refetchInterval: 1000 * 30, // Auto-poll every 30s for multi-user sync
+    staleTime: 1000 * 60 * 5,
+    refetchInterval: 1000 * 60 * 5,
   }) as UseQueryResult<ProductionOrder[], Error>;
 
   const planningAccountsQuery = useQuery({
@@ -1770,8 +1770,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       const res = await fetch(`${BASE}api/accounts`, { headers: authHeaders() });
       return res.json() as Promise<{id: number; company: string; productName: string | null; productType: string | null}[]>;
     },
-    staleTime: 1000 * 30, // 30s — faster than before
-    refetchInterval: 1000 * 30, // Auto-poll every 30s so all users see product changes
+    staleTime: 1000 * 60 * 5,
+    refetchInterval: 1000 * 60 * 5,
   });
 
   const planningAccountMap = React.useMemo(() => {
@@ -1932,8 +1932,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       return res.json() as Promise<Array<{ id: number; floorId: number; weekLabel: string; assignedDay: string; status: FloorStatus; updatedAt: string }>>;
     },
     enabled: Boolean(selectedWeekLabel),
-    staleTime: 1000 * 30,
-    refetchInterval: 1000 * 30, // Auto-poll every 30s
+    staleTime: 1000 * 60 * 5,
+    refetchInterval: 1000 * 60 * 5,
   });
 
   const floorDayStatusMap = React.useMemo(() => {
@@ -1957,8 +1957,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       return res.json() as Promise<Array<{ id: number; afterAssignmentId: number; minutes: number }>>;
     },
     enabled: Boolean(selectedWeekLabel),
-    staleTime: 1000 * 30,
-    refetchInterval: 1000 * 30, // Auto-poll every 30s
+    staleTime: 1000 * 60 * 5,
+    refetchInterval: 1000 * 60 * 5,
   });
 
   const downtimeByAssignmentId = React.useMemo(() => {
@@ -4466,8 +4466,8 @@ function MonthlyOrdersTab() {
       if (!res.ok) throw new Error("Failed to fetch monthly orders");
       return res.json() as Promise<MonthlyOrder[]>;
     },
-    staleTime: 30000,
-    refetchInterval: 30000,
+    staleTime: 1000 * 60 * 5,
+    refetchInterval: 1000 * 60 * 5,
   });
 
   // Update monthly order mutation
@@ -5174,8 +5174,8 @@ function ProductionHistoryTab() {
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || "Failed to load orders"); }
       return res.json() as Promise<ProductionOrder[]>;
     },
-    staleTime: 1000 * 30, // 30s
-    refetchInterval: 1000 * 30, // Auto-poll every 30s
+    staleTime: 1000 * 60 * 5, // 5 min
+    refetchInterval: 1000 * 60 * 5, // Poll every 5 min
   }) as UseQueryResult<ProductionOrder[], Error>;
 
   const historyAccountsQuery = useQuery({
@@ -5184,8 +5184,8 @@ function ProductionHistoryTab() {
       const res = await fetch(`${BASE}api/accounts`, { headers: authHeaders() });
       return res.json() as Promise<{id: number; company: string; productName: string | null; productType: string | null}[]>;
     },
-    staleTime: 1000 * 30, // 30s
-    refetchInterval: 1000 * 30, // Auto-poll every 30s
+    staleTime: 1000 * 60 * 5, // 5 min
+    refetchInterval: 1000 * 60 * 5, // Poll every 5 min
   });
 
   const historyAccountMap = React.useMemo(() => {
@@ -5212,8 +5212,8 @@ function ProductionHistoryTab() {
       }
       return (await res.json()) as ProducedOrder[];
     },
-    staleTime: 1000 * 30, // 30s
-    refetchInterval: 1000 * 30, // Auto-poll every 30s
+    staleTime: 1000 * 60 * 5, // 5 min
+    refetchInterval: 1000 * 60 * 5, // Poll every 5 min
   }) as UseQueryResult<ProducedOrder[], Error>;
 
   const clearHistoryMutation = useMutation({

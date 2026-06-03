@@ -1,7 +1,7 @@
 import { useEffect, useReducer } from "react";
 
-const PRIMARY_API = "https://open.er-api.com/v6/latest/USD";
-const FALLBACK_API = "https://api.exchangerate-api.com/v4/latest/USD";
+const BASE = import.meta.env.BASE_URL;
+const PROXY_API = `${BASE}api/exchange-rate`; // server-side proxy — no CORS issues
 const REFRESH_MS = 10 * 60 * 1000; // 10 minutes
 
 interface Cache {
@@ -49,8 +49,10 @@ async function fetchRates(force = false): Promise<void> {
     let fetched = false;
 
     try {
-      const res = await fetch(PRIMARY_API);
-      if (!res.ok) throw new Error("primary failed");
+      const token = localStorage.getItem("rd_token");
+      const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await fetch(PROXY_API, { headers });
+      if (!res.ok) throw new Error(`proxy ${res.status}`);
       const data = await res.json();
       if (data?.rates && typeof data.rates === "object") {
         cache = { ...cache, rates: data.rates, fetchedAt: Date.now(), isLoading: false };
@@ -58,19 +60,6 @@ async function fetchRates(force = false): Promise<void> {
         fetched = true;
       }
     } catch {}
-
-    if (!fetched) {
-      try {
-        const res = await fetch(FALLBACK_API);
-        if (!res.ok) throw new Error("fallback failed");
-        const data = await res.json();
-        if (data?.rates && typeof data.rates === "object") {
-          cache = { ...cache, rates: data.rates, fetchedAt: Date.now(), isLoading: false };
-          notify();
-          fetched = true;
-        }
-      } catch {}
-    }
 
     if (!fetched) {
       cache = { ...cache, isLoading: false };
