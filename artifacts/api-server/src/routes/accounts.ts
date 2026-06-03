@@ -103,7 +103,12 @@ async function deleteTodayOrderEntry(productionOrderId: number) {
 
 router.get("/", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allAccounts = await db.select().from(accountsTable).orderBy(desc(accountsTable.createdAt));
+    const limit  = Math.min(parseInt(String(req.query.limit  ?? 500)), 500);
+    const offset = Math.max(parseInt(String(req.query.offset ?? 0)),   0);
+    const allAccounts = await db.select().from(accountsTable)
+      .orderBy(desc(accountsTable.createdAt))
+      .limit(limit)
+      .offset(offset);
     const users = await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable);
     const userMap = Object.fromEntries(users.map(u => [u.id, u.name]));
 

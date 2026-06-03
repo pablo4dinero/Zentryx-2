@@ -37,7 +37,7 @@ import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
 import { useListUsers, useGetCurrentUser } from "@/api-client";
 import { PlannedOrdersProvider, usePlannedOrders } from "./planned-orders-context";
-import { runAssistedPlanning, type ExistingCellUsage, type PlanningSummary } from "./ai-planner";
+import { type PlanningSummary } from "./ai-planner";
 import { useCustomOptions, DEFAULT_PRODUCT_TYPES, displayLabel, useServerProductTypes } from "@/lib/project-options";
 import { CustomOptionsSelect } from "@/components/ui/CustomOptionsSelect";
 import { calculateEfficiency, getEfficiencyColor, getEfficiencyLabel } from "./efficiency-calculator";
@@ -2598,60 +2598,11 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     }
     setAssistedState("optimizing");
 
-    // AUTO-CLEAR: Delete all existing assignments for this week before running.
-    // This ensures the algorithm always starts from a clean state and previous
-    // wrong placements (e.g. Breading on Floor 3 Mon-Tue) don't persist.
-    const existingIds = assignments.map((row: any) => row.assignment.id).filter(Boolean);
-    if (existingIds.length > 0) {
-      try {
-        await fetch(`${BASE}api/mdp/floor-assignments/batch-delete`, {
-          method: "POST",
-          headers: { ...authHeaders(), "Content-Type": "application/json" },
-          body: JSON.stringify({ ids: existingIds }),
-        });
-      } catch (err) {
-        console.error("Failed to clear existing assignments before planning:", err);
-      }
-    }
-
-    // Build the input shape the planner expects from the existing reactive
-    // state. Everything is read live — nothing hardcoded.
-    const fastMin = blendSpeeds.find(b => b.id === "fast")?.timeTakenMinutes ?? 40;
-    const FAST_BATCHES_PER_DAY = Math.max(1, Math.floor(450 / fastMin));
-
-    // existingUsage is now always empty since we cleared above — no stale
-    // manual assignments can pollute the algorithm's capacity calculations.
-    const existingUsage = new Map<string, ExistingCellUsage>();
-    for (const row of ([] as typeof assignments)) {
-      const floorId = row.assignment.floorId;
-      const day = row.assignment.assignedDay;
-      const key = `${floorId}|${day}`;
-      const assignedVol = row.assignment.assignedVolume != null
-        ? Number(row.assignment.assignedVolume)
-        : Number(row.order.volume ?? 0);
-      const floor = floors.find(f => f.id === floorId);
-      if (!floor) continue;
-      const bSize = floor.maxCapacityKg / FAST_BATCHES_PER_DAY;
-      const blendId = blendSpeedByOrderId[row.order.id] || "fast";
-      const blendMin = blendSpeeds.find(b => b.id === blendId)?.timeTakenMinutes ?? fastMin;
-      const minutesUsed = Math.ceil(assignedVol / bSize) * blendMin;
-      const acc = planningAccountMap[(mdpOrderByMdpId.get(row.order.id)?.accountId ?? 0) as number];
-      const productType = acc?.productType ?? row.order.productType ?? null;
-      const norm = productType ? String(productType).trim().toLowerCase().replace(/[\s&_\-/]+/g, "_") : "";
-      const prev = existingUsage.get(key);
-      if (prev) {
-        prev.minutesUsed += minutesUsed;
-        if (norm) prev.productTypes.add(norm);
-      } else {
-        existingUsage.set(key, { minutesUsed, productTypes: norm ? new Set([norm]) : new Set() });
-      }
-    }
-
     const workingDays = ["Mon", "Tue", "Wed", "Thu", "Fri", ...(includeSaturday ? ["Sat"] : [])];
     const workingDates = selectedWeek.days.slice(0, workingDays.length);
 
-    // Hand orders to the planner with their resolved product type and a fresh
-    // remaining-quantity number (running balance against the mother volume).
+    // Build planner orders (resolve product type + remaining volume client-side,
+    // then send to server — algorithm runs on the server now)
     const plannerOrders = plannedOrders
       .map(order => {
         const acc = planningAccountMap[order.accountId ?? 0];
@@ -2660,90 +2611,67 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
         const blendId = blendSpeedByOrderId[order.id] || "fast";
         const microbial = order.microbialAnalysis ?? "Normal";
         const rawMaterial = order.rawMaterialStatus ?? "Pending";
-        const priorityScore = calcPriorityScore(
-          rawMaterial,
-          microbial,
-          blendId,
-          Number(order.volume ?? 0),
-          order.expectedDeliveryDateDate,
-        );
+        const priorityScore = calcPriorityScore(rawMaterial, microbial, blendId, Number(order.volume ?? 0), order.expectedDeliveryDateDate);
         const productionLabel = `${acc?.company ?? order.accountName ?? "Unknown"} — ${acc?.productName ?? order.productName ?? "Unknown product"}`;
-        return {
-          id: order.id,
-          productionLabel,
-          productType,
-          blendSpeedId: blendId,
-          microbialAnalysis: microbial,
-          rawMaterialStatus: rawMaterial,
-          expectedDeliveryDateDate: order.expectedDeliveryDateDate ?? null,
-          remainingQuantity: remaining,
-          priorityScore,
-        };
+        return { id: order.id, productionLabel, productType, blendSpeedId: blendId, microbialAnalysis: microbial, rawMaterialStatus: rawMaterial, expectedDeliveryDateDate: order.expectedDeliveryDateDate ?? null, remainingQuantity: remaining, priorityScore };
       })
       .filter(o => o.remainingQuantity > 0);
 
-    const result = runAssistedPlanning({
-      // Project to the shape the planner expects — explicitly include
-      // blendCategory so the eligibility fallback can use it.
-      floors: floors.map(f => ({
-        id: f.id,
-        floorName: f.floorName,
-        blendCategory: String(f.blendCategory ?? ""),
-        maxCapacityKg: f.maxCapacityKg,
-        allowedProductTypes: f.allowedProductTypes ?? [],
-      })),
-      orders: plannerOrders,
-      blendSpeeds,
-      workingDays,
-      workingDates,
-      includeNightShift,
-      existingUsage,
-      isFloorDayBlocked: (floorId, day) => getFloorDayStatus(floorId, day) !== "Running",
-      today: new Date(),
-    });
+    // Serialise floor-day statuses for the server
+    const floorDayStatuses: Record<string, string> = {};
+    for (const floor of floors) {
+      for (const day of workingDays) {
+        const status = getFloorDayStatus(floor.id, day);
+        floorDayStatuses[`${floor.id}|${day}`] = status;
+      }
+    }
 
-    // allSettled: don't let a single failed POST hide the summary card. Every
-    // placement either lands on the board (fulfilled) or shows up in the
-    // failure count toast — the summary still appears either way.
-    const responses = await Promise.allSettled(result.placements.map(p =>
-      fetch(`${BASE}api/mdp/floor-assignments`, {
+    try {
+      const res = await fetch(`${BASE}api/mdp/assisted-planning`, {
         method: "POST",
-        headers: authHeaders(),
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({
-          floorId: p.floorId,
-          productionOrderId: p.productionOrderId,
           weekLabel: selectedWeekLabel,
-          assignedDay: p.assignedDay,
-          planStatus: "Planned",
-          assignedVolume: p.assignedVolume,
+          workingDays,
+          workingDates: workingDates.map(d => d instanceof Date ? d.toISOString() : new Date(d).toISOString()),
+          includeNightShift,
+          includeSaturday,
+          plannerOrders,
+          existingUsageRaw: {},
+          floorDayStatuses,
         }),
-      }).then(r => { if (!r.ok) throw new Error(`POST failed: ${r.status}`); return r; })
-    ));
-    const successful = responses.filter(r => r.status === "fulfilled").length;
-    const failedCount = responses.length - successful;
-
-    queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/mdp/product-switch-downtimes"] });
-
-    setAiSummary(result.summary);
-    setAssistedState("done");
-    window.setTimeout(() => setAssistedState("idle"), 3000);
-
-    if (result.placements.length === 0) {
-      toast({
-        title: "No placements made",
-        description: result.summary.skipped[0]?.reason || "Check floor product-type configuration and order due dates.",
-        variant: "destructive",
       });
-    } else {
-      toast({
-        title: `AI placed ${successful} assignment${successful === 1 ? "" : "s"}`,
-        description: failedCount > 0
-          ? `${failedCount} POST(s) failed — check the summary panel for details.`
-          : `Across ${workingDays.length} day${workingDays.length === 1 ? "" : "s"}. Adjust manually as needed.`,
-        variant: failedCount > 0 ? "destructive" : "default",
-      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Server error ${res.status}`);
+      }
+
+      const { summary, placementCount } = await res.json();
+
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/product-switch-downtimes"] });
+
+      setAiSummary(summary);
+      setAssistedState("done");
+      window.setTimeout(() => setAssistedState("idle"), 3000);
+
+      if (placementCount === 0) {
+        toast({
+          title: "No placements made",
+          description: summary.skipped[0]?.reason || "Check floor product-type configuration and order due dates.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: `AI placed ${placementCount} assignment${placementCount === 1 ? "" : "s"}`,
+          description: `Across ${workingDays.length} day${workingDays.length === 1 ? "" : "s"}. Adjust manually as needed.`,
+        });
+      }
+    } catch (err: any) {
+      setAssistedState("idle");
+      toast({ title: "Planning failed", description: err.message || "Please try again.", variant: "destructive" });
     }
   };
 

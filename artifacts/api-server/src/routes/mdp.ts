@@ -18,6 +18,7 @@ import { eq, desc, inArray, gte, lte, and } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "../lib/auth";
 import { logActivity } from "../lib/activity";
 import { callModel, SONNET_MODEL } from "../oracle/claude";
+import { runAssistedPlanning, type ExistingCellUsage } from "../lib/ai-planner";
 
 const router = Router();
 
@@ -96,7 +97,12 @@ router.delete("/customer-products/:id", requireAuth, async (req: AuthRequest, re
 
 router.get("/production-orders", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const salesOrders = await db.select().from(accountProductionOrdersTable).orderBy(desc(accountProductionOrdersTable.createdAt)) as Array<Record<string, any>>;
+    const limit  = Math.min(parseInt(String(req.query.limit  ?? 1000)), 1000);
+    const offset = Math.max(parseInt(String(req.query.offset ?? 0)),    0);
+    const salesOrders = await db.select().from(accountProductionOrdersTable)
+      .orderBy(desc(accountProductionOrdersTable.createdAt))
+      .limit(limit)
+      .offset(offset) as Array<Record<string, any>>;
     const salesIds = salesOrders.map((order: Record<string, any>) => order.id).filter((id): id is number => typeof id === "number");
     const existingMdpRows = salesIds.length
       ? await db.select().from(mdpProductionOrdersTable).where(inArray(mdpProductionOrdersTable.salesOrderId, salesIds)) as Array<Record<string, any>>
@@ -379,11 +385,17 @@ router.get("/floor-assignments", requireAuth, async (req: AuthRequest, res) => {
       .leftJoin(accountProductionOrdersTable, eq(mdpProductionOrdersTable.salesOrderId, accountProductionOrdersTable.id))
       .leftJoin(accountsTable, eq(accountProductionOrdersTable.accountId, accountsTable.id));
 
+    const limit  = Math.min(parseInt(String(req.query.limit  ?? 2000)), 2000);
+    const offset = Math.max(parseInt(String(req.query.offset ?? 0)),    0);
+
     const query = weekLabel
       ? baseQuery.where(eq(mdpFloorAssignmentsTable.weekLabel, weekLabel))
       : baseQuery;
 
-    const assignments = await query.orderBy(desc(mdpFloorAssignmentsTable.assignedAt)) as Array<Record<string, any>>;
+    const assignments = await query
+      .orderBy(desc(mdpFloorAssignmentsTable.assignedAt))
+      .limit(limit)
+      .offset(offset) as Array<Record<string, any>>;
 
     // Enrich with company, productName, productType from the joined account
     const enriched = assignments.map((a: Record<string, any>) => {
@@ -406,6 +418,102 @@ router.get("/floor-assignments", requireAuth, async (req: AuthRequest, res) => {
     res.json(enriched);
   } catch (err) {
     console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+// ── Assisted Planning — server-side ──────────────────────────────────────────
+// Runs the full planning algorithm on the server, saves all placements in a
+// single batch, and returns the summary. No client-side computation needed.
+router.post("/assisted-planning", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const {
+      weekLabel, workingDays, workingDates: workingDatesRaw,
+      includeNightShift, includeSaturday,
+      plannerOrders, existingUsageRaw, floorDayStatuses,
+    } = req.body as {
+      weekLabel: string;
+      workingDays: string[];
+      workingDates: string[];
+      includeNightShift: boolean;
+      includeSaturday: boolean;
+      plannerOrders: any[];
+      existingUsageRaw: Record<string, { minutesUsed: number; productTypes: string[] }>;
+      floorDayStatuses: Record<string, string>;
+    };
+
+    if (!weekLabel || !workingDays?.length || !plannerOrders) {
+      res.status(400).json({ error: "Missing required fields" });
+      return;
+    }
+
+    // Fetch floors and blend speeds from DB
+    const floors = await db.select().from(mdpProductionFloorsTable);
+    const blendSpeeds = [
+      { id: "fast",   label: "Fast",   timeTakenMinutes: 40 },
+      { id: "medium", label: "Medium", timeTakenMinutes: 60 },
+      { id: "slow",   label: "Slow",   timeTakenMinutes: 90 },
+    ];
+
+    // Rebuild existingUsage Map from serialised form
+    const existingUsage = new Map<string, ExistingCellUsage>();
+    for (const [key, val] of Object.entries(existingUsageRaw ?? {})) {
+      existingUsage.set(key, {
+        minutesUsed: val.minutesUsed,
+        productTypes: new Set(val.productTypes),
+      });
+    }
+
+    const workingDates = (workingDatesRaw ?? []).map((d: string) => new Date(d));
+
+    // Delete all existing assignments for this week before running
+    const existing = await db.select({ id: mdpFloorAssignmentsTable.id })
+      .from(mdpFloorAssignmentsTable)
+      .where(eq(mdpFloorAssignmentsTable.weekLabel, weekLabel));
+    if (existing.length > 0) {
+      const ids = existing.map(e => e.id);
+      await db.delete(mdpProductSwitchDowntimesTable).where(inArray(mdpProductSwitchDowntimesTable.floorAssignmentId, ids));
+      await db.delete(mdpFloorAssignmentsTable).where(inArray(mdpFloorAssignmentsTable.id, ids));
+    }
+
+    const result = runAssistedPlanning({
+      floors: floors.map(f => ({
+        id: f.id,
+        floorName: f.floorName,
+        blendCategory: String(f.blendCategory ?? ""),
+        maxCapacityKg: f.maxCapacityKg ?? 0,
+        allowedProductTypes: f.allowedProductTypes ?? [],
+      })),
+      orders: plannerOrders,
+      blendSpeeds,
+      workingDays,
+      workingDates,
+      includeNightShift: !!includeNightShift,
+      existingUsage,
+      isFloorDayBlocked: (floorId, day) => {
+        const key = `${floorId}|${day}`;
+        return floorDayStatuses?.[key] !== "Running" && floorDayStatuses?.[key] !== undefined;
+      },
+      today: new Date(),
+    });
+
+    // Batch insert all placements
+    if (result.placements.length > 0) {
+      await db.insert(mdpFloorAssignmentsTable).values(
+        result.placements.map(p => ({
+          floorId: p.floorId,
+          productionOrderId: p.productionOrderId,
+          weekLabel,
+          assignedDay: p.assignedDay,
+          planStatus: "Planned",
+          assignedVolume: String(p.assignedVolume),
+        }))
+      );
+    }
+
+    res.json({ summary: result.summary, placementCount: result.placements.length });
+  } catch (err) {
+    console.error("[assisted-planning]", err);
     res.status(500).json({ error: "InternalServerError" });
   }
 });
