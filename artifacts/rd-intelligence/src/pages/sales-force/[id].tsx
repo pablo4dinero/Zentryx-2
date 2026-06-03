@@ -571,10 +571,12 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
 
   const fetchRates = useCallback(() => {
     setRatesRefreshing(true);
-    fetch("https://api.exchangerate-api.com/v4/latest/USD")
+    const token = localStorage.getItem("rd_token");
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+    fetch(`${BASE}api/exchange-rate`, { headers })
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
       .then(d => { if (d?.rates) setAllRates(d.rates); })
-      .catch(() => { /* keep prior rates / fallback */ })
+      .catch(() => { /* keep prior rates */ })
       .finally(() => setRatesRefreshing(false));
   }, []);
   useEffect(() => { fetchRates(); }, [fetchRates]);
