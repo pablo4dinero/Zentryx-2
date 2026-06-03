@@ -88,7 +88,7 @@ export function useServerOptionList(listKey: string): CustomOptionsHandle {
       if (!res.ok) return [] as Array<{ id: number; name: string }>;
       return res.json() as Promise<Array<{ id: number; name: string }>>;
     },
-    staleTime: 1000 * 30,
+    staleTime: 1000 * 60 * 10,
   });
 
   const options = rows.map(r => r.name);
@@ -169,7 +169,7 @@ export function useServerProductTypes(): CustomOptionsHandle {
       if (!res.ok) return [] as Array<{ id: number; name: string }>;
       return res.json() as Promise<Array<{ id: number; name: string }>>;
     },
-    staleTime: 1000 * 30,
+    staleTime: 1000 * 60 * 10,
   });
 
   const options = rows.map(r => r.name);
