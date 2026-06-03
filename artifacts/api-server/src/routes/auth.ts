@@ -187,7 +187,7 @@ router.post("/login", async (req, res) => {
 
     // Optional-MFA role, not enrolled — straight to a full session.
     await logLoginAttempt(req, { userId: user.id, email: user.email, success: true, reason: "ok" });
-    const token = signToken({ userId: user.id, email: user.email, role: user.role });
+    const token = signToken({ userId: user.id, email: user.email, role: user.role, tv: user.tokenVersion ?? 0 });
     res.json({
       token,
       user: { id: user.id, email: user.email, name: user.name, role: user.role, department: user.department, avatar: user.avatar, isActive: user.isActive, createdAt: user.createdAt },
@@ -238,7 +238,7 @@ router.post("/verify-sms", async (req, res) => {
 
     await db.update(usersTable).set({ smsVerifiedAt: new Date(), updatedAt: new Date() }).where(eq(usersTable.id, user.id));
 
-    const token = signToken({ userId: user.id, email: user.email, role: user.role });
+    const token = signToken({ userId: user.id, email: user.email, role: user.role, tv: user.tokenVersion ?? 0 });
     res.json({
       token,
       user: { id: user.id, email: user.email, name: user.name, role: user.role, department: user.department, avatar: user.avatar, isActive: user.isActive, createdAt: user.createdAt },
@@ -638,7 +638,7 @@ async function oauthFinish(req: Request, res: import("express").Response, user: 
   }
 
   // Optional-MFA role, not enrolled → straight to a full session.
-  const token = signToken({ userId: user.id, email: user.email, role: user.role });
+  const token = signToken({ userId: user.id, email: user.email, role: user.role, tv: user.tokenVersion ?? 0 });
   res.redirect(`${base}/login?oauth_token=${token}`);
 }
 

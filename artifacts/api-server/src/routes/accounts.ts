@@ -209,7 +209,21 @@ router.put("/:id", requireAuth, async (req: AuthRequest, res) => {
     const id = parseInt(String(req.params.id));
     const { company, productName, accountManagers, contactPerson, cpPhone, cpEmail,
       customerType, productType, application, targetPrice, volume, urgencyLevel,
-      competitorReference, sellingPrice, margin, approvalStatus, isActive, status } = req.body;
+      competitorReference, sellingPrice, margin, approvalStatus, isActive, status,
+      updatedAt: clientUpdatedAt } = req.body;
+
+    // Optimistic locking: if the client sent updatedAt, reject if the record
+    // was modified by someone else since they loaded it.
+    if (clientUpdatedAt) {
+      const [current] = await db.select({ updatedAt: accountsTable.updatedAt })
+        .from(accountsTable).where(eq(accountsTable.id, id)).limit(1);
+      if (!current) { res.status(404).json({ error: "NotFound" }); return; }
+      if (new Date(clientUpdatedAt).getTime() !== current.updatedAt.getTime()) {
+        res.status(409).json({ error: "Conflict", message: "This record was modified by someone else. Please refresh and try again." });
+        return;
+      }
+    }
+
     const [account] = await db.update(accountsTable).set({
       company, productName, accountManagers: accountManagers || [],
       contactPerson: contactPerson || null, cpPhone: cpPhone || null, cpEmail: cpEmail || null,

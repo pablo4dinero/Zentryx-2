@@ -545,6 +545,18 @@ async function applyMigrations() {
       ADD COLUMN IF NOT EXISTS blend_speed_id TEXT;
     `);
 
+    // Token revocation — tokenVersion column on users table
+    await db.execute(sql`
+      ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
+    `);
+
+    // Optimistic locking — ensure updatedAt exists on production orders
+    await db.execute(sql`
+      ALTER TABLE account_production_orders
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
+    `);
+
     logger.info("Migrations applied successfully");
   } catch (err) {
     logger.error({ err }, "Failed to apply migrations");
