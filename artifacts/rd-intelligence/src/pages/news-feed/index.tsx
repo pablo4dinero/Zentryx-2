@@ -27,7 +27,7 @@ interface NewsItem {
 }
 
 interface NewsSection {
-  id: "newsapi" | "ift" | "guardian" | "gnews";
+  id: "newsapi" | "ift" | "guardian" | "gnews" | "elsevier";
   label: string;
   subtitle: string;
   items: NewsItem[];
@@ -702,6 +702,49 @@ function ListView({ items, isLight }: { items: NewsItem[]; isLight: boolean }) {
   );
 }
 
+// ─── Elsevier Research section (slider / grid / list) ────────────────────────
+
+function ElsevierSection({ section, isLight }: { section: NewsSection; isLight: boolean }) {
+  const [view, setView] = useState<ViewMode>("grid");
+
+  const VIEW_OPTIONS: { key: ViewMode; icon: React.ElementType; label: string }[] = [
+    { key: "slider", icon: Layers,     label: "Slider" },
+    { key: "grid",   icon: LayoutGrid, label: "Grid" },
+    { key: "list",   icon: List,       label: "List" },
+  ];
+
+  return (
+    <SectionBanner
+      label={section.label}
+      subtitle={section.subtitle}
+      icon={FlaskConical}
+      gradientClass="bg-gradient-to-r from-orange-700 to-rose-600"
+      count={section.items.length}
+      isLight={isLight}
+    >
+      {/* View toggle */}
+      <div className="flex gap-1 p-1 rounded-lg bg-black/20 border border-white/10 self-start shrink-0">
+        {VIEW_OPTIONS.map(opt => (
+          <button
+            key={opt.key}
+            onClick={() => setView(opt.key)}
+            title={opt.label}
+            className={cn(
+              "p-1.5 rounded-md transition-all",
+              view === opt.key ? "bg-white/20 text-white" : "text-white/40 hover:text-white/70",
+            )}
+          >
+            <opt.icon className="w-3.5 h-3.5" />
+          </button>
+        ))}
+      </div>
+      {view === "slider" && <SliderView items={section.items} isLight={isLight} />}
+      {view === "grid"   && <GridView   items={section.items} isLight={isLight} />}
+      {view === "list"   && <ListView   items={section.items} isLight={isLight} />}
+    </SectionBanner>
+  );
+}
+
 // ─── Carousel section (NewsAPI / IFT fallback) ────────────────────────────────
 
 const CAROUSEL_STYLE: Record<string, { icon: React.ElementType; gradientClass: string }> = {
@@ -1042,6 +1085,7 @@ export default function NewsFeed() {
               {(section.id === "newsapi" || section.id === "ift") && <CarouselSection section={section} isLight={isLight} />}
               {section.id === "guardian" && <GuardianSection section={section} isLight={isLight} />}
               {section.id === "gnews" && <GNewsSection section={section} isLight={isLight} />}
+              {section.id === "elsevier" && <ElsevierSection section={section} isLight={isLight} />}
             </motion.div>
           ))}
         </div>
