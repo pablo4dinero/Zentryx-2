@@ -1,5 +1,7 @@
 import { Router } from "express";
 import { requireAuth, AuthRequest } from "../lib/auth";
+import { db } from "@workspace/db";
+import { sql } from "drizzle-orm";
 
 const router = Router();
 
@@ -96,13 +98,60 @@ function parseRssItems(xml: string) {
   return results;
 }
 
-// ─── Caches ───────────────────────────────────────────────────────────────────
+// ─── DB-persistent cache ─────────────────────────────────────────────────────
+// Articles are stored in the newsfeed_cache table so they survive server
+// restarts. The in-memory layer is kept as a hot-path shortcut to avoid a DB
+// round-trip on every request within the same process lifetime.
 
-let newsApiCache:   { items: NewsItem[]; fetchedAt: number } | null = null;
-let iftCache:       { items: NewsItem[]; fetchedAt: number } | null = null;
-let guardianCache:  { items: NewsItem[]; fetchedAt: number } | null = null;
-let gnewsCache:     { items: NewsItem[]; fetchedAt: number } | null = null;
-let elsevierCache:  { items: NewsItem[]; fetchedAt: number } | null = null;
+const memCache = new Map<string, { items: NewsItem[]; fetchedAt: number }>();
+
+async function getCached(sectionId: string, query = ""): Promise<{ items: NewsItem[]; fetchedAt: number } | null> {
+  // 1. Try in-memory first (fastest path)
+  const key = `${sectionId}:${query}`;
+  const mem = memCache.get(key);
+  if (mem) return mem;
+
+  // 2. Try DB (survives restarts)
+  try {
+    const rows = await db.execute(sql`
+      SELECT items, fetched_at FROM newsfeed_cache
+      WHERE section_id = ${sectionId} AND query = ${query}
+      LIMIT 1
+    `);
+    const row = (rows as any).rows?.[0] ?? (rows as any)[0];
+    if (row) {
+      const entry = { items: row.items as NewsItem[], fetchedAt: new Date(row.fetched_at).getTime() };
+      memCache.set(key, entry); // warm the in-memory cache too
+      return entry;
+    }
+  } catch { /* DB not ready yet — fall through */ }
+  return null;
+}
+
+async function setCached(sectionId: string, items: NewsItem[], query = ""): Promise<void> {
+  const key = `${sectionId}:${query}`;
+  const entry = { items, fetchedAt: Date.now() };
+  memCache.set(key, entry);
+
+  try {
+    await db.execute(sql`
+      INSERT INTO newsfeed_cache (section_id, query, items, fetched_at)
+      VALUES (${sectionId}, ${query}, ${JSON.stringify(items)}::jsonb, NOW())
+      ON CONFLICT (section_id, query)
+      DO UPDATE SET items = EXCLUDED.items, fetched_at = EXCLUDED.fetched_at
+    `);
+  } catch { /* non-fatal — in-memory cache still works */ }
+}
+
+async function getStale(sectionId: string, query = ""): Promise<NewsItem[] | null> {
+  try {
+    const rows = await db.execute(sql`
+      SELECT items FROM newsfeed_cache WHERE section_id = ${sectionId} AND query = ${query} LIMIT 1
+    `);
+    const row = (rows as any).rows?.[0] ?? (rows as any)[0];
+    return row ? (row.items as NewsItem[]) : null;
+  } catch { return null; }
+}
 
 // ─── NewsAPI (carousel primary) ───────────────────────────────────────────────
 
@@ -382,96 +431,82 @@ async function fetchFromElsevier(customQ?: string): Promise<NewsItem[]> {
 
 // ─── Route ────────────────────────────────────────────────────────────────────
 
+async function resolveSection(
+  id: NewsSection["id"],
+  label: string,
+  subtitle: string,
+  fetcher: () => Promise<NewsItem[]>,
+  cacheQ: string,
+  useCache: boolean,
+): Promise<NewsItem[] | null> {
+  if (useCache) {
+    const cached = await getCached(id, cacheQ);
+    if (cached && Date.now() - cached.fetchedAt < CACHE_MS) return cached.items;
+  }
+  try {
+    const items = await fetcher();
+    if (useCache) await setCached(id, items, cacheQ);
+    console.log(`[${id}] Fetched ${items.length} articles${cacheQ ? ` (q: "${cacheQ}")` : ""}`);
+    return items;
+  } catch (err) {
+    console.error(`[${id}] Failed:`, err);
+    // Fall back to stale DB cache (survives restarts, prevents blank feed)
+    return await getStale(id, cacheQ);
+  }
+}
+
 router.get("/", requireAuth, async (req: AuthRequest, res) => {
   const now = Date.now();
   const sections: NewsSection[] = [];
   const customQ = typeof req.query.q === "string" ? req.query.q.trim() : "";
-  const useCache = !customQ; // bypass 3-hour cache for custom searches
+  const useCache = !customQ;
 
-  // 1. Carousel: NewsAPI (primary) → IFT RSS (fallback) ─────────────────────
-  try {
-    if (useCache && newsApiCache && now - newsApiCache.fetchedAt < CACHE_MS) {
-      sections.push({ id: "newsapi", label: "Food Tech Newsfeed", subtitle: "NewsAPI · Food Technology & Flavours", items: newsApiCache.items });
-    } else {
-      const items = await fetchFromNewsAPI(customQ || undefined);
-      if (useCache) newsApiCache = { items, fetchedAt: now };
-      sections.push({ id: "newsapi", label: "Food Tech Newsfeed", subtitle: "NewsAPI · Food Technology & Flavours", items });
-      console.log(`[NewsAPI] Fetched ${items.length} articles${customQ ? ` (query: "${customQ}")` : ""}`);
-    }
-  } catch (err) {
-    console.error("[NewsAPI] Failed:", err);
-    if (newsApiCache && newsApiCache.items.length > 0) {
-      sections.push({ id: "newsapi", label: "Food Tech Newsfeed", subtitle: "NewsAPI · Food Technology & Flavours", items: newsApiCache.items });
-    } else {
-      // IFT RSS fallback
-      try {
-        if (useCache && iftCache && now - iftCache.fetchedAt < CACHE_MS) {
-          sections.push({ id: "ift", label: "Food Science Today", subtitle: "IFT.org · Institute of Food Technologists", items: iftCache.items });
-        } else {
-          const items = await fetchFromIFT();
-          if (useCache) iftCache = { items, fetchedAt: now };
-          sections.push({ id: "ift", label: "Food Science Today", subtitle: "IFT.org · Institute of Food Technologists", items });
-        }
-      } catch (iftErr) {
-        console.error("[IFT] Fallback also failed:", iftErr);
-        if (iftCache && iftCache.items.length > 0) {
-          sections.push({ id: "ift", label: "Food Science Today", subtitle: "IFT.org · Institute of Food Technologists", items: iftCache.items });
-        }
-      }
+  // 1. NewsAPI (primary) → IFT RSS (fallback if NewsAPI fails completely) ────
+  const newsApiItems = await resolveSection(
+    "newsapi", "Food Tech Newsfeed", "NewsAPI · Food Technology & Flavours",
+    () => fetchFromNewsAPI(customQ || undefined), customQ, useCache,
+  );
+  if (newsApiItems && newsApiItems.length > 0) {
+    sections.push({ id: "newsapi", label: "Food Tech Newsfeed", subtitle: "NewsAPI · Food Technology & Flavours", items: newsApiItems });
+  } else {
+    // IFT fallback — only when NewsAPI has nothing (not even stale)
+    const iftItems = await resolveSection(
+      "ift", "Food Science Today", "IFT.org · Institute of Food Technologists",
+      () => fetchFromIFT(), "", useCache,
+    );
+    if (iftItems && iftItems.length > 0) {
+      sections.push({ id: "ift", label: "Food Science Today", subtitle: "IFT.org · Institute of Food Technologists", items: iftItems });
     }
   }
 
   // 2. Guardian (editorial — only if key configured) ────────────────────────
   if (GUARDIAN_API_KEY) {
-    try {
-      if (useCache && guardianCache && now - guardianCache.fetchedAt < CACHE_MS) {
-        sections.push({ id: "guardian", label: "Industry Spotlight", subtitle: "The Guardian", items: guardianCache.items });
-      } else {
-        const items = await fetchFromGuardian(customQ || undefined);
-        if (useCache) guardianCache = { items, fetchedAt: now };
-        sections.push({ id: "guardian", label: "Industry Spotlight", subtitle: "The Guardian", items });
-      }
-    } catch (err) {
-      console.error("[Guardian] Failed:", err);
-      if (guardianCache && guardianCache.items.length > 0) {
-        sections.push({ id: "guardian", label: "Industry Spotlight", subtitle: "The Guardian", items: guardianCache.items });
-      }
+    const guardianItems = await resolveSection(
+      "guardian", "Industry Spotlight", "The Guardian",
+      () => fetchFromGuardian(customQ || undefined), customQ, useCache,
+    );
+    if (guardianItems && guardianItems.length > 0) {
+      sections.push({ id: "guardian", label: "Industry Spotlight", subtitle: "The Guardian", items: guardianItems });
     }
   }
 
-  // 3. GNews (flavour technology — always fetched) ───────────────────────────
-  try {
-    if (gnewsCache && now - gnewsCache.fetchedAt < CACHE_MS) {
-      sections.push({ id: "gnews", label: "Flavour Technology", subtitle: "GNews · Global Flavour & Food Innovation", items: gnewsCache.items });
-    } else {
-      const items = await fetchFromGNews();
-      gnewsCache = { items, fetchedAt: now };
-      sections.push({ id: "gnews", label: "Flavour Technology", subtitle: "GNews · Global Flavour & Food Innovation", items });
-      console.log(`[GNews] Fetched ${items.length} articles`);
-    }
-  } catch (err) {
-    console.error("[GNews] Failed:", err);
-    if (gnewsCache && gnewsCache.items.length > 0) {
-      sections.push({ id: "gnews", label: "Flavour Technology", subtitle: "GNews · Global Flavour & Food Innovation", items: gnewsCache.items });
-    }
+  // 3. GNews (flavour technology) ───────────────────────────────────────────
+  const gnewsItems = await resolveSection(
+    "gnews", "Flavour Technology", "GNews · Global Flavour & Food Innovation",
+    () => fetchFromGNews(), "", true, // GNews doesn't support custom queries
+  );
+  if (gnewsItems && gnewsItems.length > 0) {
+    sections.push({ id: "gnews", label: "Flavour Technology", subtitle: "GNews · Global Flavour & Food Innovation", items: gnewsItems });
   }
 
-  // 4. Elsevier ScienceDirect (research journals — only if key configured) ──────
+  // 4. Elsevier (research journals — only if key configured) ────────────────
   if (ELSEVIER_API_KEY) {
-    try {
-      if (useCache && elsevierCache && now - elsevierCache.fetchedAt < CACHE_MS) {
-        sections.push({ id: "elsevier", label: "Research & Science", subtitle: "Elsevier ScienceDirect · Peer-reviewed journals", items: elsevierCache.items });
-      } else {
-        const items = await fetchFromElsevier(customQ || undefined);
-        if (useCache) elsevierCache = { items, fetchedAt: now };
-        sections.push({ id: "elsevier", label: "Research & Science", subtitle: "Elsevier ScienceDirect · Peer-reviewed journals", items });
-        console.log(`[Elsevier] Fetched ${items.length} articles${customQ ? ` (query: "${customQ}")` : ""}`);
-      }
-    } catch (err) {
-      console.error("[Elsevier] Failed:", err);
-      if (elsevierCache && elsevierCache.items.length > 0) {
-        sections.push({ id: "elsevier", label: "Research & Science", subtitle: "Elsevier ScienceDirect · Peer-reviewed journals", items: elsevierCache.items });
-      }
+    const elsevierItems = await resolveSection(
+      "elsevier", "Research & Science", "Elsevier ScienceDirect · Peer-reviewed journals",
+      () => fetchFromElsevier(customQ || undefined), customQ, useCache,
+    );
+    if (elsevierItems && elsevierItems.length > 0) {
+      sections.push({ id: "elsevier", label: "Research & Science", subtitle: "Elsevier ScienceDirect · Peer-reviewed journals", items: elsevierItems });
     }
   }
 
