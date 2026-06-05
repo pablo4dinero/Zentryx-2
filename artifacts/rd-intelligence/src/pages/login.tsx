@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useAuthStore } from "@/lib/auth";
+import { clearQueryCache } from "@/lib/query-cache";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Zap, Lock, Mail, User, AlertCircle, Phone, Eye, EyeOff, ArrowLeft, KeyRound, CheckCircle, MessageSquare, ShieldCheck, Clock, Loader2 } from "lucide-react";
@@ -173,6 +174,7 @@ export default function Login() {
         localStorage.clear();
         sessionStorage.clear();
       } catch { /* ignore */ }
+      clearQueryCache();
       setToken(data.token);
       toast({ title: "Welcome!", description: `Signed in as ${data.user?.name ?? ""}` });
       setLocation("/");
@@ -207,6 +209,7 @@ export default function Login() {
         localStorage.clear();
         sessionStorage.clear();
       } catch { /* ignore */ }
+      clearQueryCache();
       setToken(oauthToken);
       setLocation("/");
     } else if (mfaTokenParam) {

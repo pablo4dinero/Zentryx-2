@@ -6,6 +6,7 @@ import { useAuthStore } from "@/lib/auth";
 import { ThemeProvider } from "@/lib/theme";
 import { CallProvider } from "@/lib/call";
 import { UpdatePrompt } from "@/components/ui/UpdatePrompt";
+import { setQueryClient } from "@/lib/query-cache";
 
 import Login from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
@@ -34,6 +35,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
 });
+setQueryClient(queryClient);
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { token } = useAuthStore();
