@@ -43,6 +43,7 @@ import { useCustomOptions, DEFAULT_PRODUCT_TYPES, displayLabel, useServerProduct
 import { CustomOptionsSelect } from "@/components/ui/CustomOptionsSelect";
 import { calculateEfficiency, getEfficiencyColor, getEfficiencyLabel } from "./efficiency-calculator";
 import { useFeatureFlagsContext, FeatureFlagsProvider } from "@/contexts/FeatureFlagsContext";
+import { useCall } from "@/lib/call";
 import { DowntimeAlerts, type IdleTimeAlert } from "./downtime-alerts";
 
 const BASE = import.meta.env.BASE_URL;
@@ -912,8 +913,8 @@ function ProductionOrdersTab() {
       const res = await fetch(`${BASE}api/accounts`, { headers: authHeaders() });
       return res.json() as Promise<{id: number; company: string; productName: string | null; productType: string | null}[]>;
     },
-    staleTime: 1000 * 60 * 5, // 5 min
-    refetchInterval: 1000 * 60 * 5, // Poll every 5 min
+    staleTime: 1000 * 60 * 2,
+    refetchInterval: 1000 * 60 * 2,
   });
   const orderAccounts = accountsForOrderQuery.data ?? [];
 
@@ -933,8 +934,8 @@ function ProductionOrdersTab() {
       }
       return res.json() as Promise<ProductionOrder[]>;
     },
-    staleTime: 1000 * 60 * 5, // 5 min
-    refetchInterval: 1000 * 60 * 5, // Poll every 5 min
+    staleTime: 1000 * 60 * 2,
+    refetchInterval: 1000 * 60 * 2,
   }) as UseQueryResult<ProductionOrder[], Error>;
 
   const mdpOrderBySalesId = React.useMemo(() => {
@@ -955,8 +956,8 @@ function ProductionOrdersTab() {
       }
       return res.json() as Promise<SFOrder[]>;
     },
-    staleTime: 1000 * 60 * 5, // 5 min
-    refetchInterval: 1000 * 60 * 5, // Poll every 5 min
+    staleTime: 1000 * 60 * 2,
+    refetchInterval: 1000 * 60 * 2,
   });
 
   const mergedOrders = React.useMemo((): MergedOrder[] => {
@@ -1559,6 +1560,21 @@ function PartialAssignModal({
 function ProductionPlanningTab() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { onWsMessage } = useCall();
+
+  // Instant cache invalidation when another user changes planning data
+  React.useEffect(() => {
+    const off = onWsMessage((msg: any) => {
+      if (msg?.type !== "data:changed") return;
+      if (msg.resource === "floor-assignments") {
+        queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments"] });
+      }
+      if (msg.resource === "production-orders") {
+        queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
+      }
+    });
+    return off;
+  }, [onWsMessage, queryClient]);
   // Shared dynamic product type list (same store as Sales Force "Add Account"
   // and MDP "Add Product"). Add/rename/delete happens via those forms — this
   // hook just reads the current set for the floor allow-list chips.
@@ -1727,8 +1743,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       }
       return res.json() as Promise<ProductionFloor[]>;
     },
-    staleTime: 1000 * 60 * 5,
-    refetchInterval: 1000 * 60 * 5,
+    staleTime: 1000 * 60 * 2,
+    refetchInterval: 1000 * 60 * 2,
   }) as UseQueryResult<ProductionFloor[], Error>;
 
   const assignmentsQuery = useQuery({
@@ -1744,8 +1760,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       return res.json() as Promise<FloorAssignmentRow[]>;
     },
     enabled: !!selectedWeekLabel,
-    staleTime: 1000 * 60 * 5, // 5 min
-    refetchInterval: 1000 * 60 * 5, // Poll every 5 min
+    staleTime: 1000 * 60 * 2,
+    refetchInterval: 1000 * 60 * 2,
   }) as UseQueryResult<FloorAssignmentRow[], Error>;
 
   // All assignments across all weeks — used to permanently hide ordered orders from Planned Orders list
@@ -1756,8 +1772,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       if (!res.ok) throw new Error("Failed to load all floor assignments");
       return res.json() as Promise<FloorAssignmentRow[]>;
     },
-    staleTime: 1000 * 60 * 5, // 5 min
-    refetchInterval: 1000 * 60 * 5, // Poll every 5 min
+    staleTime: 1000 * 60 * 2,
+    refetchInterval: 1000 * 60 * 2,
   }) as UseQueryResult<FloorAssignmentRow[], Error>;
 
   const productionOrdersQuery = useQuery({
@@ -1770,8 +1786,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       }
       return res.json() as Promise<ProductionOrder[]>;
     },
-    staleTime: 1000 * 60 * 5,
-    refetchInterval: 1000 * 60 * 5,
+    staleTime: 1000 * 60 * 2,
+    refetchInterval: 1000 * 60 * 2,
   }) as UseQueryResult<ProductionOrder[], Error>;
 
   const planningAccountsQuery = useQuery({
@@ -1780,8 +1796,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       const res = await fetch(`${BASE}api/accounts`, { headers: authHeaders() });
       return res.json() as Promise<{id: number; company: string; productName: string | null; productType: string | null}[]>;
     },
-    staleTime: 1000 * 60 * 5,
-    refetchInterval: 1000 * 60 * 5,
+    staleTime: 1000 * 60 * 2,
+    refetchInterval: 1000 * 60 * 2,
   });
 
   const planningAccountMap = React.useMemo(() => {
@@ -1942,8 +1958,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       return res.json() as Promise<Array<{ id: number; floorId: number; weekLabel: string; assignedDay: string; status: FloorStatus; updatedAt: string }>>;
     },
     enabled: Boolean(selectedWeekLabel),
-    staleTime: 1000 * 60 * 5,
-    refetchInterval: 1000 * 60 * 5,
+    staleTime: 1000 * 60 * 2,
+    refetchInterval: 1000 * 60 * 2,
   });
 
   const floorDayStatusMap = React.useMemo(() => {
@@ -1967,8 +1983,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       return res.json() as Promise<Array<{ id: number; afterAssignmentId: number; minutes: number }>>;
     },
     enabled: Boolean(selectedWeekLabel),
-    staleTime: 1000 * 60 * 5,
-    refetchInterval: 1000 * 60 * 5,
+    staleTime: 1000 * 60 * 2,
+    refetchInterval: 1000 * 60 * 2,
   });
 
   const downtimeByAssignmentId = React.useMemo(() => {
@@ -4407,8 +4423,8 @@ function MonthlyOrdersTab() {
       if (!res.ok) throw new Error("Failed to fetch monthly orders");
       return res.json() as Promise<MonthlyOrder[]>;
     },
-    staleTime: 1000 * 60 * 5,
-    refetchInterval: 1000 * 60 * 5,
+    staleTime: 1000 * 60 * 2,
+    refetchInterval: 1000 * 60 * 2,
   });
 
   // Update monthly order mutation
@@ -5115,8 +5131,8 @@ function ProductionHistoryTab() {
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || "Failed to load orders"); }
       return res.json() as Promise<ProductionOrder[]>;
     },
-    staleTime: 1000 * 60 * 5, // 5 min
-    refetchInterval: 1000 * 60 * 5, // Poll every 5 min
+    staleTime: 1000 * 60 * 2,
+    refetchInterval: 1000 * 60 * 2,
   }) as UseQueryResult<ProductionOrder[], Error>;
 
   const historyAccountsQuery = useQuery({
@@ -5125,8 +5141,8 @@ function ProductionHistoryTab() {
       const res = await fetch(`${BASE}api/accounts`, { headers: authHeaders() });
       return res.json() as Promise<{id: number; company: string; productName: string | null; productType: string | null}[]>;
     },
-    staleTime: 1000 * 60 * 5, // 5 min
-    refetchInterval: 1000 * 60 * 5, // Poll every 5 min
+    staleTime: 1000 * 60 * 2,
+    refetchInterval: 1000 * 60 * 2,
   });
 
   const historyAccountMap = React.useMemo(() => {
@@ -5153,8 +5169,8 @@ function ProductionHistoryTab() {
       }
       return (await res.json()) as ProducedOrder[];
     },
-    staleTime: 1000 * 60 * 5, // 5 min
-    refetchInterval: 1000 * 60 * 5, // Poll every 5 min
+    staleTime: 1000 * 60 * 2,
+    refetchInterval: 1000 * 60 * 2,
   }) as UseQueryResult<ProducedOrder[], Error>;
 
   const clearHistoryMutation = useMutation({

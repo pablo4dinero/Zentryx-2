@@ -19,6 +19,7 @@ import { requireAuth, type AuthRequest } from "../lib/auth";
 import { logActivity } from "../lib/activity";
 import { callModel, SONNET_MODEL } from "../oracle/claude";
 import { runAssistedPlanning, type ExistingCellUsage } from "../lib/ai-planner";
+import { broadcastDataChange } from "../lib/realtime";
 
 const router = Router();
 
@@ -527,6 +528,8 @@ router.post("/assisted-planning", requireAuth, async (req: AuthRequest, res) => 
     }
 
     planningInProgress.delete(weekLabel);
+    broadcastDataChange("floor-assignments", { weekLabel }, req.user?.userId);
+    broadcastDataChange("production-orders", {}, req.user?.userId);
     res.json({ summary: result.summary, placementCount: result.placements.length });
   } catch (err) {
     planningInProgress.delete(weekLabel); // always release lock even on error
@@ -590,6 +593,8 @@ router.post("/floor-assignments", requireAuth, async (req: AuthRequest, res) => 
       }
     }
 
+    // Push cache-invalidation to all other connected users immediately
+    broadcastDataChange("floor-assignments", { weekLabel }, req.user?.userId);
     res.status(201).json(created);
   } catch (err) {
     console.error(err);
@@ -637,6 +642,7 @@ router.post("/floor-assignments/batch-delete", requireAuth, async (req: AuthRequ
     // Delete in correct order: dependent records first
     await db.delete(mdpProductSwitchDowntimesTable).where(inArray(mdpProductSwitchDowntimesTable.afterAssignmentId, ids));
     await db.delete(mdpFloorAssignmentsTable).where(inArray(mdpFloorAssignmentsTable.id, ids));
+    broadcastDataChange("floor-assignments", {}, req.user?.userId);
     res.json({ success: true, deleted: ids.length });
   } catch (err) {
     console.error(err);
