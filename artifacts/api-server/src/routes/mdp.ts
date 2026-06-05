@@ -20,6 +20,7 @@ import { logActivity } from "../lib/activity";
 import { callModel, SONNET_MODEL } from "../oracle/claude";
 import { runAssistedPlanning, type ExistingCellUsage } from "../lib/ai-planner";
 import { broadcastDataChange } from "../lib/realtime";
+import { sanitize } from "../lib/sanitize";
 
 const router = Router();
 
@@ -40,13 +41,13 @@ router.post("/customer-products", requireAuth, async (req: AuthRequest, res) => 
   try {
     const body = req.body as any;
     const [created] = await db.insert(mdpCustomerProductsTable).values({
-      accountName: body.accountName,
-      company: body.company,
-      productType: body.productType,
+      accountName: sanitize(body.accountName),
+      company: sanitize(body.company),
+      productType: sanitize(body.productType),
       urgency: body.urgency ?? "normal",
       priority: body.priority ?? "medium",
       volume: body.volume !== undefined ? Number(body.volume) : 0,
-      accountManager: body.accountManager ?? null,
+      accountManager: sanitize(body.accountManager) ?? null,
       dateAdded: new Date(),
       lastUpdated: new Date(),
       createdAt: new Date(),
@@ -63,13 +64,13 @@ router.put("/customer-products/:id", requireAuth, async (req: AuthRequest, res) 
     const id = Number(req.params.id);
     const body = req.body as any;
     const [updated] = await db.update(mdpCustomerProductsTable).set({
-      accountName: body.accountName,
-      company: body.company,
-      productType: body.productType,
+      accountName: sanitize(body.accountName),
+      company: sanitize(body.company),
+      productType: sanitize(body.productType),
       urgency: body.urgency,
       priority: body.priority,
       volume: body.volume !== undefined ? Number(body.volume) : undefined,
-      accountManager: body.accountManager,
+      accountManager: sanitize(body.accountManager),
       lastUpdated: new Date(),
     }).where(eq(mdpCustomerProductsTable.id, id)).returning();
 

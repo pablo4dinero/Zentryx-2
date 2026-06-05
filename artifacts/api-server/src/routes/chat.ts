@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { chatRoomsTable, chatRoomMembersTable, chatMessagesTable, chatReadReceiptsTable, usersTable, notificationsTable } from "@workspace/db";
-import { eq, and, inArray, desc, sql, ne } from "drizzle-orm";
+import { eq, and, inArray, desc, sql, ne, lt } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../lib/auth";
 import { SUPERADMIN_EMAIL } from "./auth";
 import { uploadToR2, getSignedFileUrl } from "../lib/r2";
+import { sanitize } from "../lib/sanitize";
 import multer from "multer";
 import { randomUUID } from "crypto";
 
@@ -179,7 +180,7 @@ router.post("/rooms", requireAuth, async (req: AuthRequest, res) => {
     }
 
     const [room] = await db.insert(chatRoomsTable).values({
-      name, isGroup: isGroup !== false, createdById: userId,
+      name: sanitize(name), isGroup: isGroup !== false, createdById: userId,
     }).returning();
     for (const uid of allMemberIds) {
       await db.insert(chatRoomMembersTable).values({ roomId: room.id, userId: uid }).catch(() => {});
@@ -205,7 +206,7 @@ router.patch("/rooms/:roomId", requireAuth, async (req: AuthRequest, res) => {
     if (!room.isGroup) { res.status(400).json({ error: "DMNotEditable" }); return; }
 
     if (typeof name === "string" && name.trim() !== "" && name !== room.name) {
-      await db.update(chatRoomsTable).set({ name: name.trim() }).where(eq(chatRoomsTable.id, roomId));
+      await db.update(chatRoomsTable).set({ name: sanitize(name) }).where(eq(chatRoomsTable.id, roomId));
     }
 
     if (Array.isArray(memberIds)) {
@@ -268,13 +269,24 @@ router.get("/rooms/:roomId/messages", requireAuth, async (req: AuthRequest, res)
   try {
     const roomId = parseInt(Array.isArray(req.params.roomId) ? req.params.roomId[0] : req.params.roomId as string);
     const userId = req.user!.userId;
-    const limit = Math.min(parseInt(Array.isArray(req.query.limit) ? String(req.query.limit[0]) : String(req.query.limit)) || 100, 200);
-    const messages = await db.select(MSG_SELECT)
+    const limit = Math.min(parseInt(String(req.query.limit ?? 50)) || 50, 100);
+    // Cursor-based pagination: ?before=<messageId> loads older messages
+    const beforeId = req.query.before ? parseInt(String(req.query.before)) : null;
+
+    const whereClause = beforeId
+      ? and(eq(chatMessagesTable.roomId, roomId), lt(chatMessagesTable.id, beforeId))
+      : eq(chatMessagesTable.roomId, roomId);
+
+    // Fetch in DESC order to get the N most recent (or N before cursor),
+    // then reverse so messages render oldest→newest in the UI.
+    const rawMessages = await db.select(MSG_SELECT)
       .from(chatMessagesTable)
       .leftJoin(usersTable, eq(chatMessagesTable.senderId, usersTable.id))
-      .where(eq(chatMessagesTable.roomId, roomId))
-      .orderBy(chatMessagesTable.createdAt)
+      .where(whereClause)
+      .orderBy(desc(chatMessagesTable.id))
       .limit(limit);
+
+    const messages = rawMessages.reverse();
 
     // Get read receipts for all members in this room (for seen indicators)
     const members = await db.select({ userId: chatRoomMembersTable.userId })
@@ -298,7 +310,9 @@ router.get("/rooms/:roomId/messages", requireAuth, async (req: AuthRequest, res)
       seenBy: memberIds.filter(uid => (seenMap.get(uid) ?? 0) >= m.id),
     }));
 
-    res.json(enriched);
+    // hasMore: true means there are older messages the client hasn't loaded yet
+    const hasMore = rawMessages.length === limit;
+    res.json({ messages: enriched, hasMore, oldestId: messages[0]?.id ?? null });
   } catch (err) { console.error(err); res.status(500).json({ error: "InternalServerError" }); }
 });
 
@@ -321,7 +335,7 @@ router.post("/rooms/:roomId/messages", requireAuth, async (req: AuthRequest, res
     const [msg] = await db.insert(chatMessagesTable).values({
       roomId, senderId: req.user!.userId,
       messageType: messageType || "text",
-      content,
+      content: sanitize(content),
     }).returning();
     const [withSender] = await db.select(MSG_SELECT)
       .from(chatMessagesTable)

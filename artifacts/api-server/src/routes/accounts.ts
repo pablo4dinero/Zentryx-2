@@ -4,6 +4,7 @@ import { accountsTable, accountTasksTable, accountProductionOrdersTable, account
 import { eq, asc, desc } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../lib/auth";
 import { logActivity } from "../lib/activity";
+import { sanitize } from "../lib/sanitize";
 
 const router = Router();
 
@@ -186,11 +187,11 @@ router.post("/", requireAuth, async (req: AuthRequest, res) => {
     }
 
     const [account] = await db.insert(accountsTable).values({
-      company, productName, accountManagers: mgrs,
-      contactPerson: contactPerson || null, cpPhone: cpPhone || null, cpEmail: cpEmail || null,
-      customerType: customerType || "new", productType, application: application || null,
+      company: sanitize(company), productName: sanitize(productName), accountManagers: mgrs,
+      contactPerson: sanitize(contactPerson) || null, cpPhone: cpPhone || null, cpEmail: cpEmail || null,
+      customerType: customerType || "new", productType: sanitize(productType), application: sanitize(application) || null,
       targetPrice: targetPrice || null, volume: volume || null,
-      urgencyLevel: urgencyLevel || "normal", competitorReference: competitorReference || null,
+      urgencyLevel: urgencyLevel || "normal", competitorReference: sanitize(competitorReference) || null,
       sellingPrice: sellingPrice || null, margin: margin || null,
       createdById: creatorId,
     }).returning();
@@ -225,11 +226,11 @@ router.put("/:id", requireAuth, async (req: AuthRequest, res) => {
     }
 
     const [account] = await db.update(accountsTable).set({
-      company, productName, accountManagers: accountManagers || [],
-      contactPerson: contactPerson || null, cpPhone: cpPhone || null, cpEmail: cpEmail || null,
-      customerType, productType, application: application || null,
+      company: sanitize(company), productName: sanitize(productName), accountManagers: accountManagers || [],
+      contactPerson: sanitize(contactPerson) || null, cpPhone: cpPhone || null, cpEmail: cpEmail || null,
+      customerType, productType: sanitize(productType), application: sanitize(application) || null,
       targetPrice: targetPrice || null, volume: volume || null, urgencyLevel,
-      competitorReference: competitorReference || null, sellingPrice: sellingPrice || null,
+      competitorReference: sanitize(competitorReference) || null, sellingPrice: sellingPrice || null,
       margin: margin || null, approvalStatus, isActive,
       status: status || "active", updatedAt: new Date(),
     }).where(eq(accountsTable.id, id)).returning();

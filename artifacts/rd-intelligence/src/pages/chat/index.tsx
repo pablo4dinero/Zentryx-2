@@ -355,6 +355,8 @@ export default function ChatRoom() {
 
   // Cache messages per room so switching rooms restores instantly and bad fetches don't wipe history
   const msgCacheRef = useRef<Record<number, any[]>>({});
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -516,18 +518,17 @@ export default function ChatRoom() {
   }, []);
 
   const loadMessages = useCallback((roomId: number) => {
-    api.get(`/chat/rooms/${roomId}/messages?limit=100`).then((msgs: any) => {
-      // Guard: only accept a genuine array — null / error responses are ignored
-      if (!Array.isArray(msgs)) return;
-      const msgList: any[] = msgs;
-      // Update the per-room cache so switching back restores history instantly
+    api.get(`/chat/rooms/${roomId}/messages?limit=50`).then((res: any) => {
+      // Support both old flat array and new { messages, hasMore } shape
+      const msgList: any[] = Array.isArray(res) ? res : (res?.messages ?? []);
+      if (!Array.isArray(msgList)) return;
+      setHasMoreMessages(res?.hasMore ?? false);
       msgCacheRef.current[roomId] = msgList;
       setMessages(prev => {
         const optimistic = prev.filter((m: any) => m._sending);
         const merged = [...msgList, ...optimistic.filter((o: any) => !msgList.find((m: any) => m.content === o.content))];
         return merged;
       });
-      // On first load after switching rooms, scroll to bottom
       if (justSwitchedRoomRef.current) {
         justSwitchedRoomRef.current = false;
         requestAnimationFrame(() => {
@@ -535,10 +536,27 @@ export default function ChatRoom() {
         });
       }
       refreshRooms();
-    }).catch(() => {
-      // Network / parse error — silently keep whatever messages are already displayed
-    });
+    }).catch(() => {});
   }, [currentUserId, refreshRooms]);
+
+  const loadOlderMessages = useCallback(() => {
+    if (!activeRoom || loadingOlder) return;
+    const oldest = messages[0];
+    if (!oldest) return;
+    setLoadingOlder(true);
+    const scrollEl = scrollContainerRef.current;
+    const prevScrollHeight = scrollEl?.scrollHeight ?? 0;
+    api.get(`/chat/rooms/${activeRoom.id}/messages?limit=50&before=${oldest.id}`).then((res: any) => {
+      const older: any[] = Array.isArray(res) ? res : (res?.messages ?? []);
+      if (!Array.isArray(older) || older.length === 0) { setHasMoreMessages(false); return; }
+      setHasMoreMessages(res?.hasMore ?? false);
+      setMessages(prev => [...older, ...prev]);
+      // Maintain scroll position so the view doesn't jump to the top
+      requestAnimationFrame(() => {
+        if (scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight - prevScrollHeight;
+      });
+    }).catch(() => {}).finally(() => setLoadingOlder(false));
+  }, [activeRoom, loadingOlder, messages]);
 
   const selectRoom = (room: any) => {
     justSwitchedRoomRef.current = true;
@@ -1326,6 +1344,15 @@ export default function ChatRoom() {
                   className="sticky top-2 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary text-white text-xs font-medium shadow-lg z-10 hover:bg-primary/90 transition-all w-fit mx-auto"
                 >
                   <ArrowDown className="w-3.5 h-3.5" /> Jump to latest
+                </button>
+              )}
+              {hasMoreMessages && (
+                <button
+                  onClick={loadOlderMessages}
+                  disabled={loadingOlder}
+                  className="w-full py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors rounded-lg disabled:opacity-50"
+                >
+                  {loadingOlder ? "Loading..." : "Load older messages"}
                 </button>
               )}
               {visibleMessages.map((msg: any, i: number) => {
