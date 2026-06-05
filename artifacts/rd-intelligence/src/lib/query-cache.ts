@@ -13,6 +13,10 @@ export function getQueryClient(): QueryClient | null {
 
 export function clearQueryCache() {
   if (globalQueryClient) {
-    globalQueryClient.clear();
+    // Invalidate all queries (marks them as stale, forces refetch)
+    // This is safer than clear() which might not exist
+    globalQueryClient.invalidateQueries();
+    // Also remove all query data to ensure old cached data is gone
+    globalQueryClient.removeQueries();
   }
 }
