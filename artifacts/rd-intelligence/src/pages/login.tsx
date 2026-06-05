@@ -168,13 +168,13 @@ export default function Login() {
         goMode("sms-otp");
       }
     } else if (data.token) {
-      // Clear app state before setting new token to prevent cross-user contamination
-      // (e.g., if user doesn't explicitly logout before logging in as a different user)
+      // Clear app state BEFORE setting new token to prevent cross-user contamination
+      // Order matters: cache first, then storage, then token
+      clearQueryCache();
       try {
         localStorage.clear();
         sessionStorage.clear();
       } catch { /* ignore */ }
-      clearQueryCache();
       setToken(data.token);
       toast({ title: "Welcome!", description: `Signed in as ${data.user?.name ?? ""}` });
       setLocation("/");
