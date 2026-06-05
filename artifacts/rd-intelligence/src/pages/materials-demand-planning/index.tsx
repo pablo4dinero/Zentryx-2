@@ -38,6 +38,7 @@ import { useTheme } from "@/lib/theme";
 import { useListUsers, useGetCurrentUser } from "@/api-client";
 import { PlannedOrdersProvider, usePlannedOrders } from "./planned-orders-context";
 import { type PlanningSummary } from "./ai-planner";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { useCustomOptions, DEFAULT_PRODUCT_TYPES, displayLabel, useServerProductTypes } from "@/lib/project-options";
 import { CustomOptionsSelect } from "@/components/ui/CustomOptionsSelect";
 import { calculateEfficiency, getEfficiencyColor, getEfficiencyLabel } from "./efficiency-calculator";
@@ -2653,6 +2654,9 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
+        if (res.status === 409 && err.error === "PlanningInProgress") {
+          throw new Error(err.message || "Another user is already planning this week. Please wait and try again.");
+        }
         throw new Error(err.error || `Server error ${res.status}`);
       }
 
@@ -5848,7 +5852,7 @@ function MaterialsDemandPlanningPageContent(props: { productsQuery: UseQueryResu
       <AnimatePresence mode="wait">
         <motion.div key={activeTab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
 
-          {activeTab === "customer-products" && (
+          {activeTab === "customer-products" && <ErrorBoundary label="Customer Products">{(
             <div className="space-y-5">
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                 {[
@@ -6233,21 +6237,21 @@ function MaterialsDemandPlanningPageContent(props: { productsQuery: UseQueryResu
               )}
             </AnimatePresence>
           </div>
-          )}
+          )}</ErrorBoundary>}
 
-          {activeTab === "production-orders" && <ProductionOrdersTab />}
+          {activeTab === "production-orders" && <ErrorBoundary label="Production Orders"><ProductionOrdersTab /></ErrorBoundary>}
 
-          {activeTab === "monthly-orders" && <MonthlyOrdersTab />}
+          {activeTab === "monthly-orders" && <ErrorBoundary label="Monthly Orders"><MonthlyOrdersTab /></ErrorBoundary>}
 
-          {activeTab === "strategy-evaluator" && <StrategyEvaluatorTab />}
+          {activeTab === "strategy-evaluator" && <ErrorBoundary label="Strategy Evaluator"><StrategyEvaluatorTab /></ErrorBoundary>}
 
-          {activeTab === "production-planning" && <ProductionPlanningTab />}
+          {activeTab === "production-planning" && <ErrorBoundary label="Production Planning"><ProductionPlanningTab /></ErrorBoundary>}
 
-          {activeTab === "production-analytics" && <ProductionAnalyticsTab isLight={isLight} />}
+          {activeTab === "production-analytics" && <ErrorBoundary label="Analytics"><ProductionAnalyticsTab isLight={isLight} /></ErrorBoundary>}
 
-          {activeTab === "production-history" && <ProductionHistoryTab />}
+          {activeTab === "production-history" && <ErrorBoundary label="Production History"><ProductionHistoryTab /></ErrorBoundary>}
 
-          {activeTab === "forecast" && <SalesForecastPage />}
+          {activeTab === "forecast" && <ErrorBoundary label="Forecast"><SalesForecastPage /></ErrorBoundary>}
 
         </motion.div>
       </AnimatePresence>

@@ -425,6 +425,11 @@ router.get("/floor-assignments", requireAuth, async (req: AuthRequest, res) => {
 // ── Assisted Planning — server-side ──────────────────────────────────────────
 // Runs the full planning algorithm on the server, saves all placements in a
 // single batch, and returns the summary. No client-side computation needed.
+
+// Week-level lock: prevents two users from running planning on the same
+// week simultaneously, which would cause corrupted/doubled assignments.
+const planningInProgress = new Set<string>();
+
 router.post("/assisted-planning", requireAuth, async (req: AuthRequest, res) => {
   try {
     const {
@@ -446,6 +451,16 @@ router.post("/assisted-planning", requireAuth, async (req: AuthRequest, res) => 
       res.status(400).json({ error: "Missing required fields" });
       return;
     }
+
+    // Week-level concurrency lock
+    if (planningInProgress.has(weekLabel)) {
+      res.status(409).json({
+        error: "PlanningInProgress",
+        message: "Another user is already running Assisted Planning for this week. Please wait a moment and try again.",
+      });
+      return;
+    }
+    planningInProgress.add(weekLabel);
 
     // Fetch floors and blend speeds from DB
     const floors = await db.select().from(mdpProductionFloorsTable);
@@ -511,8 +526,10 @@ router.post("/assisted-planning", requireAuth, async (req: AuthRequest, res) => 
       );
     }
 
+    planningInProgress.delete(weekLabel);
     res.json({ summary: result.summary, placementCount: result.placements.length });
   } catch (err) {
+    planningInProgress.delete(weekLabel); // always release lock even on error
     console.error("[assisted-planning]", err);
     res.status(500).json({ error: "InternalServerError" });
   }
