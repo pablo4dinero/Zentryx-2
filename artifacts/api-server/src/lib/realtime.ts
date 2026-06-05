@@ -146,4 +146,29 @@ export function attachRealtime(server: Server): void {
   logger.info("Realtime WebSocket server attached at /ws");
 }
 
+/**
+ * Broadcast a data-change event to ALL connected users except the sender.
+ * Used to push cache-invalidation signals so other users' UIs refresh
+ * immediately without waiting for their polling interval.
+ *
+ * @param resource  e.g. "floor-assignments", "production-orders"
+ * @param extra     optional extra fields (e.g. weekLabel)
+ * @param exceptUserId  don't send to the user who made the change
+ */
+export function broadcastDataChange(
+  resource: string,
+  extra: Record<string, unknown> = {},
+  exceptUserId?: number,
+): void {
+  const payload = JSON.stringify({ type: "data:changed", resource, ...extra });
+  for (const [userId, sockets] of userSockets) {
+    if (userId === exceptUserId) continue;
+    for (const s of sockets) {
+      if (s.readyState === WebSocket.OPEN) {
+        try { s.send(payload); } catch { /* noop */ }
+      }
+    }
+  }
+}
+
 export { isUserOnline };
