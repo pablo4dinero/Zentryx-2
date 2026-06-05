@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuthStore } from "@/lib/auth";
 import { ThemeProvider } from "@/lib/theme";
 import { CallProvider } from "@/lib/call";
+import { UpdatePrompt } from "@/components/ui/UpdatePrompt";
 
 import Login from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
@@ -80,6 +81,7 @@ function App() {
             </WouterRouter>
           </CallProvider>
           <Toaster />
+          <UpdatePrompt />
         </TooltipProvider>
       </QueryClientProvider>
     </ThemeProvider>

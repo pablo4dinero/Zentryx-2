@@ -1,4 +1,4 @@
-import { Router } from "express";
+import express, { Router } from "express";
 import { db } from "@workspace/db";
 import {
   mdpCustomerProductsTable,
@@ -544,14 +544,47 @@ router.post("/floor-assignments", requireAuth, async (req: AuthRequest, res) => 
     const floorId = Number(body.floorId);
     const weekLabel = String(body.weekLabel ?? "");
     const assignedDay = String(body.assignedDay ?? "");
+    const productionOrderId = Number(body.productionOrderId);
+    const assignedVolume = body.assignedVolume != null ? Number(body.assignedVolume) : null;
+
+    // Optimistic locking: verify the order's total assigned volume won't
+    // exceed its mother volume when this assignment is added.
+    // Prevents two planners simultaneously over-assigning the same order.
+    if (assignedVolume && assignedVolume > 0) {
+      const [salesOrder] = await db
+        .select({ volume: accountProductionOrdersTable.volume })
+        .from(mdpProductionOrdersTable)
+        .innerJoin(accountProductionOrdersTable, eq(mdpProductionOrdersTable.salesOrderId, accountProductionOrdersTable.id))
+        .where(eq(mdpProductionOrdersTable.id, productionOrderId))
+        .limit(1);
+
+      if (salesOrder?.volume) {
+        const motherVolume = Number(salesOrder.volume);
+        const alreadyAssigned = await db
+          .select({ vol: mdpFloorAssignmentsTable.assignedVolume })
+          .from(mdpFloorAssignmentsTable)
+          .where(and(
+            eq(mdpFloorAssignmentsTable.productionOrderId, productionOrderId),
+            eq(mdpFloorAssignmentsTable.weekLabel, weekLabel),
+          ));
+        const totalAssigned = alreadyAssigned.reduce((sum, r) => sum + Number(r.vol ?? 0), 0);
+        if (totalAssigned + assignedVolume > motherVolume * 1.01) { // 1% tolerance for rounding
+          res.status(409).json({
+            error: "Conflict",
+            message: "This order was already fully assigned by another user. Please refresh and try again.",
+          });
+          return;
+        }
+      }
+    }
 
     const [created] = await db.insert(mdpFloorAssignmentsTable).values({
       floorId,
-      productionOrderId: Number(body.productionOrderId),
+      productionOrderId,
       weekLabel,
       assignedDay,
       planStatus: body.planStatus ?? "Planned",
-      assignedVolume: body.assignedVolume != null ? String(body.assignedVolume) : null,
+      assignedVolume: assignedVolume != null ? String(assignedVolume) : null,
       assignedAt: new Date(),
       producedAt: body.producedAt ? new Date(body.producedAt) : null,
     }).returning();
@@ -1267,7 +1300,7 @@ router.get("/floor-definitions", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.post("/parse-plan-document", requireAuth, async (req: AuthRequest, res) => {
+router.post("/parse-plan-document", requireAuth, express.json({ limit: "15mb" }), async (req: AuthRequest, res) => {
   try {
     const { fileData, fileName } = req.body as { fileData: string; fileName: string };
     if (!fileData || !fileName) {

@@ -9,7 +9,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: "autoUpdate",
+      registerType: "prompt",
       includeAssets: ["favicon.png", "favicon.svg", "zentryx-icon.svg", "zentryx-icon-maskable.svg"],
       manifest: {
         name: "Zentryx — R&D Intelligence",
