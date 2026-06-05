@@ -106,8 +106,11 @@ app.use(cors({
   credentials: true,
 }));
 
-app.use(express.json({ limit: "15mb" }));
-app.use(express.urlencoded({ extended: true, limit: "15mb" }));
+// 1MB for all API routes — prevents memory exhaustion from large JSON payloads.
+// The document upload endpoint (/api/mdp/parse-plan-document) overrides this
+// with its own 15MB limit applied directly on that route.
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
 // ── Rate limiting ──────────────────────────────────────────────────────
 // Global ceiling: 600 requests / 15 min / IP. Most endpoints will sit
