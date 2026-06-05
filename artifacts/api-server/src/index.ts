@@ -551,6 +551,18 @@ async function applyMigrations() {
       ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
     `);
 
+    // Performance indexes on high-frequency query columns
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_floor_assignments_week_label ON mdp_floor_assignments(week_label);`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_floor_assignments_floor_id ON mdp_floor_assignments(floor_id);`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_floor_assignments_order_id ON mdp_floor_assignments(production_order_id);`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_floor_day_statuses_week ON mdp_floor_day_statuses(week_label);`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_production_orders_account_id ON account_production_orders(account_id);`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_mdp_orders_sales_order_id ON mdp_production_orders(sales_order_id);`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_accounts_created_at ON accounts(created_at DESC);`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_activity_logs_user_id ON activity_logs(user_id);`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_produced_orders_week ON mdp_produced_orders(week_label);`);
+
     // Persistent newsfeed cache — survives server restarts so free API
     // rate limits (100 req/day) are never exhausted by cold starts
     await db.execute(sql`
