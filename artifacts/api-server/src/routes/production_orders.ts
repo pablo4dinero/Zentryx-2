@@ -184,6 +184,19 @@ router.put("/:id", requireAuth, async (req: AuthRequest, res) => {
       return;
     }
 
+    // Optimistic locking: reject if record changed since client loaded it
+    if (body.updatedAt) {
+      const [current] = await db.select({ updatedAt: accountProductionOrdersTable.updatedAt })
+        .from(accountProductionOrdersTable)
+        .where(eq(accountProductionOrdersTable.id, id))
+        .limit(1);
+      if (!current) { res.status(404).json({ error: "NotFound" }); return; }
+      if (new Date(String(body.updatedAt)).getTime() !== new Date(current.updatedAt ?? 0).getTime()) {
+        res.status(409).json({ error: "Conflict", message: "This record was modified by someone else. Please refresh and try again." });
+        return;
+      }
+    }
+
     const [updated] = await db.update(accountProductionOrdersTable)
       .set(updates)
       .where(eq(accountProductionOrdersTable.id, id))

@@ -251,6 +251,23 @@ router.post("/users/:id/reset-password", async (req: AuthRequest, res) => {
   }
 });
 
+// Revoke all active sessions for a user by incrementing their tokenVersion.
+// Any JWT with an older tv is instantly rejected on the next request.
+router.post("/users/:id/revoke-tokens", async (req: AuthRequest, res) => {
+  try {
+    const id = parseInt(String(req.params.id));
+    const [updated] = await db.update(usersTable)
+      .set({ tokenVersion: sql`${usersTable.tokenVersion} + 1`, updatedAt: new Date() })
+      .where(eq(usersTable.id, id))
+      .returning({ tokenVersion: usersTable.tokenVersion });
+    if (!updated) { res.status(404).json({ error: "NotFound" }); return; }
+    res.json({ ok: true, newTokenVersion: updated.tokenVersion });
+  } catch (err) {
+    console.error("[admin] revoke-tokens failed", err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
 function randomTempPassword(): string {
   const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
   let out = "";

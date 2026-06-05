@@ -40,7 +40,7 @@ router.post("/:id/allow", requireAuth, async (req: AuthRequest, res) => {
     const [user] = await db.select().from(usersTable).where(eq(usersTable.id, request.userId)).limit(1);
     if (!user) { res.status(404).json({ error: "UserNotFound" }); return; }
 
-    const token = signToken({ userId: user.id, email: user.email, role: user.role });
+    const token = signToken({ userId: user.id, email: user.email, role: user.role, tv: user.tokenVersion ?? 0 });
     approveRequest(req.params.id, token);
     res.json({ success: true });
   } catch (err) {

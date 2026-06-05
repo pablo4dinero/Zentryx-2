@@ -95,6 +95,11 @@ export const usersTable = pgTable("users", {
   // Real-time presence tracking: updated whenever user sends messages or interacts
   lastActiveAt: timestamp("last_active_at").notNull().defaultNow(),
 
+  // ─── Token revocation ─────────────────────────────────────────────
+  // Incremented whenever an admin revokes access or the user logs out
+  // from all devices. Any JWT carrying an older tokenVersion is rejected.
+  tokenVersion: integer("token_version").notNull().default(0),
+
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

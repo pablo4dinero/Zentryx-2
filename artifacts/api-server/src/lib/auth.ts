@@ -1,5 +1,8 @@
 import jwt from "jsonwebtoken";
 import { Request, Response, NextFunction } from "express";
+import { db } from "@workspace/db";
+import { usersTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 
 // JWT secret must come from env. Refusing to boot without it is intentional
 // — a hard-coded fallback would mean anyone with read access to this file
@@ -21,13 +24,10 @@ export interface JwtPayload {
   userId: number;
   email: string;
   role: string;
+  // ── Token revocation ────────────────────────────────────────────────
+  // Must match user.tokenVersion in DB. Mismatch = token revoked.
+  tv: number;
   // ── Phase 1 session policy ──────────────────────────────────────────
-  // `idleUntil`     — refreshes on every authenticated request, expires
-  //                   if the user is idle longer than IDLE_TTL_SEC.
-  // `absoluteExpiry`— NEVER refreshes, hard cap on session lifetime.
-  // `noExpiry`      — true only for the superadmin; both fields are
-  //                   ignored and the legacy 7-day `exp` claim applies.
-  // Times are seconds-since-epoch to match JWT's native clock format.
   idleUntil?: number;
   absoluteExpiry?: number;
   noExpiry?: boolean;
@@ -55,7 +55,7 @@ function nowSec(): number {
  * The JWT `expiresIn` is set to the absolute ceiling so a token can
  * never outlive its absolute cap even if the idleUntil math is buggy.
  */
-export function signToken(payload: Omit<JwtPayload, "idleUntil" | "absoluteExpiry" | "noExpiry">): string {
+export function signToken(payload: Omit<JwtPayload, "idleUntil" | "absoluteExpiry" | "noExpiry"> & { tv: number }): string {
   const now = nowSec();
   const full: JwtPayload = {
     ...payload,
@@ -92,7 +92,7 @@ export interface AuthRequest extends Request {
   user?: JwtPayload;
 }
 
-export function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
+export async function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     res.status(401).json({ error: "Unauthorized", message: "No token provided" });
@@ -137,6 +137,25 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
         const remainingAbsolute = Math.max(1, payload.absoluteExpiry - now);
         const newToken = jwt.sign(refreshed, JWT_SECRET, { expiresIn: remainingAbsolute });
         res.setHeader("x-refreshed-token", newToken);
+      }
+    }
+
+    // Token version check — if admin revoked this user or user logged out
+    // all devices, their tokenVersion in DB will be higher than tv in JWT.
+    // Skip for superadmin (noExpiry) to avoid the DB hit on every request.
+    if (!payload.noExpiry && payload.tv !== undefined) {
+      const [user] = await db
+        .select({ tokenVersion: usersTable.tokenVersion, isActive: usersTable.isActive })
+        .from(usersTable)
+        .where(eq(usersTable.id, payload.userId))
+        .limit(1);
+      if (!user || !user.isActive) {
+        res.status(401).json({ error: "Unauthorized", message: "Account deactivated" });
+        return;
+      }
+      if (user.tokenVersion !== payload.tv) {
+        res.status(401).json({ error: "SessionExpired", reason: "revoked", message: "Session was revoked. Please sign in again." });
+        return;
       }
     }
 

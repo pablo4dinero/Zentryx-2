@@ -1016,12 +1016,21 @@ function ProductionOrdersTab() {
       const res = await fetch(`${BASE}api/mdp/production-orders/${orderId}`, {
         method: "PUT", headers: authHeaders(), body: JSON.stringify(changes),
       });
-      if (!res.ok) { const error = await res.json().catch(() => ({})); throw new Error(error.error || "Failed to save"); }
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        if (error.error === "Conflict") throw new Error("conflict");
+        throw new Error(error.error || "Failed to save");
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/production-orders"] });
+    },
+    onError: (error: any) => {
+      if (error?.message === "conflict") {
+        toast({ title: "Edit conflict", description: "Someone else updated this order. Please refresh and try again.", variant: "destructive" });
+      }
     },
   });
 
@@ -5603,10 +5612,11 @@ function MaterialsDemandPlanningPageContent(props: { productsQuery: UseQueryResu
       const res = await fetch(`${BASE}api/accounts/${editingProduct.id}`, {
         method: "PUT",
         headers: authHeaders(),
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, updatedAt: editingProduct.updatedAt }),
       });
       if (!res.ok) {
         const error = await res.json().catch(() => ({}));
+        if (error.error === "Conflict") throw new Error("conflict");
         throw new Error(error.error || "Failed to update account");
       }
       return res.json();
@@ -5618,7 +5628,11 @@ function MaterialsDemandPlanningPageContent(props: { productsQuery: UseQueryResu
       toast({ title: "Product updated", description: "Account information was updated." });
     },
     onError: (error: any) => {
-      toast({ title: "Could not update", description: error?.message || "Try again.", variant: "destructive" });
+      if (error?.message === "conflict") {
+        toast({ title: "Edit conflict", description: "Someone else updated this record. Please close, refresh and try again.", variant: "destructive" });
+      } else {
+        toast({ title: "Could not update", description: error?.message || "Try again.", variant: "destructive" });
+      }
     },
   });
 

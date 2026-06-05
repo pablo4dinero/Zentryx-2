@@ -196,7 +196,7 @@ function KanbanBoard({ accountId, account }: { accountId: number; account: any }
   const saveApproval = async (val: string) => {
     setApproval(val);
     setShowApprovalDrop(false);
-    await api(`api/accounts/${accountId}`, { method: "PUT", body: JSON.stringify({ ...account, approvalStatus: val }) });
+    await api(`api/accounts/${accountId}`, { method: "PUT", body: JSON.stringify({ ...account, approvalStatus: val, updatedAt: account?.updatedAt }) });
     queryClient.invalidateQueries({ queryKey: ["/api/accounts"] });
     queryClient.invalidateQueries({ queryKey: [`/api/accounts/${accountId}`] });
   };
@@ -666,7 +666,11 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
   };
 
   const updateRow = async (id: number, data: any) => {
-    await api(`api/accounts/${accountId}/production-orders/${id}`, { method: "PUT", body: JSON.stringify(data) });
+    const res = await api(`api/accounts/${accountId}/production-orders/${id}`, { method: "PUT", body: JSON.stringify(data) });
+    if (res?.error === "Conflict") {
+      toast({ title: "Edit conflict", description: "Someone else updated this order. Please refresh and try again.", variant: "destructive" });
+      return;
+    }
     queryClient.invalidateQueries({ queryKey: [`/api/accounts/${accountId}/production-orders`] });
     reseedForecasts();
   };
@@ -1125,7 +1129,11 @@ function AccountInfoTab({ account, accountId }: { account: any; accountId: numbe
   };
 
   const save = async () => {
-    await api(`api/accounts/${accountId}`, { method: "PUT", body: JSON.stringify(form) });
+    const res = await api(`api/accounts/${accountId}`, { method: "PUT", body: JSON.stringify({ ...form, updatedAt: account?.updatedAt }) });
+    if (res?.error === "Conflict") {
+      toast({ title: "Edit conflict", description: "Someone else updated this record. Please refresh and try again.", variant: "destructive" });
+      return;
+    }
     queryClient.invalidateQueries({ queryKey: ["/api/accounts"] });
     queryClient.invalidateQueries({ queryKey: [`/api/accounts/${accountId}`] });
     setDirty(false);
@@ -1224,7 +1232,11 @@ function TasksInfoPanel({ account, accountId }: { account: any; accountId: numbe
   const merged = { ...account, ...editing };
 
   const save = async () => {
-    await api(`api/accounts/${accountId}`, { method: "PUT", body: JSON.stringify({ ...account, ...editing }) });
+    const res = await api(`api/accounts/${accountId}`, { method: "PUT", body: JSON.stringify({ ...account, ...editing, updatedAt: account?.updatedAt }) });
+    if (res?.error === "Conflict") {
+      toast({ title: "Edit conflict", description: "Someone else updated this record. Please refresh and try again.", variant: "destructive" });
+      return;
+    }
     queryClient.invalidateQueries({ queryKey: ["/api/accounts"] });
     queryClient.invalidateQueries({ queryKey: [`/api/accounts/${accountId}`] });
     setDirty(false);
