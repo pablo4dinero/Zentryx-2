@@ -551,6 +551,22 @@ async function applyMigrations() {
       ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
     `);
 
+    // Persistent newsfeed cache — survives server restarts so free API
+    // rate limits (100 req/day) are never exhausted by cold starts
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS newsfeed_cache (
+        id         SERIAL PRIMARY KEY,
+        section_id TEXT NOT NULL,
+        query      TEXT NOT NULL DEFAULT '',
+        items      JSONB NOT NULL,
+        fetched_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `);
+    await db.execute(sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS newsfeed_cache_section_query_idx
+        ON newsfeed_cache (section_id, query);
+    `);
+
     // Optimistic locking — ensure updatedAt exists on production orders
     await db.execute(sql`
       ALTER TABLE account_production_orders
