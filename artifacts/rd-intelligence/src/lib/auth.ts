@@ -19,7 +19,9 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ token });
   },
   logout: () => {
-    localStorage.removeItem("rd_token");
+    // Clear ALL app state to prevent cross-user contamination when logging in as different user
+    localStorage.clear();
+    sessionStorage.clear();
     set({ token: null });
     window.location.href = "/login";
   },

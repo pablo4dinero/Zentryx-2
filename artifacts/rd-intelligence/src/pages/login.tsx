@@ -167,6 +167,12 @@ export default function Login() {
         goMode("sms-otp");
       }
     } else if (data.token) {
+      // Clear app state before setting new token to prevent cross-user contamination
+      // (e.g., if user doesn't explicitly logout before logging in as a different user)
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+      } catch { /* ignore */ }
       setToken(data.token);
       toast({ title: "Welcome!", description: `Signed in as ${data.user?.name ?? ""}` });
       setLocation("/");
@@ -197,6 +203,10 @@ export default function Login() {
     window.history.replaceState({}, "", window.location.pathname);
 
     if (oauthToken) {
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+      } catch { /* ignore */ }
       setToken(oauthToken);
       setLocation("/");
     } else if (mfaTokenParam) {
