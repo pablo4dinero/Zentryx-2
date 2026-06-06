@@ -5,8 +5,8 @@ import { sql } from "drizzle-orm";
 
 const router = Router();
 
-const NEWS_API_KEY     = process.env.NEWS_API_KEY    || "e01cc0072e714204bb9eb8768c5f0424";
-const GNEWS_API_KEY    = process.env.GNEWS_API_KEY   || "6d39b3dbbf98e01bc1b77b60231e1f2f";
+const NEWS_API_KEY     = process.env.NEWS_API_KEY;
+const GNEWS_API_KEY    = process.env.GNEWS_API_KEY;
 const GUARDIAN_API_KEY = process.env.GUARDIAN_API_KEY;
 const ELSEVIER_API_KEY = process.env.ELSEVIER_API_KEY;
 
