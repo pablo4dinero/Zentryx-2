@@ -105,11 +105,41 @@ function isWithinLastDays(date: string | null | undefined, days: number): boolea
   return diff >= 0 && diff < days;
 }
 
-function filterByPeriod(orders: TodayOrder[], period: string): TodayOrder[] {
+function isInMonth(date: string | null | undefined, monthStr: string): boolean {
+  const parsed = parseDMY(date);
+  if (!parsed || !monthStr) return false;
+  const [year, month] = monthStr.split("-").map(Number);
+  return parsed.getFullYear() === year && parsed.getMonth() === month - 1;
+}
+
+function isInWeek(date: string | null | undefined, weekStr: string): boolean {
+  const parsed = parseDMY(date);
+  if (!parsed || !weekStr) return false;
+  const [yearWeekStr] = weekStr.split("W");
+  const [year, week] = [parseInt(yearWeekStr), parseInt(weekStr.split("W")[1])];
+
+  const jan4 = new Date(year, 0, 4);
+  const weekStart = new Date(jan4);
+  weekStart.setDate(jan4.getDate() - jan4.getDay() + 1);
+  weekStart.setDate(weekStart.getDate() + (week - 1) * 7);
+
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6);
+
+  return parsed >= weekStart && parsed <= weekEnd;
+}
+
+function filterByPeriod(orders: TodayOrder[], period: string, selectedMonth?: string, selectedWeek?: string): TodayOrder[] {
   if (period === "all") return orders;
   if (period === "yearly") return orders.filter(o => isWithinLastDays(o.dateOrdered, 365));
-  if (period === "monthly") return orders.filter(o => isWithinLastDays(o.dateOrdered, 30));
-  if (period === "weekly") return orders.filter(o => isWithinLastDays(o.dateOrdered, 7));
+  if (period === "monthly") {
+    if (selectedMonth) return orders.filter(o => isInMonth(o.dateOrdered, selectedMonth));
+    return orders.filter(o => isWithinLastDays(o.dateOrdered, 30));
+  }
+  if (period === "weekly") {
+    if (selectedWeek) return orders.filter(o => isInWeek(o.dateOrdered, selectedWeek));
+    return orders.filter(o => isWithinLastDays(o.dateOrdered, 7));
+  }
   return orders.filter(o => isTodayDate(o.dateOrdered));
 }
 
@@ -422,6 +452,8 @@ export default function NewProductionOrdersPage() {
   const exchange = useExchangeRate();
   const [viewMode, setViewMode] = useState<ViewMode>("weekly");
   const [search, setSearch] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState<string>(""); // For month filtering
+  const [selectedWeek, setSelectedWeek] = useState<string>(""); // For week filtering
   // Form is visible by default — clicking Cancel hides it, Add Today Order or
   // Cancel both reset/close.
   const [showForm, setShowForm] = useState(true);
@@ -552,8 +584,8 @@ export default function NewProductionOrdersPage() {
   }, [accounts]);
 
   const tableOrders = useMemo(
-    () => filterByPeriod(allOrders, viewMode),
-    [allOrders, viewMode],
+    () => filterByPeriod(allOrders, viewMode, selectedMonth, selectedWeek),
+    [allOrders, viewMode, selectedMonth, selectedWeek],
   );
 
   const filteredOrders = useMemo(() => {
@@ -836,27 +868,119 @@ export default function NewProductionOrdersPage() {
           </div>
         </div>
 
-        <LeadingProductTypeChart allOrders={allOrders} accountTypeMap={accountTypeMap} />
+        {/* Right side: Currency Converter + Leading Product Type Chart - fit within form height */}
+        <div className="flex flex-col gap-4 h-[480px] sm:h-[540px]">
+          {/* Currency Converter */}
+          <div className={cn(
+            "rounded-2xl border p-4 flex flex-col gap-3",
+            isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5",
+          )}>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-muted-foreground">CURRENCY CONVERTER</p>
+              <span className={cn("text-xs font-medium px-2 py-1 rounded-full", isLight ? "bg-emerald-100 text-emerald-700" : "bg-emerald-500/20 text-emerald-400")}>
+                ₦ 1 USD = ₦{exchange.ngnRate?.toLocaleString("en-NG", { maximumFractionDigits: 2 }) || "—"}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 items-end">
+              <div>
+                <label className="text-[10px] text-muted-foreground mb-1 block">From</label>
+                <select disabled className={cn("w-full h-9 rounded-lg border px-2 text-xs font-medium", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/20")}>
+                  <option>NGN</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] text-muted-foreground mb-1 block">Rate</label>
+                <div className={cn("h-9 rounded-lg border px-2 flex items-center text-xs font-mono", isLight ? "border-slate-200 bg-slate-100 text-slate-600" : "border-white/10 bg-white/5 text-muted-foreground")}>
+                  {exchange.ngnRate ? (1 / exchange.ngnRate).toFixed(4) : "—"}
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] text-muted-foreground mb-1 block">To</label>
+                <select disabled className={cn("w-full h-9 rounded-lg border px-2 text-xs font-medium", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/20")}>
+                  <option>USD</option>
+                </select>
+              </div>
+            </div>
+            <p className="text-[10px] text-muted-foreground">1 NGN • {exchange.getLastUpdated ? exchange.getLastUpdated() : "—"}</p>
+          </div>
+
+          {/* Leading Product Type Chart - flex-1 to fill remaining space */}
+          <div className="flex-1 min-h-0">
+            <LeadingProductTypeChart allOrders={allOrders} accountTypeMap={accountTypeMap} />
+          </div>
+        </div>
       </div>
 
       {/* Search + export bar above the table */}
-      <div className="flex items-center gap-3">
-        <div className="sf-field flex-1 flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
-          <Search className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search by account, product, or date"
-            className="flex-1 bg-transparent text-sm text-foreground focus:outline-none placeholder:text-muted-foreground"
-          />
+      <div className="flex flex-col gap-3">
+        {/* Month/Week selector for specific filtering */}
+        {(viewMode === "monthly" || viewMode === "weekly") && (
+          <div className="flex items-center gap-3">
+            {viewMode === "monthly" && (
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-medium text-muted-foreground whitespace-nowrap">Select Month:</label>
+                <input
+                  type="month"
+                  value={selectedMonth}
+                  onChange={e => setSelectedMonth(e.target.value)}
+                  className={cn(
+                    "rounded-lg border px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary/50",
+                    isLight ? "border-slate-200 bg-white text-slate-900" : "border-white/10 bg-black/20 text-foreground",
+                  )}
+                />
+                {selectedMonth && (
+                  <button
+                    onClick={() => setSelectedMonth("")}
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            )}
+            {viewMode === "weekly" && (
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-medium text-muted-foreground whitespace-nowrap">Select Week:</label>
+                <input
+                  type="week"
+                  value={selectedWeek}
+                  onChange={e => setSelectedWeek(e.target.value)}
+                  className={cn(
+                    "rounded-lg border px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary/50",
+                    isLight ? "border-slate-200 bg-white text-slate-900" : "border-white/10 bg-black/20 text-foreground",
+                  )}
+                />
+                {selectedWeek && (
+                  <button
+                    onClick={() => setSelectedWeek("")}
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="flex items-center gap-3">
+          <div className="sf-field flex-1 flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+            <Search className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search by account, product, or date"
+              className="flex-1 bg-transparent text-sm text-foreground focus:outline-none placeholder:text-muted-foreground"
+            />
+          </div>
+          <button
+            onClick={exportTable}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-white/10 text-sm text-muted-foreground hover:text-foreground hover:border-white/20 transition-colors whitespace-nowrap"
+          >
+            <Download className="w-4 h-4" />
+            Export {viewModeLabel} Orders
+          </button>
         </div>
-        <button
-          onClick={exportTable}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-white/10 text-sm text-muted-foreground hover:text-foreground hover:border-white/20 transition-colors whitespace-nowrap"
-        >
-          <Download className="w-4 h-4" />
-          Export {viewModeLabel} Orders
-        </button>
       </div>
 
       {/* Orders table */}
