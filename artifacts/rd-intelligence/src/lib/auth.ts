@@ -11,10 +11,10 @@ interface AuthState {
 export const useAuthStore = create<AuthState>((set) => ({
   token: localStorage.getItem("rd_token"),
   setToken: (token) => {
+    // Always clear old token first to prevent cross-user contamination
+    localStorage.removeItem("rd_token");
     if (token) {
       localStorage.setItem("rd_token", token);
-    } else {
-      localStorage.removeItem("rd_token");
     }
     set({ token });
   },
