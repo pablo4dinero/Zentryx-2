@@ -131,10 +131,15 @@ router.get("/production-orders", requireAuth, async (req: AuthRequest, res) => {
       insertedRows.forEach((row: Record<string, any>) => mdpBySalesId.set(row.salesOrderId, row));
     }
 
-    const merged = salesOrders.map((order: Record<string, any>) => ({
-      ...order,
-      ...mdpBySalesId.get(order.id as number),
-    }));
+    const merged = salesOrders.map((order: Record<string, any>) => {
+      const mdpRow = mdpBySalesId.get(order.id as number) || {};
+      return {
+        ...order,
+        ...mdpRow,
+        // Preserve accountId from salesOrder if mdpRow doesn't have it (for legacy rows)
+        accountId: mdpRow.accountId || order.accountId,
+      };
+    });
 
     // Enrich with account data using accountId from MDP orders
     const accounts = await db.select().from(accountsTable) as Array<Record<string, any>>;
