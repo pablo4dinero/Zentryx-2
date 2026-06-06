@@ -169,12 +169,19 @@ export default function Login() {
       }
     } else if (data.token) {
       // Clear app state BEFORE setting new token to prevent cross-user contamination
-      // Order matters: cache first, then storage, then token
       clearQueryCache();
+      // Wipe old token and session state, but don't clear entire localStorage
       try {
-        localStorage.clear();
+        localStorage.removeItem("rd_token");
         sessionStorage.clear();
       } catch { /* ignore */ }
+      // Manually set token to ensure it's updated
+      try {
+        localStorage.setItem("rd_token", data.token);
+      } catch (err) {
+        console.error("[login] Failed to set token in localStorage:", err);
+      }
+      // Also update Zustand state
       setToken(data.token);
       toast({ title: "Welcome!", description: `Signed in as ${data.user?.name ?? ""}` });
       setLocation("/");
@@ -205,11 +212,16 @@ export default function Login() {
     window.history.replaceState({}, "", window.location.pathname);
 
     if (oauthToken) {
+      clearQueryCache();
       try {
-        localStorage.clear();
+        localStorage.removeItem("rd_token");
         sessionStorage.clear();
       } catch { /* ignore */ }
-      clearQueryCache();
+      try {
+        localStorage.setItem("rd_token", oauthToken);
+      } catch (err) {
+        console.error("[login] Failed to set OAuth token:", err);
+      }
       setToken(oauthToken);
       setLocation("/");
     } else if (mfaTokenParam) {
