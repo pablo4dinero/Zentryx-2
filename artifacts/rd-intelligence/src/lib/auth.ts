@@ -12,9 +12,19 @@ export const useAuthStore = create<AuthState>((set) => ({
   token: localStorage.getItem("rd_token"),
   setToken: (token) => {
     // Always clear old token first to prevent cross-user contamination
+    console.log("[auth.setToken] Clearing old token");
     localStorage.removeItem("rd_token");
     if (token) {
+      console.log("[auth.setToken] Setting new token, userId from JWT:", (() => {
+        try {
+          const parts = token.split(".");
+          const payload = JSON.parse(atob(parts[1]));
+          return payload.userId;
+        } catch { return "ERROR_PARSING"; }
+      })());
       localStorage.setItem("rd_token", token);
+      const stored = localStorage.getItem("rd_token");
+      console.log("[auth.setToken] Token stored successfully?", !!stored, "Matches input?", stored === token);
     }
     set({ token });
   },
@@ -55,6 +65,16 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   // unless they actually went idle past 6h or hit the 12h absolute cap.
   const refreshed = response.headers.get("x-refreshed-token");
   if (refreshed && refreshed !== token) {
+    try {
+      const parts = refreshed.split(".");
+      const payload = JSON.parse(atob(parts[1]));
+      console.log("[fetch-interceptor] Received x-refreshed-token with userId:", payload.userId, "Current token userId:", (() => {
+        try {
+          const p = token.split(".")[1];
+          return JSON.parse(atob(p)).userId;
+        } catch { return "ERROR"; }
+      })());
+    } catch (e) { /* silent */ }
     localStorage.setItem("rd_token", refreshed);
   }
 
