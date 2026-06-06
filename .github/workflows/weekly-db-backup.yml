@@ -89,17 +89,17 @@ jobs:
           pip install awscli
 
           # Create bucket if it doesn't exist
-          aws s3api head-bucket --bucket zentryx-backups 2>/dev/null || \
-            aws s3api create-bucket --bucket zentryx-backups --region us-east-1
+          aws s3api head-bucket --bucket zentryx-backup 2>/dev/null || \
+            aws s3api create-bucket --bucket zentryx-backup --region us-east-1
 
           # Enable versioning on bucket
           aws s3api put-bucket-versioning \
-            --bucket zentryx-backups \
+            --bucket zentryx-backup \
             --versioning-configuration Status=Enabled
 
           # Enable server-side encryption
           aws s3api put-bucket-encryption \
-            --bucket zentryx-backups \
+            --bucket zentryx-backup \
             --server-side-encryption-configuration '{
               "Rules": [{
                 "ApplyServerSideEncryptionByDefault": {
@@ -109,11 +109,11 @@ jobs:
             }' 2>/dev/null || true
 
           # Upload backup
-          aws s3 cp ${{ env.BACKUP_FILE }} s3://zentryx-backups/ \
+          aws s3 cp ${{ env.BACKUP_FILE }} s3://zentryx-backup/ \
             --storage-class STANDARD_IA \
             --metadata "date=$(date -u +%Y-%m-%dT%H:%M:%SZ),size=${{ env.BACKUP_SIZE }}"
 
-          echo "✅ Backup uploaded: s3://zentryx-backups/${{ env.BACKUP_FILE }}"
+          echo "✅ Backup uploaded: s3://zentryx-backup/${{ env.BACKUP_FILE }}"
 
           # Export backup timestamp for Render env var update
           echo "BACKUP_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
@@ -126,7 +126,7 @@ jobs:
         run: |
           pip install awscli
           aws s3api put-bucket-lifecycle-configuration \
-            --bucket zentryx-backups \
+            --bucket zentryx-backup \
             --lifecycle-configuration '{
               "Rules": [{
                 "Id": "DeleteOldBackups",
@@ -153,7 +153,7 @@ jobs:
           echo "**Time:** $(date -u +%H:%M:%SZ)" >> $GITHUB_STEP_SUMMARY
           echo "**File:** ${{ env.BACKUP_FILE }}" >> $GITHUB_STEP_SUMMARY
           echo "**Size:** ${{ env.BACKUP_SIZE }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Location:** s3://zentryx-backups/${{ env.BACKUP_FILE }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Location:** s3://zentryx-backup/${{ env.BACKUP_FILE }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "To check backup health: \`curl https://your-api.render.com/api/health/backups\`" >> $GITHUB_STEP_SUMMARY
 
