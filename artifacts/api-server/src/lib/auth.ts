@@ -99,9 +99,10 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
     return;
   }
   const token = authHeader.slice(7);
+  const reqId = (req as any).id || "unknown";
   try {
     const payload = jwt.verify(token, JWT_SECRET) as JwtPayload & { mfaPending?: boolean };
-    console.log("[requireAuth] Verified token with userId:", payload.userId, "email:", payload.email, "noExpiry:", payload.noExpiry);
+    console.log(`[requireAuth:${reqId}] Verified token with userId:`, payload.userId, "email:", payload.email);
     if (payload.mfaPending) {
       res.status(401).json({ error: "MFAPending", message: "SMS verification required" });
       return;
@@ -135,7 +136,7 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { iat: _iat, exp: _exp, ...rest } = payload as JwtPayload & { iat?: number; exp?: number };
         const refreshed = { ...rest, idleUntil: newIdleUntil };
-        console.log("[requireAuth] Creating refreshed token. Original userId:", payload.userId, "Refreshed userId:", refreshed.userId);
+        console.log(`[requireAuth:${reqId}] Creating refreshed token for userId:`, refreshed.userId);
         const remainingAbsolute = Math.max(1, payload.absoluteExpiry - now);
         const newToken = jwt.sign(refreshed, JWT_SECRET, { expiresIn: remainingAbsolute });
         res.setHeader("x-refreshed-token", newToken);
