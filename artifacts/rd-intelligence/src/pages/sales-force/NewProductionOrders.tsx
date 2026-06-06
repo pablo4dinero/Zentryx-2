@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Search, Download, Trash2, Maximize2, Minimize2, Edit3, X, Calendar, ChevronDown, Pencil } from "lucide-react";
+import { Plus, Search, Download, Trash2, Maximize2, Minimize2, Edit3, X, Calendar, ChevronDown, Pencil, RefreshCw } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
@@ -465,6 +465,8 @@ export default function NewProductionOrdersPage() {
   });
   const [ngnRateOpen, setNgnRateOpen] = useState(false);
   const [ngnRateDraft, setNgnRateDraft] = useState("");
+  const [converterAmount, setConverterAmount] = useState<string>("");
+  const [converterFrom, setConverterFrom] = useState<"NGN" | "USD">("NGN");
 
   const { data: accounts = [], isLoading: accountsLoading } = useQuery<Account[]>({
     queryKey: ["/api/accounts"],
@@ -881,27 +883,58 @@ export default function NewProductionOrdersPage() {
                 ₦ 1 USD = ₦{exchange.ngnRate?.toLocaleString("en-NG", { maximumFractionDigits: 2 }) || "—"}
               </span>
             </div>
-            <div className="grid grid-cols-3 gap-2 items-end">
+
+            {/* Amount input */}
+            <div>
+              <label className="text-[10px] text-muted-foreground mb-1 block">Amount</label>
+              <input
+                type="number"
+                value={converterAmount}
+                onChange={e => setConverterAmount(e.target.value)}
+                placeholder="Enter amount"
+                className={cn("w-full h-9 rounded-lg border px-3 text-xs focus:outline-none focus:ring-2 focus:ring-primary/50", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/20")}
+              />
+            </div>
+
+            {/* From/To selectors */}
+            <div className="grid grid-cols-3 gap-2 items-center">
               <div>
                 <label className="text-[10px] text-muted-foreground mb-1 block">From</label>
-                <select disabled className={cn("w-full h-9 rounded-lg border px-2 text-xs font-medium", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/20")}>
-                  <option>NGN</option>
+                <select
+                  value={converterFrom}
+                  onChange={e => setConverterFrom(e.target.value as "NGN" | "USD")}
+                  className={cn("w-full h-9 rounded-lg border px-2 text-xs font-medium", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/20")}
+                >
+                  <option value="NGN">NGN</option>
+                  <option value="USD">USD</option>
                 </select>
               </div>
-              <div>
-                <label className="text-[10px] text-muted-foreground mb-1 block">Rate</label>
-                <div className={cn("h-9 rounded-lg border px-2 flex items-center text-xs font-mono", isLight ? "border-slate-200 bg-slate-100 text-slate-600" : "border-white/10 bg-white/5 text-muted-foreground")}>
-                  {exchange.ngnRate ? (1 / exchange.ngnRate).toFixed(4) : "—"}
-                </div>
+              <div className="flex items-center justify-center">
+                <span className="text-xs text-muted-foreground">→</span>
               </div>
               <div>
                 <label className="text-[10px] text-muted-foreground mb-1 block">To</label>
                 <select disabled className={cn("w-full h-9 rounded-lg border px-2 text-xs font-medium", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/20")}>
-                  <option>USD</option>
+                  <option>{converterFrom === "NGN" ? "USD" : "NGN"}</option>
                 </select>
               </div>
             </div>
-            <p className="text-[10px] text-muted-foreground">1 NGN • {exchange.getLastUpdated ? exchange.getLastUpdated() : "—"}</p>
+
+            {/* Result */}
+            {converterAmount && exchange.ngnRate && (
+              <div className={cn("rounded-lg p-3 text-center", isLight ? "bg-emerald-50 border border-emerald-200" : "bg-emerald-500/10 border border-emerald-500/20")}>
+                <p className={cn("text-sm font-bold", isLight ? "text-emerald-900" : "text-emerald-400")}>
+                  {converterFrom === "NGN"
+                    ? `${Number(converterAmount).toLocaleString()} NGN = $${(Number(converterAmount) / exchange.ngnRate).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+                    : `$${Number(converterAmount).toLocaleString()} = ₦${(Number(converterAmount) * exchange.ngnRate).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                  }
+                </p>
+              </div>
+            )}
+
+            <p className={cn("text-[10px]", isLight ? "text-slate-500" : "text-muted-foreground")}>
+              {exchange.getLastUpdated ? `Updated ${exchange.getLastUpdated()}` : "—"}
+            </p>
           </div>
 
           {/* Leading Product Type Chart - flex-1 to fill remaining space */}
