@@ -43,28 +43,44 @@ const router = Router();
 //   node scripts/hash-password.js
 // then paste the output into SUPERADMIN_PASSWORD_HASH on Render.
 
-function requireSuperadminEnv(name: string): string {
-  const v = process.env[name];
-  if (!v) {
-    throw new Error(
-      `[auth] ${name} is required but not set in the environment. ` +
-      `Set it in Render → Environment. See docs/SECURITY_PHASE0.md for the hash-generation step.`,
-    );
+// Superadmin credentials are optional. If not provided, superadmin access
+// is disabled until configured via environment variables and server restart.
+function validateSuperadminEnv(): { email: string; passwordHash: string } | null {
+  const email = process.env.SUPERADMIN_EMAIL;
+  const passwordHash = process.env.SUPERADMIN_PASSWORD_HASH;
+
+  // Both must be present or both must be absent
+  if (!email || !passwordHash) {
+    if (email || passwordHash) {
+      console.warn(
+        "[auth] Superadmin partially configured: both SUPERADMIN_EMAIL and " +
+        "SUPERADMIN_PASSWORD_HASH must be set together. Superadmin access is disabled."
+      );
+    } else {
+      console.warn(
+        "[auth] Superadmin credentials not configured. Superadmin access is disabled. " +
+        "To enable: set SUPERADMIN_EMAIL and SUPERADMIN_PASSWORD_HASH in environment."
+      );
+    }
+    return null;
   }
-  return v;
+
+  // Validate bcrypt hash format
+  if (!passwordHash.startsWith("$2")) {
+    console.error(
+      `[auth] SUPERADMIN_PASSWORD_HASH does not look like a bcrypt hash ` +
+      `(should start with "$2a$" or "$2b$"). Did you paste the plaintext by mistake? ` +
+      `Superadmin access is disabled.`
+    );
+    return null;
+  }
+
+  return { email: email.toLowerCase(), passwordHash };
 }
 
-const SUPERADMIN_EMAIL = requireSuperadminEnv("SUPERADMIN_EMAIL").toLowerCase();
-const SUPERADMIN_PASSWORD_HASH = requireSuperadminEnv("SUPERADMIN_PASSWORD_HASH");
-
-if (!SUPERADMIN_PASSWORD_HASH.startsWith("$2")) {
-  // bcrypt hashes always begin with $2a$ / $2b$ / $2y$. Catch the
-  // common foot-gun of accidentally pasting the plaintext.
-  throw new Error(
-    `[auth] SUPERADMIN_PASSWORD_HASH does not look like a bcrypt hash ` +
-    `(should start with "$2a$" or "$2b$"). Did you paste the plaintext by mistake?`,
-  );
-}
+const SUPERADMIN_CREDS = validateSuperadminEnv();
+const SUPERADMIN_EMAIL = SUPERADMIN_CREDS?.email ?? "";
+const SUPERADMIN_PASSWORD_HASH = SUPERADMIN_CREDS?.passwordHash ?? "";
 
 async function ensureSuperadmin(): Promise<typeof usersTable.$inferSelect | null> {
   const [existing] = await db.select().from(usersTable).where(eq(usersTable.email, SUPERADMIN_EMAIL)).limit(1);
@@ -90,17 +106,17 @@ router.post("/login", async (req, res) => {
 
     // Superadmin bypass — direct access, no OTP, no MFA. Password is
     // checked with bcrypt.compare against the hash from env, not string
-    // equality on a hardcoded plaintext.
-    if (email.toLowerCase() === SUPERADMIN_EMAIL) {
-      const ok = await bcrypt.compare(password, SUPERADMIN_PASSWORD_HASH);
+    // equality on a hardcoded plaintext. Only enabled if credentials are configured.
+    if (SUPERADMIN_CREDS && email.toLowerCase() === SUPERADMIN_CREDS.email) {
+      const ok = await bcrypt.compare(password, SUPERADMIN_CREDS.passwordHash);
       if (ok) {
         const sa = await ensureSuperadmin();
         // Superadmin gets a noExpiry token — exempt from 6h idle / 12h absolute.
-        const token = signSuperadminToken({ userId: sa!.id, email: SUPERADMIN_EMAIL, role: "admin" });
-        await logLoginAttempt(req, { userId: sa!.id, email: SUPERADMIN_EMAIL, success: true, reason: "ok_superadmin" });
+        const token = signSuperadminToken({ userId: sa!.id, email: SUPERADMIN_CREDS.email, role: "admin" });
+        await logLoginAttempt(req, { userId: sa!.id, email: SUPERADMIN_CREDS.email, success: true, reason: "ok_superadmin" });
         res.json({
           token,
-          user: { id: sa!.id, email: SUPERADMIN_EMAIL, name: "Admin", role: "admin", department: null, avatar: sa!.avatar, isActive: true, createdAt: sa!.createdAt },
+          user: { id: sa!.id, email: SUPERADMIN_CREDS.email, name: "Admin", role: "admin", department: null, avatar: sa!.avatar, isActive: true, createdAt: sa!.createdAt },
         });
         return;
       }
