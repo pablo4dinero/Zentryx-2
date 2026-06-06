@@ -1273,7 +1273,13 @@ export default function OraclePage() {
             {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
           </button>
         </div>
-        <p className="text-[10px] text-muted-foreground mt-1.5 pl-1">Enter to send · Shift+Enter for new line</p>
+        <div className="flex flex-col gap-1 mt-2">
+          <p className="text-[10px] text-muted-foreground pl-1">Enter to send · Shift+Enter for new line</p>
+          <p className="text-[10px] text-amber-600/80 dark:text-amber-500/80 pl-1 flex items-center gap-1">
+            <AlertTriangle className="w-3 h-3" />
+            Do not paste confidential information or pricing data
+          </p>
+        </div>
       </div>
     </div>
   );
