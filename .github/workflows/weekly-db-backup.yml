@@ -24,16 +24,29 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          # Extract host, port, database, user from DATABASE_URL
-          # Format: postgresql://user:password@host:port/database
-          PGPASSWORD=$(echo $DATABASE_URL | sed -n 's/.*:\(.*\)@.*/\1/p')
-          PGHOST=$(echo $DATABASE_URL | sed -n 's/.*@\([^:]*\).*/\1/p')
-          PGPORT=$(echo $DATABASE_URL | sed -n 's/.*:\([0-9]*\)\/.*/\1/p' | grep -o '[0-9]*$')
-          PGUSER=$(echo $DATABASE_URL | sed -n 's/.*\/\/\([^:]*\).*/\1/p')
-          PGDATABASE=$(echo $DATABASE_URL | sed -n 's/.*\/\([^?]*\).*/\1/p')
+          # Parse DATABASE_URL: postgresql://user:password@host:port/database
+          # Remove the postgresql:// prefix
+          URL=${DATABASE_URL#postgresql://}
 
-          # Default port if not specified
-          PGPORT=${PGPORT:-5432}
+          # Extract user:password
+          USERPASS=${URL%%@*}
+          PGUSER=${USERPASS%%:*}
+          PGPASSWORD=${USERPASS#*:}
+
+          # Extract host:port/database
+          HOSTPART=${URL#*@}
+          PGHOST=${HOSTPART%%/*}
+          PGHOST=${PGHOST%:*}
+
+          # Extract port
+          if [[ $HOSTPART =~ :([0-9]+) ]]; then
+            PGPORT=${BASH_REMATCH[1]}
+          else
+            PGPORT=5432
+          fi
+
+          # Extract database name
+          PGDATABASE=${HOSTPART#*/}
 
           echo "Backing up database: $PGDATABASE on $PGHOST:$PGPORT"
 
