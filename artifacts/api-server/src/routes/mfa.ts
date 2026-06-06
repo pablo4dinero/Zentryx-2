@@ -21,21 +21,10 @@ const router = Router();
 // Everyone else can opt in via Settings → Security. Post-Phase-1 these
 // are: admin / executive / manager. Legacy values are kept for safety
 // in case any user predates the role-consolidation migration.
-const MFA_REQUIRED_ROLES = new Set([
-  // New 9-role tiers (Phase 1 Chunk 4 target list)
-  "admin",
-  "executive",
-  "manager",
-  // Legacy aliases still kept defensively
-  "ceo",
-  "managing_director",
-  "head_of_product_development",
-  "head_of_department",
-]);
-
 export function mfaRequiredForRole(role: string | null | undefined): boolean {
-  if (!role) return false;
-  return MFA_REQUIRED_ROLES.has(role.toLowerCase());
+  // TOTP is mandatory for all users except superadmin (which bypasses
+  // this check entirely in the login flow). Any non-null role gets MFA.
+  return !!role;
 }
 
 // ─── POST /enroll/start ──────────────────────────────────────────────
