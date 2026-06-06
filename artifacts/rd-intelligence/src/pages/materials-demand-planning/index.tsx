@@ -5387,10 +5387,10 @@ function ProductionHistoryTab() {
                 </thead>
                 <tbody>
                   {filteredPending.map(order => {
-                    const acc = historyAccountMap[order.accountId ?? 0];
-                    const company = acc?.company ?? order.accountName ?? order.accountCompany ?? "—";
-                    const productName = acc?.productName ?? order.productName ?? null;
-                    const productTypeKey = acc?.productType ?? order.productType ?? null;
+                    // Backend enriches with account data, use it directly
+                    const company = order.accountName ?? order.company ?? order.accountCompany ?? "—";
+                    const productName = order.productName ?? null;
+                    const productTypeKey = order.productType ?? null;
                     const rawMat = order.rawMaterialStatus ?? "Pending";
                     return (
                       <tr key={order.id} className={cn("group border-b last:border-0 transition-colors", isLight ? "border-slate-100 hover:bg-slate-50" : "border-white/5 hover:bg-white/[0.02]")}>
