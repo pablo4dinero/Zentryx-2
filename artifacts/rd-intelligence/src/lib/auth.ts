@@ -66,16 +66,23 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   const refreshed = response.headers.get("x-refreshed-token");
   if (refreshed && refreshed !== token) {
     try {
-      const parts = refreshed.split(".");
-      const payload = JSON.parse(atob(parts[1]));
-      console.log("[fetch-interceptor] Received x-refreshed-token with userId:", payload.userId, "Current token userId:", (() => {
-        try {
-          const p = token.split(".")[1];
-          return JSON.parse(atob(p)).userId;
-        } catch { return "ERROR"; }
-      })());
-    } catch (e) { /* silent */ }
-    localStorage.setItem("rd_token", refreshed);
+      // CRITICAL: Only accept refreshed token if it's for the SAME user
+      // to prevent race condition where in-flight requests from before
+      // login contaminate the current user's session.
+      const refreshedPayload = JSON.parse(atob(refreshed.split(".")[1]));
+      const currentPayload = JSON.parse(atob(token.split(".")[1]));
+      if (refreshedPayload.userId === currentPayload.userId) {
+        console.log("[fetch-interceptor] Accepted x-refreshed-token for userId:", refreshedPayload.userId);
+        localStorage.setItem("rd_token", refreshed);
+      } else {
+        console.warn("[fetch-interceptor] REJECTED x-refreshed-token: userId mismatch", {
+          sent: currentPayload.userId,
+          received: refreshedPayload.userId,
+        });
+      }
+    } catch (e) {
+      console.error("[fetch-interceptor] Error processing x-refreshed-token:", e);
+    }
   }
 
   const alreadyOnLogin = window.location.pathname.startsWith("/login");
