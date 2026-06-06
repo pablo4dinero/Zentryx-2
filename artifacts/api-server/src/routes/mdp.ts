@@ -115,6 +115,7 @@ router.get("/production-orders", requireAuth, async (req: AuthRequest, res) => {
       .filter((order: Record<string, any>) => !mdpBySalesId.has(order.id as number))
       .map((order: Record<string, any>) => ({
         salesOrderId: order.id,
+        accountId: order.accountId,
         microbialAnalysis: "Normal",
         remarks: "",
         orderStatus: "Ordered",
