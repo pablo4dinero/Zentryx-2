@@ -466,7 +466,11 @@ export default function NewProductionOrdersPage() {
   const [ngnRateOpen, setNgnRateOpen] = useState(false);
   const [ngnRateDraft, setNgnRateDraft] = useState("");
   const [converterAmount, setConverterAmount] = useState<string>("");
-  const [converterFrom, setConverterFrom] = useState<"NGN" | "USD">("NGN");
+  const [converterFrom, setConverterFrom] = useState<string>("NGN");
+  const [converterTo, setConverterTo] = useState<string>("USD");
+  const [manualRateOpen, setManualRateOpen] = useState(false);
+  const [manualRateDraft, setManualRateDraft] = useState("");
+  const [manualRates, setManualRates] = useState<Record<string, number>>({});
 
   const { data: accounts = [], isLoading: accountsLoading } = useQuery<Account[]>({
     queryKey: ["/api/accounts"],
@@ -870,75 +874,124 @@ export default function NewProductionOrdersPage() {
           </div>
         </div>
 
-        {/* Right side: Currency Converter + Leading Product Type Chart - fit within form height */}
-        <div className="flex flex-col gap-4 h-[480px] sm:h-[540px]">
-          {/* Currency Converter */}
+        {/* Right side: Currency Converter + Leading Product Type Chart - compact fit */}
+        <div className="flex flex-col gap-3 h-[420px] sm:h-[480px]">
+          {/* Currency Converter - Compact */}
           <div className={cn(
-            "rounded-2xl border p-4 flex flex-col gap-3",
+            "rounded-2xl border p-3 flex flex-col gap-2",
             isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5",
           )}>
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold text-muted-foreground">CURRENCY CONVERTER</p>
-              <span className={cn("text-xs font-medium px-2 py-1 rounded-full", isLight ? "bg-emerald-100 text-emerald-700" : "bg-emerald-500/20 text-emerald-400")}>
-                ₦ 1 USD = ₦{exchange.ngnRate?.toLocaleString("en-NG", { maximumFractionDigits: 2 }) || "—"}
-              </span>
+            <div className="flex items-center justify-between gap-1">
+              <p className="text-[10px] font-semibold text-muted-foreground">CONVERTER</p>
+              <button
+                onClick={() => {
+                  setManualRateDraft(exchange.rates[`${converterFrom}/${converterTo}`]?.toFixed(4) || "");
+                  setManualRateOpen(true);
+                }}
+                className="text-[9px] text-muted-foreground hover:text-foreground"
+              >
+                Set Rate
+              </button>
             </div>
 
-            {/* Amount input */}
-            <div>
-              <label className="text-[10px] text-muted-foreground mb-1 block">Amount</label>
-              <input
-                type="number"
-                value={converterAmount}
-                onChange={e => setConverterAmount(e.target.value)}
-                placeholder="Enter amount"
-                className={cn("w-full h-9 rounded-lg border px-3 text-xs focus:outline-none focus:ring-2 focus:ring-primary/50", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/20")}
-              />
-            </div>
+            {/* Amount input - Smaller */}
+            <input
+              type="number"
+              value={converterAmount}
+              onChange={e => setConverterAmount(e.target.value)}
+              placeholder="Amount"
+              className={cn("w-full h-8 rounded-lg border px-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary/50", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/20")}
+            />
 
-            {/* From/To selectors */}
-            <div className="grid grid-cols-3 gap-2 items-center">
-              <div>
-                <label className="text-[10px] text-muted-foreground mb-1 block">From</label>
-                <select
-                  value={converterFrom}
-                  onChange={e => setConverterFrom(e.target.value as "NGN" | "USD")}
-                  className={cn("w-full h-9 rounded-lg border px-2 text-xs font-medium", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/20")}
-                >
-                  <option value="NGN">NGN</option>
-                  <option value="USD">USD</option>
-                </select>
-              </div>
+            {/* From/To selectors - Compact */}
+            <div className="grid grid-cols-3 gap-1.5 items-end">
+              <select
+                value={converterFrom}
+                onChange={e => setConverterFrom(e.target.value)}
+                className={cn("h-8 rounded-lg border px-1.5 text-[10px] font-medium focus:outline-none focus:ring-2 focus:ring-primary/50", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/20")}
+              >
+                <option value="NGN">NGN</option>
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+                <option value="JPY">JPY</option>
+                <option value="CAD">CAD</option>
+                <option value="AUD">AUD</option>
+              </select>
               <div className="flex items-center justify-center">
-                <span className="text-xs text-muted-foreground">→</span>
+                <span className="text-[9px] text-muted-foreground">→</span>
               </div>
-              <div>
-                <label className="text-[10px] text-muted-foreground mb-1 block">To</label>
-                <select disabled className={cn("w-full h-9 rounded-lg border px-2 text-xs font-medium", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/20")}>
-                  <option>{converterFrom === "NGN" ? "USD" : "NGN"}</option>
-                </select>
-              </div>
+              <select
+                value={converterTo}
+                onChange={e => setConverterTo(e.target.value)}
+                className={cn("h-8 rounded-lg border px-1.5 text-[10px] font-medium focus:outline-none focus:ring-2 focus:ring-primary/50", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/20")}
+              >
+                <option value="USD">USD</option>
+                <option value="NGN">NGN</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+                <option value="JPY">JPY</option>
+                <option value="CAD">CAD</option>
+                <option value="AUD">AUD</option>
+              </select>
             </div>
 
             {/* Result */}
-            {converterAmount && exchange.ngnRate && (
-              <div className={cn("rounded-lg p-3 text-center", isLight ? "bg-emerald-50 border border-emerald-200" : "bg-emerald-500/10 border border-emerald-500/20")}>
-                <p className={cn("text-sm font-bold", isLight ? "text-emerald-900" : "text-emerald-400")}>
-                  {converterFrom === "NGN"
-                    ? `${Number(converterAmount).toLocaleString()} NGN = $${(Number(converterAmount) / exchange.ngnRate).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
-                    : `$${Number(converterAmount).toLocaleString()} = ₦${(Number(converterAmount) * exchange.ngnRate).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
-                  }
+            {converterAmount && (
+              <div className={cn("rounded-lg p-2 text-center text-xs", isLight ? "bg-emerald-50 border border-emerald-200" : "bg-emerald-500/10 border border-emerald-500/20")}>
+                <p className={cn("font-bold", isLight ? "text-emerald-900" : "text-emerald-400")}>
+                  {(() => {
+                    const amt = Number(converterAmount);
+                    if (!amt || isNaN(amt)) return "—";
+                    const key = `${converterFrom}/${converterTo}`;
+                    const rate = manualRates[key] || exchange.rates[key] || null;
+                    if (!rate) return "—";
+                    const result = converterFrom === "USD" ? amt * rate : amt / rate;
+                    return `${amt.toLocaleString()} ${converterFrom} = ${result.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${converterTo}`;
+                  })()}
                 </p>
               </div>
             )}
 
-            <p className={cn("text-[10px]", isLight ? "text-slate-500" : "text-muted-foreground")}>
+            {/* Manual rate override dialog */}
+            {manualRateOpen && (
+              <div className={cn("rounded-lg border p-2 space-y-1.5", isLight ? "bg-slate-100 border-slate-300" : "bg-white/5 border-white/10")}>
+                <div className="flex items-center justify-between">
+                  <label className="text-[9px] text-muted-foreground font-medium">Manual Rate ({converterFrom}/{converterTo})</label>
+                  <button onClick={() => setManualRateOpen(false)} className="text-[9px] text-muted-foreground">✕</button>
+                </div>
+                <div className="flex gap-1">
+                  <input
+                    type="number"
+                    value={manualRateDraft}
+                    onChange={e => setManualRateDraft(e.target.value)}
+                    placeholder="0.0000"
+                    step="0.0001"
+                    className={cn("flex-1 h-7 rounded-md border px-2 text-[10px] focus:outline-none focus:ring-2 focus:ring-primary/50", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/20")}
+                  />
+                  <button
+                    onClick={() => {
+                      const v = Number(manualRateDraft);
+                      if (Number.isFinite(v) && v > 0) {
+                        setManualRates({ ...manualRates, [`${converterFrom}/${converterTo}`]: v });
+                        setManualRateOpen(false);
+                      }
+                    }}
+                    className="px-2 rounded-md text-[9px] font-semibold bg-primary text-white hover:bg-primary/90"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <p className={cn("text-[9px]", isLight ? "text-slate-500" : "text-muted-foreground")}>
               {exchange.getLastUpdated ? `Updated ${exchange.getLastUpdated()}` : "—"}
             </p>
           </div>
 
-          {/* Leading Product Type Chart - flex-1 to fill remaining space */}
-          <div className="flex-1 min-h-0">
+          {/* Leading Product Type Chart - constrained height */}
+          <div className="flex-1 min-h-0 overflow-hidden">
             <LeadingProductTypeChart allOrders={allOrders} accountTypeMap={accountTypeMap} />
           </div>
         </div>
