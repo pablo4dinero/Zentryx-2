@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Search, Download, Trash2, Maximize2, Minimize2, Edit3, X, Calendar, ChevronDown, Pencil, RefreshCw } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts";
@@ -465,8 +465,60 @@ export default function NewProductionOrdersPage() {
   });
   const [ngnRateOpen, setNgnRateOpen] = useState(false);
   const [ngnRateDraft, setNgnRateDraft] = useState("");
-  const [converterAmount, setConverterAmount] = useState<string>("");
-  const [converterFrom, setConverterFrom] = useState<"NGN" | "USD">("NGN");
+  const [convAmount, setConvAmount] = useState<string>("");
+  const [convFrom, setConvFrom] = useState<string>("NGN");
+  const [convTo, setConvTo] = useState<string>("USD");
+  const [allRates, setAllRates] = useState<Record<string, number> | null>(null);
+  const [manualRateCurrency, setManualRateCurrency] = useState<string>("NGN");
+  const [manualConvRate, setManualConvRate] = useState<string>("");
+  const [showManualConv, setShowManualConv] = useState(false);
+  const [ratesRefreshing, setRatesRefreshing] = useState(false);
+
+  // Currency converter constants and helpers
+  const SUPPORTED_CURRENCIES = ["NGN", "USD", "EUR", "GBP", "ZAR", "CNY", "KES", "GHS", "ZMW"] as const;
+
+  const fetchRates = useCallback(() => {
+    setRatesRefreshing(true);
+    const token = localStorage.getItem("rd_token");
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+    fetch(`${BASE}api/exchange-rate`, { headers })
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(d => { if (d?.rates) setAllRates(d.rates); })
+      .catch(() => { /* keep prior rates */ })
+      .finally(() => setRatesRefreshing(false));
+  }, []);
+
+  useEffect(() => { fetchRates(); }, [fetchRates]);
+
+  const isUsdNgnPair = (a: string, b: string) =>
+    (a === "USD" && b === "NGN") || (a === "NGN" && b === "USD");
+
+  const manualRateNum = manualConvRate ? parseFloat(manualConvRate) : NaN;
+  const manualRateValid = !isNaN(manualRateNum) && manualRateNum > 0;
+  const usdRateFor = (currency: string, allowManual: boolean): number | null => {
+    if (currency === "USD") return 1;
+    if (allowManual && currency === manualRateCurrency && manualRateValid) return manualRateNum;
+    const live = allRates?.[currency];
+    return typeof live === "number" ? live : null;
+  };
+
+  const allowManualForPair = !isUsdNgnPair(convFrom, convTo);
+  const liveConvRate = (() => {
+    const fromUsd = usdRateFor(convFrom, allowManualForPair);
+    const toUsd = usdRateFor(convTo, allowManualForPair);
+    if (!fromUsd || !toUsd) return null;
+    return toUsd / fromUsd;
+  })();
+  const effectiveConvRate = liveConvRate;
+  const manualOverrideActive = manualRateValid && allowManualForPair
+    && (convFrom === manualRateCurrency || convTo === manualRateCurrency);
+
+  const liveUsdNgn = allRates?.NGN ?? null;
+  const convertedAmount = (() => {
+    const amt = parseFloat(convAmount);
+    if (!effectiveConvRate || isNaN(amt)) return null;
+    return amt * effectiveConvRate;
+  })();
 
   const { data: accounts = [], isLoading: accountsLoading } = useQuery<Account[]>({
     queryKey: ["/api/accounts"],
@@ -874,67 +926,93 @@ export default function NewProductionOrdersPage() {
         <div className="flex flex-col gap-4 h-[480px] sm:h-[540px]">
           {/* Currency Converter */}
           <div className={cn(
-            "rounded-2xl border p-4 flex flex-col gap-3",
+            "rounded-2xl border p-4 flex flex-col gap-3 overflow-hidden",
             isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5",
           )}>
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold text-muted-foreground">CURRENCY CONVERTER</p>
-              <span className={cn("text-xs font-medium px-2 py-1 rounded-full", isLight ? "bg-emerald-100 text-emerald-700" : "bg-emerald-500/20 text-emerald-400")}>
-                ₦ 1 USD = ₦{exchange.ngnRate?.toLocaleString("en-NG", { maximumFractionDigits: 2 }) || "—"}
-              </span>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-muted-foreground">CURRENCY CONVERTER</p>
+                {liveUsdNgn && (
+                  <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    1 USD = ₦{liveUsdNgn.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {liveConvRate !== null && !manualOverrideActive && (
+                  <span className="text-[10px] text-emerald-400">Live</span>
+                )}
+                {manualOverrideActive && (
+                  <span className="text-[10px] text-amber-400">Manual</span>
+                )}
+                <button onClick={fetchRates} disabled={ratesRefreshing}
+                  className="text-[11px] text-primary hover:underline disabled:opacity-40">
+                  {ratesRefreshing ? "Refreshing…" : "Refresh"}
+                </button>
+              </div>
             </div>
-
-            {/* Amount input */}
-            <div>
-              <label className="text-[10px] text-muted-foreground mb-1 block">Amount</label>
-              <input
-                type="number"
-                value={converterAmount}
-                onChange={e => setConverterAmount(e.target.value)}
-                placeholder="Enter amount"
-                className={cn("w-full h-9 rounded-lg border px-3 text-xs focus:outline-none focus:ring-2 focus:ring-primary/50", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/20")}
-              />
-            </div>
-
-            {/* From/To selectors */}
-            <div className="grid grid-cols-3 gap-2 items-center">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-end">
               <div>
                 <label className="text-[10px] text-muted-foreground mb-1 block">From</label>
-                <select
-                  value={converterFrom}
-                  onChange={e => setConverterFrom(e.target.value as "NGN" | "USD")}
-                  className={cn("w-full h-9 rounded-lg border px-2 text-xs font-medium", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/20")}
-                >
-                  <option value="NGN">NGN</option>
-                  <option value="USD">USD</option>
-                </select>
-              </div>
-              <div className="flex items-center justify-center">
-                <span className="text-xs text-muted-foreground">→</span>
+                <div className="flex gap-1">
+                  <input type="number" inputMode="decimal" value={convAmount}
+                    onChange={e => setConvAmount(e.target.value)}
+                    placeholder="Amount"
+                    className="flex-1 min-w-0 h-9 rounded-lg border border-white/10 bg-black/20 px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/40 text-foreground placeholder:text-muted-foreground" />
+                  <select value={convFrom} onChange={e => setConvFrom(e.target.value)}
+                    className="h-9 rounded-lg border border-white/10 bg-black/30 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary/40 text-foreground cursor-pointer">
+                    {SUPPORTED_CURRENCIES.map(c => <option key={c} value={c} className="bg-card">{c}</option>)}
+                  </select>
+                </div>
               </div>
               <div>
                 <label className="text-[10px] text-muted-foreground mb-1 block">To</label>
-                <select disabled className={cn("w-full h-9 rounded-lg border px-2 text-xs font-medium", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/20")}>
-                  <option>{converterFrom === "NGN" ? "USD" : "NGN"}</option>
-                </select>
+                <div className="flex gap-1">
+                  <input type="text" readOnly
+                    value={convertedAmount !== null ? convertedAmount.toLocaleString(undefined, { maximumFractionDigits: 4 }) : ""}
+                    placeholder={effectiveConvRate ? `Rate: ${effectiveConvRate.toLocaleString(undefined, { maximumFractionDigits: 4 })}` : "Loading rate…"}
+                    className="flex-1 min-w-0 h-9 rounded-lg border border-white/10 bg-emerald-500/10 px-2 text-sm text-emerald-400 placeholder:text-muted-foreground/70" />
+                  <select value={convTo} onChange={e => setConvTo(e.target.value)}
+                    className="h-9 rounded-lg border border-white/10 bg-black/30 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary/40 text-foreground cursor-pointer">
+                    {SUPPORTED_CURRENCIES.map(c => <option key={c} value={c} className="bg-card">{c}</option>)}
+                  </select>
+                </div>
               </div>
             </div>
-
-            {/* Result */}
-            {converterAmount && exchange.ngnRate && (
-              <div className={cn("rounded-lg p-3 text-center", isLight ? "bg-emerald-50 border border-emerald-200" : "bg-emerald-500/10 border border-emerald-500/20")}>
-                <p className={cn("text-sm font-bold", isLight ? "text-emerald-900" : "text-emerald-400")}>
-                  {converterFrom === "NGN"
-                    ? `${Number(converterAmount).toLocaleString()} NGN = $${(Number(converterAmount) / exchange.ngnRate).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
-                    : `$${Number(converterAmount).toLocaleString()} = ₦${(Number(converterAmount) * exchange.ngnRate).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
-                  }
+            <div className="mt-1 flex items-center justify-between gap-2">
+              <button onClick={() => setShowManualConv(s => !s)}
+                className="text-[11px] text-muted-foreground hover:text-foreground">
+                {showManualConv ? "Hide manual rate" : "Set rate manually"}
+              </button>
+              {effectiveConvRate && (
+                <span className="text-[10px] text-muted-foreground">
+                  1 {convFrom} = {effectiveConvRate.toLocaleString(undefined, { maximumFractionDigits: 4 })} {convTo}
+                </span>
+              )}
+            </div>
+            {showManualConv && (
+              <div className="flex flex-col gap-1 pt-2 border-t border-white/5">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">1 USD =</span>
+                  <input type="number" inputMode="decimal" value={manualConvRate}
+                    onChange={e => setManualConvRate(e.target.value)}
+                    placeholder={allRates?.[manualRateCurrency] ? `Live: ${allRates[manualRateCurrency].toLocaleString(undefined, { maximumFractionDigits: 4 })}` : ""}
+                    className="flex-1 min-w-0 h-7 rounded-lg border border-white/10 bg-black/20 px-2 text-xs focus:outline-none text-foreground" />
+                  <select value={manualRateCurrency} onChange={e => setManualRateCurrency(e.target.value)}
+                    className="h-7 rounded-lg border border-white/10 bg-black/30 px-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/40 text-foreground cursor-pointer">
+                    {SUPPORTED_CURRENCIES.filter(c => c !== "USD").map(c => <option key={c} value={c} className="bg-card">{c}</option>)}
+                  </select>
+                  {manualConvRate && <button onClick={() => setManualConvRate("")} className="text-xs text-red-400">Clear</button>}
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  Override is applied automatically to any conversion involving {manualRateCurrency}.
+                  {manualRateCurrency === "NGN" && (
+                    <span className="block mt-0.5 text-emerald-400/80">USD ↔ NGN itself always uses the live rate shown in the header.</span>
+                  )}
                 </p>
               </div>
             )}
-
-            <p className={cn("text-[10px]", isLight ? "text-slate-500" : "text-muted-foreground")}>
-              {exchange.getLastUpdated ? `Updated ${exchange.getLastUpdated()}` : "—"}
-            </p>
           </div>
 
           {/* Leading Product Type Chart - flex-1 to fill remaining space */}
