@@ -923,7 +923,7 @@ export default function NewProductionOrdersPage() {
         </div>
 
         {/* Right side: Currency Converter + Leading Product Type Chart - fit within form height */}
-        <div className="flex flex-col gap-4 h-[480px] sm:h-[540px]">
+        <div className="flex flex-col gap-2 h-[480px] sm:h-[540px]">
           {/* Currency Converter */}
           <div className={cn(
             "rounded-2xl border p-4 flex flex-col gap-3 overflow-hidden",
