@@ -15,7 +15,7 @@ import {
   usersTable,
 } from "@workspace/db";
 import { eq, desc, inArray, gte, lte, and } from "drizzle-orm";
-import { requireAuth, type AuthRequest } from "../lib/auth";
+import { requireAuth, requireRole, type AuthRequest } from "../lib/auth";
 import { logActivity } from "../lib/activity";
 import { callModel, SONNET_MODEL } from "../oracle/claude";
 import { runAssistedPlanning, type ExistingCellUsage } from "../lib/ai-planner";
@@ -231,7 +231,7 @@ router.get("/production-floors", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.post("/production-floors", requireAuth, async (req: AuthRequest, res) => {
+router.post("/production-floors", requireAuth, requireRole("admin"), async (req: AuthRequest, res) => {
   try {
     const body = req.body as any;
     const [created] = await db.insert(mdpProductionFloorsTable).values({

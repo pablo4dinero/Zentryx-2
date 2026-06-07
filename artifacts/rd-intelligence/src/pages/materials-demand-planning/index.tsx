@@ -1561,6 +1561,8 @@ function ProductionPlanningTab() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { onWsMessage } = useCall();
+  const { data: currentUser } = useGetCurrentUser();
+  const isAdmin = ((currentUser?.role as string | undefined) ?? "").toLowerCase() === "admin";
 
   // Instant cache invalidation when another user changes planning data
   React.useEffect(() => {
@@ -2987,6 +2989,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
               <p className="text-xs text-muted-foreground mt-0.5">Drag planned orders into floor boxes to schedule production.</p>
             </div>
             <div className="flex flex-col items-end gap-2 shrink-0">
+            {isAdmin && (
             <Dialog open={floorModalOpen} onOpenChange={setFloorModalOpen}>
               <DialogTrigger asChild>
                 <Button>Add Production Floor</Button>
@@ -3082,6 +3085,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+            )}
             <button
               type="button"
               onClick={handleUnassignAll}

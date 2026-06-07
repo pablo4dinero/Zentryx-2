@@ -1,3 +1,4 @@
+import nodemailer from "nodemailer";
 import { logger } from "./logger";
 
 export interface ProductionOrderMailData {
@@ -32,25 +33,22 @@ export async function sendProductionOrderNotification(
   const html = buildOrderEmail(order, dateLine);
   const subject = `New Production Order #${order.orderNumber} — ${order.account}`;
 
+  // Send over Resend's SMTP via nodemailer — the same transport the OTP/login
+  // emails use successfully. The previous direct HTTP-API path was failing to
+  // deliver production order notifications.
+  const transporter = nodemailer.createTransport({
+    host: "smtp.resend.com",
+    port: 465,
+    secure: true,
+    auth: { user: "resend", pass: resendApiKey },
+  });
+
   const sendOne = (email: string) =>
-    fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${resendApiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: `Zentryx R&D <${fromEmail}>`,
-        to: [email],
-        subject,
-        html,
-      }),
-    }).then(async res => {
-      if (!res.ok) {
-        const body = await res.text();
-        throw new Error(`Resend ${res.status}: ${body}`);
-      }
-      return res.json();
+    transporter.sendMail({
+      from: `Zentryx R&D <${fromEmail}>`,
+      to: email,
+      subject,
+      html,
     });
 
   // Resend allows 5 req/sec — send in batches of 5 with 250ms between batches

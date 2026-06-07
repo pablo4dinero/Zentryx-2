@@ -550,7 +550,7 @@ export default function NewProductionOrdersPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/production-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/production-orders/all"] });
       setForm({ accountId: "", price: "", volume: "", expectedDeliveryDate: "" });
     },
   });
@@ -572,7 +572,7 @@ export default function NewProductionOrdersPage() {
       return res;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/production-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/production-orders/all"] });
     },
   });
 
@@ -610,7 +610,7 @@ export default function NewProductionOrdersPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/production-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/production-orders/all"] });
       setEditingOrder(null);
     },
   });
