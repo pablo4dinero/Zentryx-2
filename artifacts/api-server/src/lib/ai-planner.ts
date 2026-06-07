@@ -785,6 +785,71 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
     }
   }
 
+  // ── PHASE 2c: Leftover exclusive products → Floor 3 (Wed onward) ──────────
+  // Exclusive Sweet products (>500kg) are prioritized for Floor 3 Mon-Tue. If
+  // Mon-Tue fills up and some remain unplaced, they must STILL be placed only
+  // on Floor 3 (never Floor 1/2), and BEFORE any non-exclusive product gets to
+  // compete for Floor 3 Wed-Fri capacity. Anything that still cannot fit Floor 3
+  // is left unplaced rather than spilling onto another floor.
+  if (floor3) {
+    const wedOnward = workingDays.filter(d => d !== "Mon" && d !== "Tue");
+    for (const order of sortedOrders) {
+      if (order.remainingQuantity <= 0) continue;
+      if (!isMonTueExclusiveProduct(order.productType)) continue;
+      if (order.remainingQuantity <= 500) continue;  // ≤500kg is Floor 2 only
+
+      const deadline = latestCompletion.get(order.id) ?? null;
+      const blendMins = blendMinutesById(blendSpeeds, order.blendSpeedId || "fast");
+      const dailyCap = dailyCapacityKg(floor3, order.blendSpeedId || "fast", blendSpeeds);
+      const bSize = batchSizeKg(floor3, blendSpeeds);
+      const orderType = normalizeType(order.productType);
+
+      for (const cell of cellsForFloorByDeadline(floor3.id, deadline, wedOnward)) {
+        if (order.remainingQuantity <= 0) break;
+        const key = cellKey(floor3.id, cell.day);
+        let availableMin = cellMinutesRemaining.get(key) ?? 0;
+        if (availableMin <= 0) continue;
+
+        // Savory/Sweet same-cell conflict (exclusives are Sweet group).
+        const existingTypes = cellProductTypes.get(key) ?? new Set();
+        const currentIsSavory = isSavoryGroup(order.productType);
+        const currentIsSweet = isSweetGroup(order.productType);
+        const existingHasSavory = [...existingTypes].some(t => isSavoryGroup(t));
+        const existingHasSweet = [...existingTypes].some(t => isSweetGroup(t));
+        if ((currentIsSavory && existingHasSweet) || (currentIsSweet && existingHasSavory)) continue;
+
+        const hasOtherType = orderType && [...existingTypes].some(t => t && t !== orderType);
+        if (hasOtherType) {
+          availableMin -= DEFAULT_SWITCH_MINUTES;
+          if (availableMin <= 0) continue;
+          switchDays.push({ floorName: floor3.floorName, day: cell.day });
+        }
+
+        const batches = Math.floor(availableMin / blendMins);
+        if (batches <= 0) continue;
+        const assignable = Math.round(Math.min(batches * bSize, order.remainingQuantity, dailyCap));
+        if (assignable <= 0) continue;
+
+        placements.push({
+          floorId: floor3.id,
+          productionOrderId: order.id,
+          assignedDay: cell.day,
+          assignedVolume: assignable,
+        });
+
+        const minutesUsed = Math.ceil(assignable / bSize) * blendMins + (hasOtherType ? DEFAULT_SWITCH_MINUTES : 0);
+        cellMinutesRemaining.set(key, Math.max(0, (cellMinutesRemaining.get(key) ?? 0) - minutesUsed));
+        if (orderType) cellProductTypes.set(key, new Set([...existingTypes, orderType]));
+        order.remainingQuantity -= assignable;
+      }
+
+      if (order.remainingQuantity <= 0) {
+        const idx = fullyScheduled.findIndex(p => p.orderId === order.id);
+        if (idx < 0) fullyScheduled.push({ orderId: order.id, label: order.productionLabel });
+      }
+    }
+  }
+
   // PHASE 3: Assign remaining orders (>500kg + other products)
   // Strategy: Floor 3 Wed-Fri FIRST (all products), then Floor 1 as fallback
   // STRICT RULE 1: Non-exclusive products CANNOT use Floor 3 Mon-Tue (reserved for Phase 2)
