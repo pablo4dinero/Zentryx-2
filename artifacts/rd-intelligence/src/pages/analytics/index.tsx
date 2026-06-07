@@ -25,7 +25,7 @@ function useChartTheme() {
     axisStroke: isLight ? "#9CA3AF" : "rgba(255,255,255,0.3)",
     tooltipStyle: {
       contentStyle: {
-        backgroundColor: isLight ? "#FFFFFF" : "rgba(15,17,26,0.95)",
+        backgroundColor: isLight ? "rgba(255, 255, 255, 0.95)" : "rgba(15,17,26,0.95)",
         borderColor: isLight ? "#E5E7EB" : "rgba(255,255,255,0.1)",
         borderRadius: "10px",
         color: isLight ? "#111827" : "#fff",
