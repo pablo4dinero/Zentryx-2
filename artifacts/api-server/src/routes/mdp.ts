@@ -680,15 +680,20 @@ router.post("/floor-assignments/batch-delete", requireAuth, async (req: AuthRequ
       return;
     }
 
-    // Batch delete using a single transaction for better performance
-    await Promise.all([
-      // Delete product switch downtimes in parallel (they don't depend on each other)
-      db.delete(mdpProductSwitchDowntimesTable).where(inArray(mdpProductSwitchDowntimesTable.afterAssignmentId, ids)),
-      // Delete floor assignments in parallel
-      db.delete(mdpFloorAssignmentsTable).where(inArray(mdpFloorAssignmentsTable.id, ids)),
-    ]);
+    // Delete floor assignments FIRST (primary operation)
+    await db.delete(mdpFloorAssignmentsTable).where(inArray(mdpFloorAssignmentsTable.id, ids));
 
+    // Delete dependent product switch downtimes ASYNCHRONOUSLY (non-blocking)
+    // Don't wait for this - respond immediately so UI is responsive
+    db.delete(mdpProductSwitchDowntimesTable)
+      .where(inArray(mdpProductSwitchDowntimesTable.afterAssignmentId, ids))
+      .catch(err => console.error("Background cleanup error:", err));
+
+    // Broadcast ASYNCHRONOUSLY (non-blocking)
+    // Fire-and-forget: don't wait for this
     broadcastDataChange("floor-assignments", {}, req.user?.userId);
+
+    // Respond immediately while cleanup happens in background
     res.json({ success: true, deleted: ids.length });
   } catch (err) {
     console.error(err);
