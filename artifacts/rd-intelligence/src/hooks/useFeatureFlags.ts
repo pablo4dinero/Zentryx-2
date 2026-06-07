@@ -34,8 +34,8 @@ export function useFeatureFlags() {
   const { data = {}, isLoading, error, refetch } = useQuery({
     queryKey: ["featureFlags"],
     queryFn: fetchFeatureFlags,
-    staleTime: 1000 * 60 * 5,
-    refetchInterval: 1000 * 60 * 10, // 10 min to reduce server load
+    staleTime: 1000 * 30, // 30 seconds - allows caching within pages but updates frequently
+    refetchInterval: 1000 * 60, // 1 min refetch for timely updates when settings change
     retry: 1,
   });
 
