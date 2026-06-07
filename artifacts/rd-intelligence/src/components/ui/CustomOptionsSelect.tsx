@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, Edit3, Trash2, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CustomOptionsHandle } from "@/lib/project-options";
@@ -22,6 +23,10 @@ interface CustomOptionsSelectProps {
   triggerClassName?: string;
 }
 
+// Approximate rendered height of the dropdown panel (search box + option list)
+// used only to decide whether to open upward or downward.
+const ESTIMATED_PANEL_HEIGHT = 290;
+
 export function CustomOptionsSelect({
   value, onChange, handle, displayFn = v => v, placeholder = "Select...", isLight, compact = false, triggerClassName = "",
 }: CustomOptionsSelectProps) {
@@ -31,19 +36,59 @@ export function CustomOptionsSelect({
   const [editVal, setEditVal] = useState("");
   const [search, setSearch] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Fixed-position coordinates for the portal-rendered panel so it escapes any
+  // parent `overflow` clipping (e.g. the scrollable Add Account form).
+  const [menuPos, setMenuPos] = useState<{ left: number; width: number; top: number; bottom: number; openUp: boolean } | null>(null);
 
   const filteredOptions = search.trim()
     ? options.filter(o => o.toLowerCase().includes(search.trim().toLowerCase()))
     : options;
   const exactMatch = options.some(o => o.toLowerCase() === search.trim().toLowerCase());
 
+  const updateMenuPos = () => {
+    const el = triggerRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - r.bottom;
+    const spaceAbove = r.top;
+    // Prefer opening downward; flip up only when there isn't room below and
+    // there's more room above.
+    const openUp = spaceBelow < ESTIMATED_PANEL_HEIGHT && spaceAbove > spaceBelow;
+    setMenuPos({
+      left: r.left,
+      width: compact ? 224 : r.width,
+      top: r.bottom,
+      bottom: window.innerHeight - r.top,
+      openUp,
+    });
+  };
+
+  // Recompute position when opening, and keep it pinned to the trigger while
+  // the user scrolls or resizes.
+  useLayoutEffect(() => {
+    if (!open) { setMenuPos(null); return; }
+    updateMenuPos();
+    const onMove = () => updateMenuPos();
+    window.addEventListener("scroll", onMove, true);
+    window.addEventListener("resize", onMove);
+    return () => {
+      window.removeEventListener("scroll", onMove, true);
+      window.removeEventListener("resize", onMove);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, compact]);
+
   useEffect(() => {
     if (!open) { setSearch(""); return; }
     const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-        setEditingOpt(null);
-      }
+      const target = e.target as Node;
+      // Keep open when the click is on the trigger or inside the portal panel.
+      if (containerRef.current?.contains(target)) return;
+      if (panelRef.current?.contains(target)) return;
+      setOpen(false);
+      setEditingOpt(null);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -61,6 +106,7 @@ export function CustomOptionsSelect({
   return (
     <div ref={containerRef} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen(o => !o)}
         className={cn(
@@ -82,13 +128,22 @@ export function CustomOptionsSelect({
         <ChevronDown className={cn(compact ? "w-3 h-3 shrink-0 ml-1" : "w-4 h-4 shrink-0 ml-2", "transition-transform", open && "rotate-180", isLight ? "text-gray-500" : "opacity-50")} />
       </button>
 
-      {open && (
-        <div className={cn(
-          compact
-            ? "absolute bottom-[calc(100%+4px)] left-0 z-50 w-56 rounded-xl border shadow-xl overflow-hidden"
-            : "absolute bottom-[calc(100%+4px)] left-0 right-0 z-50 rounded-xl border shadow-xl overflow-hidden",
-          isLight ? "bg-white border-gray-200" : "bg-card border-white/10"
-        )}>
+      {open && menuPos && createPortal(
+        <div
+          ref={panelRef}
+          style={{
+            position: "fixed",
+            left: menuPos.left,
+            width: menuPos.width,
+            ...(menuPos.openUp
+              ? { bottom: menuPos.bottom + 4 }
+              : { top: menuPos.top + 4 }),
+          }}
+          className={cn(
+            "z-[120] rounded-xl border shadow-xl overflow-hidden",
+            isLight ? "bg-white border-gray-200" : "bg-card border-white/10"
+          )}
+        >
           {/* Search */}
           <div className={cn("p-2 border-b", isLight ? "border-gray-100" : "border-white/10")}>
             <div className={cn("flex items-center gap-1.5 px-2 py-1 rounded-lg border", isLight ? "bg-slate-50 border-slate-200" : "bg-white/5 border-white/10")}>
@@ -112,7 +167,7 @@ export function CustomOptionsSelect({
               />
             </div>
           </div>
-          <div className="max-h-48 overflow-y-auto">
+          <div className="max-h-48 overflow-y-auto custom-scrollbar">
             {filteredOptions.length === 0 && search.trim() && (
               <button
                 type="button"
@@ -172,8 +227,8 @@ export function CustomOptionsSelect({
               </div>
             ))}
           </div>
-
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
