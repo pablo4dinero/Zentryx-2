@@ -24,12 +24,12 @@ const BASE = import.meta.env.BASE_URL;
 const TASK_STATUSES = ['todo', 'in_progress', 'review', 'done', 'blocked'] as const;
 type TaskStatus = typeof TASK_STATUSES[number];
 
-const COLUMN_COLORS: Record<string, string> = {
-  todo: "border-white/10",
-  in_progress: "border-blue-500/20",
-  review: "border-yellow-500/20",
-  done: "border-green-500/20",
-  blocked: "border-red-500/20",
+const COLUMN_COLORS: Record<string, { dark: string; light: string }> = {
+  todo: { dark: "border-white/10", light: "border-gray-200 bg-gray-100/70" },
+  in_progress: { dark: "border-blue-500/20", light: "border-blue-200 bg-blue-50" },
+  review: { dark: "border-yellow-500/20", light: "border-yellow-200 bg-yellow-50" },
+  done: { dark: "border-green-500/20", light: "border-green-200 bg-green-50" },
+  blocked: { dark: "border-red-500/20", light: "border-red-200 bg-red-50" },
 };
 const COLUMN_HEADER_COLORS: Record<string, string> = {
   todo: "text-muted-foreground",
@@ -127,45 +127,45 @@ interface ConversionBarProps {
   onChangeCurrency?: (code: string) => void;
 }
 
-function ConversionBar({ converted, currency, currencyMeta, isLoading, lastUpdated, isManualOverride, showOverride, setShowOverride, overrideInput, setOverrideInput, applyOverride, clearOverride, refresh, onChangeCurrency }: ConversionBarProps) {
+function ConversionBar({ converted, currency, currencyMeta, isLoading, lastUpdated, isManualOverride, showOverride, setShowOverride, overrideInput, setOverrideInput, applyOverride, clearOverride, refresh, onChangeCurrency, isLight }: ConversionBarProps & { isLight?: boolean }) {
   const fmtConverted = converted != null
     ? fmtNGN(converted)
     : null;
 
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center gap-2 bg-black/20 rounded-lg px-3 py-2 border border-white/5">
-        <span className="text-[10px] text-muted-foreground uppercase tracking-wide shrink-0">≈</span>
+      <div className={cn("flex items-center gap-2 rounded-lg px-3 py-2 border", isLight ? "bg-gray-50 border-gray-200" : "bg-black/20 border-white/5")}>
+        <span className={cn("text-[10px] uppercase tracking-wide shrink-0", isLight ? "text-gray-500" : "text-muted-foreground")}>≈</span>
         {isLoading ? (
-          <span className="text-xs text-muted-foreground animate-pulse">Fetching rate…</span>
+          <span className={cn("text-xs animate-pulse", isLight ? "text-gray-500" : "text-muted-foreground")}>Fetching rate…</span>
         ) : fmtConverted != null ? (
-          <span className="text-xs font-semibold text-amber-400">
+          <span className={cn("text-xs font-semibold", isLight ? "text-amber-600" : "text-amber-400")}>
             {currencyMeta?.flag ?? "🇳🇬"} {currency === "NGN" ? "₦" : ""}{fmtConverted} {currency}
           </span>
         ) : (
-          <span className="text-xs text-muted-foreground italic">Rate not available</span>
+          <span className={cn("text-xs italic", isLight ? "text-gray-500" : "text-muted-foreground")}>Rate not available</span>
         )}
         {onChangeCurrency ? (
           <select value={currency} onChange={e => onChangeCurrency(e.target.value)}
-            className="ml-auto text-[11px] bg-transparent border border-white/10 rounded-md px-1.5 py-0.5 text-muted-foreground focus:outline-none hover:border-white/20 cursor-pointer"
+            className={cn("ml-auto text-[11px] border rounded-md px-1.5 py-0.5 focus:outline-none cursor-pointer", isLight ? "bg-white border-gray-300 text-gray-700 hover:border-gray-400" : "bg-transparent border-white/10 text-muted-foreground hover:border-white/20")}
             onClick={e => e.stopPropagation()}>
             {CURRENCY_OPTIONS.map(c => <option key={c.code} value={c.code} className="bg-card">{c.flag} {c.code} — {c.label}</option>)}
           </select>
         ) : (
-          <button onClick={refresh} className="ml-auto text-[11px] text-muted-foreground hover:text-foreground px-1 rounded" title="Refresh rate">↻</button>
+          <button onClick={refresh} className={cn("ml-auto text-[11px] px-1 rounded", isLight ? "text-gray-600 hover:text-gray-800" : "text-muted-foreground hover:text-foreground")} title="Refresh rate">↻</button>
         )}
       </div>
       <div className="flex items-center justify-between px-1">
         <div className="flex items-center gap-1.5">
-          {lastUpdated && <span className="text-[10px] text-muted-foreground">Updated {lastUpdated}</span>}
-          {isManualOverride && <span className="text-[10px] text-amber-500/80 font-medium">(manual rate)</span>}
+          {lastUpdated && <span className={cn("text-[10px]", isLight ? "text-gray-500" : "text-muted-foreground")}>Updated {lastUpdated}</span>}
+          {isManualOverride && <span className={cn("text-[10px] font-medium", isLight ? "text-amber-700" : "text-amber-500/80")}>(manual rate)</span>}
         </div>
         <div className="flex items-center gap-1.5">
           {isManualOverride && (
-            <button onClick={clearOverride} className="text-[10px] text-red-400/70 hover:text-red-400 underline">Clear override</button>
+            <button onClick={clearOverride} className={cn("text-[10px] underline", isLight ? "text-red-600 hover:text-red-700" : "text-red-400/70 hover:text-red-400")}>Clear override</button>
           )}
           {currency === "NGN" && (
-            <button onClick={() => setShowOverride(!showOverride)} className="text-[10px] text-primary/70 hover:text-primary underline">
+            <button onClick={() => setShowOverride(!showOverride)} className={cn("text-[10px] underline", isLight ? "text-blue-600 hover:text-blue-700" : "text-primary/70 hover:text-primary")}>
               {showOverride ? "Cancel" : "Set rate"}
             </button>
           )}
@@ -173,18 +173,18 @@ function ConversionBar({ converted, currency, currencyMeta, isLoading, lastUpdat
       </div>
       {showOverride && (
         <div className="flex items-center gap-2">
-          <span className="text-[11px] text-muted-foreground shrink-0">$1 USD =</span>
+          <span className={cn("text-[11px] shrink-0", isLight ? "text-gray-600" : "text-muted-foreground")}>$1 USD =</span>
           <input type="number" value={overrideInput} onChange={e => setOverrideInput(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter") applyOverride(); if (e.key === "Escape") setShowOverride(false); }}
-            placeholder="e.g. 1650" className="flex-1 h-7 rounded-md border border-white/10 bg-black/30 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 text-foreground" autoFocus />
-          <button onClick={applyOverride} className="px-2 py-1 text-[11px] bg-primary/20 text-primary rounded-md hover:bg-primary/30 shrink-0">Apply</button>
+            placeholder="e.g. 1650" className={cn("flex-1 h-7 rounded-md border px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50", isLight ? "border-gray-300 bg-white text-gray-900" : "border-white/10 bg-black/30 text-foreground")} autoFocus />
+          <button onClick={applyOverride} className={cn("px-2 py-1 text-[11px] rounded-md shrink-0", isLight ? "bg-blue-100 text-blue-700 hover:bg-blue-200" : "bg-primary/20 text-primary hover:bg-primary/30")}>Apply</button>
         </div>
       )}
     </div>
   );
 }
 
-function CostTargetField({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+function CostTargetField({ value, onSave, isLight }: { value: string; onSave: (v: string) => void; isLight: boolean }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(value);
   const [displayVal, setDisplayVal] = useState(value);
@@ -221,38 +221,38 @@ function CostTargetField({ value, onSave }: { value: string; onSave: (v: string)
   const cls = "flex h-9 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground";
 
   return (
-    <div className="glass-card rounded-xl p-4 group/field relative">
-      <div className="flex items-center gap-2 mb-1.5 text-xs text-muted-foreground uppercase tracking-wide font-medium">
+    <div className={cn("glass-card rounded-xl p-4 group/field relative", isLight ? "bg-white border border-gray-200" : "")}>
+      <div className={cn("flex items-center gap-2 mb-1.5 text-xs uppercase tracking-wide font-medium", isLight ? "text-gray-600" : "text-muted-foreground")}>
         <DollarSign className="w-3.5 h-3.5" /> Cost Target (USD $)
       </div>
       {editing ? (
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">$</span>
+              <span className={cn("absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium", isLight ? "text-gray-600" : "text-muted-foreground")}>$</span>
               <input type="number" value={val} onChange={e => setVal(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); }}
-                className={cls + " pl-7"} placeholder="0.00" autoFocus step="0.01" min="0" />
+                className={cn(cls, "pl-7", isLight ? "border-gray-300 bg-white text-gray-900" : "")} placeholder="0.00" autoFocus step="0.01" min="0" />
             </div>
-            <button onClick={save} className="p-1.5 text-green-400 hover:text-green-300 shrink-0"><Check className="w-4 h-4" /></button>
-            <button onClick={cancel} className="p-1.5 text-muted-foreground hover:text-foreground shrink-0"><X className="w-4 h-4" /></button>
+            <button onClick={save} className={cn("p-1.5 shrink-0", isLight ? "text-green-600 hover:text-green-700" : "text-green-400 hover:text-green-300")}><Check className="w-4 h-4" /></button>
+            <button onClick={cancel} className={cn("p-1.5 shrink-0", isLight ? "text-gray-400 hover:text-gray-600" : "text-muted-foreground hover:text-foreground")}><X className="w-4 h-4" /></button>
           </div>
           {activeAmount > 0 && (
-            <ConversionBar converted={converted} currency={targetCurrency} currencyMeta={currencyMeta} isLoading={isLoading} lastUpdated={lastUpdated} isManualOverride={isManualOverride} showOverride={showOverride} setShowOverride={setShowOverride} overrideInput={overrideInput} setOverrideInput={setOverrideInput} applyOverride={applyOverride} clearOverride={clearOverride} refresh={refresh} onChangeCurrency={changeCurrency} />
+            <ConversionBar converted={converted} currency={targetCurrency} currencyMeta={currencyMeta} isLoading={isLoading} lastUpdated={lastUpdated} isManualOverride={isManualOverride} showOverride={showOverride} setShowOverride={setShowOverride} overrideInput={overrideInput} setOverrideInput={setOverrideInput} applyOverride={applyOverride} clearOverride={clearOverride} refresh={refresh} onChangeCurrency={changeCurrency} isLight={isLight} />
           )}
         </div>
       ) : (
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2 group/val">
-            <span className={`text-sm font-bold ${!displayVal ? "text-muted-foreground italic" : "text-green-400"}`}>
+            <span className={cn("text-sm font-bold", !displayVal ? (isLight ? "text-gray-400 italic" : "text-muted-foreground italic") : (isLight ? "text-green-600" : "text-green-400"))}>
               {displayVal ? `$${parseFloat(displayVal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "Not set"}
             </span>
-            <button onClick={() => setEditing(true)} className="opacity-0 group-hover/field:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-opacity shrink-0">
+            <button onClick={() => setEditing(true)} className={cn("opacity-0 group-hover/field:opacity-100 p-1 transition-opacity shrink-0", isLight ? "text-gray-400 hover:text-gray-600" : "text-muted-foreground hover:text-foreground")}>
               <Edit3 className="w-3.5 h-3.5" />
             </button>
           </div>
           {activeAmount > 0 && (
-            <ConversionBar converted={converted} currency={targetCurrency} currencyMeta={currencyMeta} isLoading={isLoading} lastUpdated={lastUpdated} isManualOverride={isManualOverride} showOverride={showOverride} setShowOverride={setShowOverride} overrideInput={overrideInput} setOverrideInput={setOverrideInput} applyOverride={applyOverride} clearOverride={clearOverride} refresh={refresh} onChangeCurrency={changeCurrency} />
+            <ConversionBar converted={converted} currency={targetCurrency} currencyMeta={currencyMeta} isLoading={isLoading} lastUpdated={lastUpdated} isManualOverride={isManualOverride} showOverride={showOverride} setShowOverride={setShowOverride} overrideInput={overrideInput} setOverrideInput={setOverrideInput} applyOverride={applyOverride} clearOverride={clearOverride} refresh={refresh} onChangeCurrency={changeCurrency} isLight={isLight} />
           )}
         </div>
       )}
@@ -260,7 +260,7 @@ function CostTargetField({ value, onSave }: { value: string; onSave: (v: string)
   );
 }
 
-function SellingPriceField({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+function SellingPriceField({ value, onSave, isLight }: { value: string; onSave: (v: string) => void; isLight: boolean }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(value);
   const [displayVal, setDisplayVal] = useState(value);
@@ -289,38 +289,38 @@ function SellingPriceField({ value, onSave }: { value: string; onSave: (v: strin
   const cls = "flex h-9 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground";
 
   return (
-    <div className="glass-card rounded-xl p-4 group/field relative">
-      <div className="flex items-center gap-2 mb-1.5 text-xs text-muted-foreground uppercase tracking-wide font-medium">
+    <div className={cn("glass-card rounded-xl p-4 group/field relative", isLight ? "bg-white border border-gray-200" : "")}>
+      <div className={cn("flex items-center gap-2 mb-1.5 text-xs uppercase tracking-wide font-medium", isLight ? "text-gray-600" : "text-muted-foreground")}>
         <TrendingUp className="w-3.5 h-3.5" /> Selling Price (USD $)
       </div>
       {editing ? (
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">$</span>
+              <span className={cn("absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium", isLight ? "text-gray-600" : "text-muted-foreground")}>$</span>
               <input type="number" value={val} onChange={e => setVal(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); }}
-                className={cls + " pl-7"} placeholder="0.00" autoFocus step="0.01" min="0" />
+                className={cn(cls, "pl-7", isLight ? "border-gray-300 bg-white text-gray-900" : "")} placeholder="0.00" autoFocus step="0.01" min="0" />
             </div>
-            <button onClick={save} className="p-1.5 text-green-400 hover:text-green-300 shrink-0"><Check className="w-4 h-4" /></button>
-            <button onClick={cancel} className="p-1.5 text-muted-foreground hover:text-foreground shrink-0"><X className="w-4 h-4" /></button>
+            <button onClick={save} className={cn("p-1.5 shrink-0", isLight ? "text-green-600 hover:text-green-700" : "text-green-400 hover:text-green-300")}><Check className="w-4 h-4" /></button>
+            <button onClick={cancel} className={cn("p-1.5 shrink-0", isLight ? "text-gray-400 hover:text-gray-600" : "text-muted-foreground hover:text-foreground")}><X className="w-4 h-4" /></button>
           </div>
           {activeAmount > 0 && (
-            <ConversionBar converted={converted} currency="NGN" currencyMeta={{ code: "NGN", label: "Nigerian Naira", flag: "🇳🇬" }} isLoading={isLoading} lastUpdated={lastUpdated} isManualOverride={isManualOverride} showOverride={showOverride} setShowOverride={setShowOverride} overrideInput={overrideInput} setOverrideInput={setOverrideInput} applyOverride={applyOverride} clearOverride={clearOverride} refresh={refresh} />
+            <ConversionBar converted={converted} currency="NGN" currencyMeta={{ code: "NGN", label: "Nigerian Naira", flag: "🇳🇬" }} isLoading={isLoading} lastUpdated={lastUpdated} isManualOverride={isManualOverride} showOverride={showOverride} setShowOverride={setShowOverride} overrideInput={overrideInput} setOverrideInput={setOverrideInput} applyOverride={applyOverride} clearOverride={clearOverride} refresh={refresh} isLight={isLight} />
           )}
         </div>
       ) : (
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2 group/val">
-            <span className={`text-sm font-bold ${!displayVal ? "text-muted-foreground italic" : "text-violet-400"}`}>
+            <span className={cn("text-sm font-bold", !displayVal ? (isLight ? "text-gray-400 italic" : "text-muted-foreground italic") : (isLight ? "text-purple-600" : "text-violet-400"))}>
               {displayVal ? `$${parseFloat(displayVal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "Not set"}
             </span>
-            <button onClick={() => setEditing(true)} className="opacity-0 group-hover/field:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-opacity shrink-0">
+            <button onClick={() => setEditing(true)} className={cn("opacity-0 group-hover/field:opacity-100 p-1 transition-opacity shrink-0", isLight ? "text-gray-400 hover:text-gray-600" : "text-muted-foreground hover:text-foreground")}>
               <Edit3 className="w-3.5 h-3.5" />
             </button>
           </div>
           {activeAmount > 0 && (
-            <ConversionBar converted={converted} currency="NGN" currencyMeta={{ code: "NGN", label: "Nigerian Naira", flag: "🇳🇬" }} isLoading={isLoading} lastUpdated={lastUpdated} isManualOverride={isManualOverride} showOverride={showOverride} setShowOverride={setShowOverride} overrideInput={overrideInput} setOverrideInput={setOverrideInput} applyOverride={applyOverride} clearOverride={clearOverride} refresh={refresh} />
+            <ConversionBar converted={converted} currency="NGN" currencyMeta={{ code: "NGN", label: "Nigerian Naira", flag: "🇳🇬" }} isLoading={isLoading} lastUpdated={lastUpdated} isManualOverride={isManualOverride} showOverride={showOverride} setShowOverride={setShowOverride} overrideInput={overrideInput} setOverrideInput={setOverrideInput} applyOverride={applyOverride} clearOverride={clearOverride} refresh={refresh} isLight={isLight} />
           )}
         </div>
       )}
@@ -595,7 +595,7 @@ export default function ProjectDetail() {
                 const isOver = dragOverCol === status;
                 return (
                   <div key={status}
-                    className={`w-72 flex flex-col rounded-2xl border transition-colors ${COLUMN_COLORS[status]} ${isOver ? "bg-white/5 scale-[1.01]" : ""}`}
+                    className={`w-72 flex flex-col rounded-2xl border transition-colors ${isLight ? COLUMN_COLORS[status].light : COLUMN_COLORS[status].dark} ${isOver ? (isLight ? "bg-white scale-[1.01]" : "bg-white/5 scale-[1.01]") : ""}`}
                     onDragOver={e => handleDragOver(e, status)}
                     onDragLeave={() => setDragOverCol(null)}
                     onDrop={e => handleDrop(e, status)}>
@@ -667,8 +667,8 @@ export default function ProjectDetail() {
             <InlineEdit label="Customer Email" value={(project as any).customerEmail || ""} onSave={v => saveField("customerEmail", v)} type="email" icon={<Mail className="w-3.5 h-3.5" />} placeholder="email@example.com" />
             <InlineEdit label="Customer Phone" value={(project as any).customerPhone || ""} onSave={v => saveField("customerPhone", v)} icon={<Phone className="w-3.5 h-3.5" />} placeholder="+27 xx xxx xxxx" />
             <InlineEdit label="Product Type" value={(project as any).productType || ""} onSave={v => saveField("productType", v)} options={typeOpts.options} icon={<Package className="w-3.5 h-3.5" />} />
-            <CostTargetField value={(project as any).costTarget ? String(parseFloat(String((project as any).costTarget))) : ""} onSave={v => saveField("costTarget", v)} />
-            <SellingPriceField value={(project as any).sellingPrice ? String(parseFloat(String((project as any).sellingPrice))) : ""} onSave={v => saveField("sellingPrice", v)} />
+            <CostTargetField value={(project as any).costTarget ? String(parseFloat(String((project as any).costTarget))) : ""} onSave={v => saveField("costTarget", v)} isLight={isLight} />
+            <SellingPriceField value={(project as any).sellingPrice ? String(parseFloat(String((project as any).sellingPrice))) : ""} onSave={v => saveField("sellingPrice", v)} isLight={isLight} />
             <InlineEdit label="Volume (kg/Month)" value={(project as any).volumeKgPerMonth ? String(parseFloat(String((project as any).volumeKgPerMonth))) : ""} onSave={v => saveField("volumeKgPerMonth", v)} type="number" icon={<Package className="w-3.5 h-3.5" />} placeholder="e.g. 500" />
             <InlineEdit label="Priority" value={project.priority || "medium"} onSave={v => saveField("priority", v)} options={priorityOpts.options} icon={<Edit3 className="w-3.5 h-3.5" />} />
             <InlineEdit label="Stage" value={project.stage || ""} onSave={v => saveField("stage", v)} options={stageOpts.options} icon={<Edit3 className="w-3.5 h-3.5" />} />
@@ -1006,7 +1006,8 @@ function CommentsTab({ projectId, users }: { projectId: number; users: any[] }) 
               if (e.key === "Enter" && !e.shiftKey && mentionQuery === null) { e.preventDefault(); post(); }
             }}
             placeholder="Write a status report... Type @ to mention a team member (Enter to send)"
-            className="w-full min-h-[72px] rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground resize-none"
+            className={cn("w-full min-h-[72px] rounded-xl border px-3 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none",
+              isLight ? "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400" : "border-white/10 bg-black/20 text-foreground placeholder:text-muted-foreground")}
           />
           <AtSign className="absolute right-3 top-3 w-4 h-4 text-muted-foreground pointer-events-none opacity-50" />
         </div>
