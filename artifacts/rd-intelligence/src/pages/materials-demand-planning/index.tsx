@@ -2570,13 +2570,21 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
 
     const assignmentCount = assignments.length;
     const assignmentIds = assignments.map(row => row.assignment.id);
+    const idSet = new Set(assignmentIds);
     setUnassigning(true);
 
-    // IMMEDIATE: Update cache optimistically before server request
-    queryClient.setQueryData(["/api/mdp/floor-assignments", selectedWeekLabel], (old: any) => {
-      if (!Array.isArray(old)) return old;
-      return old.filter(row => !assignmentIds.includes(row.id));
-    });
+    // Cancel any in-flight floor-assignment refetches so a late response can't
+    // overwrite our optimistic clear and make the cards reappear.
+    await queryClient.cancelQueries({ queryKey: ["/api/mdp/floor-assignments"] });
+
+    // IMMEDIATE: Optimistically clear BOTH floor-assignment caches.
+    // The board renders from either the week-scoped query (weekly view) or the
+    // all-weeks query (other views), so both must be cleared. The id lives at
+    // row.assignment.id — filtering by row.id was a no-op and left cards on screen.
+    const dropDeleted = (old: any) =>
+      Array.isArray(old) ? old.filter((row: any) => !idSet.has(row?.assignment?.id)) : old;
+    queryClient.setQueryData(["/api/mdp/floor-assignments", selectedWeekLabel], dropDeleted);
+    queryClient.setQueryData(["/api/mdp/floor-assignments"], dropDeleted);
 
     // IMMEDIATE: Invalidate production-orders to force refetch (syncs cache)
     queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
@@ -2602,8 +2610,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       })
       .catch((error) => {
         console.error("Background unassign error:", error);
-        // On error, refetch to resync
-        queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments", selectedWeekLabel] });
+        // On error, refetch BOTH floor-assignment queries to resync the board.
+        queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments"] });
         queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
         toast({
           title: "Background sync error",
