@@ -1153,7 +1153,7 @@ function ProductionOrdersTab() {
         <input value={searchOrders} onChange={e => setSearchOrders(e.target.value)} placeholder="Search orders..." className={cn("h-9 pl-9 pr-4 rounded-xl border text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/50", isLight ? "bg-white border-slate-200 text-slate-800 placeholder:text-slate-400" : "bg-black/20 border-white/10 text-foreground placeholder:text-muted-foreground")} />
       </div>
 
-      <div className={cn("glass-card rounded-2xl overflow-x-auto border", isLight ? "border-slate-200 bg-white" : "border-white/5 bg-white/5")}>
+      <div className={cn("glass-card rounded-2xl overflow-x-auto custom-scrollbar border", isLight ? "border-slate-200 bg-white" : "border-white/5 bg-white/5")}>
         <table className="w-full text-sm">
           <thead className={cn("text-xs text-muted-foreground border-b", isLight ? "bg-slate-50 border-slate-200" : "bg-white/5 border-white/5")}>
             <tr>
@@ -2907,7 +2907,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
             </>
           )}
         </div>
-        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+        <div className="flex items-center gap-2 overflow-x-auto pb-3 custom-scrollbar">
           {planningView === "weekly" && (
             <label className={cn("flex items-center gap-2 px-3 h-9 rounded-xl border text-xs font-medium cursor-pointer transition-all whitespace-nowrap",
               isLight ? "border-slate-200 text-slate-700 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5"
@@ -5887,7 +5887,7 @@ function MaterialsDemandPlanningPageContent(props: { productsQuery: UseQueryResu
         </div>
       </div>
 
-      <div className={cn("flex gap-1 p-1 rounded-2xl border mb-6 w-fit max-w-full overflow-x-auto",
+      <div className={cn("flex gap-1 p-1 rounded-2xl border mb-6 w-fit max-w-full overflow-x-auto custom-scrollbar",
         isLight ? "bg-slate-100 border-slate-200" : "bg-white/5 border-white/10"
       )}>
         {MDP_TABS.map(tab => (
