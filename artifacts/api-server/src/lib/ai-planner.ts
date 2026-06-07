@@ -216,6 +216,7 @@ const MON_TUE_EXCLUSIVE_TYPES = new Set([
   "dairy_premix",
   "bread_premix",
   "dough_premix",
+  "bread_and_dough_premix",
   "snack_dusting",
   "sweet_flavour",
   "sweet_flavor",
@@ -285,8 +286,8 @@ function isFloorEligible(floor: Floor, orderProductType: string | null, volume?:
 
   // Floor 3 special cases
   if (floor.floorName === "Floor 3") {
-    // Allow Curry and Breading
-    if (t.includes("curry") || t.includes("breading")) return true;
+    // Allow Curry, Breading and Spice Mix (Floor 3 Friday savoury accommodation)
+    if (t.includes("curry") || t.includes("breading") || t.includes("spice")) return true;
     // Allow Seasoning and Marinade only if volume is 600-2000kg
     if ((t.includes("seasoning") || t.includes("marinade")) && volume) {
       return volume >= 600 && volume <= 2000;
@@ -454,18 +455,18 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
 
       const batches = Math.floor(availableMin / blendMins);
       if (batches <= 0) continue;
-      const assignable = Math.min(
+      const assignable = Math.round(Math.min(
         batches * bSize,
         order.remainingQuantity,
         dailyCap,
-      );
+      ));
       if (assignable <= 0) continue;
 
       placements.push({
         floorId: floor.id,
         productionOrderId: order.id,
         assignedDay: cell.day,
-        assignedVolume: Math.round(assignable * 10) / 10,
+        assignedVolume: assignable,
       });
 
       // Consume minutes proportional to the volume actually placed
@@ -527,14 +528,14 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
 
         const batches = Math.floor(availableMin / blendMins);
         if (batches <= 0) continue;
-        const assignable = Math.min(batches * bSize, order.remainingQuantity, dailyCap);
+        const assignable = Math.round(Math.min(batches * bSize, order.remainingQuantity, dailyCap));
         if (assignable <= 0) continue;
 
         placements.push({
           floorId: floor3.id,
           productionOrderId: order.id,
           assignedDay: cell.day,
-          assignedVolume: Math.round(assignable * 10) / 10,
+          assignedVolume: assignable,
         });
 
         const minutesUsed = Math.ceil(assignable / bSize) * blendMins + (hasOtherType ? DEFAULT_SWITCH_MINUTES : 0);
@@ -582,8 +583,10 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
       if (order.remainingQuantity <= 0) continue;
 
       const deadline = latestCompletion.get(order.id) ?? null;
-      const blendMins = blendMinutesById(blendSpeeds, order.blendSpeedId || "fast");
-      const dailyCap = dailyCapacityKg(floor2, order.blendSpeedId || "fast", blendSpeeds);
+      // Floor 2 only: every order here is ≤500kg and is forced to FAST blend,
+      // regardless of the order's pre-selected blend speed.
+      const blendMins = blendMinutesById(blendSpeeds, "fast");
+      const dailyCap = dailyCapacityKg(floor2, "fast", blendSpeeds);
       const bSize = batchSizeKg(floor2, blendSpeeds);
       const orderType = normalizeType(order.productType);
 
@@ -611,14 +614,17 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
 
         const batches = Math.floor(availableMin / blendMins);
         if (batches <= 0) continue;
-        const assignable = Math.min(batches * bSize, order.remainingQuantity, dailyCap);
+        const assignable = Math.round(Math.min(batches * bSize, order.remainingQuantity, dailyCap));
         if (assignable <= 0) continue;
+        // Never split an order below 100kg — only place it if the whole order
+        // fits this cell; otherwise move on and try the next cell.
+        if (order.remainingQuantity < 100 && assignable < order.remainingQuantity) continue;
 
         placements.push({
           floorId: floor2.id,
           productionOrderId: order.id,
           assignedDay: cell.day,
-          assignedVolume: Math.round(assignable * 10) / 10,
+          assignedVolume: assignable,
         });
 
         const minutesUsed = Math.ceil(assignable / bSize) * blendMins + (hasOtherType ? DEFAULT_SWITCH_MINUTES : 0);
@@ -673,14 +679,14 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
 
         const batches = Math.floor(availableMin / blendMins);
         if (batches <= 0) continue;
-        const assignable = Math.min(batches * bSize, order.remainingQuantity, dailyCap);
+        const assignable = Math.round(Math.min(batches * bSize, order.remainingQuantity, dailyCap));
         if (assignable <= 0) continue;
 
         placements.push({
           floorId: floor3.id,
           productionOrderId: order.id,
           assignedDay: cell.day,
-          assignedVolume: Math.round(assignable * 10) / 10,
+          assignedVolume: assignable,
         });
 
         const minutesUsed = Math.ceil(assignable / bSize) * blendMins + (hasOtherType ? DEFAULT_SWITCH_MINUTES : 0);
@@ -755,14 +761,14 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
 
           const batches = Math.floor(availableMin / blendMins);
           if (batches <= 0) continue;
-          const assignable = Math.min(batches * bSize, order.remainingQuantity, dailyCap);
+          const assignable = Math.round(Math.min(batches * bSize, order.remainingQuantity, dailyCap));
           if (assignable <= 0) continue;
 
           placements.push({
             floorId: floor3.id,
             productionOrderId: order.id,
             assignedDay: cell.day,
-            assignedVolume: Math.round(assignable * 10) / 10,
+            assignedVolume: assignable,
           });
 
           const minutesUsed = Math.ceil(assignable / bSize) * blendMins + (hasOtherType ? DEFAULT_SWITCH_MINUTES : 0);
@@ -844,14 +850,14 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
 
           const batches = Math.floor(availableMin / blendMins);
           if (batches <= 0) continue;
-          const assignable = Math.min(batches * bSize, order.remainingQuantity, dailyCap);
+          const assignable = Math.round(Math.min(batches * bSize, order.remainingQuantity, dailyCap));
           if (assignable <= 0) continue;
 
           placements.push({
             floorId: floor3.id,
             productionOrderId: order.id,
             assignedDay: cell.day,
-            assignedVolume: Math.round(assignable * 10) / 10,
+            assignedVolume: assignable,
           });
 
           const minutesUsed = Math.ceil(assignable / bSize) * blendMins + (hasOtherType ? DEFAULT_SWITCH_MINUTES : 0);
@@ -922,14 +928,14 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
       const dailyCap = dailyCapacityKg(floor, order.blendSpeedId || "fast", blendSpeeds);
       const batches = Math.floor(availableMin / blendMins);
       if (batches <= 0) break;
-      const assignable = Math.min(batches * bSize, order.remainingQuantity, dailyCap);
+      const assignable = Math.round(Math.min(batches * bSize, order.remainingQuantity, dailyCap));
       if (assignable <= 0) continue;
 
       placements.push({
         floorId: floor.id,
         productionOrderId: order.id,
         assignedDay: cell.day,
-        assignedVolume: Math.round(assignable * 10) / 10,
+        assignedVolume: assignable,
       });
       const minutesUsed = Math.ceil(assignable / bSize) * blendMins;
       availableMin -= minutesUsed;
