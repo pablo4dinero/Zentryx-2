@@ -2537,16 +2537,35 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     }
   };
 
+  // Persist a floor's manual card order to the server so it survives reloads
+  // and is shared across users (writes sort_order = index per assignment).
+  const reorderMutation = useMutation({
+    mutationFn: async (ids: number[]) => {
+      const res = await fetch(`${BASE}api/mdp/floor-assignments/reorder`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ ids }),
+      });
+      if (!res.ok) throw new Error("Failed to save order");
+      return res.json();
+    },
+    onError: () => {
+      toast({ title: "Couldn't save new order", description: "Please try again.", variant: "destructive" });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments"] });
+    },
+  });
+
   const handleReorder = (floorId: number, draggedAssignmentId: number, targetAssignmentId: number) => {
-    setLocalFloorOrder((prev) => {
-      const current = [...(prev[floorId] ?? [])];
-      const fromIndex = current.indexOf(draggedAssignmentId);
-      const toIndex = current.indexOf(targetAssignmentId);
-      if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return prev;
-      current.splice(fromIndex, 1);
-      current.splice(toIndex, 0, draggedAssignmentId);
-      return { ...prev, [floorId]: current };
-    });
+    const current = [...(localFloorOrder[floorId] ?? floorOrder(floorId).map(r => r.assignment.id))];
+    const fromIndex = current.indexOf(draggedAssignmentId);
+    const toIndex = current.indexOf(targetAssignmentId);
+    if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
+    current.splice(fromIndex, 1);
+    current.splice(toIndex, 0, draggedAssignmentId);
+    // Optimistic local update for instant feedback…
+    setLocalFloorOrder((prev) => ({ ...prev, [floorId]: current }));
+    // …then persist so it sticks across refetches, reloads and other users.
+    reorderMutation.mutate(current);
   };
 
   const handleDropOnFloorDay = async (floor: ProductionFloor, day: string, event: React.DragEvent, weekLabelOverride?: string) => {

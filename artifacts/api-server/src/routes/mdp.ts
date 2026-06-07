@@ -14,7 +14,7 @@ import {
   notificationsTable,
   usersTable,
 } from "@workspace/db";
-import { eq, desc, inArray, gte, lte, and } from "drizzle-orm";
+import { eq, desc, asc, sql, inArray, gte, lte, and } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "../lib/auth";
 import { logActivity } from "../lib/activity";
 import { callModel, SONNET_MODEL } from "../oracle/claude";
@@ -401,7 +401,9 @@ router.get("/floor-assignments", requireAuth, async (req: AuthRequest, res) => {
       : baseQuery;
 
     const assignments = await query
-      .orderBy(desc(mdpFloorAssignmentsTable.assignedAt))
+      // Manual order first (sort_order asc), un-ordered assignments last (NULLs),
+      // with id as a stable tiebreaker so insertion order is preserved.
+      .orderBy(sql`${mdpFloorAssignmentsTable.sortOrder} asc nulls last`, asc(mdpFloorAssignmentsTable.id))
       .limit(limit)
       .offset(offset) as Array<Record<string, any>>;
 
@@ -541,6 +543,32 @@ router.post("/assisted-planning", requireAuth, async (req: AuthRequest, res) => 
   } catch (err) {
     planningInProgress.delete(weekLabel); // always release lock even on error
     console.error("[assisted-planning]", err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+// Persist manual card ordering within a floor. Body: { ids: number[] } listing
+// the assignment ids in the desired display order. We write sort_order = index
+// so the arrangement survives refetches, reloads, and other users' sessions.
+router.post("/floor-assignments/reorder", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const raw = (req.body as any)?.ids;
+    const ids: number[] = Array.isArray(raw) ? raw.map(Number).filter((n: number) => Number.isFinite(n)) : [];
+    if (ids.length === 0) {
+      res.status(400).json({ error: "ids array required and non-empty" });
+      return;
+    }
+    await Promise.all(
+      ids.map((id, index) =>
+        db.update(mdpFloorAssignmentsTable)
+          .set({ sortOrder: index })
+          .where(eq(mdpFloorAssignmentsTable.id, id)),
+      ),
+    );
+    broadcastDataChange("floor-assignments", {}, req.user?.userId);
+    res.json({ success: true, updated: ids.length });
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "InternalServerError" });
   }
 });

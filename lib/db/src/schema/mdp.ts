@@ -72,6 +72,9 @@ export const mdpFloorAssignmentsTable = pgTable("mdp_floor_assignments", {
   assignedDay: text("assigned_day").notNull(),
   planStatus: text("plan_status").default("Planned"),
   assignedVolume: numeric("assigned_volume"),
+  // Manual display order within a floor. NULL = not manually ordered yet
+  // (those sort last, by id). Set by the reorder endpoint.
+  sortOrder: integer("sort_order"),
   assignedAt: timestamp("assigned_at").notNull().defaultNow(),
   producedAt: timestamp("produced_at"),
 });
