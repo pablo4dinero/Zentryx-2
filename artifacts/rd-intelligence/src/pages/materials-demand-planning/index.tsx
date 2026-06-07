@@ -1873,12 +1873,31 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     return map;
   }, [assignments]);
 
+  // Keep a per-floor manual ordering of assignment cards, reconciled against the
+  // latest server data WITHOUT discarding the user's manual arrangement: preserve
+  // the existing order for assignments that still exist, append newly-added ones,
+  // and drop removed ones. (Previously this overwrote the order on every refetch,
+  // which snapped manually-reordered cards back to server order.)
   React.useEffect(() => {
-    const next: Record<number, number[]> = {};
-    assignmentsByFloor.forEach((rows, floorId) => {
-      next[floorId] = rows.map((row) => row.assignment.id);
+    setLocalFloorOrder((prev) => {
+      const next: Record<number, number[]> = {};
+      assignmentsByFloor.forEach((rows, floorId) => {
+        const serverIds = rows.map((row) => row.assignment.id);
+        const prevOrder = prev[floorId];
+        if (!prevOrder || prevOrder.length === 0) {
+          next[floorId] = serverIds;
+          return;
+        }
+        const serverSet = new Set(serverIds);
+        // Preserve manual order for assignments that still exist…
+        const preserved = prevOrder.filter((id) => serverSet.has(id));
+        // …then append any newly-added assignments not yet in the local order.
+        const preservedSet = new Set(preserved);
+        const added = serverIds.filter((id) => !preservedSet.has(id));
+        next[floorId] = [...preserved, ...added];
+      });
+      return next;
     });
-    setLocalFloorOrder(next);
   }, [assignmentsByFloor]);
 
   const assignedMap = React.useMemo(() => {
