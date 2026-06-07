@@ -5595,9 +5595,46 @@ function MaterialsDemandPlanningPageContent(props: { productsQuery: UseQueryResu
   const [editingProduct, setEditingProduct] = React.useState<Account | null>(null);
   const [formValues, setFormValues] = React.useState({ ...DEFAULT_FORM });
   const [manSearch, setManSearch] = React.useState("");
+  const [columnWidths, setColumnWidths] = React.useState<Record<string, number>>(() => {
+    const saved = localStorage.getItem("mdp_column_widths");
+    return saved ? JSON.parse(saved) : {};
+  });
+  const [resizingColumn, setResizingColumn] = React.useState<string | null>(null);
   const typeOpts = useServerProductTypes();
 
   const { data: users } = useListUsers();
+
+  // Column resize handlers
+  const handleMouseDown = (e: React.MouseEvent, columnKey: string) => {
+    e.preventDefault();
+    setResizingColumn(columnKey);
+    const startX = e.clientX;
+    const startWidth = columnWidths[columnKey] || 0;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const diff = moveEvent.clientX - startX;
+      const newWidth = Math.max(80, startWidth + diff);
+      setColumnWidths(prev => {
+        const updated = { ...prev, [columnKey]: newWidth };
+        localStorage.setItem("mdp_column_widths", JSON.stringify(updated));
+        return updated;
+      });
+    };
+
+    const handleMouseUp = () => {
+      setResizingColumn(null);
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  };
+
+  const getColumnWidth = (columnKey: string) => {
+    const width = columnWidths[columnKey];
+    return width ? `${width}px` : undefined;
+  };
 
   const products = productsQuery.data ?? [];
 
@@ -5933,12 +5970,72 @@ function MaterialsDemandPlanningPageContent(props: { productsQuery: UseQueryResu
               <table className="w-full text-sm min-w-[760px]">
                 <thead className={cn("text-xs text-muted-foreground border-b", isLight ? "bg-slate-50 border-slate-200" : "bg-white/5 border-white/5")}>
                   <tr>
-                    <SortHeader label="Account" k="account" />
-                    <SortHeader label="Product Type" k="productType" />
-                    <SortHeader label="Volume (kg)" k="volume" />
-                    <SortHeader label="Manager(s)" k="managers" />
-                    <SortHeader label="Urgency" k="urgency" />
-                    <SortHeader label="Added" k="added" />
+                    <th className="relative group" style={{ width: getColumnWidth("account") }}>
+                      <div className="px-5 py-3 font-medium">
+                        <SortHeader label="Account" k="account" />
+                      </div>
+                      <div
+                        onMouseDown={(e) => handleMouseDown(e, "account")}
+                        className={cn("absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/50 transition-colors",
+                          resizingColumn === "account" ? "bg-primary" : "bg-transparent")}
+                        title="Drag to resize"
+                      />
+                    </th>
+                    <th className="relative group" style={{ width: getColumnWidth("productType") }}>
+                      <div className="px-5 py-3 font-medium">
+                        <SortHeader label="Product Type" k="productType" />
+                      </div>
+                      <div
+                        onMouseDown={(e) => handleMouseDown(e, "productType")}
+                        className={cn("absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/50 transition-colors",
+                          resizingColumn === "productType" ? "bg-primary" : "bg-transparent")}
+                        title="Drag to resize"
+                      />
+                    </th>
+                    <th className="relative group" style={{ width: getColumnWidth("volume") }}>
+                      <div className="px-5 py-3 font-medium">
+                        <SortHeader label="Volume (kg)" k="volume" />
+                      </div>
+                      <div
+                        onMouseDown={(e) => handleMouseDown(e, "volume")}
+                        className={cn("absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/50 transition-colors",
+                          resizingColumn === "volume" ? "bg-primary" : "bg-transparent")}
+                        title="Drag to resize"
+                      />
+                    </th>
+                    <th className="relative group" style={{ width: getColumnWidth("managers") }}>
+                      <div className="px-5 py-3 font-medium">
+                        <SortHeader label="Manager(s)" k="managers" />
+                      </div>
+                      <div
+                        onMouseDown={(e) => handleMouseDown(e, "managers")}
+                        className={cn("absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/50 transition-colors",
+                          resizingColumn === "managers" ? "bg-primary" : "bg-transparent")}
+                        title="Drag to resize"
+                      />
+                    </th>
+                    <th className="relative group" style={{ width: getColumnWidth("urgency") }}>
+                      <div className="px-5 py-3 font-medium">
+                        <SortHeader label="Urgency" k="urgency" />
+                      </div>
+                      <div
+                        onMouseDown={(e) => handleMouseDown(e, "urgency")}
+                        className={cn("absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/50 transition-colors",
+                          resizingColumn === "urgency" ? "bg-primary" : "bg-transparent")}
+                        title="Drag to resize"
+                      />
+                    </th>
+                    <th className="relative group" style={{ width: getColumnWidth("added") }}>
+                      <div className="px-5 py-3 font-medium">
+                        <SortHeader label="Added" k="added" />
+                      </div>
+                      <div
+                        onMouseDown={(e) => handleMouseDown(e, "added")}
+                        className={cn("absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/50 transition-colors",
+                          resizingColumn === "added" ? "bg-primary" : "bg-transparent")}
+                        title="Drag to resize"
+                      />
+                    </th>
                     <th className="px-5 py-3 text-left font-medium" />
                   </tr>
                 </thead>
@@ -5955,24 +6052,24 @@ function MaterialsDemandPlanningPageContent(props: { productsQuery: UseQueryResu
                         className={cn("border-b last:border-0 transition-colors group",
                           isLight ? "border-slate-100 hover:bg-slate-50/70" : "border-white/5 hover:bg-white/[0.03]"
                         )}>
-                        <td className="px-5 py-3">
+                        <td className="px-5 py-3" style={{ width: getColumnWidth("account") }}>
                           <p className="font-medium text-foreground text-sm">{account.company}</p>
                           <p className="text-xs text-muted-foreground mt-0.5">{account.productName ?? "—"}</p>
                         </td>
-                        <td className="px-5 py-3 text-xs text-muted-foreground">
+                        <td className="px-5 py-3 text-xs text-muted-foreground" style={{ width: getColumnWidth("productType") }}>
                           {account.productType ?? "—"}
                         </td>
-                        <td className="px-5 py-3 text-xs">
+                        <td className="px-5 py-3 text-xs" style={{ width: getColumnWidth("volume") }}>
                           <div className="flex items-center gap-1.5">
                             <span className="text-foreground font-medium">{parseFloat(account.volume || "0").toLocaleString()}</span>
                             <VolumeTag volume={account.volume} />
                           </div>
                         </td>
-                        <td className="px-5 py-3 text-xs text-muted-foreground">
+                        <td className="px-5 py-3 text-xs text-muted-foreground" style={{ width: getColumnWidth("managers") }}>
                           {(account.accountManagerNames || []).join(", ") || "—"}
                         </td>
-                        <td className="px-5 py-3"><UrgencyBadge level={account.urgencyLevel} /></td>
-                        <td className="px-5 py-3 text-xs text-muted-foreground">{formatDate(account.createdAt)}</td>
+                        <td className="px-5 py-3" style={{ width: getColumnWidth("urgency") }}><UrgencyBadge level={account.urgencyLevel} /></td>
+                        <td className="px-5 py-3 text-xs text-muted-foreground" style={{ width: getColumnWidth("added") }}>{formatDate(account.createdAt)}</td>
                         <td className="px-5 py-3">
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button onClick={() => openEditDialog(account)}

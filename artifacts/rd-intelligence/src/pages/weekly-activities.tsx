@@ -273,6 +273,7 @@ function DispatchRecords({ users, isLight }: { users: any[]; isLight: boolean })
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
+  const [editingRecordId, setEditingRecordId] = useState<number | null>(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -300,6 +301,23 @@ function DispatchRecords({ users, isLight }: { users: any[]; isLight: boolean })
       qc.invalidateQueries({ queryKey: ["/api/weekly-activities/dispatch"] });
       setShowModal(false);
       setForm({ ...EMPTY_FORM });
+      setEditingRecordId(null);
+    },
+  });
+
+  const updateRecord = useMutation({
+    mutationFn: async (body: any) => {
+      const r = await fetch(`${BASE}api/weekly-activities/dispatch/${editingRecordId}`, {
+        method: "PUT", headers: authHeaders(), body: JSON.stringify(body),
+      });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/weekly-activities/dispatch"] });
+      setShowModal(false);
+      setForm({ ...EMPTY_FORM });
+      setEditingRecordId(null);
     },
   });
 
@@ -397,7 +415,7 @@ function DispatchRecords({ users, isLight }: { users: any[]; isLight: boolean })
     if (!validate()) return;
     setSaving(true);
     try {
-      await createRecord.mutateAsync({
+      const payload = {
         sampleCode: form.sampleCode,
         productDescription: form.productDescription,
         customer: form.customer,
@@ -410,8 +428,34 @@ function DispatchRecords({ users, isLight }: { users: any[]; isLight: boolean })
         recipientPhone: form.recipientPhone,
         recipientMail: form.recipientMail,
         followUpMailSent: form.followUpMailSent,
-      });
+      };
+
+      if (editingRecordId) {
+        await updateRecord.mutateAsync(payload);
+      } else {
+        await createRecord.mutateAsync(payload);
+      }
     } finally { setSaving(false); }
+  }
+
+  function openEditModal(record: DispatchRecord) {
+    setEditingRecordId(record.id);
+    setForm({
+      sampleCode: record.sampleCode,
+      productDescription: record.productDescription,
+      customer: record.customer,
+      quantity: record.quantity ? String(record.quantity) : "",
+      sentByUserId: record.sentByUserId ? String(record.sentByUserId) : "",
+      dispatchMethod: record.dispatchMethod || "",
+      productType: (record.productType as "" | "sweet" | "savory") || "",
+      dateSent: record.dateSent || "",
+      recipientName: record.recipientName,
+      recipientPhone: record.recipientPhone || "",
+      recipientMail: record.recipientMail || "",
+      followUpMailSent: record.followUpMailSent,
+    });
+    setErrors({});
+    setShowModal(true);
   }
 
   // ── Exports ──
@@ -568,11 +612,20 @@ function DispatchRecords({ users, isLight }: { users: any[]; isLight: boolean })
                     </button>
                   </td>
                   <td className="px-3 py-2.5 text-center">
-                    <button
-                      onClick={() => { if (confirm("Delete this record?")) deleteRecord.mutate(r.id); }}
-                      className="p-1 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center gap-1 justify-center">
+                      <button
+                        onClick={() => openEditModal(r)}
+                        className="p-1 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                        title="Edit">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => { if (confirm("Delete this record?")) deleteRecord.mutate(r.id); }}
+                        className="p-1 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                        title="Delete">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -620,19 +673,19 @@ function DispatchRecords({ users, isLight }: { users: any[]; isLight: boolean })
         </div>
       </div>
 
-      {/* Add Dispatch Record Modal */}
+      {/* Add/Edit Dispatch Record Modal */}
       {showModal && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
-          onClick={e => { if (e.target === e.currentTarget) setShowModal(false); }}>
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowModal(false)} />
+          onClick={e => { if (e.target === e.currentTarget) { setShowModal(false); setEditingRecordId(null); } }}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => { setShowModal(false); setEditingRecordId(null); }} />
           <div className={cn("relative w-full max-w-2xl rounded-2xl border shadow-2xl z-10 max-h-[90vh] overflow-y-auto",
             isLight ? "bg-white border-slate-200" : "glass-panel border-white/10")}>
             <div className={cn("sticky top-0 px-6 py-4 border-b flex items-center justify-between z-10",
               isLight ? "bg-white border-slate-100" : "bg-[#0f0f1a] border-white/10")}>
               <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
-                <Package className="w-4 h-4 text-primary" /> Add Dispatch Record
+                <Package className="w-4 h-4 text-primary" /> {editingRecordId ? "Edit" : "Add"} Dispatch Record
               </h3>
-              <button onClick={() => setShowModal(false)}
+              <button onClick={() => { setShowModal(false); setEditingRecordId(null); }}
                 className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors">
                 <X className="w-4 h-4" />
               </button>
@@ -773,13 +826,17 @@ function DispatchRecords({ users, isLight }: { users: any[]; isLight: boolean })
 
             <div className={cn("sticky bottom-0 px-6 py-4 border-t flex justify-end gap-3",
               isLight ? "bg-white border-slate-100" : "bg-[#0f0f1a] border-white/10")}>
-              <button onClick={() => setShowModal(false)}
+              <button onClick={() => { setShowModal(false); setEditingRecordId(null); }}
                 className="px-5 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors">
                 Cancel
               </button>
               <button onClick={handleSave} disabled={saving}
                 className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-medium bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-50">
-                {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</> : <><Check className="w-3.5 h-3.5" /> Save Record</>}
+                {saving ? (
+                  <><Loader2 className="w-3.5 h-3.5 animate-spin" /> {editingRecordId ? "Updating…" : "Saving…"}</>
+                ) : (
+                  <><Check className="w-3.5 h-3.5" /> {editingRecordId ? "Update Record" : "Save Record"}</>
+                )}
               </button>
             </div>
           </div>

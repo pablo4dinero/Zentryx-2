@@ -7,7 +7,7 @@ import {
 import {
   TrendingUp, DollarSign, Package, Download, Bell, ChevronLeft, ChevronRight,
   Filter, Star, AlertTriangle, CheckCircle, Clock, X, Search, Send, Mail,
-  BarChart2, PieChartIcon, Donut,
+  BarChart2, PieChartIcon, Donut, Maximize2,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { useExchangeRate } from "@/hooks/useExchangeRate";
@@ -117,12 +117,13 @@ function StatCard({ icon: Icon, label, value, sub, color }: { icon: any; label: 
 type ChartViewType = "bar" | "pie" | "donut";
 
 function ChartPanel({
-  title, data, views, defaultView,
+  title, data, views, defaultView, onExpand,
 }: {
   title: string;
   data: { name: string; value: number }[];
   views: ChartViewType[];
   defaultView: ChartViewType;
+  onExpand?: () => void;
 }) {
   const [view, setView] = useState<ChartViewType>(defaultView);
   const { theme: _ft } = useTheme();
@@ -146,6 +147,15 @@ function ChartPanel({
               </button>
             );
           })}
+          {onExpand && (
+            <button
+              onClick={onExpand}
+              className="p-1.5 rounded-lg transition-colors text-muted-foreground hover:bg-white/5 ml-2"
+              title="Expand chart"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
       <div style={{ height: 260 }}>
@@ -186,6 +196,7 @@ function ForecastCalendar({ forecasts }: { forecasts: Forecast[] }) {
   const [calDate, setCalDate] = useState(today);
   const [tooltip, setTooltip] = useState<CalendarTooltip | null>(null);
   const [selected, setSelected] = useState<Forecast | null>(null);
+  const [expandedDate, setExpandedDate] = useState<string | null>(null);
   const { theme: _calTheme } = useTheme();
   const isCalLight = _calTheme === "light";
 
@@ -301,9 +312,11 @@ function ForecastCalendar({ forecasts }: { forecasts: Forecast[] }) {
                         </div>
                       ))}
                       {extra > 0 && (
-                        <span className="text-[9px] text-muted-foreground/60 pl-1 block">
+                        <button
+                          onClick={() => setExpandedDate(key)}
+                          className="text-[9px] text-primary/70 hover:text-primary pl-1 block font-semibold transition-colors">
                           +{extra} more
-                        </span>
+                        </button>
                       )}
                     </div>
                   </>
@@ -413,6 +426,66 @@ function ForecastCalendar({ forecasts }: { forecasts: Forecast[] }) {
               className={`mt-5 w-full px-4 py-2.5 rounded-xl text-sm transition-colors ${isCalLight ? "bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-600 hover:text-gray-900" : "bg-white/5 hover:bg-white/10 border border-white/8 text-muted-foreground hover:text-foreground"}`}>
               Close
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Expanded date modal — show all forecasts for a date */}
+      {expandedDate && (
+        <div
+          className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          onClick={() => setExpandedDate(null)}
+        >
+          <div
+            className={`border rounded-2xl p-6 w-full max-w-2xl shadow-2xl mx-4 max-h-[80vh] overflow-y-auto ${isCalLight ? "bg-white border-gray-200" : "bg-[#1a1a2e] border-white/10"}`}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between mb-5">
+              <div>
+                <h3 className="font-bold text-foreground text-lg">Forecasts for {expandedDate}</h3>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  {forecastsByDay.get(expandedDate)?.length ?? 0} forecast{(forecastsByDay.get(expandedDate)?.length ?? 0) !== 1 ? "s" : ""}
+                </p>
+              </div>
+              <button
+                onClick={() => setExpandedDate(null)}
+                className="p-1.5 rounded-lg hover:bg-white/10 text-muted-foreground transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {(forecastsByDay.get(expandedDate) ?? []).map((f, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    setSelected(f);
+                    setExpandedDate(null);
+                  }}
+                  className={`w-full p-3 rounded-xl border text-left transition-all ${getCalColor(f.confidence, isCalLight)} hover:shadow-md cursor-pointer`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-foreground truncate">{f.company}</p>
+                      <p className={`text-sm mt-0.5 ${isCalLight ? "text-gray-600" : "text-gray-400"}`}>{f.productName}</p>
+                      {f.productType && (
+                        <p className={`text-xs mt-1 capitalize ${isCalLight ? "text-gray-500" : "text-gray-500"}`}>
+                          {f.productType.replace(/_/g, " ")}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 ml-3 shrink-0">
+                      <span className="text-sm font-medium text-foreground text-right">
+                        {f.forecastVolume ? `${Number(f.forecastVolume).toLocaleString()} kg` : "—"}
+                      </span>
+                      <span className={`font-bold text-right min-w-[40px] ${getConfidenceColor(f.confidence)}`}>
+                        {f.confidence}%
+                      </span>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -596,6 +669,94 @@ function NotifyModal({ onClose, users }: { onClose: () => void; users: any[] }) 
   );
 }
 
+interface ExpandedChartConfig {
+  title: string;
+  data: { name: string; value: number }[];
+  defaultView: ChartViewType;
+  views: ChartViewType[];
+}
+
+function ExpandedChartModal({
+  chartId,
+  charts,
+  onClose,
+}: {
+  chartId: string;
+  charts: Record<string, ExpandedChartConfig>;
+  onClose: () => void;
+}) {
+  const chart = charts[chartId];
+  const [view, setView] = useState<ChartViewType>(chart.defaultView);
+  const { theme: _eft } = useTheme();
+  const isELF = _eft === "light";
+  const axisColor = isELF ? "#374151" : "#64748b";
+  const gridStrokeF = isELF ? "#E5E7EB" : "rgba(255,255,255,0.05)";
+  const tipStyleF = { background: isELF ? "#FFFFFF" : "#1e1e2e", border: isELF ? "1px solid #E5E7EB" : "1px solid rgba(255,255,255,0.1)", borderRadius: 10, fontSize: 12, color: isELF ? "#111827" : undefined };
+  const icons: Record<ChartViewType, any> = { bar: BarChart2, pie: PieChartIcon, donut: Donut };
+
+  return (
+    <div
+      className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className={`border rounded-2xl p-6 w-full max-w-4xl shadow-2xl ${isELF ? "bg-white border-gray-200" : "bg-[#1a1a2e] border-white/10"}`}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="font-bold text-foreground text-lg">{chart.title}</h3>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
+              {chart.views.map(v => {
+                const Icon = icons[v];
+                return (
+                  <button key={v} onClick={() => setView(v)}
+                    className={`p-1.5 rounded-lg transition-colors ${view === v ? "bg-primary/20 text-primary" : "text-muted-foreground hover:bg-white/5"}`}>
+                    <Icon className="w-4 h-4" />
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg hover:bg-white/10 text-muted-foreground transition-colors ml-2">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        <div style={{ height: 400 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            {view === "bar" ? (
+              <BarChart data={chart.data} margin={{ left: 0, right: 16, top: 4, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={gridStrokeF} />
+                <XAxis dataKey="name" tick={{ fill: axisColor, fontSize: 11 }} />
+                <YAxis tick={{ fill: axisColor, fontSize: 11 }} tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
+                <Tooltip contentStyle={tipStyleF}
+                  formatter={(v: any) => [`${Number(v).toLocaleString()} kg`]} />
+                <Bar dataKey="value" radius={[8, 8, 0, 0]}>
+                  {chart.data.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                </Bar>
+              </BarChart>
+            ) : (
+              <PieChart>
+                <Pie data={chart.data} dataKey="value" nameKey="name" cx="50%" cy="50%"
+                  innerRadius={view === "donut" ? 80 : 0} outerRadius={140}
+                  paddingAngle={view === "donut" ? 3 : 0}>
+                  {chart.data.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                </Pie>
+                <Tooltip contentStyle={tipStyleF}
+                  formatter={(v: any) => [`${Number(v).toLocaleString()} kg`]} />
+                <Legend iconSize={12} wrapperStyle={{ fontSize: 12, color: axisColor }} />
+              </PieChart>
+            )}
+          </ResponsiveContainer>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SalesForecastPage() {
   const { fmtNGN } = useExchangeRate();
   const qc = useQueryClient();
@@ -605,10 +766,11 @@ export default function SalesForecastPage() {
   const [productTypeFilter, setProductTypeFilter] = useState("all");
   const [customerTypeFilter, setCustomerTypeFilter] = useState("all");
   const [confidenceFilter, setConfidenceFilter] = useState("all");
-  const [timeRange, setTimeRange] = useState<7 | 30 | 90>(30);
+  const [timeRange, setTimeRange] = useState<7 | 30 | 90 | 180 | 365>(30);
   const [strategicOnly, setStrategicOnly] = useState(false);
   const [showNotify, setShowNotify] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [expandedChart, setExpandedChart] = useState<string | null>(null);
   const [seeding, setSeeding] = useState(false);
   const seededRef = useRef(false);
   const exportMenuRef = useRef<HTMLDivElement>(null);
@@ -669,8 +831,15 @@ export default function SalesForecastPage() {
 
   const acc = accounts as any[];
   const activeAcc = acc.filter(a => a.isActive && (a.status ?? "active") !== "on_hold");
-  const totalMonthlyRevenue = activeAcc.reduce((sum, a) => sum + parseFloat(a.sellingPrice || 0) * parseFloat(a.volume || 0), 0);
-  const totalVolume = activeAcc.reduce((sum, a) => sum + parseFloat(a.volume || 0), 0);
+  const totalMonthlyRevenue = activeAcc.reduce((sum, a) => {
+    const price = parseFloat(a.sellingPrice) || 0;
+    const vol = parseFloat(a.volume) || 0;
+    return sum + (price * vol);
+  }, 0);
+  const totalVolume = activeAcc.reduce((sum, a) => {
+    const vol = parseFloat(a.volume) || 0;
+    return sum + vol;
+  }, 0);
 
   const rangeEnd = addDays(new Date(), timeRange);
 
@@ -804,11 +973,13 @@ export default function SalesForecastPage() {
             <option value="medium">Medium (50–74%)</option>
             <option value="low">Low (&lt;50%)</option>
           </select>
-          <select value={timeRange} onChange={e => setTimeRange(Number(e.target.value) as 7 | 30 | 90)}
+          <select value={timeRange} onChange={e => setTimeRange(Number(e.target.value) as 7 | 30 | 90 | 180 | 365)}
             className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/50 transition-colors">
             <option value={7}>Next 7 Days</option>
             <option value={30}>Next 30 Days</option>
             <option value={90}>Next 90 Days</option>
+            <option value={180}>Next 180 Days</option>
+            <option value={365}>Next 1 Year</option>
           </select>
           <label className="flex items-center gap-2 cursor-pointer ml-1">
             <div onClick={() => setStrategicOnly(v => !v)}
@@ -924,18 +1095,21 @@ export default function SalesForecastPage() {
           data={volumeByMonth}
           views={["bar", "donut", "pie"]}
           defaultView="bar"
+          onExpand={() => setExpandedChart("volume-by-month")}
         />
         <ChartPanel
           title="Forecast by Customer"
           data={volumeByCustomer}
           views={["pie", "bar"]}
           defaultView="pie"
+          onExpand={() => setExpandedChart("by-customer")}
         />
         <ChartPanel
           title="Forecast by Product Type"
           data={volumeByType}
           views={["donut", "pie", "bar"]}
           defaultView="donut"
+          onExpand={() => setExpandedChart("by-product-type")}
         />
       </div>
 
@@ -943,6 +1117,19 @@ export default function SalesForecastPage() {
       <div className="relative">
         <ForecastCalendar forecasts={filteredForecasts} />
       </div>
+
+      {/* Expanded Chart Modal */}
+      {expandedChart && (
+        <ExpandedChartModal
+          chartId={expandedChart}
+          charts={{
+            "volume-by-month": { title: "Forecast Volume by Month", data: volumeByMonth, defaultView: "bar", views: ["bar", "donut", "pie"] },
+            "by-customer": { title: "Forecast by Customer", data: volumeByCustomer, defaultView: "pie", views: ["pie", "bar"] },
+            "by-product-type": { title: "Forecast by Product Type", data: volumeByType, defaultView: "donut", views: ["donut", "pie", "bar"] },
+          }}
+          onClose={() => setExpandedChart(null)}
+        />
+      )}
 
       {showNotify && <NotifyModal onClose={() => setShowNotify(false)} users={users} />}
     </div>

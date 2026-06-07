@@ -814,9 +814,11 @@ function EditBDModal({ item, users, onUpdate, onClose, stageOpts, statusOpts, pr
     assigneeIds: (item.assignees || []).map((a: any) => a.id) as number[],
   });
   const [saving, setSaving] = useState(false);
+  const [assigneeSearch, setAssigneeSearch] = useState("");
   const { toast } = useToast();
   const setF = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }));
   const toggleAssignee = (id: number) => setForm(f => ({ ...f, assigneeIds: f.assigneeIds.includes(id) ? f.assigneeIds.filter(x => x !== id) : [...f.assigneeIds, id] }));
+  const filteredUsers = assigneeSearch.trim() ? users.filter(u => u.name.toLowerCase().includes(assigneeSearch.toLowerCase())) : users;
 
   const handleSave = async () => {
     setSaving(true);
@@ -836,11 +838,10 @@ function EditBDModal({ item, users, onUpdate, onClose, stageOpts, statusOpts, pr
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent
-        className={cn("sm:max-w-[640px] max-h-[90vh] overflow-y-auto", isLight ? "border-slate-200 [&>button]:text-slate-900 [&>button]:opacity-100" : "glass-panel border-white/10 bg-card/95")}
-        style={isLight ? { background: "#ffffff", color: "rgb(15,23,42)" } : undefined}
+        className={cn("sm:max-w-[640px] max-h-[90vh] overflow-y-auto p-0", isLight ? "border-slate-200 [&>button]:text-slate-900 [&>button]:opacity-100 bg-white" : "glass-panel border-white/10 bg-card/95")}
       >
-        <DialogHeader><DialogTitle className="text-xl font-display">Edit BD Item — {item.name}</DialogTitle></DialogHeader>
-        <div className="space-y-4 mt-2">
+        <DialogHeader className={cn("px-6 py-4 border-b", isLight ? "border-slate-200 bg-white" : "border-white/10")}><DialogTitle className={cn("text-xl font-display", isLight ? "text-slate-900" : "")}>{item.name}</DialogTitle></DialogHeader>
+        <div className="space-y-4 p-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2 space-y-1.5"><label className={lbl}>Title *</label><input value={form.name} onChange={e => setF("name", e.target.value)} className={cls} /></div>
             <div className="sm:col-span-2 space-y-1.5"><label className={lbl}>Description</label><textarea value={form.description} onChange={e => setF("description", e.target.value)} className={cn("flex min-h-[60px] w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground", isLight ? "border-gray-200 bg-white" : "border-white/10 bg-black/20")} /></div>
@@ -857,21 +858,35 @@ function EditBDModal({ item, users, onUpdate, onClose, stageOpts, statusOpts, pr
             <div className="space-y-1.5"><label className={lbl}>Due Date</label><input type="date" value={form.targetDate} onChange={e => setF("targetDate", e.target.value)} className={cls} /></div>
           </div>
           {users.length > 0 && (
-            <div className="space-y-2">
+            <div className="space-y-3">
               <label className={lbl}>Assignees</label>
-              <div className={cn("flex flex-wrap gap-2 p-3 rounded-xl border max-h-28 overflow-y-auto", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/10")}>
-                {users.map(u => (
-                  <button key={u.id} type="button" onClick={() => toggleAssignee(u.id)}
-                    className={cn("flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all", form.assigneeIds.includes(u.id) ? "bg-primary text-white border-primary" : isLight ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground")}>
-                    <span className={cn("w-4 h-4 rounded-full flex items-center justify-center text-[10px]", isLight ? "bg-slate-100 text-slate-700" : "bg-white/10")}>{u.name.charAt(0)}</span>
-                    {u.name}
-                  </button>
-                ))}
+              <div className={cn("relative")}>
+                <Search className={cn("absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none", isLight ? "text-slate-400" : "text-muted-foreground")} />
+                <input
+                  type="text"
+                  placeholder="Search team members…"
+                  value={assigneeSearch}
+                  onChange={e => setAssigneeSearch(e.target.value)}
+                  className={cn("w-full pl-10 pr-3 py-2 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-primary/50", isLight ? "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400" : "border-white/10 bg-black/20 text-foreground placeholder:text-muted-foreground")}
+                />
+              </div>
+              <div className={cn("flex flex-wrap gap-2 p-3 rounded-xl border max-h-32 overflow-y-auto", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/10")}>
+                {filteredUsers.length > 0 ? (
+                  filteredUsers.map(u => (
+                    <button key={u.id} type="button" onClick={() => toggleAssignee(u.id)}
+                      className={cn("flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all", form.assigneeIds.includes(u.id) ? "bg-primary text-white border-primary" : isLight ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground")}>
+                      <span className={cn("w-4 h-4 rounded-full flex items-center justify-center text-[10px]", isLight ? "bg-slate-100 text-slate-700" : "bg-white/10")}>{u.name.charAt(0)}</span>
+                      {u.name}
+                    </button>
+                  ))
+                ) : (
+                  <p className={cn("text-xs", isLight ? "text-slate-400" : "text-muted-foreground")}>No team members found</p>
+                )}
               </div>
             </div>
           )}
-          <div className="flex justify-end gap-3 pt-2">
-            <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <div className={cn("flex justify-end gap-3 pt-2 border-t", isLight ? "border-slate-200" : "border-white/10")}>
+            <button onClick={onClose} className={cn("px-4 py-2 rounded-xl text-sm font-medium transition-colors", isLight ? "bg-red-500 text-white hover:bg-red-600" : "bg-red-600 text-white hover:bg-red-700")}>Cancel</button>
             <Button onClick={handleSave} disabled={saving}>{saving ? "Saving..." : "Save Changes"}</Button>
           </div>
         </div>
@@ -884,11 +899,13 @@ function EditBDModal({ item, users, onUpdate, onClose, stageOpts, statusOpts, pr
 function CreateBDModal({ users, onCreate, stageOpts, statusOpts, priorityOpts, typeOpts }: { users: any[]; onCreate: (data: any) => Promise<any>; stageOpts: CustomOptionsHandle; statusOpts: CustomOptionsHandle; priorityOpts: CustomOptionsHandle; typeOpts: CustomOptionsHandle }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [assigneeSearch, setAssigneeSearch] = useState("");
   const { toast } = useToast();
   const emptyForm = { name: "", description: "", stage: "innovation", status: "in_progress", priority: "medium", productType: "", customerName: "", customerEmail: "", customerPhone: "", startDate: "", targetDate: "", costTarget: "", assigneeIds: [] as number[] };
   const [form, setForm] = useState(emptyForm);
   const setF = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }));
   const toggleAssignee = (id: number) => setForm(f => ({ ...f, assigneeIds: f.assigneeIds.includes(id) ? f.assigneeIds.filter(x => x !== id) : [...f.assigneeIds, id] }));
+  const filteredUsers = assigneeSearch.trim() ? users.filter(u => u.name.toLowerCase().includes(assigneeSearch.toLowerCase())) : users;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -912,11 +929,10 @@ function CreateBDModal({ users, onCreate, stageOpts, statusOpts, priorityOpts, t
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild><Button className="gap-2"><Plus className="w-4 h-4" /> New BD Item</Button></DialogTrigger>
       <DialogContent
-        className={cn("sm:max-w-[620px] max-h-[90vh] overflow-y-auto", isLight ? "border-slate-200 [&>button]:text-slate-900 [&>button]:opacity-100" : "glass-panel border-white/10 bg-card/95")}
-        style={isLight ? { background: "#ffffff", color: "rgb(15,23,42)" } : undefined}
+        className={cn("sm:max-w-[620px] max-h-[90vh] overflow-y-auto p-0", isLight ? "border-slate-200 [&>button]:text-slate-900 [&>button]:opacity-100 bg-white" : "glass-panel border-white/10 bg-card/95")}
       >
-        <DialogHeader><DialogTitle className="text-xl font-display">New Business Development</DialogTitle></DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+        <DialogHeader className={cn("px-6 py-4 border-b", isLight ? "border-slate-200 bg-white" : "border-white/10")}><DialogTitle className={cn("text-xl font-display", isLight ? "text-slate-900" : "")}>New Business Development</DialogTitle></DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4 p-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2 space-y-1.5"><label className={lbl}>Title *</label><input required value={form.name} onChange={e => setF("name", e.target.value)} placeholder="e.g. Seasoning Launch for Client X" className={cls} /></div>
             <div className="sm:col-span-2 space-y-1.5"><label className={lbl}>Description</label><textarea value={form.description} onChange={e => setF("description", e.target.value)} placeholder="BD opportunity details..." className={cn("flex min-h-[60px] w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground", isLight ? "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400" : "border-white/10 bg-black/20 text-foreground")} /></div>
@@ -933,21 +949,35 @@ function CreateBDModal({ users, onCreate, stageOpts, statusOpts, priorityOpts, t
             <div className="space-y-1.5"><label className={lbl}>Due Date</label><input type="date" value={form.targetDate} onChange={e => setF("targetDate", e.target.value)} className={cls} /></div>
           </div>
           {users.length > 0 && (
-            <div className="space-y-2">
+            <div className="space-y-3">
               <label className={lbl}>Assignees</label>
-              <div className={cn("flex flex-wrap gap-2 p-3 rounded-xl border max-h-28 overflow-y-auto", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/10")}>
-                {users.map(u => (
-                  <button key={u.id} type="button" onClick={() => toggleAssignee(u.id)}
-                    className={cn("flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all", form.assigneeIds.includes(u.id) ? "bg-primary text-white border-primary" : isLight ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground")}>
-                    <span className={cn("w-4 h-4 rounded-full flex items-center justify-center text-[10px]", isLight ? "bg-slate-100 text-slate-700" : "bg-white/10")}>{u.name.charAt(0)}</span>
-                    {u.name}
-                  </button>
-                ))}
+              <div className={cn("relative")}>
+                <Search className={cn("absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none", isLight ? "text-slate-400" : "text-muted-foreground")} />
+                <input
+                  type="text"
+                  placeholder="Search team members…"
+                  value={assigneeSearch}
+                  onChange={e => setAssigneeSearch(e.target.value)}
+                  className={cn("w-full pl-10 pr-3 py-2 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-primary/50", isLight ? "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400" : "border-white/10 bg-black/20 text-foreground placeholder:text-muted-foreground")}
+                />
+              </div>
+              <div className={cn("flex flex-wrap gap-2 p-3 rounded-xl border max-h-32 overflow-y-auto", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/10")}>
+                {filteredUsers.length > 0 ? (
+                  filteredUsers.map(u => (
+                    <button key={u.id} type="button" onClick={() => toggleAssignee(u.id)}
+                      className={cn("flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all", form.assigneeIds.includes(u.id) ? "bg-primary text-white border-primary" : isLight ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground")}>
+                      <span className={cn("w-4 h-4 rounded-full flex items-center justify-center text-[10px]", isLight ? "bg-slate-100 text-slate-700" : "bg-white/10")}>{u.name.charAt(0)}</span>
+                      {u.name}
+                    </button>
+                  ))
+                ) : (
+                  <p className={cn("text-xs", isLight ? "text-slate-400" : "text-muted-foreground")}>No team members found</p>
+                )}
               </div>
             </div>
           )}
-          <div className={cn("flex justify-end gap-3 pt-2 border-t", isLight ? "border-slate-200" : "border-white/10")}>
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+          <div className={cn("flex justify-end gap-3 pt-2 border-t px-6 pb-6", isLight ? "border-slate-200" : "border-white/10")}>
+            <button type="button" onClick={() => setOpen(false)} className={cn("px-4 py-2 rounded-xl text-sm font-medium transition-colors", isLight ? "bg-red-500 text-white hover:bg-red-600" : "bg-red-600 text-white hover:bg-red-700")}>Cancel</button>
             <Button type="submit" disabled={loading}>{loading ? "Creating..." : "Create BD Item"}</Button>
           </div>
         </form>

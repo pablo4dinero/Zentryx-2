@@ -869,7 +869,7 @@ export default function NewsFeed() {
 
   // Load saved default on mount
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY) || "";
+    const saved = localStorage.getItem(STORAGE_KEY) || "Food Science";
     setDefaultSearch(saved);
     setActiveSearch(saved);
     setSearchInput(saved);
@@ -984,7 +984,7 @@ export default function NewsFeed() {
             value={searchInput}
             onChange={e => setSearchInput(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter") handleSearch(); }}
-            placeholder="Search NewsAPI & Guardian — e.g. Nigeria dairy, snack trends, NAFDAC…"
+            placeholder="Search NewsAPI & Guardian e.g. Nigeria dairy, snack trends, NAFDAC…"
             className={cn(
               "flex-1 bg-transparent text-sm focus:outline-none min-w-0",
               isLight ? "text-gray-800 placeholder:text-slate-400" : "text-foreground placeholder:text-gray-600",

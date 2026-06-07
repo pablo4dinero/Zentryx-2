@@ -300,7 +300,7 @@ export default function ProjectsList() {
           <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input placeholder="Search projects..." className="pl-9" value={searchTerm} onChange={e => setSearchQuery(e.target.value)} />
+              <Input placeholder="Search projects..." className={cn("pl-9", isLight && "bg-white")} value={searchTerm} onChange={e => setSearchQuery(e.target.value)} />
             </div>
             <div className="flex items-center gap-2 relative" data-status-manage="">
               {/* Mobile/tablet: one compact dropdown for the whole status list. */}
