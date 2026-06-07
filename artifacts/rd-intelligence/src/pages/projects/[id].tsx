@@ -864,6 +864,8 @@ function AssigneeEditor({ currentAssigneeIds, users, onSave }: { currentAssignee
 }
 
 function CommentsTab({ projectId, users }: { projectId: number; users: any[] }) {
+  const { theme } = useTheme();
+  const isLight = theme === "light";
   const [comments, setComments] = useState<any[]>([]);
   const [newComment, setNewComment] = useState("");
   const [loading, setLoading] = useState(true);
