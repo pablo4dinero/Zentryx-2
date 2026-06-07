@@ -238,6 +238,22 @@ function isFloor3Priority(productType: string | null, volume?: number): boolean 
   return false;
 }
 
+// Helper: Tuesday backfill eligibility (Phase 2b).
+// Once all Mon-Tue exclusive Sweet products are placed, leftover Floor 3
+// TUESDAY capacity is filled with these large overflow products so the floor
+// is maxed out instead of sitting idle. Volume gates per business rule:
+//   Breading  > 500kg
+//   Spice Mix > 500kg
+//   Seasoning > 1000kg and ≤ 2000kg (consistent with Floor 3's Seasoning cap)
+function isTuesdayBackfillEligible(productType: string | null, volume: number): boolean {
+  if (!productType) return false;
+  const t = normalizeType(productType);
+  if (t === "breading") return volume > 500;
+  if (t === "spice_mix") return volume > 500;
+  if (t === "seasoning") return volume > 1000 && volume <= 2000;
+  return false;
+}
+
 // Floor eligibility:
 //   1. If the floor has an explicit allowedProductTypes list, that wins —
 //      strict include match.
@@ -676,6 +692,89 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
       if (order.remainingQuantity <= 0) {
         const idx = fullyScheduled.findIndex(p => p.orderId === order.id);
         if (idx < 0) fullyScheduled.push({ orderId: order.id, label: order.productionLabel });
+      }
+    }
+  }
+
+  // ── PHASE 2b: Floor 3 Mon-Tue backfill (overflow) ─────────────────────────
+  // Mon-Tue is reserved for exclusive Sweet products. But once those run out,
+  // leftover Floor 3 Mon-Tue capacity should not sit idle. Backfill BOTH days'
+  // remaining capacity with large overflow orders — Breading (>500kg),
+  // Seasoning (>1000–2000kg), Spice Mix (>500kg) — chosen largest-volume-first,
+  // until Mon-Tue is maxed out. Anything not placed here still flows into
+  // Phase 3 (Wed-Fri / Floor 1).
+  if (floor3) {
+    // Gate: only backfill once no Mon-Tue exclusive product remains unplaced
+    // (≤500kg orders are Floor 2 only, so they never count as "unplaced" here).
+    const exclusivesUnplaced = sortedOrders.some(
+      o => o.remainingQuantity > 500 && isMonTueExclusiveProduct(o.productType),
+    );
+
+    if (!exclusivesUnplaced) {
+      // Largest volume first, then earliest deadline.
+      const backfillOrders = sortedOrders
+        .filter(o => o.remainingQuantity > 0 && isTuesdayBackfillEligible(o.productType, o.remainingQuantity))
+        .sort((a, b) => {
+          if (b.remainingQuantity !== a.remainingQuantity) return b.remainingQuantity - a.remainingQuantity;
+          const da = a.expectedDeliveryDate ? new Date(a.expectedDeliveryDate).getTime() : Infinity;
+          const db = b.expectedDeliveryDate ? new Date(b.expectedDeliveryDate).getTime() : Infinity;
+          return da - db;
+        });
+
+      for (const order of backfillOrders) {
+        if (order.remainingQuantity <= 0) continue;
+
+        const deadline = latestCompletion.get(order.id) ?? null;
+        const blendMins = blendMinutesById(blendSpeeds, order.blendSpeedId || "fast");
+        const dailyCap = dailyCapacityKg(floor3, order.blendSpeedId || "fast", blendSpeeds);
+        const bSize = batchSizeKg(floor3, blendSpeeds);
+        const orderType = normalizeType(order.productType);
+
+        // Both Mon and Tue — fill all leftover Mon-Tue capacity once exclusives are gone.
+        for (const cell of cellsForFloorByDeadline(floor3.id, deadline, ["Mon", "Tue"])) {
+          if (order.remainingQuantity <= 0) break;
+          const key = cellKey(floor3.id, cell.day);
+          let availableMin = cellMinutesRemaining.get(key) ?? 0;
+          if (availableMin <= 0) continue;
+
+          // Savory/Sweet same-cell conflict (Spice Mix is in neither group).
+          const existingTypes = cellProductTypes.get(key) ?? new Set();
+          const currentIsSavory = isSavoryGroup(order.productType);
+          const currentIsSweet = isSweetGroup(order.productType);
+          const existingHasSavory = [...existingTypes].some(t => isSavoryGroup(t));
+          const existingHasSweet = [...existingTypes].some(t => isSweetGroup(t));
+          if ((currentIsSavory && existingHasSweet) || (currentIsSweet && existingHasSavory)) continue;
+
+          // Switch cost if a different product already occupies this cell.
+          const hasOtherType = orderType && [...existingTypes].some(t => t && t !== orderType);
+          if (hasOtherType) {
+            availableMin -= DEFAULT_SWITCH_MINUTES;
+            if (availableMin <= 0) continue;
+            switchDays.push({ floorName: floor3.floorName, day: cell.day });
+          }
+
+          const batches = Math.floor(availableMin / blendMins);
+          if (batches <= 0) continue;
+          const assignable = Math.min(batches * bSize, order.remainingQuantity, dailyCap);
+          if (assignable <= 0) continue;
+
+          placements.push({
+            floorId: floor3.id,
+            productionOrderId: order.id,
+            assignedDay: cell.day,
+            assignedVolume: Math.round(assignable * 10) / 10,
+          });
+
+          const minutesUsed = Math.ceil(assignable / bSize) * blendMins + (hasOtherType ? DEFAULT_SWITCH_MINUTES : 0);
+          cellMinutesRemaining.set(key, Math.max(0, (cellMinutesRemaining.get(key) ?? 0) - minutesUsed));
+          if (orderType) cellProductTypes.set(key, new Set([...existingTypes, orderType]));
+          order.remainingQuantity -= assignable;
+        }
+
+        if (order.remainingQuantity <= 0) {
+          const idx = fullyScheduled.findIndex(p => p.orderId === order.id);
+          if (idx < 0) fullyScheduled.push({ orderId: order.id, label: order.productionLabel });
+        }
       }
     }
   }
