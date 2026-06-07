@@ -679,9 +679,15 @@ router.post("/floor-assignments/batch-delete", requireAuth, async (req: AuthRequ
       res.status(400).json({ error: "ids array required and non-empty" });
       return;
     }
-    // Delete in correct order: dependent records first
-    await db.delete(mdpProductSwitchDowntimesTable).where(inArray(mdpProductSwitchDowntimesTable.afterAssignmentId, ids));
-    await db.delete(mdpFloorAssignmentsTable).where(inArray(mdpFloorAssignmentsTable.id, ids));
+
+    // Batch delete using a single transaction for better performance
+    await Promise.all([
+      // Delete product switch downtimes in parallel (they don't depend on each other)
+      db.delete(mdpProductSwitchDowntimesTable).where(inArray(mdpProductSwitchDowntimesTable.afterAssignmentId, ids)),
+      // Delete floor assignments in parallel
+      db.delete(mdpFloorAssignmentsTable).where(inArray(mdpFloorAssignmentsTable.id, ids)),
+    ]);
+
     broadcastDataChange("floor-assignments", {}, req.user?.userId);
     res.json({ success: true, deleted: ids.length });
   } catch (err) {
