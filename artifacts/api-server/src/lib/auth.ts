@@ -169,6 +169,36 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
   }
 }
 
+// Auth guard for the MFA *enrollment* endpoints only. These must be reachable
+// during the must-enroll-MFA login flow, where the user has passed the password
+// check but only holds an `mfaPending` token (no full session yet). A normal
+// `requireAuth` rejects mfaPending tokens ("SMS verification required"), which
+// blocked "I'm ready — generate my code". Here we accept an mfaPending token
+// (its 15-min expiry is still enforced by jwt.verify) and otherwise defer to the
+// standard session checks for already-logged-in users enrolling from Settings.
+export async function requireAuthOrMfaEnrollment(req: AuthRequest, res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Unauthorized", message: "No token provided" });
+    return;
+  }
+  const token = authHeader.slice(7);
+  try {
+    const payload = jwt.verify(token, JWT_SECRET) as JwtPayload & { mfaPending?: boolean };
+    if (payload.mfaPending) {
+      // Password already validated — allow TOTP enrollment to proceed.
+      req.user = payload;
+      next();
+      return;
+    }
+  } catch {
+    res.status(401).json({ error: "Unauthorized", message: "Invalid or expired token" });
+    return;
+  }
+  // Full session token — apply the normal session-policy / revocation checks.
+  return requireAuth(req, res, next);
+}
+
 export function requireRole(...roles: string[]) {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.user || !roles.includes(req.user.role)) {

@@ -4,7 +4,7 @@ import { usersTable, notificationsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { randomBytes } from "crypto";
-import { requireAuth, AuthRequest, verifyMfaToken, signToken } from "../lib/auth";
+import { requireAuth, requireAuthOrMfaEnrollment, AuthRequest, verifyMfaToken, signToken } from "../lib/auth";
 import {
   generateTotpSecret,
   buildOtpAuthUri,
@@ -35,7 +35,7 @@ export function mfaRequiredForRole(role: string | null | undefined): boolean {
 // Idempotent: re-issuing replaces the in-progress secret. The user
 // isn't considered enrolled until /enroll/verify succeeds — that's
 // when we set `mfa_enrolled_at`.
-router.post("/enroll/start", requireAuth, async (req: AuthRequest, res) => {
+router.post("/enroll/start", requireAuthOrMfaEnrollment, async (req: AuthRequest, res) => {
   try {
     const userId = req.user!.userId;
     const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
@@ -66,7 +66,7 @@ router.post("/enroll/start", requireAuth, async (req: AuthRequest, res) => {
 // Confirms the user has the shared secret in their app by checking
 // their first 6-digit code. On success, generates and returns 10
 // backup codes (shown ONCE — never retrievable again).
-router.post("/enroll/verify", requireAuth, async (req: AuthRequest, res) => {
+router.post("/enroll/verify", requireAuthOrMfaEnrollment, async (req: AuthRequest, res) => {
   try {
     const userId = req.user!.userId;
     const { code } = req.body as { code?: string };
