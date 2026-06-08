@@ -195,6 +195,10 @@
 @media (max-width: 1023px) {
   .light-app-bg > aside {
     position: fixed;
+    /* `.light-app-bg > *` also forces z-index:1 on every child, which clobbers
+       the sidebar's z-50 and let the (later-in-DOM) page content stack on top —
+       so the slide-in sidebar appeared *under* the page. Restore it above. */
+    z-index: 50;
   }
 }
 
