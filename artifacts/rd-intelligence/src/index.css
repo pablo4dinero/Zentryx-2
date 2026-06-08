@@ -185,6 +185,19 @@
   z-index: 1;
 }
 
+/* On phones + tablets the sidebar is a fixed slide-in overlay (so page content
+   owns the full width). The `.light-app-bg > *` rule above forces
+   position:relative on every direct child, which pulled the fixed sidebar back
+   into document flow — its 64/256px width then reserved a wide empty left
+   margin in LIGHT mode only (dark mode doesn't use .light-app-bg, so it was
+   unaffected). Restore the overlay so light mode matches dark mode. Desktop
+   (>=1024px) keeps the in-flow sidebar via Tailwind's lg:relative. */
+@media (max-width: 1023px) {
+  .light-app-bg > aside {
+    position: fixed;
+  }
+}
+
 /* ─────────────────────────────────────────────
    GLASSMORPHISM — LIGHT SIDEBAR
    Properly frosted: lower background alpha so the
