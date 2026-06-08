@@ -211,7 +211,7 @@
    ───────────────────────────────────────────── */
 .light-sidebar {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.78) 0%, rgba(248, 250, 255, 0.62) 100%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 255, 0.96) 100%),
     radial-gradient(ellipse 90% 30% at 50% 0%, rgba(99, 102, 241, 0.06) 0%, transparent 70%);
   backdrop-filter: blur(28px) saturate(190%);
   -webkit-backdrop-filter: blur(28px) saturate(190%);
