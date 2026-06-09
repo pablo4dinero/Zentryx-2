@@ -194,11 +194,15 @@ function microbialBufferDays(microbial: string): number {
   return 0;
 }
 
-// Helper: Check if a product type is in the "savory" group (Seasoning, Marinade, Curry, Breading)
+// Helper: Check if a product type is in the "savory" group (Seasoning, Marinade,
+// Curry, Breading, Savoury Flavour, Concentrate). These must never share a
+// floor/day cell with a sweet product.
 function isSavoryGroup(productType: string | null): boolean {
   if (!productType) return false;
   const t = normalizeType(productType);
-  return t.includes("seasoning") || t.includes("marinade") || t.includes("curry") || t.includes("breading");
+  return t.includes("seasoning") || t.includes("marinade") || t.includes("curry")
+    || t.includes("breading") || t.includes("savoury") || t.includes("savory")
+    || t.includes("concentrate");
 }
 
 // Helper: Check if a product type is in the "sweet" group (Dairy Premix, Bread Premix, Snack Dusting, Sweet Flavour, Functional Blend, Dough Premix)
@@ -284,13 +288,18 @@ function isFloorEligible(floor: Floor, orderProductType: string | null, volume?:
     return true;
   }
 
-  // Floor 3 special cases
+  // Floor 3 special cases — reserved for SMALL grouped savoury orders. Accepts
+  // Curry, Breading, Spice Mix, Seasoning, Marinade, Savoury Flavour and
+  // Concentrate, but only at 501–3000kg: ≤500kg is Floor 2, and >3000kg is a
+  // "large" order that stays on Floor 1.
   if (floor.floorName === "Floor 3") {
-    // Allow Curry, Breading and Spice Mix (Floor 3 Friday savoury accommodation)
-    if (t.includes("curry") || t.includes("breading") || t.includes("spice")) return true;
-    // Allow Seasoning and Marinade only if volume is 600-2000kg
-    if ((t.includes("seasoning") || t.includes("marinade")) && volume) {
-      return volume >= 600 && volume <= 2000;
+    const floor3Type =
+      t.includes("curry") || t.includes("breading") || t.includes("spice") ||
+      t.includes("seasoning") || t.includes("marinade") ||
+      t.includes("savoury") || t.includes("savory") || t.includes("concentrate");
+    if (floor3Type) {
+      const v = volume ?? 0;
+      return v > 500 && v <= 3000;
     }
   }
 
@@ -850,10 +859,138 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
     }
   }
 
-  // PHASE 3: Assign remaining orders (>500kg + other products)
-  // Strategy: Floor 3 Wed-Fri FIRST (all products), then Floor 1 as fallback
-  // STRICT RULE 1: Non-exclusive products CANNOT use Floor 3 Mon-Tue (reserved for Phase 2)
-  // STRICT RULE 2: ≤500kg orders are Phase 1 only
+  // PHASE 3: size-aware routing
+  //  • LARGE orders (>3000kg) stay on Floor 1. When one spills to the next day we
+  //    never carry a sub-1000kg sliver (the first day is under-filled so the
+  //    carried portion is ≥1000kg), and large orders are placed FIRST so a spill
+  //    leads the next day before any other product lands there.
+  //  • SMALL orders (501–3000kg) of Floor-3 types are grouped on Floor 3 (Wed
+  //    onward); everything else falls back to Floor 1.
+  //  • ≤500kg orders are Phase 1 (Floor 2) only.
+  const LARGE_THRESHOLD_KG = 3000;
+  const MIN_SPILL_KG = 1000;
+  const floor1 = floors.find(f => f.floorName.toLowerCase() === "floor 1");
+
+  // Place a large order on Floor 1, day by day. Keeps any carried spill ≥1000kg
+  // by under-filling the current day when the natural leftover would be smaller.
+  const placeLargeOnFloor1 = (order: Order) => {
+    if (!floor1) return;
+    const deadline = latestCompletion.get(order.id) ?? null;
+    const blendMins = blendMinutesById(blendSpeeds, order.blendSpeedId || "fast");
+    const dailyCap = dailyCapacityKg(floor1, order.blendSpeedId || "fast", blendSpeeds);
+    const bSize = batchSizeKg(floor1, blendSpeeds);
+    const orderType = normalizeType(order.productType);
+
+    for (let i = 0; i < workingDays.length; i++) {
+      if (order.remainingQuantity <= 0) break;
+      const date = workingDates[i];
+      if (deadline && date && date.getTime() > deadline.getTime()) break;
+      const day = workingDays[i];
+      if (isFloorDayBlocked(floor1.id, day)) continue;
+      const key = cellKey(floor1.id, day);
+      let availableMin = cellMinutesRemaining.get(key) ?? 0;
+      if (availableMin <= 0) continue;
+
+      const existingTypes: Set<string> = cellProductTypes.get(key) ?? new Set<string>();
+      const curSavory = isSavoryGroup(order.productType);
+      const curSweet = isSweetGroup(order.productType);
+      const hasSavory = [...existingTypes].some(t => isSavoryGroup(t));
+      const hasSweet = [...existingTypes].some(t => isSweetGroup(t));
+      if ((curSavory && hasSweet) || (curSweet && hasSavory)) continue;
+
+      const hasOtherType = !!orderType && [...existingTypes].some(t => t && t !== orderType);
+      if (hasOtherType) {
+        availableMin -= DEFAULT_SWITCH_MINUTES;
+        if (availableMin <= 0) continue;
+      }
+      const batches = Math.floor(availableMin / blendMins);
+      if (batches <= 0) continue;
+      const maxFit = Math.min(batches * bSize, dailyCap);
+      if (maxFit <= 0) continue;
+
+      let placeQty: number;
+      if (maxFit >= order.remainingQuantity) {
+        placeQty = order.remainingQuantity;                  // fits fully — no spill
+      } else if (order.remainingQuantity - maxFit < MIN_SPILL_KG) {
+        placeQty = order.remainingQuantity - MIN_SPILL_KG;    // under-fill so spill ≥ 1000kg
+      } else {
+        placeQty = maxFit;
+      }
+      placeQty = Math.round(placeQty);
+      if (placeQty <= 0) continue;
+
+      if (hasOtherType) switchDays.push({ floorName: floor1.floorName, day });
+      placements.push({ floorId: floor1.id, productionOrderId: order.id, assignedDay: day, assignedVolume: placeQty });
+      const minutesUsed = Math.ceil(placeQty / bSize) * blendMins + (hasOtherType ? DEFAULT_SWITCH_MINUTES : 0);
+      cellMinutesRemaining.set(key, Math.max(0, (cellMinutesRemaining.get(key) ?? 0) - minutesUsed));
+      cellProductTypes.set(key, new Set([...existingTypes, orderType]));
+      order.remainingQuantity -= placeQty;
+    }
+  };
+
+  // Place a small order on Floor 3, Wed onward (Mon-Tue reserved for exclusives),
+  // clustering same-type products together to keep switches down.
+  const placeSmallOnFloor3 = (order: Order) => {
+    if (!floor3) return;
+    const deadline = latestCompletion.get(order.id) ?? null;
+    const blendMins = blendMinutesById(blendSpeeds, order.blendSpeedId || "fast");
+    const dailyCap = dailyCapacityKg(floor3, order.blendSpeedId || "fast", blendSpeeds);
+    const bSize = batchSizeKg(floor3, blendSpeeds);
+    const orderType = normalizeType(order.productType);
+    const wednesdayIndex = workingDays.indexOf("Wed");
+    const startFrom = wednesdayIndex >= 0 ? wednesdayIndex : 0;
+
+    for (let i = startFrom; i < workingDays.length; i++) {
+      if (order.remainingQuantity <= 0) break;
+      const date = workingDates[i];
+      if (deadline && date && date.getTime() > deadline.getTime()) break;
+      const day = workingDays[i];
+      if (isFloorDayBlocked(floor3.id, day)) continue;
+      const key = cellKey(floor3.id, day);
+      let availableMin = cellMinutesRemaining.get(key) ?? 0;
+      if (availableMin <= 0) continue;
+
+      const existingTypes: Set<string> = cellProductTypes.get(key) ?? new Set<string>();
+      const curSavory = isSavoryGroup(order.productType);
+      const curSweet = isSweetGroup(order.productType);
+      const hasSavory = [...existingTypes].some(t => isSavoryGroup(t));
+      const hasSweet = [...existingTypes].some(t => isSweetGroup(t));
+      if ((curSavory && hasSweet) || (curSweet && hasSavory)) continue;
+
+      const hasOtherType = !!orderType && [...existingTypes].some(t => t && t !== orderType);
+      if (hasOtherType) {
+        availableMin -= DEFAULT_SWITCH_MINUTES;
+        if (availableMin <= 0) continue;
+        switchDays.push({ floorName: floor3.floorName, day });
+      }
+      const batches = Math.floor(availableMin / blendMins);
+      if (batches <= 0) continue;
+      const assignable = Math.round(Math.min(batches * bSize, order.remainingQuantity, dailyCap));
+      if (assignable <= 0) continue;
+
+      placements.push({ floorId: floor3.id, productionOrderId: order.id, assignedDay: day, assignedVolume: assignable });
+      const minutesUsed = Math.ceil(assignable / bSize) * blendMins + (hasOtherType ? DEFAULT_SWITCH_MINUTES : 0);
+      cellMinutesRemaining.set(key, Math.max(0, (cellMinutesRemaining.get(key) ?? 0) - minutesUsed));
+      cellProductTypes.set(key, new Set([...existingTypes, orderType]));
+      order.remainingQuantity -= assignable;
+    }
+  };
+
+  // Pass A — LARGE orders (>3000kg) anchor Floor 1 first, largest first, so a
+  // spilled order leads its next day before any other product is placed there.
+  const largeHandled = new Set<number>();
+  if (floor1) {
+    const largeOrders = sortedOrders
+      .filter(o => o.remainingQuantity > LARGE_THRESHOLD_KG && !isMonTueExclusiveProduct(o.productType))
+      .sort((a, b) => b.remainingQuantity - a.remainingQuantity);
+    for (const order of largeOrders) {
+      if (!isFloorEligible(floor1, order.productType, order.remainingQuantity)) continue;
+      placeLargeOnFloor1(order);
+      largeHandled.add(order.id);
+    }
+  }
+
+  // Pass B — SMALL orders (501–3000kg): grouped on Floor 3 where eligible, else Floor 1.
   for (const group of productGroups) {
     if (group.orders.every(o => o.remainingQuantity <= 0)) continue;
     if (group.orders.every(o => isMonTueExclusiveProduct(o.productType))) continue;  // Skip exclusive products (handled in Phase 2)
@@ -866,82 +1003,15 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
       }
     }
 
-    // Phase 3 Strategy: Try Floor 3 Wed-Fri FIRST for all >500kg orders
-    if (floor3) {
-      for (const order of group.orders) {
-        if (order.remainingQuantity <= 0) continue;
+    for (const order of group.orders) {
+      if (order.remainingQuantity <= 0) continue;
+      if (largeHandled.has(order.id)) continue;  // large orders are Floor 1 only (Pass A)
 
-        // Check if this product type is allowed on Floor 3
-        if (!isFloorEligible(floor3, order.productType, order.remainingQuantity)) {
-          continue; // Skip to Floor 1 fallback instead
-        }
-
-        // Try to assign to Floor 3 Wed-Fri ONLY (must pass eligibility check)
-        const blendMins = blendMinutesById(blendSpeeds, order.blendSpeedId || "fast");
-        const dailyCap = dailyCapacityKg(floor3, order.blendSpeedId || "fast", blendSpeeds);
-        const bSize = batchSizeKg(floor3, blendSpeeds);
-        const orderType = normalizeType(order.productType);
-
-        // Use Wed-Fri only (exclude Mon-Tue which are reserved for Phase 2)
-        const wednesdayIndex = workingDays.indexOf("Wed");
-        const startFrom = wednesdayIndex >= 0 ? wednesdayIndex : 0;
-
-        for (let i = startFrom; i < workingDays.length; i++) {
-          if (order.remainingQuantity <= 0) break;
-          const day = workingDays[i];
-          const cell = { day, dayIndex: i, isNS: false };
-
-          if (isFloorDayBlocked(floor3.id, cell.day)) continue;
-
-          const key = cellKey(floor3.id, cell.day);
-          let availableMin = cellMinutesRemaining.get(key) ?? 0;
-          if (availableMin <= 0) continue;
-
-          const existingTypes = cellProductTypes.get(key) ?? new Set();
-          const currentIsSavory = isSavoryGroup(order.productType);
-          const currentIsSweet = isSweetGroup(order.productType);
-          const existingHasSavory = [...existingTypes].some(t => isSavoryGroup(t));
-          const existingHasSweet = [...existingTypes].some(t => isSweetGroup(t));
-
-          // Savory/Sweet conflict check (still applies on Floor 3)
-          if ((currentIsSavory && existingHasSweet) || (currentIsSweet && existingHasSavory)) continue;
-
-          const hasOtherType = orderType && [...existingTypes].some(t => t && t !== orderType);
-          if (hasOtherType) {
-            availableMin -= DEFAULT_SWITCH_MINUTES;
-            if (availableMin <= 0) continue;
-            switchDays.push({ floorName: floor3.floorName, day: cell.day });
-          }
-
-          const batches = Math.floor(availableMin / blendMins);
-          if (batches <= 0) continue;
-          const assignable = Math.round(Math.min(batches * bSize, order.remainingQuantity, dailyCap));
-          if (assignable <= 0) continue;
-
-          placements.push({
-            floorId: floor3.id,
-            productionOrderId: order.id,
-            assignedDay: cell.day,
-            assignedVolume: assignable,
-          });
-
-          const minutesUsed = Math.ceil(assignable / bSize) * blendMins + (hasOtherType ? DEFAULT_SWITCH_MINUTES : 0);
-          cellMinutesRemaining.set(key, Math.max(0, (cellMinutesRemaining.get(key) ?? 0) - minutesUsed));
-          if (orderType) cellProductTypes.set(key, new Set([...existingTypes, orderType]));
-          order.remainingQuantity -= assignable;
-        }
+      // Small order: Floor 3 (grouped) if the type is eligible, else Floor 1.
+      if (floor3 && isFloorEligible(floor3, order.productType, order.remainingQuantity)) {
+        placeSmallOnFloor3(order);
       }
-    }
-
-    // Phase 3 Fallback: If still remaining, try Floor 1
-    const floor1 = floors.find(f => f.floorName.toLowerCase() === "floor 1");
-    if (floor1) {
-      for (const order of group.orders) {
-        if (order.remainingQuantity <= 0) continue;
-        // Only try Floor 1 if product is eligible for it
-        if (!isFloorEligible(floor1, order.productType, order.remainingQuantity)) {
-          continue;
-        }
+      if (order.remainingQuantity > 0 && floor1 && isFloorEligible(floor1, order.productType, order.remainingQuantity)) {
         tryAssignOnFloor(order, floor1);
       }
     }
