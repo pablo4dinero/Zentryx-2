@@ -80,7 +80,9 @@ export type PlanningOutput = {
 const STANDARD_DAY_MINUTES = 450;
 const NIGHT_SHIFT_MINUTES = 450;
 const SLOW_BLEND_CAP_KG = 8_000;
-const DEFAULT_SWITCH_MINUTES = 60;
+const DEFAULT_SWITCH_MINUTES = 60;       // switch between DIFFERENT product types
+const SAME_TYPE_SWITCH_MINUTES = 30;     // switch between two products of the SAME type ("similar")
+const FLOOR3_MAX_PRODUCTS_PER_DAY = 4;   // Floor 3 may hold at most 4 distinct product cards per day
 
 function normalizeType(s: string | null | undefined): string {
   return String(s ?? "").trim().toLowerCase().replace(/[\s&_\-/]+/g, "_");
@@ -209,7 +211,10 @@ function isSavoryGroup(productType: string | null): boolean {
 function isSweetGroup(productType: string | null): boolean {
   if (!productType) return false;
   const t = normalizeType(productType);
-  return t.includes("dairy") || t.includes("bread") || t.includes("snack") || t.includes("sweet") ||
+  // NB: "breading" contains "bread" — exclude it so Breading (savoury) is never
+  // misclassified as the sweet/exclusive Bread Premix.
+  return t.includes("dairy") || (t.includes("bread") && !t.includes("breading")) ||
+         t.includes("snack") || t.includes("sweet") ||
          t.includes("functional") || t.includes("dough");
 }
 
@@ -365,6 +370,23 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
   // assignments already consumed.
   const cellMinutesRemaining = new Map<string, number>();
   const cellProductTypes = new Map<string, Set<string>>();
+  // Distinct order ids per cell — drives the Floor 3 "max 4 products/day" cap.
+  const cellProducts = new Map<string, Set<number>>();
+  const addCellProduct = (key: string, orderId: number) => {
+    const set = cellProducts.get(key) ?? new Set<number>();
+    set.add(orderId);
+    cellProducts.set(key, set);
+  };
+  const floor3AtCap = (floor: Floor, key: string): boolean =>
+    floor.floorName.toLowerCase() === "floor 3" &&
+    (cellProducts.get(key)?.size ?? 0) >= FLOOR3_MAX_PRODUCTS_PER_DAY;
+  // Switch minutes for placing `orderType` into a cell: 0 if empty, 30 if a
+  // product of the same type is already there ("similar"), else 60 (new type).
+  const switchMinutesFor = (key: string, orderType: string): number => {
+    const types = cellProductTypes.get(key);
+    if (!types || types.size === 0) return 0;
+    return types.has(orderType) ? SAME_TYPE_SWITCH_MINUTES : DEFAULT_SWITCH_MINUTES;
+  };
 
   const eligibleCells: { floorId: number; day: string; dayIndex: number; isNS: boolean }[] = [];
 
@@ -441,6 +463,7 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
       const key = cellKey(floor.id, cell.day);
       let availableMin = cellMinutesRemaining.get(key) ?? 0;
       if (availableMin <= 0) continue;
+      if (floor3AtCap(floor, key)) continue;  // Floor 3: max 4 distinct products/day
 
       // Check day conflict: Savory group cannot be with Sweet group on same day
       const existingTypes = cellProductTypes.get(key) ?? new Set();
@@ -454,10 +477,10 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
         continue;
       }
 
-      // Switch cost if a different product is already on this cell
-      const hasOtherType = orderType && [...existingTypes].some(t => t && t !== orderType);
-      if (hasOtherType) {
-        availableMin -= DEFAULT_SWITCH_MINUTES;
+      // Per-product switch cost (30 same-type / 60 different-type)
+      const sw = switchMinutesFor(key, orderType);
+      if (sw > 0) {
+        availableMin -= sw;
         if (availableMin <= 0) continue;
         switchDays.push({ floorName: floor.floorName, day: cell.day });
       }
@@ -479,9 +502,10 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
       });
 
       // Consume minutes proportional to the volume actually placed
-      const minutesUsed = Math.ceil(assignable / bSize) * blendMins + (hasOtherType ? DEFAULT_SWITCH_MINUTES : 0);
+      const minutesUsed = Math.ceil(assignable / bSize) * blendMins + sw;
       cellMinutesRemaining.set(key, Math.max(0, (cellMinutesRemaining.get(key) ?? 0) - minutesUsed));
       if (orderType) cellProductTypes.set(key, new Set([...existingTypes, orderType]));
+      addCellProduct(key, order.id);
       order.remainingQuantity -= assignable;
     }
 
@@ -515,6 +539,7 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
         const key = cellKey(floor3.id, cell.day);
         let availableMin = cellMinutesRemaining.get(key) ?? 0;
         if (availableMin <= 0) continue;
+        if (floor3AtCap(floor3, key)) continue;  // Floor 3: max 4 distinct products/day
 
         // Check day conflict: Savory group cannot be with Sweet group on same day
         const existingTypes = cellProductTypes.get(key) ?? new Set();
@@ -527,10 +552,10 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
           continue;
         }
 
-        // Switch cost if a different product is already on this cell
-        const hasOtherType = orderType && [...existingTypes].some(t => t && t !== orderType);
-        if (hasOtherType) {
-          availableMin -= DEFAULT_SWITCH_MINUTES;
+        // Per-product switch cost (30 same-type / 60 different-type)
+        const sw = switchMinutesFor(key, orderType);
+        if (sw > 0) {
+          availableMin -= sw;
           if (availableMin <= 0) continue;
           switchDays.push({ floorName: floor3.floorName, day: cell.day });
         }
@@ -547,9 +572,10 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
           assignedVolume: assignable,
         });
 
-        const minutesUsed = Math.ceil(assignable / bSize) * blendMins + (hasOtherType ? DEFAULT_SWITCH_MINUTES : 0);
+        const minutesUsed = Math.ceil(assignable / bSize) * blendMins + sw;
         cellMinutesRemaining.set(key, Math.max(0, (cellMinutesRemaining.get(key) ?? 0) - minutesUsed));
         if (orderType) cellProductTypes.set(key, new Set([...existingTypes, orderType]));
+        addCellProduct(key, order.id);
         order.remainingQuantity -= assignable;
         assignedToFloor3MonTue.add(order.id);
       }
@@ -614,9 +640,9 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
         if (availableMin <= 0) continue;
 
         const existingTypes = cellProductTypes.get(key) ?? new Set();
-        const hasOtherType = orderType && [...existingTypes].some(t => t && t !== orderType);
-        if (hasOtherType) {
-          availableMin -= DEFAULT_SWITCH_MINUTES;
+        const sw = switchMinutesFor(key, orderType);
+        if (sw > 0) {
+          availableMin -= sw;
           if (availableMin <= 0) continue;
           switchDays.push({ floorName: floor2.floorName, day: cell.day });
         }
@@ -636,9 +662,10 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
           assignedVolume: assignable,
         });
 
-        const minutesUsed = Math.ceil(assignable / bSize) * blendMins + (hasOtherType ? DEFAULT_SWITCH_MINUTES : 0);
+        const minutesUsed = Math.ceil(assignable / bSize) * blendMins + sw;
         cellMinutesRemaining.set(key, Math.max(0, (cellMinutesRemaining.get(key) ?? 0) - minutesUsed));
         if (orderType) cellProductTypes.set(key, new Set([...existingTypes, orderType]));
+        addCellProduct(key, order.id);
         order.remainingQuantity -= assignable;
       }
 
@@ -670,6 +697,7 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
         const key = cellKey(floor3.id, cell.day);
         let availableMin = cellMinutesRemaining.get(key) ?? 0;
         if (availableMin <= 0) continue;
+        if (floor3AtCap(floor3, key)) continue;  // Floor 3: max 4 distinct products/day
 
         const existingTypes = cellProductTypes.get(key) ?? new Set();
         const currentIsSavory = isSavoryGroup(order.productType);
@@ -679,9 +707,9 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
 
         if ((currentIsSavory && existingHasSweet) || (currentIsSweet && existingHasSavory)) continue;
 
-        const hasOtherType = orderType && [...existingTypes].some(t => t && t !== orderType);
-        if (hasOtherType) {
-          availableMin -= DEFAULT_SWITCH_MINUTES;
+        const sw = switchMinutesFor(key, orderType);
+        if (sw > 0) {
+          availableMin -= sw;
           if (availableMin <= 0) continue;
           switchDays.push({ floorName: floor3.floorName, day: cell.day });
         }
@@ -698,9 +726,10 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
           assignedVolume: assignable,
         });
 
-        const minutesUsed = Math.ceil(assignable / bSize) * blendMins + (hasOtherType ? DEFAULT_SWITCH_MINUTES : 0);
+        const minutesUsed = Math.ceil(assignable / bSize) * blendMins + sw;
         cellMinutesRemaining.set(key, Math.max(0, (cellMinutesRemaining.get(key) ?? 0) - minutesUsed));
         if (orderType) cellProductTypes.set(key, new Set([...existingTypes, orderType]));
+        addCellProduct(key, order.id);
         order.remainingQuantity -= assignable;
       }
 
@@ -751,6 +780,7 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
           const key = cellKey(floor3.id, cell.day);
           let availableMin = cellMinutesRemaining.get(key) ?? 0;
           if (availableMin <= 0) continue;
+          if (floor3AtCap(floor3, key)) continue;  // Floor 3: max 4 distinct products/day
 
           // Savory/Sweet same-cell conflict (Spice Mix is in neither group).
           const existingTypes = cellProductTypes.get(key) ?? new Set();
@@ -760,10 +790,10 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
           const existingHasSweet = [...existingTypes].some(t => isSweetGroup(t));
           if ((currentIsSavory && existingHasSweet) || (currentIsSweet && existingHasSavory)) continue;
 
-          // Switch cost if a different product already occupies this cell.
-          const hasOtherType = orderType && [...existingTypes].some(t => t && t !== orderType);
-          if (hasOtherType) {
-            availableMin -= DEFAULT_SWITCH_MINUTES;
+          // Per-product switch cost (30 same-type / 60 different-type)
+          const sw = switchMinutesFor(key, orderType);
+          if (sw > 0) {
+            availableMin -= sw;
             if (availableMin <= 0) continue;
             switchDays.push({ floorName: floor3.floorName, day: cell.day });
           }
@@ -780,9 +810,10 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
             assignedVolume: assignable,
           });
 
-          const minutesUsed = Math.ceil(assignable / bSize) * blendMins + (hasOtherType ? DEFAULT_SWITCH_MINUTES : 0);
+          const minutesUsed = Math.ceil(assignable / bSize) * blendMins + sw;
           cellMinutesRemaining.set(key, Math.max(0, (cellMinutesRemaining.get(key) ?? 0) - minutesUsed));
           if (orderType) cellProductTypes.set(key, new Set([...existingTypes, orderType]));
+          addCellProduct(key, order.id);
           order.remainingQuantity -= assignable;
         }
 
@@ -818,6 +849,7 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
         const key = cellKey(floor3.id, cell.day);
         let availableMin = cellMinutesRemaining.get(key) ?? 0;
         if (availableMin <= 0) continue;
+        if (floor3AtCap(floor3, key)) continue;  // Floor 3: max 4 distinct products/day
 
         // Savory/Sweet same-cell conflict (exclusives are Sweet group).
         const existingTypes = cellProductTypes.get(key) ?? new Set();
@@ -827,9 +859,9 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
         const existingHasSweet = [...existingTypes].some(t => isSweetGroup(t));
         if ((currentIsSavory && existingHasSweet) || (currentIsSweet && existingHasSavory)) continue;
 
-        const hasOtherType = orderType && [...existingTypes].some(t => t && t !== orderType);
-        if (hasOtherType) {
-          availableMin -= DEFAULT_SWITCH_MINUTES;
+        const sw = switchMinutesFor(key, orderType);
+        if (sw > 0) {
+          availableMin -= sw;
           if (availableMin <= 0) continue;
           switchDays.push({ floorName: floor3.floorName, day: cell.day });
         }
@@ -846,9 +878,10 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
           assignedVolume: assignable,
         });
 
-        const minutesUsed = Math.ceil(assignable / bSize) * blendMins + (hasOtherType ? DEFAULT_SWITCH_MINUTES : 0);
+        const minutesUsed = Math.ceil(assignable / bSize) * blendMins + sw;
         cellMinutesRemaining.set(key, Math.max(0, (cellMinutesRemaining.get(key) ?? 0) - minutesUsed));
         if (orderType) cellProductTypes.set(key, new Set([...existingTypes, orderType]));
+        addCellProduct(key, order.id);
         order.remainingQuantity -= assignable;
       }
 
@@ -898,9 +931,9 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
       const hasSweet = [...existingTypes].some(t => isSweetGroup(t));
       if ((curSavory && hasSweet) || (curSweet && hasSavory)) continue;
 
-      const hasOtherType = !!orderType && [...existingTypes].some(t => t && t !== orderType);
-      if (hasOtherType) {
-        availableMin -= DEFAULT_SWITCH_MINUTES;
+      const sw = switchMinutesFor(key, orderType);
+      if (sw > 0) {
+        availableMin -= sw;
         if (availableMin <= 0) continue;
       }
       const batches = Math.floor(availableMin / blendMins);
@@ -919,11 +952,12 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
       placeQty = Math.round(placeQty);
       if (placeQty <= 0) continue;
 
-      if (hasOtherType) switchDays.push({ floorName: floor1.floorName, day });
+      if (sw > 0) switchDays.push({ floorName: floor1.floorName, day });
       placements.push({ floorId: floor1.id, productionOrderId: order.id, assignedDay: day, assignedVolume: placeQty });
-      const minutesUsed = Math.ceil(placeQty / bSize) * blendMins + (hasOtherType ? DEFAULT_SWITCH_MINUTES : 0);
+      const minutesUsed = Math.ceil(placeQty / bSize) * blendMins + sw;
       cellMinutesRemaining.set(key, Math.max(0, (cellMinutesRemaining.get(key) ?? 0) - minutesUsed));
       cellProductTypes.set(key, new Set([...existingTypes, orderType]));
+      addCellProduct(key, order.id);
       order.remainingQuantity -= placeQty;
     }
   };
@@ -949,6 +983,7 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
       const key = cellKey(floor3.id, day);
       let availableMin = cellMinutesRemaining.get(key) ?? 0;
       if (availableMin <= 0) continue;
+      if (floor3AtCap(floor3, key)) continue;  // Floor 3: max 4 distinct products/day
 
       const existingTypes: Set<string> = cellProductTypes.get(key) ?? new Set<string>();
       const curSavory = isSavoryGroup(order.productType);
@@ -957,9 +992,9 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
       const hasSweet = [...existingTypes].some(t => isSweetGroup(t));
       if ((curSavory && hasSweet) || (curSweet && hasSavory)) continue;
 
-      const hasOtherType = !!orderType && [...existingTypes].some(t => t && t !== orderType);
-      if (hasOtherType) {
-        availableMin -= DEFAULT_SWITCH_MINUTES;
+      const sw = switchMinutesFor(key, orderType);
+      if (sw > 0) {
+        availableMin -= sw;
         if (availableMin <= 0) continue;
         switchDays.push({ floorName: floor3.floorName, day });
       }
@@ -969,9 +1004,10 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
       if (assignable <= 0) continue;
 
       placements.push({ floorId: floor3.id, productionOrderId: order.id, assignedDay: day, assignedVolume: assignable });
-      const minutesUsed = Math.ceil(assignable / bSize) * blendMins + (hasOtherType ? DEFAULT_SWITCH_MINUTES : 0);
+      const minutesUsed = Math.ceil(assignable / bSize) * blendMins + sw;
       cellMinutesRemaining.set(key, Math.max(0, (cellMinutesRemaining.get(key) ?? 0) - minutesUsed));
       cellProductTypes.set(key, new Set([...existingTypes, orderType]));
+      addCellProduct(key, order.id);
       order.remainingQuantity -= assignable;
     }
   };
@@ -991,7 +1027,30 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
   }
 
   // Pass B — SMALL orders (501–3000kg): grouped on Floor 3 where eligible, else Floor 1.
-  for (const group of productGroups) {
+  // Breading/Marinade/Spice Mix are kept together as one block (positioned by their
+  // combined volume) and ordered Breading → Marinade → Spice Mix, so on a shared
+  // Floor 3 day the Breading card always comes first.
+  const trioRank = (pt: string | null): number => {
+    const t = normalizeType(pt);
+    if (t.includes("breading")) return 0;
+    if (t.includes("marinade")) return 1;
+    if (t.includes("spice")) return 2;
+    return -1;
+  };
+  const trioGroups = productGroups
+    .filter(g => trioRank(g.productType) >= 0)
+    .sort((a, b) => trioRank(a.productType) - trioRank(b.productType));
+  const otherGroups = productGroups.filter(g => trioRank(g.productType) < 0);
+  const trioVolume = trioGroups.reduce((s, g) => s + g.totalVolume, 0);
+  const passBGroups: ProductGroup[] = [];
+  let trioInserted = trioGroups.length === 0;
+  for (const g of otherGroups) {
+    if (!trioInserted && trioVolume >= g.totalVolume) { passBGroups.push(...trioGroups); trioInserted = true; }
+    passBGroups.push(g);
+  }
+  if (!trioInserted) passBGroups.push(...trioGroups);
+
+  for (const group of passBGroups) {
     if (group.orders.every(o => o.remainingQuantity <= 0)) continue;
     if (group.orders.every(o => isMonTueExclusiveProduct(o.productType))) continue;  // Skip exclusive products (handled in Phase 2)
 
@@ -1038,7 +1097,7 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
     }
   }
 
-  // ── Step 7: gap-fill pass (zero-switch top-ups for same product type) ─────
+  // ── Step 7: gap-fill pass (same-type top-ups; short 30-min switch) ─────────
   for (const cell of eligibleCells) {
     // Floor 3 Mon-Tue is exclusively for priority products — never gap-fill with others
     const cellFloor = floors.find(f => f.id === cell.floorId);
@@ -1059,22 +1118,29 @@ export function runAssistedPlanning(input: PlanningInputs): PlanningOutput {
       if (normalizeType(order.productType) !== onlyType) continue;
       if (!isFloorEligible(floor, order.productType, order.remainingQuantity)) continue;
 
+      // Floor 3: never exceed 4 distinct products on a day.
+      if (floor3AtCap(floor, key)) break;
       const blendMins = blendMinutesById(blendSpeeds, order.blendSpeedId || "fast");
       const dailyCap = dailyCapacityKg(floor, order.blendSpeedId || "fast", blendSpeeds);
-      const batches = Math.floor(availableMin / blendMins);
+      // Topping up with a different product of the same type still costs a
+      // (shorter, 30-min) switch.
+      const sw = switchMinutesFor(key, normalizeType(order.productType));
+      const batches = Math.floor((availableMin - sw) / blendMins);
       if (batches <= 0) break;
       const assignable = Math.round(Math.min(batches * bSize, order.remainingQuantity, dailyCap));
       if (assignable <= 0) continue;
 
+      if (sw > 0) switchDays.push({ floorName: floor.floorName, day: cell.day });
       placements.push({
         floorId: floor.id,
         productionOrderId: order.id,
         assignedDay: cell.day,
         assignedVolume: assignable,
       });
-      const minutesUsed = Math.ceil(assignable / bSize) * blendMins;
+      const minutesUsed = Math.ceil(assignable / bSize) * blendMins + sw;
       availableMin -= minutesUsed;
       cellMinutesRemaining.set(key, Math.max(0, availableMin));
+      addCellProduct(key, order.id);
       order.remainingQuantity -= assignable;
 
       // Move from partial → fully scheduled if we just closed it out
