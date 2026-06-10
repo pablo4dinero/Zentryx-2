@@ -225,7 +225,8 @@ const MON_TUE_EXCLUSIVE_TYPES = new Set([
   "dairy_premix",
   "bread_premix",
   "dough_premix",
-  "bread_and_dough_premix",
+  "bread_and_dough_premix",  // "Bread and Dough Premix"
+  "bread_dough_premix",      // "Bread & Dough Premix" — & normalizes to a single _
   "snack_dusting",
   "sweet_flavour",
   "sweet_flavor",
