@@ -531,6 +531,24 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 // ── Overlay UI: incoming-call ring + in-call window ──────────────────────
 function CallOverlay() {
   const { status, peerName, media, withVideo, muted, localStream, remoteStream, iceState, acceptCall, rejectCall, endCall, toggleMute, toggleVideo } = useCall();
+
+  // In-call timer — starts when the call connects ("active"), resets when it
+  // ends. Applies to both voice and video calls.
+  const callStartRef = useRef<number | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (status !== "active") {
+      callStartRef.current = null;
+      setElapsed(0);
+      return () => {};
+    }
+    if (callStartRef.current == null) callStartRef.current = Date.now();
+    setElapsed(Math.floor((Date.now() - callStartRef.current) / 1000));
+    const id = setInterval(() => {
+      if (callStartRef.current != null) setElapsed(Math.floor((Date.now() - callStartRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [status]);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
@@ -540,6 +558,12 @@ function CallOverlay() {
   useEffect(() => {
     if (remoteVideoRef.current && remoteStream) remoteVideoRef.current.srcObject = remoteStream;
   }, [remoteStream, status]);
+
+  const fmtElapsed = (s: number) => {
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    const mm = String(m).padStart(2, "0"), ss = String(sec).padStart(2, "0");
+    return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+  };
 
   if (status === "idle") return null;
 
@@ -584,6 +608,11 @@ function CallOverlay() {
         {/* Remote video / avatar */}
         <div className="relative flex-1 flex items-center justify-center bg-black">
           <video ref={remoteVideoRef} autoPlay playsInline className={cn("w-full h-full object-cover", showRemoteVideo ? "block" : "hidden")} />
+          {showRemoteVideo && status === "active" && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-black/50 text-white text-sm font-medium tabular-nums backdrop-blur-sm">
+              {fmtElapsed(elapsed)}
+            </div>
+          )}
           {!showRemoteVideo && (
             <div className="flex flex-col items-center gap-4">
               <div className="w-28 h-28 rounded-full bg-gradient-to-tr from-primary to-accent flex items-center justify-center text-white text-4xl font-bold">
@@ -596,7 +625,9 @@ function CallOverlay() {
                     ? "Ringing…"
                     : status === "connecting"
                       ? `Connecting…${iceState ? ` (${iceState})` : ""}`
-                      : media === "video" ? "Camera off" : "On call"}
+                      : status === "active"
+                        ? fmtElapsed(elapsed)
+                        : media === "video" ? "Camera off" : "On call"}
                 </p>
                 {/* When the call is active but stuck, show ICE state so the
                     cause is visible without opening devtools. "checking" =

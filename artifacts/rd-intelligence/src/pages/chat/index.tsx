@@ -525,6 +525,11 @@ export default function ChatRoom() {
         && r.memberUserIds.includes(currentUserId))
     : null;
   const adminMeta = adminDmRoom ? roomMeta[adminDmRoom.id] : null;
+  // The superadmin is shown anonymised as "Administrator" inside the admin DM.
+  const senderDisplay = (m: any) =>
+    (!!adminDmRoom && !!activeRoom && activeRoom.id === adminDmRoom.id && m?.senderId !== currentUserId)
+      ? "Administrator"
+      : m?.senderName;
 
 
   // Build people list: all users with DM room info, sorted by chosen mode
@@ -945,7 +950,7 @@ export default function ChatRoom() {
                 ? (isAdminDm ? (adminContact?.id ?? null) : (dmPartner?.id ?? null))
                 : null;
               const callPeerName: string = isAdminDm
-                ? (adminContact?.name ?? "Administrator")
+                ? "Administrator"
                 : (dmPartner?.name ?? activeRoom.name);
               return (
             <div className="px-3 lg:px-6 py-3 border-b border-white/5 flex items-center justify-between shrink-0 gap-2 lg:gap-3">
@@ -960,7 +965,7 @@ export default function ChatRoom() {
                 </button>
                 {activeRoom.isGroup ? <Hash className="w-5 h-5 text-primary shrink-0" /> : <Lock className="w-5 h-5 text-primary shrink-0" />}
                 <h3 className="font-semibold text-foreground truncate">
-                  {adminDmRoom && activeRoom.id === adminDmRoom.id ? adminContact!.name : activeRoom.name}
+                  {adminDmRoom && activeRoom.id === adminDmRoom.id ? "Administrator" : activeRoom.name}
                 </h3>
                 {isRoomPinned(activeRoom.id) && <span className="flex items-center gap-1 text-[10px] text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded-full shrink-0"><Pin className="w-2.5 h-2.5" />Pinned</span>}
                 {dmPartner && (
@@ -1042,9 +1047,9 @@ export default function ChatRoom() {
                     </p>
                     {pinnedMessages.map((m: any) => (
                       <div key={m.id} className="flex items-start gap-2 text-xs bg-amber-400/5 rounded-lg p-2">
-                        <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-secondary/50 to-primary/50 flex items-center justify-center text-white text-[8px] font-bold shrink-0">{m.senderName?.charAt(0)}</div>
+                        <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-secondary/50 to-primary/50 flex items-center justify-center text-white text-[8px] font-bold shrink-0">{senderDisplay(m)?.charAt(0)}</div>
                         <div>
-                          <span className="font-medium text-amber-300 mr-1">{m.senderName}:</span>
+                          <span className="font-medium text-amber-300 mr-1">{senderDisplay(m)}:</span>
                           <span className="text-muted-foreground">{m.content?.slice(0, 100)}{m.content?.length > 100 ? "..." : ""}</span>
                         </div>
                         <button onClick={() => toggleMsgPin(m.id)} className="ml-auto shrink-0 text-muted-foreground hover:text-amber-400">
@@ -1107,12 +1112,12 @@ export default function ChatRoom() {
                     )}
                     {!isOwn && (
                       <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-secondary/50 to-primary/50 flex items-center justify-center text-white text-xs font-bold shrink-0 mt-1">
-                        {msg.senderName?.charAt(0) || "?"}
+                        {senderDisplay(msg)?.charAt(0) || "?"}
                       </div>
                     )}
                     <div className={`max-w-[65%] ${isOwn ? "items-end" : "items-start"} flex flex-col gap-0.5`}>
                       {showName && !isOwn && (
-                        <span className="text-xs text-muted-foreground font-medium">{msg.senderName}</span>
+                        <span className="text-xs text-muted-foreground font-medium">{senderDisplay(msg)}</span>
                       )}
                       {/*
                         Bubble palette per theme. Inline style on color avoids
