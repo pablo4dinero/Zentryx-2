@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { chatRoomsTable, chatRoomMembersTable, chatMessagesTable, chatReadReceiptsTable, usersTable, notificationsTable } from "@workspace/db";
-import { eq, and, inArray, desc, sql, ne, lt } from "drizzle-orm";
+import { eq, and, inArray, desc, sql, ne, lt, gt } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../lib/auth";
 import { SUPERADMIN_EMAIL } from "./auth";
 import { uploadToR2, getSignedFileUrl } from "../lib/r2";
@@ -124,6 +124,22 @@ router.get("/rooms", requireAuth, async (req: AuthRequest, res) => {
       const lastMsgId = lastMsg?.id ?? 0;
       const hasUnread = lastMsg && lastMsg.senderId !== userId && lastMsgId > lastReadId;
 
+      // Exact count of unread messages from other people in this room, used
+      // for the per-room and total unread badges on the client. Only queried
+      // when there's something unread so we don't pay for a count on every
+      // already-read room.
+      let unreadCount = 0;
+      if (hasUnread) {
+        const [cnt] = await db.select({ c: sql<number>`count(*)` })
+          .from(chatMessagesTable)
+          .where(and(
+            eq(chatMessagesTable.roomId, room.id),
+            gt(chatMessagesTable.id, lastReadId),
+            ne(chatMessagesTable.senderId, userId),
+          ));
+        unreadCount = Number(cnt?.c ?? 0);
+      }
+
       return {
         ...room,
         lastMessageAt: lastMsg?.createdAt ?? room.createdAt,
@@ -131,6 +147,7 @@ router.get("/rooms", requireAuth, async (req: AuthRequest, res) => {
         lastMessageSender: lastMsg?.senderName ?? null,
         lastMessageType: lastMsg?.messageType ?? null,
         hasUnread: !!hasUnread,
+        unreadCount,
         memberUserIds: memberRows.map(m => m.userId),
       };
     }));

@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { useNotificationSound } from "@/hooks/useNotificationSound";
+import { ensureNotifyPermission, showChatNotification, setChatTabTitle } from "@/lib/chat-notify";
 import { useAuthStore } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -757,8 +758,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         const rooms = await res.json();
         if (!Array.isArray(rooms)) return;
         const unreadRooms = rooms.filter((r: any) => r.hasUnread);
+        const totalUnread = rooms.reduce((s: number, r: any) => s + (r.unreadCount || 0), 0);
         setChatUnread(unreadRooms.length > 0);
-        setChatUnreadCount(unreadRooms.length);
+        setChatUnreadCount(totalUnread);
         // "New" means: an unread room whose last message was sent after the
         // user's last /chat visit. Without that gate the icon blinks forever
         // any time there's any unread DM in any room.
@@ -806,14 +808,31 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const prevNewMsgAtRef = useRef(0);
   const lastChatSoundAtRef = useRef(0);
 
+  // Ask for desktop-notification permission once the user is authenticated.
+  useEffect(() => { if (user) ensureNotifyPermission(); }, [user]);
+
   useEffect(() => {
     // Trigger when newMsgPopup picks up a fresh arrival.
     if (newMsgPopup && newMsgPopup.messageAt > prevNewMsgAtRef.current) {
       prevNewMsgAtRef.current = newMsgPopup.messageAt;
       lastChatSoundAtRef.current = Date.now();
       playMessage();
+      // System notification too — only shows when the tab is backgrounded
+      // (handled inside the helper); clicking it jumps to the chat page.
+      showChatNotification({
+        fromName: newMsgPopup.fromName,
+        onClick: () => navigateAway("/chat"),
+      });
     }
-  }, [newMsgPopup, playMessage]);
+  }, [newMsgPopup, playMessage, navigateAway]);
+
+  // Reflect chat unread in the tab title while away from the chat page.
+  // The chat page manages its own title when open, so we no-op there.
+  useEffect(() => {
+    if (location === "/chat") { setChatTabTitle(0); return; }
+    setChatTabTitle(chatUnreadCount);
+    return () => setChatTabTitle(0);
+  }, [location, chatUnreadCount]);
 
   useEffect(() => {
     const count = notifications?.length ?? 0;
@@ -937,9 +956,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                       <span className="truncate">{item.label}</span>
                       {isChatWithUnread && (
                         <span className={cn(
-                          "ml-auto text-[9px] font-bold text-red-400 bg-red-500/15 rounded-full px-2 py-0.5 leading-none uppercase tracking-wide",
+                          "ml-auto min-w-[18px] h-[18px] px-1.5 text-[10px] font-bold text-white bg-red-500 rounded-full flex items-center justify-center leading-none",
                           isChatBlinking && "animate-pulse",
-                        )}>New</span>
+                        )}>{chatUnreadCount > 99 ? "99+" : (chatUnreadCount || "")}</span>
                       )}
                     </>
                   )}
