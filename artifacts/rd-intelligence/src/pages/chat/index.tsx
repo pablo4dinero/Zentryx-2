@@ -75,6 +75,9 @@ export default function ChatRoom() {
   const [roomMeta, setRoomMeta] = useState<Record<number, { lastMessageAt: string; lastMessagePreview: string | null; lastMessageType: string | null; lastMessageSender: string | null; hasUnread: boolean; unreadCount: number }>>({});
   const [peopleSort, setPeopleSort] = useState<"recent" | "role" | "alpha">("recent");
   const [peopleSortOpen, setPeopleSortOpen] = useState(false);
+  // Live presence — ids of users currently connected (any open tab/device).
+  // Polled from /chat/presence; drives the Online/Offline indicator.
+  const [onlineIds, setOnlineIds] = useState<Set<number>>(new Set());
 
   // Cache messages per room so switching rooms restores instantly and bad fetches don't wipe history
   const msgCacheRef = useRef<Record<number, any[]>>({});
@@ -538,6 +541,21 @@ export default function ChatRoom() {
       ? "Administrator"
       : m?.senderName;
 
+  // Poll live presence so each person shows Online / Offline.
+  useEffect(() => {
+    let cancelled = false;
+    const loadPresence = () => {
+      api.get("/chat/presence").then((r: any) => {
+        if (cancelled || !r || !Array.isArray(r.online)) return;
+        setOnlineIds(new Set(r.online.map((x: any) => Number(x))));
+      }).catch(() => {});
+    };
+    loadPresence();
+    const id = setInterval(loadPresence, 10000);
+    return () => { cancelled = true; clearInterval(id); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── New-message notifications (while the /chat page is open) ──────────────
   // Ask for desktop-notification permission once. Off-/chat notifications are
   // driven separately by AppLayout; here we cover messages that arrive while
@@ -849,6 +867,7 @@ export default function ChatRoom() {
           )}
           {filteredPeople.map((person: any) => {
             const isActive = activeRoom && person.dmRoom && activeRoom.id === person.dmRoom.id;
+            const isOnline = onlineIds.has(person.id);
             // Active-DM row design:
             //   Light mode → solid indigo→violet gradient with white text,
             //   matching the new chat-bubble gradient for visual continuity.
@@ -887,6 +906,15 @@ export default function ChatRoom() {
                   )}>
                     {person.name.charAt(0)}
                   </div>
+                  {/* Presence dot — green when online, grey when offline. */}
+                  <span
+                    title={isOnline ? "Online" : "Offline"}
+                    className={cn(
+                      "absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2",
+                      isLight ? "border-white" : "border-[#0e0e16]",
+                      isOnline ? "bg-emerald-500" : "bg-slate-400",
+                    )}
+                  />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1">
@@ -932,14 +960,17 @@ export default function ChatRoom() {
                       "shrink-0 inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full border",
                       isLight
                         ? "bg-white/20 border-white/40"
-                        : "bg-primary/20 border-primary/40 text-primary",
+                        : isOnline
+                          ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
+                          : "bg-slate-500/20 border-slate-500/40 text-slate-300",
                     )}
                   >
                     <span className={cn(
-                      "w-1 h-1 rounded-full animate-pulse",
-                      isActive && isLight ? "bg-white" : "bg-primary",
+                      "w-1 h-1 rounded-full",
+                      isOnline && "animate-pulse",
+                      isLight ? "bg-white" : isOnline ? "bg-emerald-400" : "bg-slate-300",
                     )} />
-                    Active
+                    {isOnline ? "Online" : "Offline"}
                   </span>
                 ) : person.lastMessageAt && !isNaN(new Date(person.lastMessageAt).getTime()) ? (
                   <span className="text-[9px] text-muted-foreground shrink-0">

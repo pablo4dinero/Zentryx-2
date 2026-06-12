@@ -40,6 +40,11 @@ function isUserOnline(userId: number): boolean {
   return !!set && set.size > 0;
 }
 
+/** Ids of every user with at least one live socket (any tab/device). */
+function getOnlineUserIds(): number[] {
+  return Array.from(userSockets.keys());
+}
+
 /** Send a JSON payload to every live socket of a user. Returns true if at
  *  least one socket received it. */
 function sendToUser(userId: number, payload: unknown): boolean {
@@ -171,4 +176,4 @@ export function broadcastDataChange(
   }
 }
 
-export { isUserOnline };
+export { isUserOnline, getOnlineUserIds };

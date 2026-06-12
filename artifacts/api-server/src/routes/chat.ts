@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { chatRoomsTable, chatRoomMembersTable, chatMessagesTable, chatReadReceiptsTable, usersTable, notificationsTable } from "@workspace/db";
 import { eq, and, inArray, desc, sql, ne, lt, gt } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../lib/auth";
+import { getOnlineUserIds } from "../lib/realtime";
 import { SUPERADMIN_EMAIL } from "./auth";
 import { uploadToR2, getSignedFileUrl } from "../lib/r2";
 import { sanitize } from "../lib/sanitize";
@@ -89,6 +90,12 @@ async function markRead(userId: number, roomId: number, messageId: number) {
     await db.insert(chatReadReceiptsTable).values({ userId, roomId, lastReadMessageId: messageId }).catch(() => {});
   }
 }
+
+// Live presence — ids of users with at least one open WebSocket (any device).
+// The chat client polls this to show Online/Offline next to each person.
+router.get("/presence", requireAuth, (_req: AuthRequest, res) => {
+  res.json({ online: getOnlineUserIds() });
+});
 
 // Get all rooms for current user with last message preview + unread count
 router.get("/rooms", requireAuth, async (req: AuthRequest, res) => {
