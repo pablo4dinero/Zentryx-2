@@ -82,14 +82,47 @@ export async function callClaude(system: string, user: string, maxTokens = 1200)
 }
 
 export function safeParseJSON<T>(text: string, fallback: T): T {
+  const stripped = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  // 1. Straight parse.
+  try { return JSON.parse(stripped); } catch { /* fall through */ }
+  // 2. First complete {...} blob.
+  const blob = stripped.match(/(\{[\s\S]*\})/);
+  if (blob) { try { return JSON.parse(blob[1]); } catch { /* fall through */ } }
+  // 3. Repair a truncated object (e.g. the model hit max_tokens mid-JSON):
+  //    close an open string, drop a dangling key/comma, and close open
+  //    brackets. This salvages a partial profile/array instead of returning an
+  //    empty fallback — which is what made charts silently fail to render.
   try {
-    const stripped = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-    return JSON.parse(stripped);
-  } catch {
-    try {
-      const m = text.match(/(\{[\s\S]*\})/);
-      if (m) return JSON.parse(m[1]);
-    } catch {}
-    return fallback;
+    const repaired = repairTruncatedJson(stripped);
+    if (repaired) return JSON.parse(repaired);
+  } catch { /* fall through */ }
+  return fallback;
+}
+
+function repairTruncatedJson(input: string): string | null {
+  const start = input.indexOf("{");
+  if (start === -1) return null;
+  let s = input.slice(start);
+  let inStr = false;
+  let esc = false;
+  const stack: string[] = [];
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') inStr = true;
+    else if (c === "{") stack.push("}");
+    else if (c === "[") stack.push("]");
+    else if (c === "}" || c === "]") stack.pop();
   }
+  if (inStr) s += '"';                       // close an unterminated string
+  s = s.replace(/[\s,]+$/, "");              // drop trailing whitespace/comma
+  s = s.replace(/:\s*$/, ": null");          // a key with no value yet
+  s = s.replace(/,\s*"[^"]*"\s*$/, "");      // a dangling key with no colon
+  for (let i = stack.length - 1; i >= 0; i--) s += stack[i]; // close brackets
+  return s;
 }

@@ -39,6 +39,6 @@ const FALLBACK: SensoryResult = {
 };
 
 export async function runSensory(query: string): Promise<SensoryResult> {
-  const text = await callModel(HAIKU_MODEL, SYSTEM, query, 750);
+  const text = await callModel(HAIKU_MODEL, SYSTEM, query, 1600);
   return safeParseJSON<SensoryResult>(text, FALLBACK);
 }

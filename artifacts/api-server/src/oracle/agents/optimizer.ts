@@ -41,6 +41,6 @@ const FALLBACK: OptimizerResult = {
 };
 
 export async function runOptimizer(query: string): Promise<OptimizerResult> {
-  const text = await callModel(HAIKU_MODEL, SYSTEM, query, 600);
+  const text = await callModel(HAIKU_MODEL, SYSTEM, query, 1400);
   return safeParseJSON<OptimizerResult>(text, FALLBACK);
 }

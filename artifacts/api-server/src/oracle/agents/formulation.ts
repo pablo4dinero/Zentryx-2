@@ -35,6 +35,6 @@ const FALLBACK: FormulationResult = {
 };
 
 export async function runFormulation(query: string): Promise<FormulationResult> {
-  const text = await callModel(HAIKU_MODEL, SYSTEM, query, 800);
+  const text = await callModel(HAIKU_MODEL, SYSTEM, query, 1600);
   return safeParseJSON<FormulationResult>(text, FALLBACK);
 }

@@ -35,6 +35,6 @@ const FALLBACK: TrendScoutResult = {
 };
 
 export async function runTrendScout(query: string): Promise<TrendScoutResult> {
-  const text = await callModel(HAIKU_MODEL, SYSTEM, query, 500);
+  const text = await callModel(HAIKU_MODEL, SYSTEM, query, 1200);
   return safeParseJSON<TrendScoutResult>(text, FALLBACK);
 }

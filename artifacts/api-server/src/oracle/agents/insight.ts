@@ -31,6 +31,6 @@ const FALLBACK: InsightResult = {
 };
 
 export async function runInsight(query: string): Promise<InsightResult> {
-  const text = await callModel(SONNET_MODEL, SYSTEM, query, 1000);
+  const text = await callModel(SONNET_MODEL, SYSTEM, query, 1500);
   return safeParseJSON<InsightResult>(text, FALLBACK);
 }

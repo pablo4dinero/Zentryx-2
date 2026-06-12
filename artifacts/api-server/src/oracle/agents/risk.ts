@@ -32,6 +32,6 @@ const FALLBACK: RiskResult = {
 };
 
 export async function runRisk(query: string): Promise<RiskResult> {
-  const text = await callModel(HAIKU_MODEL, SYSTEM, query, 500);
+  const text = await callModel(HAIKU_MODEL, SYSTEM, query, 1200);
   return safeParseJSON<RiskResult>(text, FALLBACK);
 }

@@ -34,6 +34,6 @@ const FALLBACK: ComplianceResult = {
 };
 
 export async function runCompliance(query: string): Promise<ComplianceResult> {
-  const text = await callModel(HAIKU_MODEL, SYSTEM, query, 600);
+  const text = await callModel(HAIKU_MODEL, SYSTEM, query, 1400);
   return safeParseJSON<ComplianceResult>(text, FALLBACK);
 }

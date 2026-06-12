@@ -33,6 +33,6 @@ const FALLBACK: ExperimentResult = {
 };
 
 export async function runExperiment(query: string): Promise<ExperimentResult> {
-  const text = await callModel(HAIKU_MODEL, SYSTEM, query, 700);
+  const text = await callModel(HAIKU_MODEL, SYSTEM, query, 1400);
   return safeParseJSON<ExperimentResult>(text, FALLBACK);
 }
