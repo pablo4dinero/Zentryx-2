@@ -990,7 +990,7 @@ export default function OrdersTab() {
 
 {showNew && <NewPOModal onClose={() => setShowNew(false)} isLight={isLight} vendors={vendors} />}
 {editPO && <EditPOModal po={editPO} onClose={() => setEditPO(null)} isLight={isLight} vendors={vendors} />}
-{selectedPO && <PODetailPanel po={selectedPO} onClose={() => { setSelectedPO(null); qc.invalidateQueries({ queryKey: ["/api/procurement/orders"] }); }} isLight={isLight} />}
+{selectedPO && <PODetailPanel po={orders.find(o => o.id === selectedPO.id) ?? selectedPO} onClose={() => { setSelectedPO(null); qc.invalidateQueries({ queryKey: ["/api/procurement/orders"] }); }} isLight={isLight} />}
     </div>
   );
 }
