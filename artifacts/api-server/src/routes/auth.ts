@@ -499,15 +499,18 @@ router.post("/register", async (req, res) => {
     // reference until the next cleanup pass).
     // eslint-disable-next-line no-unreachable
     const mfaToken = signMfaToken({ userId: user.id, email: user.email, role: user.role });
-    if (!user.phone) {
+    // This SMS branch is unreachable legacy code; TS skips flow-narrowing in
+    // unreachable blocks, so coerce phone to a definite string up front.
+    const userPhone = user.phone ?? "";
+    if (!userPhone) {
       res.status(201).json({ mfaPending: true, requirePhone: true, mfaToken });
       return;
     }
-    const result = await sendSmsOtp(user.phone);
+    const result = await sendSmsOtp(userPhone);
     res.status(201).json({
       mfaPending: true,
       mfaToken,
-      phone: maskPhone(user.phone),
+      phone: maskPhone(userPhone),
       smsFailed: result.failed ?? false,
       devMode: result.devMode,
       ...(result.devMode ? { code: result.code } : {}),

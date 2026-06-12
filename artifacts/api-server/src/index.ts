@@ -105,6 +105,7 @@ async function createTablesIfNotExist() {
 
     // Ensure the expected delivery date column exists on existing production order tables
     await db.execute(sql.raw(`ALTER TABLE account_production_orders ADD COLUMN IF NOT EXISTS expected_delivery_date TEXT;`));
+    await db.execute(sql.raw(`ALTER TABLE account_production_orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT NOW();`));
     await db.execute(sql.raw(`ALTER TABLE today_production_orders ADD COLUMN IF NOT EXISTS production_order_id INTEGER NOT NULL;`));
     await db.execute(sql.raw(`ALTER TABLE today_production_orders ADD COLUMN IF NOT EXISTS account_company TEXT;`));
     await db.execute(sql.raw(`ALTER TABLE today_production_orders ADD COLUMN IF NOT EXISTS product_name TEXT;`));

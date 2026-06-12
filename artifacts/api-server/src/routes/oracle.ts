@@ -15,7 +15,7 @@ const oracleLimiter = rateLimit({
   max: 20,
   standardHeaders: "draft-7",
   legacyHeaders: false,
-  keyGenerator: (req: Request) => (req as AuthRequest).user?.id?.toString() ?? req.ip ?? "unknown",
+  keyGenerator: (req: Request) => (req as AuthRequest).user?.userId?.toString() ?? req.ip ?? "unknown",
   message: { error: "TooManyRequests", message: "Oracle limit reached — 20 requests per 10 minutes. Try again shortly." },
 });
 

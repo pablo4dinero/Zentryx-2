@@ -38,7 +38,8 @@ router.get("/backups", async (req, res) => {
   } catch (err) {
     response.checks.database = "failed";
     response.status = "unhealthy";
-    return res.status(503).json(response);
+    res.status(503).json(response);
+    return;
   }
 
   // Check backup metadata: read from environment variables set by GitHub Actions

@@ -12,7 +12,8 @@ let cache: { rates: Record<string, number>; fetchedAt: number } | null = null;
 router.get("/", requireAuth, async (_req, res) => {
   const now = Date.now();
   if (cache && now - cache.fetchedAt < CACHE_MS) {
-    return res.json({ rates: cache.rates, fetchedAt: new Date(cache.fetchedAt).toISOString() });
+    res.json({ rates: cache.rates, fetchedAt: new Date(cache.fetchedAt).toISOString() });
+    return;
   }
 
   for (const url of [PRIMARY_API, FALLBACK_API]) {
@@ -23,7 +24,8 @@ router.get("/", requireAuth, async (_req, res) => {
       const rates = data.rates ?? data.conversion_rates ?? null;
       if (rates && typeof rates === "object") {
         cache = { rates, fetchedAt: now };
-        return res.json({ rates, fetchedAt: new Date(now).toISOString() });
+        res.json({ rates, fetchedAt: new Date(now).toISOString() });
+        return;
       }
     } catch {
       // try next
@@ -32,7 +34,8 @@ router.get("/", requireAuth, async (_req, res) => {
 
   // Both failed — return stale cache if we have it, otherwise 503
   if (cache) {
-    return res.json({ rates: cache.rates, fetchedAt: new Date(cache.fetchedAt).toISOString(), stale: true });
+    res.json({ rates: cache.rates, fetchedAt: new Date(cache.fetchedAt).toISOString(), stale: true });
+    return;
   }
   res.status(503).json({ error: "Exchange rate service unavailable" });
 });

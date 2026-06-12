@@ -532,7 +532,7 @@ router.post("/feature-flags/init", async (req: AuthRequest, res) => {
 // PATCH /feature-flags/:featureName — toggle a feature flag
 router.patch("/feature-flags/:featureName", async (req: AuthRequest, res) => {
   try {
-    const { featureName } = req.params;
+    const featureName = String(req.params.featureName);
     const { enabled, reason } = req.body as { enabled?: boolean; reason?: string };
     const userId = req.user!.userId;
 
@@ -577,7 +577,7 @@ router.patch("/feature-flags/:featureName", async (req: AuthRequest, res) => {
 // GET /feature-flags/:featureName/history — view toggle history
 router.get("/feature-flags/:featureName/history", async (req: AuthRequest, res) => {
   try {
-    const { featureName } = req.params;
+    const featureName = String(req.params.featureName);
     const history = await db.select()
       .from(featureFlagHistoryTable)
       .where(eq(featureFlagHistoryTable.featureName, featureName))

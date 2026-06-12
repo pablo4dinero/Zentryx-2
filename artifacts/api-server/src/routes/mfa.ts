@@ -156,7 +156,7 @@ router.post("/totp/challenge", async (req, res) => {
       await db.update(usersTable)
         .set({ mfaFailedAttempts: 0 })
         .where(eq(usersTable.id, user.id));
-      const token = signToken({ userId: user.id, email: user.email, role: user.role });
+      const token = signToken({ userId: user.id, email: user.email, role: user.role, tv: user.tokenVersion ?? 0 });
       res.json({
         token,
         user: {
@@ -220,7 +220,7 @@ router.post("/backup-code/verify", async (req, res) => {
       .set({ mfaBackupCodes: remaining, mfaFailedAttempts: 0 })
       .where(eq(usersTable.id, user.id));
 
-    const token = signToken({ userId: user.id, email: user.email, role: user.role });
+    const token = signToken({ userId: user.id, email: user.email, role: user.role, tv: user.tokenVersion ?? 0 });
     res.json({
       token,
       remainingBackupCodes: remaining.length,
@@ -366,7 +366,7 @@ router.post("/fallback/verify", async (req, res) => {
     await db.update(usersTable)
       .set({ mfaFailedAttempts: 0 })
       .where(eq(usersTable.id, user.id));
-    const token = signToken({ userId: user.id, email: user.email, role: user.role });
+    const token = signToken({ userId: user.id, email: user.email, role: user.role, tv: user.tokenVersion ?? 0 });
     res.json({
       token,
       user: {
@@ -572,7 +572,7 @@ router.post("/emergency-login", async (req, res) => {
       })
       .where(eq(usersTable.id, user.id));
 
-    const sessionToken = signToken({ userId: user.id, email: user.email, role: user.role });
+    const sessionToken = signToken({ userId: user.id, email: user.email, role: user.role, tv: user.tokenVersion ?? 0 });
     res.json({
       token: sessionToken,
       mustReEnrollMfa: true,

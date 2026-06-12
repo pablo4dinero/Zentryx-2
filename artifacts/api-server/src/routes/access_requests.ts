@@ -34,14 +34,15 @@ router.post("/:id/allow", requireAuth, async (req: AuthRequest, res) => {
     if (!actor || !isPrivileged(actor.role)) {
       res.status(403).json({ error: "Forbidden" }); return;
     }
-    const request = getRequest(req.params.id);
+    const requestId = String(req.params.id);
+    const request = getRequest(requestId);
     if (!request) { res.status(404).json({ error: "NotFound", message: "Request not found or expired" }); return; }
 
     const [user] = await db.select().from(usersTable).where(eq(usersTable.id, request.userId)).limit(1);
     if (!user) { res.status(404).json({ error: "UserNotFound" }); return; }
 
     const token = signToken({ userId: user.id, email: user.email, role: user.role, tv: user.tokenVersion ?? 0 });
-    approveRequest(req.params.id, token);
+    approveRequest(requestId, token);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: "InternalServerError" });
@@ -55,7 +56,7 @@ router.post("/:id/deny", requireAuth, async (req: AuthRequest, res) => {
     if (!actor || !isPrivileged(actor.role)) {
       res.status(403).json({ error: "Forbidden" }); return;
     }
-    const ok = denyRequest(req.params.id);
+    const ok = denyRequest(String(req.params.id));
     if (!ok) { res.status(404).json({ error: "NotFound" }); return; }
     res.json({ success: true });
   } catch (err) {
