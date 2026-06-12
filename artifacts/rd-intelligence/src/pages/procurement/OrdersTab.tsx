@@ -206,10 +206,11 @@ function NotifyMessageModal({ po, onClose, isLight }: { po: any; onClose: () => 
     setSending(true);
     try {
       const token = localStorage.getItem("rd_token");
-      // Find or create DM room
-      const roomRes = await fetch(`${BASE}api/chat/rooms/direct/${selectedUser.id}`, {
+      // Find or create DM room via the standard rooms endpoint
+      const roomRes = await fetch(`${BASE}api/chat/rooms`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ isGroup: false, memberIds: [selectedUser.id] }),
       });
       if (roomRes.ok) {
         const room = await roomRes.json();
