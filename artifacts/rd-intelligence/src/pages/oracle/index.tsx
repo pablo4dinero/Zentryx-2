@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -437,22 +438,29 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 function WhyTooltip({ why }: { why: string }) {
-  const [show, setShow] = useState(false);
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   if (!why) return null;
   return (
     <span className="relative inline-flex ml-1 align-middle">
       <span
         className="w-3.5 h-3.5 rounded-full bg-white/10 text-[9px] font-bold flex items-center justify-center cursor-help text-muted-foreground hover:text-primary transition-colors select-none"
-        onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}
+        onMouseEnter={e => {
+          const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          setPos({ x: r.left + r.width / 2, y: r.top });
+        }}
+        onMouseLeave={() => setPos(null)}
       >?</span>
       <AnimatePresence>
-        {show && (
-          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }}
+        {pos && typeof document !== "undefined" && createPortal(
+          <motion.div
+            initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }}
             transition={{ duration: 0.1 }}
-            className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-[200] w-52 text-[11px] px-3 py-2 rounded-xl bg-gray-900 text-gray-100 shadow-2xl leading-relaxed pointer-events-none">
+            style={{ position: "fixed", left: pos.x, top: pos.y - 8, transform: "translate(-50%, -100%)" }}
+            className="z-[9999] w-52 text-[11px] px-3 py-2 rounded-xl bg-gray-900 text-gray-100 shadow-2xl leading-relaxed pointer-events-none">
             {why}
             <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900" />
-          </motion.div>
+          </motion.div>,
+          document.body
         )}
       </AnimatePresence>
     </span>
