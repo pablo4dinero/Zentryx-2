@@ -101,7 +101,8 @@ Rules:
 - Cap at 350 words
 - Write like a Unilever/Nestlé senior R&D scientist briefing a colleague — not a textbook, not a consultant report
 - The conversation history may contain earlier product details or formulations — reference them if relevant
-- NEVER generate ASCII, text-based, or pseudo-graphical charts, spider diagrams, radar profiles, or bar graphs made of characters. Sensory profile data from the Sensory agent is already rendered as an interactive radar chart above — reference its scores by name and number in your prose instead of redrawing them.`;
+- NEVER generate ASCII, text-based, or pseudo-graphical charts, spider diagrams, radar profiles, or bar graphs made of characters. Sensory profile data from the Sensory agent is already rendered as an interactive radar chart above — reference its scores by name and number in your prose instead of redrawing them.
+- When Sensory agent data is present, DO NOT output a markdown table of the sensory attributes/scores — the radar chart already shows it. Discuss the scores in prose only. (Markdown tables remain fine for non-sensory comparisons such as cost or formula breakdowns.)`;
 
 router.post("/analyze", requireAuth, oracleLimiter, withOracleQueue, async (req: AuthRequest, res) => {
   const { query, history = [], forceAgents } = req.body as {

@@ -854,12 +854,50 @@ function UserBubble({ text }: { text: string }) {
   );
 }
 
+// Agents whose output is the visual the user asks to "see" (a chart/diagram).
+// These always render prominently above the narrative and are never collapsed.
+const VISUAL_AGENT_IDS = new Set<AgentId>(["sensory", "formulation"]);
+
+// Remove GFM markdown tables from a block of text. Used to drop the redundant
+// score table the model sometimes draws when a sensory radar is already shown.
+function stripMarkdownTables(md: string): string {
+  const lines = md.split("\n");
+  const isRow = (l: string) => /^\s*\|.*\|\s*$/.test(l);
+  const isSep = (l: string) => l.includes("-") && /^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(l);
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (isRow(lines[i])) {
+      let j = i;
+      let hasSep = false;
+      while (j < lines.length && (isRow(lines[j]) || isSep(lines[j]))) {
+        if (isSep(lines[j])) hasSep = true;
+        j++;
+      }
+      if (hasSep && j - i >= 2) { i = j; continue; } // drop the whole table block
+    }
+    out.push(lines[i]);
+    i++;
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 function OracleBubble({ msg, isLight }: { msg: OracleMessage; isLight: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const agentEntries = Object.entries(msg.agentData) as [AgentId, unknown][];
   const hasAgentData = agentEntries.length > 0;
-  const showExpandButton = hasAgentData && !msg.streaming;
   const isTyping = msg.streaming && msg.text === "";
+
+  // Split into the visual chart panels (shown above, always) and the other
+  // text-heavy panels (which keep the expand/collapse behaviour).
+  const visualEntries = agentEntries.filter(([id]) => VISUAL_AGENT_IDS.has(id));
+  const otherEntries  = agentEntries.filter(([id]) => !VISUAL_AGENT_IDS.has(id));
+  const showExpandButton = otherEntries.length > 1 && !msg.streaming;
+
+  // When a sensory radar is present, drop any markdown score-table the model
+  // also drew — that duplicate table is exactly what users asked not to see.
+  const hasSensory = agentEntries.some(([id]) => id === "sensory");
+  const narrative = hasSensory ? stripMarkdownTables(msg.text) : msg.text;
 
   return (
     <div className="flex justify-start">
@@ -870,6 +908,17 @@ function OracleBubble({ msg, isLight }: { msg: OracleMessage; isLight: boolean }
 
         <div className="flex-1 min-w-0 space-y-2">
           <AgentChips statuses={msg.agentStatuses} />
+
+          {/* Charts / structured visuals — always above the narrative, never collapsed */}
+          {!isTyping && visualEntries.length > 0 && (
+            <div className="space-y-2">
+              {visualEntries.map(([id, data]) => (
+                <motion.div key={id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
+                  <AgentDataPanel agentId={id} data={data} />
+                </motion.div>
+              ))}
+            </div>
+          )}
 
           <div className={cn(
             "px-4 py-3 rounded-2xl rounded-bl-sm",
@@ -904,7 +953,7 @@ function OracleBubble({ msg, isLight }: { msg: OracleMessage; isLight: boolean }
                     td:   ({ children }) => <td className="px-3 py-2 text-muted-foreground">{children}</td>,
                   }}
                 >
-                  {msg.text}
+                  {narrative}
                 </ReactMarkdown>
                 {msg.streaming && (
                   <motion.span
@@ -917,15 +966,15 @@ function OracleBubble({ msg, isLight }: { msg: OracleMessage; isLight: boolean }
             )}
           </div>
 
-          {!msg.streaming && hasAgentData && agentEntries.length === 1 && (
+          {!msg.streaming && otherEntries.length === 1 && (
             <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
-              <AgentDataPanel agentId={agentEntries[0][0]} data={agentEntries[0][1]} />
+              <AgentDataPanel agentId={otherEntries[0][0]} data={otherEntries[0][1]} />
             </motion.div>
           )}
 
-          {msg.streaming && hasAgentData && (
+          {msg.streaming && otherEntries.length > 0 && (
             <div className="space-y-2">
-              {agentEntries.map(([id, data]) => (
+              {otherEntries.map(([id, data]) => (
                 <motion.div key={id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
                   <AgentDataPanel agentId={id} data={data} />
                 </motion.div>
@@ -933,7 +982,7 @@ function OracleBubble({ msg, isLight }: { msg: OracleMessage; isLight: boolean }
             </div>
           )}
 
-          {showExpandButton && agentEntries.length > 1 && (
+          {showExpandButton && (
             <div>
               <button
                 onClick={() => setExpanded(e => !e)}
@@ -946,7 +995,7 @@ function OracleBubble({ msg, isLight }: { msg: OracleMessage; isLight: boolean }
               >
                 {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                 {expanded ? "Collapse" : "Expand full analysis"}
-                <span className="text-[10px] opacity-60">{agentEntries.length} agents</span>
+                <span className="text-[10px] opacity-60">{otherEntries.length} agents</span>
               </button>
               <AnimatePresence>
                 {expanded && (
@@ -957,7 +1006,7 @@ function OracleBubble({ msg, isLight }: { msg: OracleMessage; isLight: boolean }
                     transition={{ duration: 0.2 }}
                     className="space-y-2 mt-2 overflow-hidden"
                   >
-                    {agentEntries.map(([id, data]) => (
+                    {otherEntries.map(([id, data]) => (
                       <AgentDataPanel key={id} agentId={id} data={data} />
                     ))}
                   </motion.div>
@@ -1036,7 +1085,15 @@ export default function OraclePage() {
             m => m.role === "oracle" && Object.keys(m.agentData).length > 0,
           );
           if (recentWithData) {
+            // Re-render the chart(s) the user is referring to.
             resolvedForceAgents = Object.keys(recentWithData.agentData) as AgentId[];
+          } else if (/\b(formula|formulation|ingredient|recipe|blend|premix)\b/.test(ql)) {
+            // First-time visual request — force the matching visual agent so a
+            // chart definitely renders instead of relying on the LLM classifier
+            // (which sometimes replies in prose only).
+            resolvedForceAgents = ["formulation"];
+          } else if (/\b(taste|flavou?r|sensory|aroma|texture|mouthfeel|umami|salt|sweet|bitter|sour|profile|radar|spider)\b/.test(ql)) {
+            resolvedForceAgents = ["sensory"];
           }
         }
       }
