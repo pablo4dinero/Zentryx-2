@@ -155,12 +155,24 @@ router.post("/analyze", requireAuth, oracleLimiter, withOracleQueue, async (req:
       const nonInsight = intent.agents.filter(a => a !== "insight");
       const agentResults: Partial<Record<AgentId, unknown>> = {};
 
+      // Recent conversation context. Agents would otherwise receive only the
+      // bare current query, which breaks follow-ups like "show me a chart" —
+      // the agent has no product to profile, returns nothing, and no chart
+      // renders. Prepending the context lets the agent identify the product
+      // (formula/sensory target) established earlier in the conversation.
+      const historyContext = history.slice(-4)
+        .map(m => `[${m.role.toUpperCase()}]: ${m.content}`)
+        .join("\n");
+      const agentQuery = historyContext
+        ? `Conversation so far (identify the product/formulation under discussion and analyse THAT product):\n${historyContext}\n\nCurrent request: ${query.trim()}`
+        : query.trim();
+
       // Run specialist agents in parallel (all Haiku)
       await Promise.allSettled(
         nonInsight.map(async (agentId) => {
           try {
             send({ type: "agent_thinking", agentId });
-            const data = await runAgent(agentId, query.trim());
+            const data = await runAgent(agentId, agentQuery);
             if (hasContent(agentId, data)) {
               agentResults[agentId] = data;
               send({ type: "agent_data", agentId, data });
@@ -179,7 +191,7 @@ router.post("/analyze", requireAuth, oracleLimiter, withOracleQueue, async (req:
       if (intent.agents.includes("insight")) {
         try {
           send({ type: "agent_thinking", agentId: "insight" });
-          const data = await runAgent("insight", query.trim());
+          const data = await runAgent("insight", agentQuery);
           if (hasContent("insight", data)) {
             agentResults["insight"] = data;
             send({ type: "agent_data", agentId: "insight", data });
@@ -196,10 +208,6 @@ router.post("/analyze", requireAuth, oracleLimiter, withOracleQueue, async (req:
       const contextParts = Object.entries(agentResults)
         .map(([id, data]) => `[${id.toUpperCase()}]\n${JSON.stringify(data, null, 2)}`)
         .join("\n\n");
-
-      const historyContext = history.slice(-4)
-        .map(m => `[${m.role.toUpperCase()}]: ${m.content}`)
-        .join("\n");
 
       const synthesisPrompt = [
         historyContext ? `Conversation context:\n${historyContext}\n` : "",

@@ -1020,20 +1020,15 @@ export default function OraclePage() {
       if (selectedMode !== "chat") {
         resolvedForceAgents = [selectedMode];
       } else {
-        // Detect "show me chart/graph" follow-ups and re-run the agent that produced data
-        const CHART_PHRASES = [
-          "show me graph", "show graph", "show me the graph", "show the graph",
-          "show me chart", "show chart", "show me the chart", "show the chart",
-          "show me a chart", "show me a graph", "give me a chart", "give me the chart",
-          "i need a chart", "i need a graph", "need a chart", "need a graph",
-          "visible chart", "actual chart", "real chart", "render the chart",
-          "display the chart", "display the graph", "chart for this", "graph for this",
-          "show the sensory", "show sensory chart", "show the radar", "show radar",
-          "show the formula", "show me the formula", "show the formulation",
-          "show ingredient", "show me the ingredient",
-        ];
+        // Detect any "show me a chart/graph/visualisation" follow-up and re-run
+        // the agent that produced data. Kept broad on purpose — phrases like
+        // "i wanna see a chart" or "visualise this" must work, not just an exact
+        // canned list. Re-running the agent simply re-renders the chart the user
+        // is asking to see.
         const ql = q.toLowerCase();
-        const isVisualizationRequest = CHART_PHRASES.some(p => ql.includes(p));
+        const isVisualizationRequest =
+          /\b(chart|charts|graph|graphs|radar|spider|plot|visuali[sz]e|visualisation|visualization|diagram)\b/.test(ql)
+          || /\bshow\b[\s\S]*\b(formula|formulation|ingredient|breakdown|profile)\b/.test(ql);
 
         if (isVisualizationRequest) {
           // Find the most recent oracle message that has agent data
