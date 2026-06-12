@@ -729,13 +729,20 @@ function EditPOModal({ po, onClose, isLight, vendors }: { po: any; onClose: () =
 
   async function save() {
     setSaving(true);
+    // Optimistic update — reflect changes instantly before the refetch lands
+    qc.setQueryData(["/api/procurement/orders"], (old: any[]) => {
+      if (!old) return old;
+      return old.map((o: any) => o.id === po.id ? { ...o, ...form, vendorId: Number(form.vendorId) || o.vendorId } : o);
+    });
+    onClose();
     try {
       await fetch(`${BASE}api/procurement/orders/${po.id}`, {
         method: "PUT", headers: authH(), body: JSON.stringify(form),
       });
+    } finally {
       qc.invalidateQueries({ queryKey: ["/api/procurement/orders"] });
-      onClose();
-    } finally { setSaving(false); }
+      setSaving(false);
+    }
   }
 
   return (

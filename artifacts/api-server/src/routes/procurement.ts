@@ -621,7 +621,8 @@ router.put("/orders/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
     const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const [existing] = await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, id));
-    if (!existing || existing.status !== "draft") { res.status(400).json({ error: "Can only edit Draft POs" }); return; }
+    if (!existing) { res.status(404).json({ error: "NotFound" }); return; }
+    if (["closed", "cancelled"].includes(existing.status)) { res.status(400).json({ error: "Cannot edit a closed or cancelled PO" }); return; }
     const b = req.body;
     const [po] = await db.update(purchaseOrdersTable).set({
       vendorId: b.vendorId ? parseInt(b.vendorId) : undefined,
