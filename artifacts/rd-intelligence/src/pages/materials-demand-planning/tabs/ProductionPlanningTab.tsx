@@ -238,6 +238,50 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
   const [dragOverFloorId, setDragOverFloorId] = React.useState<number | null>(null);
   const [dragOverNightFloorId, setDragOverNightFloorId] = React.useState<number | null>(null);
 
+  // ─── Touch drag-and-drop refs (HTML5 DnD doesn't fire on touch devices) ──────
+  type _TDInfo = {
+    type: "planned" | "assigned"; productionOrderId: number;
+    assignmentId?: number; srcFloorId?: number;
+    ghost?: HTMLDivElement; sourceEl?: HTMLElement;
+    active: boolean; offsetX: number; offsetY: number;
+    timer?: ReturnType<typeof setTimeout>;
+  };
+  const tdRef = React.useRef<_TDInfo>({ type: "planned", productionOrderId: 0, active: false, offsetX: 0, offsetY: 0 });
+  const tdMoveRef = React.useRef<((e: TouchEvent) => void) | null>(null);
+  React.useEffect(() => () => {
+    if (tdRef.current.timer) clearTimeout(tdRef.current.timer);
+    if (tdMoveRef.current) document.removeEventListener("touchmove", tdMoveRef.current);
+    tdRef.current.ghost?.remove();
+  }, []);
+  const tdCleanup = React.useCallback(() => {
+    const d = tdRef.current;
+    if (d.timer) { clearTimeout(d.timer); d.timer = undefined; }
+    if (tdMoveRef.current) { document.removeEventListener("touchmove", tdMoveRef.current); tdMoveRef.current = null; }
+    d.ghost?.remove(); d.ghost = undefined;
+    if (d.sourceEl) { d.sourceEl.style.opacity = ""; d.sourceEl = undefined; }
+    d.active = false;
+    setDragOverFloorId(null); setDragOverNightFloorId(null);
+  }, []);
+  const tdFindTarget = React.useCallback((x: number, y: number) => {
+    const g = tdRef.current.ghost;
+    if (g) g.style.visibility = "hidden";
+    const el = document.elementFromPoint(x, y);
+    if (g) g.style.visibility = "";
+    if (!el) return null;
+    let node: Element | null = el;
+    while (node && node !== document.documentElement) {
+      if (node.getAttribute("data-drop-unassign") === "true") return { type: "unassign" as const };
+      const ra = node.getAttribute("data-reorder-assignment-id"); const rf = node.getAttribute("data-reorder-floor-id");
+      if (ra && rf) return { type: "reorder" as const, assignmentId: Number(ra), floorId: Number(rf) };
+      const fid = node.getAttribute("data-drop-floor-id"); const tday = node.getAttribute("data-drop-day");
+      const wl = node.getAttribute("data-drop-week-label") ?? undefined;
+      if (fid && tday) return { type: "floor-day" as const, floorId: Number(fid), day: tday, weekLabel: wl };
+      if (fid) return { type: "floor" as const, floorId: Number(fid) };
+      node = node.parentElement;
+    }
+    return null;
+  }, []);
+
   const now = React.useMemo(() => new Date(), []);
   // Pull working weeks for the current month, plus the previous and next
   // months so the week containing today still resolves correctly at the
@@ -1440,6 +1484,86 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     });
   }
 
+  // ─── Touch drag handler factory — shared by planned cards and assigned cards ─
+  const makeTD = (type: "planned" | "assigned", productionOrderId: number, assignmentId?: number, srcFloorId?: number) => {
+    const onTouchStart = (e: React.TouchEvent<HTMLElement>) => {
+      const touch = e.touches[0];
+      const startX = touch.clientX; const startY = touch.clientY;
+      const el = e.currentTarget; const rect = el.getBoundingClientRect();
+      const cancelIfScrolled = (ev: TouchEvent) => {
+        const t = ev.touches[0];
+        if (Math.abs(t.clientX - startX) > 8 || Math.abs(t.clientY - startY) > 8) {
+          if (tdRef.current.timer) { clearTimeout(tdRef.current.timer); tdRef.current.timer = undefined; }
+          document.removeEventListener("touchmove", cancelIfScrolled);
+        }
+      };
+      document.addEventListener("touchmove", cancelIfScrolled, { passive: true });
+      tdRef.current.timer = setTimeout(() => {
+        document.removeEventListener("touchmove", cancelIfScrolled);
+        const d = tdRef.current;
+        d.type = type; d.productionOrderId = productionOrderId;
+        d.assignmentId = assignmentId; d.srcFloorId = srcFloorId;
+        d.sourceEl = el; d.active = true;
+        d.offsetX = touch.clientX - rect.left; d.offsetY = touch.clientY - rect.top;
+        try { navigator.vibrate?.(40); } catch {}
+        const ghost = el.cloneNode(true) as HTMLDivElement;
+        ghost.style.cssText = `position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;opacity:0.9;z-index:9999;pointer-events:none;transform:scale(1.04) rotate(1.5deg);box-shadow:0 20px 50px rgba(0,0,0,0.65);border-radius:12px;transition:none;`;
+        document.body.appendChild(ghost);
+        d.ghost = ghost; el.style.opacity = "0.35";
+        const moveHandler = (ev: TouchEvent) => {
+          if (!d.active) return;
+          ev.preventDefault();
+          const t = ev.touches[0];
+          if (d.ghost) { d.ghost.style.left = `${t.clientX - d.offsetX}px`; d.ghost.style.top = `${t.clientY - d.offsetY}px`; }
+          if (d.ghost) d.ghost.style.visibility = "hidden";
+          const under = document.elementFromPoint(t.clientX, t.clientY);
+          if (d.ghost) d.ghost.style.visibility = "";
+          let node: Element | null = under; let fid: string | null = null; let dday: string | null = null;
+          while (node && node !== document.documentElement) {
+            fid = node.getAttribute("data-drop-floor-id"); dday = node.getAttribute("data-drop-day");
+            if (fid) break; node = node.parentElement;
+          }
+          const floorNum = fid ? Number(fid) : null;
+          if ((dday ?? "").endsWith("-NS")) { setDragOverNightFloorId(floorNum); setDragOverFloorId(null); }
+          else { setDragOverFloorId(floorNum); setDragOverNightFloorId(null); }
+        };
+        tdMoveRef.current = moveHandler;
+        document.addEventListener("touchmove", moveHandler, { passive: false });
+      }, 400);
+    };
+    const onTouchEnd = (e: React.TouchEvent<HTMLElement>) => {
+      const d = tdRef.current;
+      if (d.timer) { clearTimeout(d.timer); d.timer = undefined; }
+      if (!d.active) return;
+      const touch = e.changedTouches[0];
+      const target = tdFindTarget(touch.clientX, touch.clientY);
+      tdCleanup();
+      if (!target) return;
+      if (target.type === "unassign" && assignmentId != null) {
+        deleteAssignmentMutation.mutateAsync(assignmentId).then(() => toast({ title: "Order unassigned", description: "The order was returned to unassigned." })).catch(() => {});
+        return;
+      }
+      if (target.type === "reorder" && type === "assigned" && assignmentId != null && target.floorId === srcFloorId) {
+        handleReorder(target.floorId, assignmentId, target.assignmentId); return;
+      }
+      const floor = floors.find(f => f.id === (target as any).floorId);
+      if (!floor) return;
+      const order = plannedOrders.find(o => o.id === productionOrderId);
+      if (!order) return;
+      const snap: DragSnapshot = type === "planned"
+        ? { type: "planned", productionOrderId }
+        : { type: "assigned", productionOrderId, assignmentId: assignmentId!, floorId: srcFloorId! };
+      const mismatch = getProductTypeMismatch(floor, order);
+      if (mismatch) {
+        setConfirmDrop({ floor, order, day: (target as any).day, draggedSnapshot: snap, productLabel: mismatch.productLabel, allowedLabels: mismatch.allowedLabels, weekLabelOverride: (target as any).weekLabel });
+        return;
+      }
+      proceedWithDrop(floor, order, (target as any).day, snap, (target as any).weekLabel);
+    };
+    const onTouchCancel = () => { const d = tdRef.current; if (d.timer) { clearTimeout(d.timer); d.timer = undefined; } tdCleanup(); };
+    return { onTouchStart, onTouchEnd, onTouchCancel };
+  };
+
   return (
     <div className="space-y-5">
       <style>{printStyles}</style>
@@ -1722,9 +1846,12 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                 <div
                   key={row.assignment.id}
                   draggable
+                  data-reorder-assignment-id={row.assignment.id}
+                  data-reorder-floor-id={floorId}
                   onDragStart={e => { e.dataTransfer.effectAllowed = "move"; setDragged({ type: "assigned", productionOrderId: row.order.id, assignmentId: row.assignment.id, floorId }); }}
                   onDragOver={e => e.preventDefault()}
                   onDrop={e => { e.preventDefault(); if (dragged?.type === "assigned" && dragged.assignmentId && dragged.floorId === floorId) handleReorder(floorId, dragged.assignmentId, row.assignment.id); }}
+                  {...makeTD("assigned", row.order.id, row.assignment.id, floorId)}
                   className={cn("rounded-xl border p-2.5 cursor-grab active:cursor-grabbing",
                     isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5"
                   )}
@@ -1849,6 +1976,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                           dragOverFloorId === floor.id ? "border-primary/50 bg-primary/5"
                             : isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5"
                         )}
+                        data-drop-floor-id={floor.id}
                         onDragOver={e => { e.preventDefault(); setDragOverFloorId(floor.id); }}
                         onDragLeave={() => setDragOverFloorId(c => c === floor.id ? null : c)}
                         onDrop={e => handleDropOnFloor(floor, e)}
@@ -1973,6 +2101,9 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                             className={cn("relative rounded-2xl border flex flex-col transition-colors",
                                               dragOverFloorId === floor.id ? "border-primary/50 bg-primary/5" : isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5"
                                             )}
+                                            data-drop-floor-id={floor.id}
+                                            data-drop-day={day}
+                                            data-drop-week-label={week.weekLabel}
                                             onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOverFloorId(floor.id); }}
                                             onDragLeave={() => setDragOverFloorId(c => c === floor.id ? null : c)}
                                             onDrop={e => { e.stopPropagation(); handleDropOnFloorDay(floor, day, e, week.weekLabel); }}
@@ -2062,6 +2193,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
 
                           return (
                             <div key={floor.id}
+                              data-drop-floor-id={floor.id}
+                              data-drop-day={day}
                               onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOverFloorId(floor.id); }}
                               onDragLeave={() => setDragOverFloorId(c => c === floor.id ? null : c)}
                               onDrop={e => { e.stopPropagation(); handleDropOnFloorDay(floor, day, e); }}
@@ -2125,6 +2258,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                               const isNightTarget = dragOverNightFloorId === floor.id;
                               return (
                                 <div key={`${floor.id}-NS`}
+                                  data-drop-floor-id={floor.id}
+                                  data-drop-day={nightDay}
                                   onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOverNightFloorId(floor.id); }}
                                   onDragLeave={() => setDragOverNightFloorId(c => c === floor.id ? null : c)}
                                   onDrop={e => { e.stopPropagation(); setDragOverNightFloorId(null); handleDropOnFloorDay(floor, nightDay, e); }}
@@ -2212,6 +2347,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
 
             <div className={cn("rounded-2xl border p-4 flex-1 overflow-y-auto", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5")}>
               <div
+                data-drop-unassign="true"
                 className={cn("min-h-[260px] rounded-xl border border-dashed p-3",
                   isLight ? "border-slate-200" : "border-white/10"
                 )}
@@ -2248,6 +2384,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                             event.dataTransfer.effectAllowed = "move";
                             setDragged({ type: "planned", productionOrderId: order.id });
                           }}
+                          {...makeTD("planned", order.id)}
                           className={cn("rounded-xl border p-3 transition-colors cursor-grab",
                             isLight ? "border-slate-200 bg-white hover:border-primary/30" : "border-white/10 bg-black/10 hover:border-white/20"
                           )}
