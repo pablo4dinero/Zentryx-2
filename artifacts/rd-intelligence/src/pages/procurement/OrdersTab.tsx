@@ -310,14 +310,14 @@ async function sendPO() {
 }
 
 async function updateStatus(newStatus: string) {
-  // Optimistic update
+  // Optimistic update so the stepper responds immediately
   qc.setQueryData(["/api/procurement/orders"], (old: any[]) => {
     if (!old) return old;
     return old.map((o: any) => o.id === po.id ? { ...o, status: newStatus } : o);
   });
-  await fetch(`${BASE}api/procurement/orders/${po.id}`, {
-    method: "PUT", headers: authH(),
-    body: JSON.stringify({ ...po, status: newStatus, vendorId: po.vendorId ?? po.vendor?.id }),
+  await fetch(`${BASE}api/procurement/orders/${po.id}/status`, {
+    method: "PATCH", headers: authH(),
+    body: JSON.stringify({ status: newStatus }),
   });
   qc.invalidateQueries({ queryKey: ["/api/procurement/orders"] });
 }

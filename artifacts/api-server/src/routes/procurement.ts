@@ -653,6 +653,21 @@ router.delete("/orders/:id", requireAuth, async (req: AuthRequest, res) => {
   } catch (e) { console.error(e); res.status(500).json({ error: "InternalServerError" }); }
 });
 
+// Dedicated status-update endpoint — no draft guard, used by the delivery stepper
+router.patch("/orders/:id/status", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
+    const { status } = req.body;
+    const allowed = ["draft","sent_to_vendor","acknowledged","in_transit","received","partially_received","closed","cancelled"];
+    if (!allowed.includes(status)) { res.status(400).json({ error: "Invalid status" }); return; }
+    const [po] = await db.update(purchaseOrdersTable)
+      .set({ status: status as any, updatedAt: new Date() })
+      .where(eq(purchaseOrdersTable.id, id)).returning();
+    if (!po) { res.status(404).json({ error: "NotFound" }); return; }
+    res.json(po);
+  } catch (e) { console.error(e); res.status(500).json({ error: "InternalServerError" }); }
+});
+
 router.post("/orders/:id/send", requireAuth, async (req: AuthRequest, res) => {
   try {
     const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
