@@ -16,6 +16,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
 import { useCall } from "@/lib/call";
+import { useNotificationSound } from "@/hooks/useNotificationSound";
+import { ensureNotifyPermission, showChatNotification, setChatTabTitle } from "@/lib/chat-notify";
 import { BASE } from "./lib/constants";
 import { useApi, usePinnedRooms, usePinnedMessages } from "./lib/hooks";
 import { NeuralBackground } from "./components/NeuralBackground";
@@ -29,6 +31,7 @@ export default function ChatRoom() {
   const api = useApi();
   const { toast } = useToast();
   const { startCall, wsSend, onWsMessage } = useCall();
+  const { playMessage } = useNotificationSound();
   const { theme } = useTheme();
   const isLight = theme === "light";
   const [rooms, setRooms] = useState<any[]>([]);
@@ -69,9 +72,12 @@ export default function ChatRoom() {
   const [lightboxImg, setLightboxImg] = useState<string | null>(null);
   const [sidebarSearch, setSidebarSearch] = useState("");
   const [forwardSearch, setForwardSearch] = useState("");
-  const [roomMeta, setRoomMeta] = useState<Record<number, { lastMessageAt: string; lastMessagePreview: string | null; lastMessageType: string | null; hasUnread: boolean }>>({});
+  const [roomMeta, setRoomMeta] = useState<Record<number, { lastMessageAt: string; lastMessagePreview: string | null; lastMessageType: string | null; lastMessageSender: string | null; hasUnread: boolean; unreadCount: number }>>({});
   const [peopleSort, setPeopleSort] = useState<"recent" | "role" | "alpha">("recent");
   const [peopleSortOpen, setPeopleSortOpen] = useState(false);
+  // Live presence — ids of users currently connected (any open tab/device).
+  // Polled from /chat/presence; drives the Online/Offline indicator.
+  const [onlineIds, setOnlineIds] = useState<Set<number>>(new Set());
 
   // Cache messages per room so switching rooms restores instantly and bad fetches don't wipe history
   const msgCacheRef = useRef<Record<number, any[]>>({});
@@ -193,7 +199,9 @@ export default function ChatRoom() {
           lastMessageAt: room.lastMessageAt,
           lastMessagePreview: room.lastMessagePreview,
           lastMessageType: room.lastMessageType,
+          lastMessageSender: room.lastMessageSender ?? null,
           hasUnread: room.hasUnread,
+          unreadCount: room.unreadCount ?? 0,
         };
       });
       setRoomMeta(meta);
@@ -213,7 +221,9 @@ export default function ChatRoom() {
           lastMessageAt: room.lastMessageAt,
           lastMessagePreview: room.lastMessagePreview,
           lastMessageType: room.lastMessageType,
+          lastMessageSender: room.lastMessageSender ?? null,
           hasUnread: room.hasUnread,
+          unreadCount: room.unreadCount ?? 0,
         };
       });
       setRoomMeta(meta);
@@ -531,6 +541,87 @@ export default function ChatRoom() {
       ? "Administrator"
       : m?.senderName;
 
+  // Poll live presence so each person shows Online / Offline.
+  useEffect(() => {
+    let cancelled = false;
+    const loadPresence = () => {
+      api.get("/chat/presence").then((r: any) => {
+        if (cancelled || !r || !Array.isArray(r.online)) return;
+        setOnlineIds(new Set(r.online.map((x: any) => Number(x))));
+      }).catch(() => {});
+    };
+    loadPresence();
+    const id = setInterval(loadPresence, 10000);
+    return () => { cancelled = true; clearInterval(id); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── New-message notifications (while the /chat page is open) ──────────────
+  // Ask for desktop-notification permission once. Off-/chat notifications are
+  // driven separately by AppLayout; here we cover messages that arrive while
+  // the user is on the chat page but not looking at that conversation.
+  useEffect(() => { ensureNotifyPermission(); }, []);
+
+  // Keep the rooms list (and therefore unread badges) fresh even when no room
+  // is open — the active-room poll already refreshes it every 1.5 s, but on
+  // the people/channels list (mobile) there's no active room to poll from.
+  useEffect(() => {
+    const id = setInterval(() => refreshRooms(), 4000);
+    return () => clearInterval(id);
+  }, [refreshRooms]);
+
+  // Total unread across every room, used for the browser tab-title alert.
+  const totalUnread = Object.values(roomMeta).reduce((sum, m) => sum + (m?.unreadCount || 0), 0);
+
+  // Flash the tab title ("(2) Zentryx:New Messages") only while the tab is in
+  // the background; clear it the moment the user returns to the tab. Restores
+  // the original title when leaving the chat page.
+  useEffect(() => {
+    const apply = () => setChatTabTitle(document.hidden ? totalUnread : 0);
+    apply();
+    document.addEventListener("visibilitychange", apply);
+    return () => {
+      document.removeEventListener("visibilitychange", apply);
+      setChatTabTitle(0);
+    };
+  }, [totalUnread]);
+
+  // Detect freshly-arrived messages by comparing each room's lastMessageAt to
+  // the previous snapshot. Fire a sound + desktop notification for messages in
+  // any room the user isn't currently viewing (or the active room while the
+  // tab is hidden). The first run only establishes the baseline.
+  const prevMsgAtRef = useRef<Record<number, string> | null>(null);
+  useEffect(() => {
+    const prev = prevMsgAtRef.current;
+    const snapshot: Record<number, string> = {};
+    const arrivals: { roomId: number; sender: string }[] = [];
+    for (const idStr in roomMeta) {
+      const id = Number(idStr);
+      const m = roomMeta[id];
+      snapshot[id] = m.lastMessageAt;
+      if (!prev || !m.hasUnread) continue;
+      const prevAt = prev[id];
+      const isNewer = !prevAt || new Date(m.lastMessageAt).getTime() > new Date(prevAt).getTime();
+      const isActive = activeRoom?.id === id;
+      if (isNewer && (!isActive || (typeof document !== "undefined" && document.hidden))) {
+        const sender = adminDmRoom && adminDmRoom.id === id ? "Administrator" : (m.lastMessageSender || "A teammate");
+        arrivals.push({ roomId: id, sender });
+      }
+    }
+    prevMsgAtRef.current = snapshot;
+    if (!prev || arrivals.length === 0) return; // baseline run, or nothing new
+    playMessage();
+    const top = arrivals[arrivals.length - 1];
+    showChatNotification({
+      fromName: top.sender,
+      onClick: () => {
+        const room = rooms.find((r: any) => r.id === top.roomId);
+        if (room) selectRoom(room);
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomMeta]);
+
 
   // Build people list: all users with DM room info, sorted by chosen mode
   const peopleList = users.filter((u: any) => u.id !== currentUserId).map((u: any) => {
@@ -543,7 +634,7 @@ export default function ChatRoom() {
         : (r.name === u.name || r.name === u.name.split(" ")[0]),
     );
     const meta = dmRoom ? roomMeta[dmRoom.id] : null;
-    return { ...u, dmRoom, lastMessageAt: meta?.lastMessageAt ?? null, lastPreview: meta?.lastMessagePreview ?? null, lastPreviewType: meta?.lastMessageType ?? null, hasUnread: meta?.hasUnread ?? false };
+    return { ...u, dmRoom, lastMessageAt: meta?.lastMessageAt ?? null, lastPreview: meta?.lastMessagePreview ?? null, lastPreviewType: meta?.lastMessageType ?? null, hasUnread: meta?.hasUnread ?? false, unreadCount: meta?.unreadCount ?? 0 };
   }).sort((a, b) => {
     if (peopleSort === "alpha") return a.name.localeCompare(b.name);
     if (peopleSort === "role") return (a.role ?? "").localeCompare(b.role ?? "") || a.name.localeCompare(b.name);
@@ -678,7 +769,11 @@ export default function ChatRoom() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1">
                         <span className="truncate text-sm">{room.name}</span>
-                        {roomMeta[room.id]?.hasUnread && <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />}
+                        {(roomMeta[room.id]?.unreadCount ?? 0) > 0 && (
+                          <span className="ml-auto min-w-[18px] h-[18px] px-1.5 rounded-full bg-primary text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                            {roomMeta[room.id].unreadCount > 99 ? "99+" : roomMeta[room.id].unreadCount}
+                          </span>
+                        )}
                       </div>
                       {roomMeta[room.id]?.lastMessagePreview && (
                         <p className="text-[10px] text-muted-foreground truncate">{roomMeta[room.id].lastMessagePreview}</p>
@@ -719,11 +814,13 @@ export default function ChatRoom() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1">
                     <span className="truncate text-sm font-medium">Administrator</span>
-                    {adminMeta?.hasUnread && (
+                    {(adminMeta?.unreadCount ?? 0) > 0 && (
                       <span className={cn(
-                        "w-1.5 h-1.5 rounded-full shrink-0",
-                        adminDmRoom && activeRoom?.id === adminDmRoom.id && isLight ? "bg-white" : "bg-primary",
-                      )} />
+                        "ml-auto min-w-[18px] h-[18px] px-1.5 rounded-full text-[10px] font-bold flex items-center justify-center shrink-0",
+                        adminDmRoom && activeRoom?.id === adminDmRoom.id && isLight ? "bg-white text-indigo-600" : "bg-primary text-white",
+                      )}>
+                        {adminMeta!.unreadCount > 99 ? "99+" : adminMeta!.unreadCount}
+                      </span>
                     )}
                   </div>
                   <p className={cn(
@@ -770,6 +867,7 @@ export default function ChatRoom() {
           )}
           {filteredPeople.map((person: any) => {
             const isActive = activeRoom && person.dmRoom && activeRoom.id === person.dmRoom.id;
+            const isOnline = onlineIds.has(person.id);
             // Active-DM row design:
             //   Light mode → solid indigo→violet gradient with white text,
             //   matching the new chat-bubble gradient for visual continuity.
@@ -808,6 +906,15 @@ export default function ChatRoom() {
                   )}>
                     {person.name.charAt(0)}
                   </div>
+                  {/* Presence dot — green when online, grey when offline. */}
+                  <span
+                    title={isOnline ? "Online" : "Offline"}
+                    className={cn(
+                      "absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2",
+                      isLight ? "border-white" : "border-[#0e0e16]",
+                      isOnline ? "bg-emerald-500" : "bg-slate-400",
+                    )}
+                  />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1">
@@ -817,11 +924,13 @@ export default function ChatRoom() {
                     )}>
                       {person.name}
                     </span>
-                    {person.hasUnread && (
+                    {person.unreadCount > 0 && (
                       <span className={cn(
-                        "w-1.5 h-1.5 rounded-full shrink-0",
-                        isActive && isLight ? "bg-white" : "bg-primary",
-                      )} />
+                        "ml-auto min-w-[18px] h-[18px] px-1.5 rounded-full text-[10px] font-bold flex items-center justify-center shrink-0",
+                        isActive && isLight ? "bg-white text-indigo-600" : "bg-primary text-white",
+                      )}>
+                        {person.unreadCount > 99 ? "99+" : person.unreadCount}
+                      </span>
                     )}
                   </div>
                   {person.lastPreview ? (
@@ -851,14 +960,17 @@ export default function ChatRoom() {
                       "shrink-0 inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full border",
                       isLight
                         ? "bg-white/20 border-white/40"
-                        : "bg-primary/20 border-primary/40 text-primary",
+                        : isOnline
+                          ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
+                          : "bg-slate-500/20 border-slate-500/40 text-slate-300",
                     )}
                   >
                     <span className={cn(
-                      "w-1 h-1 rounded-full animate-pulse",
-                      isActive && isLight ? "bg-white" : "bg-primary",
+                      "w-1 h-1 rounded-full",
+                      isOnline && "animate-pulse",
+                      isLight ? "bg-white" : isOnline ? "bg-emerald-400" : "bg-slate-300",
                     )} />
-                    Active
+                    {isOnline ? "Online" : "Offline"}
                   </span>
                 ) : person.lastMessageAt && !isNaN(new Date(person.lastMessageAt).getTime()) ? (
                   <span className="text-[9px] text-muted-foreground shrink-0">
@@ -931,10 +1043,18 @@ export default function ChatRoom() {
               //      named after the partner on create)
               //   3. user whose first name matches the room name (legacy)
               let dmPartner: any = null;
+              // The raw id of the other DM member, taken straight from the
+              // room's membership. We keep this even when the full user
+              // object isn't in `users` (e.g. the partner isn't in this
+              // viewer's loaded user list) so calls still work — see callPeerId.
+              let otherMemberId: number | null = null;
               if (!activeRoom.isGroup) {
                 if (Array.isArray(activeRoom.memberUserIds)) {
                   const otherId = activeRoom.memberUserIds.find((id: number) => id !== currentUserId);
-                  if (otherId) dmPartner = users.find((u: any) => u.id === otherId) ?? null;
+                  if (otherId) {
+                    otherMemberId = otherId;
+                    dmPartner = users.find((u: any) => u.id === otherId) ?? null;
+                  }
                 }
                 if (!dmPartner) {
                   dmPartner = users.find((u: any) => u.id !== currentUserId && u.name === activeRoom.name) ?? null;
@@ -942,12 +1062,16 @@ export default function ChatRoom() {
                 if (!dmPartner) {
                   dmPartner = users.find((u: any) => u.id !== currentUserId && u.name?.split(" ")[0] === activeRoom.name) ?? null;
                 }
+                if (otherMemberId == null && dmPartner) otherMemberId = dmPartner.id;
               }
               // Who to ring for a 1:1 call. For the unlisted-admin DM the
-              // partner isn't in `users`, so fall back to adminContact.
+              // partner isn't in `users`, so fall back to adminContact. For a
+              // normal DM, fall back to the raw member id so the call buttons
+              // appear even when the partner isn't in this viewer's `users`
+              // list (which previously left some DMs with no call buttons).
               const isAdminDm = !!adminDmRoom && activeRoom.id === adminDmRoom.id;
               const callPeerId: number | null = !activeRoom.isGroup
-                ? (isAdminDm ? (adminContact?.id ?? null) : (dmPartner?.id ?? null))
+                ? (isAdminDm ? (adminContact?.id ?? null) : (dmPartner?.id ?? otherMemberId ?? null))
                 : null;
               const callPeerName: string = isAdminDm
                 ? "Administrator"

@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { chatRoomsTable, chatRoomMembersTable, chatMessagesTable, chatReadReceiptsTable, usersTable, notificationsTable } from "@workspace/db";
-import { eq, and, inArray, desc, sql, ne, lt } from "drizzle-orm";
+import { eq, and, inArray, desc, sql, ne, lt, gt } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../lib/auth";
+import { getOnlineUserIds } from "../lib/realtime";
 import { SUPERADMIN_EMAIL } from "./auth";
 import { uploadToR2, getSignedFileUrl } from "../lib/r2";
 import { sanitize } from "../lib/sanitize";
@@ -90,6 +91,12 @@ async function markRead(userId: number, roomId: number, messageId: number) {
   }
 }
 
+// Live presence — ids of users with at least one open WebSocket (any device).
+// The chat client polls this to show Online/Offline next to each person.
+router.get("/presence", requireAuth, (_req: AuthRequest, res) => {
+  res.json({ online: getOnlineUserIds() });
+});
+
 // Get all rooms for current user with last message preview + unread count
 router.get("/rooms", requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -124,6 +131,22 @@ router.get("/rooms", requireAuth, async (req: AuthRequest, res) => {
       const lastMsgId = lastMsg?.id ?? 0;
       const hasUnread = lastMsg && lastMsg.senderId !== userId && lastMsgId > lastReadId;
 
+      // Exact count of unread messages from other people in this room, used
+      // for the per-room and total unread badges on the client. Only queried
+      // when there's something unread so we don't pay for a count on every
+      // already-read room.
+      let unreadCount = 0;
+      if (hasUnread) {
+        const [cnt] = await db.select({ c: sql<number>`count(*)` })
+          .from(chatMessagesTable)
+          .where(and(
+            eq(chatMessagesTable.roomId, room.id),
+            gt(chatMessagesTable.id, lastReadId),
+            ne(chatMessagesTable.senderId, userId),
+          ));
+        unreadCount = Number(cnt?.c ?? 0);
+      }
+
       return {
         ...room,
         lastMessageAt: lastMsg?.createdAt ?? room.createdAt,
@@ -131,6 +154,7 @@ router.get("/rooms", requireAuth, async (req: AuthRequest, res) => {
         lastMessageSender: lastMsg?.senderName ?? null,
         lastMessageType: lastMsg?.messageType ?? null,
         hasUnread: !!hasUnread,
+        unreadCount,
         memberUserIds: memberRows.map(m => m.userId),
       };
     }));
