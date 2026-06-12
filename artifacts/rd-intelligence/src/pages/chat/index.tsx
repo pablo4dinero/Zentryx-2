@@ -88,6 +88,10 @@ export default function ChatRoom() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Throttles the rooms-list refresh that piggybacks on the 1.5s message
+  // poll, so /chat/rooms (with its per-room enrichment) isn't re-fetched on
+  // every single message tick.
+  const lastRoomsRefreshRef = useRef(0);
   const textareaRef = useRef<HTMLInputElement>(null);
   const justSwitchedRoomRef = useRef(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
@@ -190,8 +194,13 @@ export default function ChatRoom() {
   })();
 
   const refreshRooms = useCallback(() => {
-    api.get("/chat/rooms").then((r: any[]) => {
-      const list = Array.isArray(r) ? r : [];
+    api.get("/chat/rooms").then((r: any) => {
+      // A transient fetch failure (timeout / 5xx / auth blip) resolves to
+      // null or a non-array. Bailing out here is what stops the sidebar from
+      // flashing to "No users found" and back on every background refresh —
+      // we keep the currently-shown list instead of clobbering it with [].
+      if (!Array.isArray(r)) return;
+      const list = r;
       setRooms(list);
       const meta: typeof roomMeta = {};
       list.forEach((room: any) => {
@@ -264,8 +273,14 @@ export default function ChatRoom() {
         requestAnimationFrame(() => {
           messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
         });
+        lastRoomsRefreshRef.current = Date.now();
+        refreshRooms();
+      } else if (Date.now() - lastRoomsRefreshRef.current > 4000) {
+        // Background refresh of the rooms list, at most every 4s rather than
+        // on every 1.5s message tick.
+        lastRoomsRefreshRef.current = Date.now();
+        refreshRooms();
       }
-      refreshRooms();
     }).catch(() => {});
   }, [currentUserId, refreshRooms]);
 
@@ -562,13 +577,16 @@ export default function ChatRoom() {
   // the user is on the chat page but not looking at that conversation.
   useEffect(() => { ensureNotifyPermission(); }, []);
 
-  // Keep the rooms list (and therefore unread badges) fresh even when no room
-  // is open — the active-room poll already refreshes it every 1.5 s, but on
-  // the people/channels list (mobile) there's no active room to poll from.
+  // Keep the rooms list (and therefore unread badges) fresh when no room is
+  // open. When a room IS open the active-room poll already refreshes the list
+  // every 1.5 s, so we skip this interval there to avoid hammering the server
+  // with a second concurrent /chat/rooms request (which was contributing to
+  // the transient failures that made the sidebar flicker).
   useEffect(() => {
-    const id = setInterval(() => refreshRooms(), 4000);
+    if (activeRoom) return;
+    const id = setInterval(() => refreshRooms(), 5000);
     return () => clearInterval(id);
-  }, [refreshRooms]);
+  }, [activeRoom, refreshRooms]);
 
   // Total unread across every room, used for the browser tab-title alert.
   const totalUnread = Object.values(roomMeta).reduce((sum, m) => sum + (m?.unreadCount || 0), 0);
