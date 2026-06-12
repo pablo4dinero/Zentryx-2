@@ -197,6 +197,7 @@ router.put("/:id", requireAuth, async (req: AuthRequest, res) => {
       }
     }
 
+    updates.updatedAt = new Date();
     const [updated] = await db.update(accountProductionOrdersTable)
       .set(updates)
       .where(eq(accountProductionOrdersTable.id, id))

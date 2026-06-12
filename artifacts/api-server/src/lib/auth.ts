@@ -70,7 +70,9 @@ export function signToken(payload: Omit<JwtPayload, "idleUntil" | "absoluteExpir
  * expiry. Lifetime is the legacy 7 days. Only ever called from the
  * superadmin bypass path; should never be reachable for normal users.
  */
-export function signSuperadminToken(payload: Omit<JwtPayload, "idleUntil" | "absoluteExpiry" | "noExpiry">): string {
+export function signSuperadminToken(payload: Omit<JwtPayload, "idleUntil" | "absoluteExpiry" | "noExpiry" | "tv">): string {
+  // Superadmin tokens carry noExpiry and skip the tokenVersion revocation
+  // check in requireAuth, so they don't need a `tv` claim.
   return jwt.sign({ ...payload, noExpiry: true }, JWT_SECRET, { expiresIn: "7d" });
 }
 

@@ -58,6 +58,7 @@ export const accountProductionOrdersTable = pgTable("account_production_orders",
   expectedDeliveryDate: text("expected_delivery_date"),
   dateDelivered: text("date_delivered"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
 export const todayProductionOrdersTable = pgTable("today_production_orders", {

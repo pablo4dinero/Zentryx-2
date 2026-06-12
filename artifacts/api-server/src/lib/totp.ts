@@ -53,7 +53,9 @@ export function verifyTotp(secret: string, code: string): boolean {
   const cleaned = code.replace(/\D/g, "");
   if (cleaned.length !== 6) return false;
   try {
-    const result = otplib.verifySync({ token: cleaned, secret, window: VERIFY_WINDOW });
+    // `window` (±step tolerance) is accepted by otplib's functional verifySync
+    // at runtime but isn't in its published OTPVerifyOptions type, so we cast.
+    const result = otplib.verifySync({ token: cleaned, secret, window: VERIFY_WINDOW } as Parameters<typeof otplib.verifySync>[0]);
     return result?.valid === true;
   } catch {
     return false;

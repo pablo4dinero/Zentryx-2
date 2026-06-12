@@ -14,7 +14,7 @@ import {
   notificationsTable,
   usersTable,
 } from "@workspace/db";
-import { eq, desc, asc, sql, inArray, gte, lte, and } from "drizzle-orm";
+import { eq, desc, asc, sql, inArray, gte, lte, and, isNull } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "../lib/auth";
 import { logActivity } from "../lib/activity";
 import { callModel, SONNET_MODEL } from "../oracle/claude";
@@ -441,13 +441,15 @@ router.get("/floor-assignments", requireAuth, async (req: AuthRequest, res) => {
 const planningInProgress = new Set<string>();
 
 router.post("/assisted-planning", requireAuth, async (req: AuthRequest, res) => {
+  // Hoisted so the catch block can release the per-week lock even if an error
+  // is thrown before/while the body is destructured.
+  const weekLabel: string | undefined = req.body?.weekLabel;
   try {
     const {
-      weekLabel, workingDays, workingDates: workingDatesRaw,
+      workingDays, workingDates: workingDatesRaw,
       includeNightShift, includeSaturday,
       plannerOrders, existingUsageRaw, floorDayStatuses,
     } = req.body as {
-      weekLabel: string;
       workingDays: string[];
       workingDates: string[];
       includeNightShift: boolean;
@@ -497,7 +499,7 @@ router.post("/assisted-planning", requireAuth, async (req: AuthRequest, res) => 
       .where(eq(mdpFloorAssignmentsTable.weekLabel, weekLabel));
     if (existing.length > 0) {
       const ids = existing.map(e => e.id);
-      await db.delete(mdpProductSwitchDowntimesTable).where(inArray(mdpProductSwitchDowntimesTable.floorAssignmentId, ids));
+      await db.delete(mdpProductSwitchDowntimesTable).where(inArray(mdpProductSwitchDowntimesTable.afterAssignmentId, ids));
       await db.delete(mdpFloorAssignmentsTable).where(inArray(mdpFloorAssignmentsTable.id, ids));
     }
 
@@ -541,7 +543,7 @@ router.post("/assisted-planning", requireAuth, async (req: AuthRequest, res) => 
     broadcastDataChange("production-orders", {}, req.user?.userId);
     res.json({ summary: result.summary, placementCount: result.placements.length });
   } catch (err) {
-    planningInProgress.delete(weekLabel); // always release lock even on error
+    if (weekLabel) planningInProgress.delete(weekLabel); // always release lock even on error
     console.error("[assisted-planning]", err);
     res.status(500).json({ error: "InternalServerError" });
   }
@@ -735,7 +737,7 @@ router.post("/floor-assignments/cleanup-orphaned", requireAuth, async (req: Auth
     const orphaned = await db.select({ id: mdpProductSwitchDowntimesTable.id })
       .from(mdpProductSwitchDowntimesTable)
       .leftJoin(mdpFloorAssignmentsTable, eq(mdpFloorAssignmentsTable.id, mdpProductSwitchDowntimesTable.afterAssignmentId))
-      .where(eq(mdpFloorAssignmentsTable.id, null));
+      .where(isNull(mdpFloorAssignmentsTable.id));
 
     const orphanedIds = orphaned.map((row: any) => row.id);
     if (orphanedIds.length > 0) {
@@ -1133,7 +1135,7 @@ router.post("/sync-order-accounts", requireAuth, async (req: AuthRequest, res) =
 router.get("/monthly-orders", requireAuth, async (req: AuthRequest, res) => {
   try {
     const month = req.query.month as string | undefined;
-    let query = db.select().from(mdpMonthlyOrdersTable);
+    let query = db.select().from(mdpMonthlyOrdersTable).$dynamic();
     if (month) {
       query = query.where(eq(mdpMonthlyOrdersTable.month, month));
     }
@@ -1406,7 +1408,7 @@ router.post("/parse-plan-document", requireAuth, express.json({ limit: "15mb" })
     days = days.map(day => {
       const floorMap = new Map<string, { floorName: string; products: any[] }>();
       day.floors.forEach(floor => {
-        floor.products.forEach(product => {
+        floor.products.forEach((product: any) => {
           const floorName = product.assignedFloor;
           if (!floorMap.has(floorName)) {
             floorMap.set(floorName, { floorName, products: [] });
@@ -1612,7 +1614,7 @@ router.post("/product-types", requireAuth, async (req: AuthRequest, res) => {
 
 router.put("/product-types/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const { name, keywords } = req.body as { name?: string; keywords?: string[] };
 
     const existing = customProductTypes.get(id);
@@ -1633,7 +1635,7 @@ router.put("/product-types/:id", requireAuth, async (req: AuthRequest, res) => {
 
 router.delete("/product-types/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const deleted = customProductTypes.delete(id);
     if (!deleted) {
       res.status(404).json({ error: "NotFound" });

@@ -323,7 +323,7 @@ async function fetchFromGNews(): Promise<NewsItem[]> {
   const url =
     `https://gnews.io/api/v4/search` +
     `?q=${q}&lang=en&max=10` +
-    `&apikey=${GNEWS_API_KEY.trim()}`;
+    `&apikey=${(GNEWS_API_KEY ?? "").trim()}`;
 
   const res = await fetch(url, {
     headers: { "User-Agent": "Zentryx-RD/1.0" },
