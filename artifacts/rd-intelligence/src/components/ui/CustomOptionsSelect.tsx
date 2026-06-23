@@ -131,6 +131,8 @@ export function CustomOptionsSelect({
       {open && menuPos && createPortal(
         <div
           ref={panelRef}
+          onMouseDown={e => e.stopPropagation()}
+          onPointerDown={e => e.stopPropagation()}
           style={{
             position: "fixed",
             left: menuPos.left,
