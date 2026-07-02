@@ -82,16 +82,19 @@ export function CustomOptionsSelect({
 
   useEffect(() => {
     if (!open) { setSearch(""); return; }
-    const handler = (e: MouseEvent) => {
+    const handler = (e: MouseEvent | TouchEvent) => {
       const target = e.target as Node;
-      // Keep open when the click is on the trigger or inside the portal panel.
       if (containerRef.current?.contains(target)) return;
       if (panelRef.current?.contains(target)) return;
       setOpen(false);
       setEditingOpt(null);
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    document.addEventListener("click", handler);
+    document.addEventListener("touchstart", handler);
+    return () => {
+      document.removeEventListener("click", handler);
+      document.removeEventListener("touchstart", handler);
+    };
   }, [open]);
 
   const commitEdit = (opt: string) => {
