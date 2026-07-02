@@ -135,12 +135,11 @@ export function CustomOptionsSelect({
       {open && menuPos && createPortal(
         <div
           ref={panelRef}
-          onMouseDownCapture={e => e.stopPropagation()}
-          onPointerDownCapture={e => e.stopPropagation()}
           style={{
             position: "fixed",
             left: menuPos.left,
             width: menuPos.width,
+            pointerEvents: "auto",
             ...(menuPos.openUp
               ? { bottom: menuPos.bottom + 4 }
               : { top: menuPos.top + 4 }),
