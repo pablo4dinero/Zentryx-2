@@ -89,11 +89,11 @@ export function CustomOptionsSelect({
       setOpen(false);
       setEditingOpt(null);
     };
-    document.addEventListener("click", handler);
-    document.addEventListener("touchstart", handler);
+    document.addEventListener("click", handler, true);
+    document.addEventListener("touchstart", handler, true);
     return () => {
-      document.removeEventListener("click", handler);
-      document.removeEventListener("touchstart", handler);
+      document.removeEventListener("click", handler, true);
+      document.removeEventListener("touchstart", handler, true);
     };
   }, [open]);
 
@@ -136,7 +136,6 @@ export function CustomOptionsSelect({
           ref={panelRef}
           onMouseDownCapture={e => e.stopPropagation()}
           onPointerDownCapture={e => e.stopPropagation()}
-          onClickCapture={e => e.stopPropagation()}
           style={{
             position: "fixed",
             left: menuPos.left,
