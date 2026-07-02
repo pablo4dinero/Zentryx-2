@@ -89,11 +89,12 @@ export function CustomOptionsSelect({
       setOpen(false);
       setEditingOpt(null);
     };
-    document.addEventListener("click", handler, true);
-    document.addEventListener("touchstart", handler, true);
+    // Use bubble phase (not capture) so React's onClick handlers fire FIRST
+    document.addEventListener("click", handler, false);
+    document.addEventListener("touchstart", handler, false);
     return () => {
-      document.removeEventListener("click", handler, true);
-      document.removeEventListener("touchstart", handler, true);
+      document.removeEventListener("click", handler, false);
+      document.removeEventListener("touchstart", handler, false);
     };
   }, [open]);
 
