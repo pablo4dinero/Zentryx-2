@@ -587,62 +587,6 @@ function EditableVolumeCell({ account, onSaveField }: { account: any; onSaveFiel
   );
 }
 
-function EditableManagersCell({ account, onSaveField, users, isLight }: { account: any; onSaveField: (id: number, updates: Record<string, any>) => Promise<void>; users: any[]; isLight: boolean; }) {
-  const [editing, setEditing] = useState(false);
-  const [search, setSearch] = useState("");
-  const [selectedIds, setSelectedIds] = useState<number[]>(account.accountManagers || []);
-
-  useEffect(() => {
-    if (editing) {
-      setSelectedIds(account.accountManagers || []);
-      setSearch("");
-    }
-  }, [editing, account.accountManagers]);
-
-  const filteredUsers = (users || []).filter((u: any) => u.name?.toLowerCase().includes(search.toLowerCase()));
-
-  const toggleManager = (id: number) => {
-    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  };
-
-  const save = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    await onSaveField(account.id, { accountManagers: selectedIds });
-    setEditing(false);
-  };
-
-  return (
-    <td className="px-5 py-3 text-xs text-muted-foreground" onClick={e => { e.stopPropagation(); setEditing(true); }}>
-      {editing ? (
-        <div className={cn("w-64 rounded-xl border p-2 shadow-lg", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/20")} onClick={e => e.stopPropagation()}>
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search staff…"
-            className={cn("mb-2 h-8 w-full rounded-lg border px-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50", isLight ? "border-slate-200 bg-slate-50 text-slate-700" : "border-white/10 bg-black/30 text-foreground")}
-          />
-          <div className="max-h-32 space-y-1 overflow-y-auto custom-scrollbar pr-1">
-            {filteredUsers.map((u: any) => (
-              <label key={u.id} className={cn("flex items-center gap-2 rounded-lg border px-2 py-1.5 text-sm", selectedIds.includes(u.id) ? "border-primary/30 bg-primary/10 text-foreground" : isLight ? "border-slate-200 text-slate-700" : "border-white/10 text-muted-foreground") }>
-                <input type="checkbox" checked={selectedIds.includes(u.id)} onChange={() => toggleManager(u.id)} className="accent-primary" />
-                <span className="flex-1">{u.name}</span>
-              </label>
-            ))}
-          </div>
-          <div className="mt-2 flex items-center justify-end gap-2">
-            <button type="button" onClick={e => { e.stopPropagation(); setEditing(false); }} className="rounded-lg border border-white/10 px-2 py-1 text-[11px] text-muted-foreground">Cancel</button>
-            <button type="button" onClick={save} className="rounded-lg bg-primary px-2 py-1 text-[11px] font-semibold text-white">Save</button>
-          </div>
-        </div>
-      ) : (
-        <div className="cursor-pointer max-w-[220px]">
-          <span className="text-foreground">{account.accountManagerNames?.join(", ") || "—"}</span>
-        </div>
-      )}
-    </td>
-  );
-}
-
 function EditableUrgencyCell({ account, onSaveField }: { account: any; onSaveField: (id: number, updates: Record<string, any>) => Promise<void>; }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(account.urgencyLevel || "normal");
@@ -670,7 +614,7 @@ function EditableUrgencyCell({ account, onSaveField }: { account: any; onSaveFie
   );
 }
 
-function AccountRow({ account, onClick, onDelete, onSaveField, users, typeOpts, isLight }: { account: any; onClick: () => void; onDelete: (e: React.MouseEvent) => void; onSaveField: (id: number, updates: Record<string, any>) => Promise<void>; users: any[]; typeOpts: any; isLight: boolean; }) {
+function AccountRow({ account, onClick, onDelete, onSaveField, typeOpts, isLight }: { account: any; onClick: () => void; onDelete: (e: React.MouseEvent) => void; onSaveField: (id: number, updates: Record<string, any>) => Promise<void>; typeOpts: any; isLight: boolean; }) {
   const isOnHold = (account.status ?? "active") === "on_hold";
   return (
     <tr onClick={onClick} className="hover:bg-white/[0.03] cursor-pointer transition-colors border-b border-white/5 last:border-0 group">
@@ -687,7 +631,9 @@ function AccountRow({ account, onClick, onDelete, onSaveField, users, typeOpts, 
       </td>
       <EditableProductTypeCell account={account} onSaveField={onSaveField} typeOpts={typeOpts} isLight={isLight} />
       <EditableVolumeCell account={account} onSaveField={onSaveField} />
-      <EditableManagersCell account={account} onSaveField={onSaveField} users={users} isLight={isLight} />
+      <td className="px-5 py-3 text-xs text-muted-foreground">
+        <div className="max-w-[220px]">{account.accountManagerNames?.join(", ") || "—"}</div>
+      </td>
       <EditableUrgencyCell account={account} onSaveField={onSaveField} />
       <td className="px-5 py-3"><PriorityBadge account={account} /></td>
       <td className="px-5 py-3">
@@ -953,7 +899,7 @@ function AccountsPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((a: any) => <AccountRow key={a.id} account={a} onClick={() => goToAccount(a)} onDelete={(e) => handleDelete(e, a.id, a.company)} onSaveField={handleSaveField} users={users} typeOpts={typeOpts} isLight={isLight} />)}
+              {filtered.map((a: any) => <AccountRow key={a.id} account={a} onClick={() => goToAccount(a)} onDelete={(e) => handleDelete(e, a.id, a.company)} onSaveField={handleSaveField} typeOpts={typeOpts} isLight={isLight} />)}
             </tbody>
           </table>
         </div>

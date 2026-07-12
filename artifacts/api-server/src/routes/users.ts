@@ -1,7 +1,7 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { db } from "@workspace/db";
-import { usersTable } from "@workspace/db";
+import { accountsTable, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAuth, requireRole, AuthRequest } from "../lib/auth";
 import { sendOtp, verifyOtp } from "../lib/otp";
@@ -203,7 +203,7 @@ router.post("/:id/make-admin", requireAuth, async (req: AuthRequest, res) => {
 // ─── Delete user (admin only) ─────────────────────────────────────────────────
 // We do a soft-delete here so the user's historical data remains intact while
 // the account is removed from active access and the team directory.
-router.delete("/:id", requireAuth, requireRole("admin"), async (req, res) => {
+router.delete("/:id", requireAuth, requireRole("admin"), async (req: AuthRequest, res) => {
   try {
     const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     if (!Number.isInteger(id)) {
@@ -253,6 +253,30 @@ router.delete("/:id", requireAuth, requireRole("admin"), async (req, res) => {
     if (!user) {
       res.status(404).json({ error: "NotFound" });
       return;
+    }
+
+    const adminUserId = req.user?.userId;
+    const allUsers = await db.select({ id: usersTable.id, role: usersTable.role, isActive: usersTable.isActive }).from(usersTable);
+    const fallbackAdmin = allUsers.find(u => u.id !== id && u.isActive !== false && (u.role === "admin" || u.role === "superadmin"));
+    const adminId = adminUserId && allUsers.some(u => u.id === adminUserId && u.isActive !== false && (u.role === "admin" || u.role === "superadmin"))
+      ? adminUserId
+      : fallbackAdmin?.id ?? null;
+
+    if (adminId) {
+      const allAccounts = await db.select({ id: accountsTable.id, accountManagers: accountsTable.accountManagers }).from(accountsTable);
+      for (const account of allAccounts) {
+        const managers = (account.accountManagers || []) as number[];
+        if (!managers.includes(id)) continue;
+
+        const updatedManagers = managers.filter(managerId => managerId !== id);
+        if (!updatedManagers.includes(adminId)) {
+          updatedManagers.unshift(adminId);
+        }
+
+        await db.update(accountsTable)
+          .set({ accountManagers: updatedManagers, updatedAt: new Date() })
+          .where(eq(accountsTable.id, account.id));
+      }
     }
 
     res.status(204).send();
