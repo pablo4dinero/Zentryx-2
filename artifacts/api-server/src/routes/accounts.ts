@@ -110,8 +110,8 @@ router.get("/", requireAuth, async (req: AuthRequest, res) => {
       .orderBy(desc(accountsTable.createdAt))
       .limit(limit)
       .offset(offset);
-    const users = await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable);
-    const userMap = Object.fromEntries(users.map(u => [u.id, u.name]));
+    const users = await db.select({ id: usersTable.id, name: usersTable.name, isActive: usersTable.isActive }).from(usersTable);
+    const activeUserMap = Object.fromEntries(users.filter(u => u.isActive !== false).map(u => [u.id, u.name]));
 
     const userRole = req.user!.role;
     const userId = req.user!.userId;
@@ -130,10 +130,15 @@ router.get("/", requireAuth, async (req: AuthRequest, res) => {
       });
     }
 
-    const result = accounts.map(a => ({
-      ...formatAccount(a),
-      accountManagerNames: ((a.accountManagers || []) as number[]).map((id: number) => userMap[id] || "Unknown"),
-    }));
+    const result = accounts.map(a => {
+      const normalizedManagers = ((a.accountManagers || []) as number[])
+        .filter((id: number) => typeof id === "number" && activeUserMap[id] !== undefined);
+
+      return {
+        ...formatAccount({ ...a, accountManagers: normalizedManagers }),
+        accountManagerNames: normalizedManagers.map((id: number) => activeUserMap[id] || "Unknown"),
+      };
+    });
     res.json(result);
   } catch (err) {
     console.error(err);
@@ -160,11 +165,13 @@ router.get("/:id", requireAuth, async (req: AuthRequest, res) => {
       }
     }
 
-    const users = await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable);
-    const userMap = Object.fromEntries(users.map(u => [u.id, u.name]));
+    const users = await db.select({ id: usersTable.id, name: usersTable.name, isActive: usersTable.isActive }).from(usersTable);
+    const activeUserMap = Object.fromEntries(users.filter(u => u.isActive !== false).map(u => [u.id, u.name]));
+    const normalizedManagers = ((account.accountManagers || []) as number[])
+      .filter((id: number) => typeof id === "number" && activeUserMap[id] !== undefined);
     res.json({
-      ...formatAccount(account),
-      accountManagerNames: ((account.accountManagers || []) as number[]).map((id: number) => userMap[id] || "Unknown"),
+      ...formatAccount({ ...account, accountManagers: normalizedManagers }),
+      accountManagerNames: normalizedManagers.map((id: number) => activeUserMap[id] || "Unknown"),
     });
   } catch {
     res.status(500).json({ error: "InternalServerError" });

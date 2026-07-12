@@ -257,6 +257,7 @@ router.delete("/:id", requireAuth, requireRole("admin"), async (req: AuthRequest
 
     const adminUserId = req.user?.userId;
     const allUsers = await db.select({ id: usersTable.id, role: usersTable.role, isActive: usersTable.isActive }).from(usersTable);
+    const activeUserIds = new Set(allUsers.filter(u => u.isActive !== false).map(u => u.id));
     const fallbackAdmin = allUsers.find(u => u.id !== id && u.isActive !== false && (u.role === "admin" || u.role === "superadmin"));
     const adminId = adminUserId && allUsers.some(u => u.id === adminUserId && u.isActive !== false && (u.role === "admin" || u.role === "superadmin"))
       ? adminUserId
@@ -266,9 +267,11 @@ router.delete("/:id", requireAuth, requireRole("admin"), async (req: AuthRequest
       const allAccounts = await db.select({ id: accountsTable.id, accountManagers: accountsTable.accountManagers }).from(accountsTable);
       for (const account of allAccounts) {
         const managers = (account.accountManagers || []) as number[];
-        if (!managers.includes(id)) continue;
+        const hasStaleManager = managers.some(managerId => managerId === id || !activeUserIds.has(managerId));
+        if (!hasStaleManager) continue;
 
-        const updatedManagers = managers.filter(managerId => managerId !== id);
+        const updatedManagers = managers
+          .filter(managerId => managerId !== id && activeUserIds.has(managerId));
         if (!updatedManagers.includes(adminId)) {
           updatedManagers.unshift(adminId);
         }

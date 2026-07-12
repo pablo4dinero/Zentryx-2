@@ -131,6 +131,7 @@ export default function Team() {
     if (!isAdmin) { toast({ title: "Permission denied", description: "Only admins can remove members.", variant: "destructive" }); return; }
     await fetch(`${BASE}api/users/${id}`, { method: "DELETE", headers });
     queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/accounts"] });
     toast({ title: "Member removed", description: `${name} has been removed from the team.` });
   };
 
