@@ -251,7 +251,7 @@ export function getBlockedPaths(role: string, jobPos: string): string[] {
   // ── Consolidated 9-role tiers ─────────────────────────────────────
   if (r === "sales_team" || r === "commercial_team") return [...adminBlock, "/projects", "/weekly-activities", "/procurement"];
   if (r === "npd_team") return [...adminBlock, "/sales-force"];
-  if (r === "operations_team") return [...adminBlock, "/sales-force", "/projects", "/business-dev"];
+  if (r === "operations_team") return [...adminBlock, "/sales-force", "/projects", "/business-dev", "/materials-demand-planning"];
   if (r === "qc_team") return [...adminBlock, "/sales-force", "/business-dev"];
   if (r === "support_staff") return [...adminBlock, "/sales-force", "/projects", "/business-dev", "/procurement", "/materials-demand-planning"];
 
