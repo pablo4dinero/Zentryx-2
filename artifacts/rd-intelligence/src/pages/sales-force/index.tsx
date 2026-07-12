@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
@@ -534,8 +534,143 @@ function AccountCard({ account, onClick, onDelete }: { account: any; onClick: ()
   );
 }
 
-function AccountRow({ account, onClick, onDelete }: { account: any; onClick: () => void; onDelete: (e: React.MouseEvent) => void }) {
-  const urgency = URGENCY.find(u => u.value === account.urgencyLevel) || URGENCY[2];
+function EditableProductTypeCell({ account, onSaveField, typeOpts, isLight }: { account: any; onSaveField: (id: number, updates: Record<string, any>) => Promise<void>; typeOpts: any; isLight: boolean; }) {
+  return (
+    <td className="px-5 py-3 text-xs text-muted-foreground" onClick={e => e.stopPropagation()}>
+      <CustomOptionsSelect
+        value={account.productType || ""}
+        onChange={async v => {
+          await onSaveField(account.id, { productType: v });
+        }}
+        handle={typeOpts}
+        displayFn={displayLabel}
+        placeholder="Select product type…"
+        isLight={isLight}
+        compact
+        triggerClassName={cn("w-full justify-between min-w-[140px]", isLight ? "border border-slate-200 bg-white text-slate-700" : "border border-white/10 bg-black/20 text-foreground")}
+      />
+    </td>
+  );
+}
+
+function EditableVolumeCell({ account, onSaveField }: { account: any; onSaveField: (id: number, updates: Record<string, any>) => Promise<void>; }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(account.volume ?? "");
+
+  const save = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    await onSaveField(account.id, { volume: draft });
+    setEditing(false);
+  };
+
+  return (
+    <td className="px-5 py-3 text-xs" onClick={e => { e.stopPropagation(); setEditing(true); }}>
+      {editing ? (
+        <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+          <input
+            type="number"
+            min="0"
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            className="h-8 w-24 rounded-lg border border-white/10 bg-black/20 px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+          />
+          <button type="button" onClick={save} className="rounded-lg bg-primary px-2 py-1 text-[11px] font-semibold text-white">Save</button>
+          <button type="button" onClick={e => { e.stopPropagation(); setEditing(false); }} className="rounded-lg border border-white/10 px-2 py-1 text-[11px] text-muted-foreground">Cancel</button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-1.5 cursor-pointer">
+          <span className="text-foreground">{parseFloat(account.volume || 0).toLocaleString()}</span>
+          <VolumeTag volume={account.volume} />
+        </div>
+      )}
+    </td>
+  );
+}
+
+function EditableManagersCell({ account, onSaveField, users, isLight }: { account: any; onSaveField: (id: number, updates: Record<string, any>) => Promise<void>; users: any[]; isLight: boolean; }) {
+  const [editing, setEditing] = useState(false);
+  const [search, setSearch] = useState("");
+  const [selectedIds, setSelectedIds] = useState<number[]>(account.accountManagers || []);
+
+  useEffect(() => {
+    if (editing) {
+      setSelectedIds(account.accountManagers || []);
+      setSearch("");
+    }
+  }, [editing, account.accountManagers]);
+
+  const filteredUsers = (users || []).filter((u: any) => u.name?.toLowerCase().includes(search.toLowerCase()));
+
+  const toggleManager = (id: number) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const save = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    await onSaveField(account.id, { accountManagers: selectedIds });
+    setEditing(false);
+  };
+
+  return (
+    <td className="px-5 py-3 text-xs text-muted-foreground" onClick={e => { e.stopPropagation(); setEditing(true); }}>
+      {editing ? (
+        <div className={cn("w-64 rounded-xl border p-2 shadow-lg", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/20")} onClick={e => e.stopPropagation()}>
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search staff…"
+            className={cn("mb-2 h-8 w-full rounded-lg border px-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50", isLight ? "border-slate-200 bg-slate-50 text-slate-700" : "border-white/10 bg-black/30 text-foreground")}
+          />
+          <div className="max-h-32 space-y-1 overflow-y-auto custom-scrollbar pr-1">
+            {filteredUsers.map((u: any) => (
+              <label key={u.id} className={cn("flex items-center gap-2 rounded-lg border px-2 py-1.5 text-sm", selectedIds.includes(u.id) ? "border-primary/30 bg-primary/10 text-foreground" : isLight ? "border-slate-200 text-slate-700" : "border-white/10 text-muted-foreground") }>
+                <input type="checkbox" checked={selectedIds.includes(u.id)} onChange={() => toggleManager(u.id)} className="accent-primary" />
+                <span className="flex-1">{u.name}</span>
+              </label>
+            ))}
+          </div>
+          <div className="mt-2 flex items-center justify-end gap-2">
+            <button type="button" onClick={e => { e.stopPropagation(); setEditing(false); }} className="rounded-lg border border-white/10 px-2 py-1 text-[11px] text-muted-foreground">Cancel</button>
+            <button type="button" onClick={save} className="rounded-lg bg-primary px-2 py-1 text-[11px] font-semibold text-white">Save</button>
+          </div>
+        </div>
+      ) : (
+        <div className="cursor-pointer max-w-[220px]">
+          <span className="text-foreground">{account.accountManagerNames?.join(", ") || "—"}</span>
+        </div>
+      )}
+    </td>
+  );
+}
+
+function EditableUrgencyCell({ account, onSaveField }: { account: any; onSaveField: (id: number, updates: Record<string, any>) => Promise<void>; }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(account.urgencyLevel || "normal");
+
+  const save = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    await onSaveField(account.id, { urgencyLevel: draft });
+    setEditing(false);
+  };
+
+  return (
+    <td className="px-5 py-3" onClick={e => { e.stopPropagation(); setEditing(true); }}>
+      {editing ? (
+        <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+          <select value={draft} onChange={e => setDraft(e.target.value)} className="h-8 rounded-lg border border-white/10 bg-black/20 px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50">
+            {URGENCY.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
+          </select>
+          <button type="button" onClick={save} className="rounded-lg bg-primary px-2 py-1 text-[11px] font-semibold text-white">Save</button>
+          <button type="button" onClick={e => { e.stopPropagation(); setEditing(false); }} className="rounded-lg border border-white/10 px-2 py-1 text-[11px] text-muted-foreground">Cancel</button>
+        </div>
+      ) : (
+        <div className="cursor-pointer"><UrgencyIndicator level={account.urgencyLevel} /></div>
+      )}
+    </td>
+  );
+}
+
+function AccountRow({ account, onClick, onDelete, onSaveField, users, typeOpts, isLight }: { account: any; onClick: () => void; onDelete: (e: React.MouseEvent) => void; onSaveField: (id: number, updates: Record<string, any>) => Promise<void>; users: any[]; typeOpts: any; isLight: boolean; }) {
   const isOnHold = (account.status ?? "active") === "on_hold";
   return (
     <tr onClick={onClick} className="hover:bg-white/[0.03] cursor-pointer transition-colors border-b border-white/5 last:border-0 group">
@@ -550,19 +685,10 @@ function AccountRow({ account, onClick, onDelete }: { account: any; onClick: () 
           )}
         </div>
       </td>
-      <td className="px-5 py-3 text-xs text-muted-foreground">
-        {account.productType ?? "—"}
-      </td>
-      <td className="px-5 py-3 text-xs">
-        <div className="flex items-center gap-1.5">
-          <span className="text-foreground">{parseFloat(account.volume || 0).toLocaleString()}</span>
-          <VolumeTag volume={account.volume} />
-        </div>
-      </td>
-      <td className="px-5 py-3 text-xs text-muted-foreground">
-        {account.accountManagerNames?.join(", ") || "—"}
-      </td>
-      <td className="px-5 py-3"><UrgencyIndicator level={account.urgencyLevel} /></td>
+      <EditableProductTypeCell account={account} onSaveField={onSaveField} typeOpts={typeOpts} isLight={isLight} />
+      <EditableVolumeCell account={account} onSaveField={onSaveField} />
+      <EditableManagersCell account={account} onSaveField={onSaveField} users={users} isLight={isLight} />
+      <EditableUrgencyCell account={account} onSaveField={onSaveField} />
       <td className="px-5 py-3"><PriorityBadge account={account} /></td>
       <td className="px-5 py-3">
         <button onClick={onDelete} className="p-1.5 rounded-lg text-muted-foreground hover:bg-red-500/10 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100" title="Delete">
@@ -659,6 +785,7 @@ function AccountsPage() {
   const { theme } = useTheme();
   const isLight = theme === "light";
   const typeOpts = useServerProductTypes();
+  const { data: users = [] } = useListUsers();
 
   const { data: accounts = [], isLoading } = useQuery({
     queryKey: ["/api/accounts"],
@@ -680,6 +807,43 @@ function AccountsPage() {
       toast({ title: "Failed to delete account", variant: "destructive" });
     }
   }, [queryClient, toast]);
+
+  const handleSaveField = useCallback(async (id: number, updates: Record<string, any>) => {
+    const token = localStorage.getItem("rd_token");
+    const current = (accounts as any[]).find((account: any) => account.id === id);
+    if (!current) return;
+
+    const payload = {
+      ...current,
+      ...updates,
+      accountManagers: updates.accountManagers ?? current.accountManagers ?? [],
+      approvalStatus: current.approvalStatus ?? "not_yet_approved",
+      isActive: current.isActive ?? true,
+      status: current.status ?? "active",
+      updatedAt: current.updatedAt,
+    };
+
+    queryClient.setQueryData(["/api/accounts"], (prev: any[] = []) =>
+      prev.map((account: any) => account.id === id ? { ...account, ...updates, updatedAt: new Date().toISOString() } : account)
+    );
+
+    try {
+      const res = await fetch(`${BASE}api/accounts/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error("Failed to update account");
+      const refreshed = await res.json();
+      queryClient.setQueryData(["/api/accounts"], (prev: any[] = []) =>
+        prev.map((account: any) => account.id === id ? refreshed : account)
+      );
+      queryClient.invalidateQueries({ queryKey: ["/api/accounts"] });
+      toast({ title: "Account updated", description: "The change has been saved." });
+    } catch {
+      toast({ title: "Failed to update account", variant: "destructive" });
+    }
+  }, [accounts, queryClient, toast]);
 
   const filtered = (accounts as any[])
     .filter(a => {
@@ -789,7 +953,7 @@ function AccountsPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((a: any) => <AccountRow key={a.id} account={a} onClick={() => goToAccount(a)} onDelete={(e) => handleDelete(e, a.id, a.company)} />)}
+              {filtered.map((a: any) => <AccountRow key={a.id} account={a} onClick={() => goToAccount(a)} onDelete={(e) => handleDelete(e, a.id, a.company)} onSaveField={handleSaveField} users={users} typeOpts={typeOpts} isLight={isLight} />)}
             </tbody>
           </table>
         </div>
