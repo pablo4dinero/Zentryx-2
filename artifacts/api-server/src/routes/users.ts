@@ -29,7 +29,7 @@ const formatUser = (user: typeof usersTable.$inferSelect) => ({
 // ─── List users (exclude superadmin) ─────────────────────────────────────────
 router.get("/", requireAuth, async (_req, res) => {
   try {
-    const users = await db.select().from(usersTable).orderBy(usersTable.name);
+    const users = await db.select().from(usersTable).where(eq(usersTable.isActive, true)).orderBy(usersTable.name);
     res.json(users.filter(u => u.email !== SUPERADMIN_EMAIL).map(formatUser));
   } catch {
     res.status(500).json({ error: "InternalServerError" });
@@ -201,12 +201,63 @@ router.post("/:id/make-admin", requireAuth, async (req: AuthRequest, res) => {
 });
 
 // ─── Delete user (admin only) ─────────────────────────────────────────────────
+// We do a soft-delete here so the user's historical data remains intact while
+// the account is removed from active access and the team directory.
 router.delete("/:id", requireAuth, requireRole("admin"), async (req, res) => {
   try {
     const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
-    await db.delete(usersTable).where(eq(usersTable.id, id));
+    if (!Number.isInteger(id)) {
+      res.status(400).json({ error: "BadRequest", message: "Invalid user id" });
+      return;
+    }
+
+    const [target] = await db.select().from(usersTable).where(eq(usersTable.id, id)).limit(1);
+    if (!target) {
+      res.status(404).json({ error: "NotFound" });
+      return;
+    }
+    if (target.email === SUPERADMIN_EMAIL) {
+      res.status(403).json({ error: "Forbidden", message: "Superadmin cannot be removed" });
+      return;
+    }
+
+    const tombstoneEmail = `deleted-${id}-${Date.now()}@deleted.invalid`;
+    const tombstonePasswordHash = await bcrypt.hash(`deleted-${id}-${Date.now()}`, 10);
+
+    const [user] = await db.update(usersTable)
+      .set({
+        email: tombstoneEmail,
+        name: `${target.name} (deleted)`,
+        passwordHash: tombstonePasswordHash,
+        role: "viewer",
+        phone: null,
+        country: null,
+        avatar: null,
+        isActive: false,
+        approvalStatus: "pending",
+        approvedByUserId: null,
+        approvedAt: null,
+        deniedReason: null,
+        mfaSecret: null,
+        mfaEnrolledAt: null,
+        mfaBackupCodes: null,
+        mfaFailedAttempts: 0,
+        emergencyLoginTokenHash: null,
+        emergencyLoginExpires: null,
+        tokenVersion: (target.tokenVersion ?? 0) + 1,
+        updatedAt: new Date(),
+      })
+      .where(eq(usersTable.id, id))
+      .returning();
+
+    if (!user) {
+      res.status(404).json({ error: "NotFound" });
+      return;
+    }
+
     res.status(204).send();
-  } catch {
+  } catch (err) {
+    console.error("[users] delete failed", err);
     res.status(500).json({ error: "InternalServerError" });
   }
 });

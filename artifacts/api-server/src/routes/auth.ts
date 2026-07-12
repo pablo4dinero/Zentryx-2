@@ -456,22 +456,54 @@ router.post("/register", async (req, res) => {
       return;
     }
 
-    const existing = await db.select().from(usersTable).where(eq(usersTable.email, email.toLowerCase())).limit(1);
-    if (existing.length > 0) {
-      res.status(409).json({ error: "Conflict", message: "Email already registered" });
-      return;
-    }
+    const [existing] = await db.select().from(usersTable).where(eq(usersTable.email, email.toLowerCase())).limit(1);
+    let user: typeof usersTable.$inferSelect | null = null;
+    if (existing) {
+      if (existing.isActive && existing.approvalStatus !== "pending") {
+        res.status(409).json({ error: "Conflict", message: "Email already registered" });
+        return;
+      }
 
-    const passwordHash = await bcrypt.hash(password, 10);
-    // New password-registered accounts also land as `pending` — first-
-    // time admin approval is unified across OAuth + password signup.
-    const [user] = await db.insert(usersTable).values({
-      email: email.toLowerCase(), name, passwordHash,
-      role: "viewer",
-      phone: phone || null,
-      isActive: true,
-      approvalStatus: "pending",
-    }).returning();
+      const passwordHash = await bcrypt.hash(password, 10);
+      [user] = await db.update(usersTable)
+        .set({
+          name,
+          passwordHash,
+          role: "viewer",
+          phone: phone || null,
+          isActive: true,
+          approvalStatus: "pending",
+          approvedByUserId: null,
+          approvedAt: null,
+          deniedReason: null,
+          mfaSecret: null,
+          mfaEnrolledAt: null,
+          mfaBackupCodes: null,
+          mfaFailedAttempts: 0,
+          emergencyLoginTokenHash: null,
+          emergencyLoginExpires: null,
+          tokenVersion: (existing.tokenVersion ?? 0) + 1,
+          updatedAt: new Date(),
+        })
+        .where(eq(usersTable.id, existing.id))
+        .returning();
+
+      if (!user) {
+        res.status(500).json({ error: "InternalServerError", message: "Registration failed" });
+        return;
+      }
+    } else {
+      const passwordHash = await bcrypt.hash(password, 10);
+      // New password-registered accounts also land as `pending` — first-
+      // time admin approval is unified across OAuth + password signup.
+      [user] = await db.insert(usersTable).values({
+        email: email.toLowerCase(), name, passwordHash,
+        role: "viewer",
+        phone: phone || null,
+        isActive: true,
+        approvalStatus: "pending",
+      }).returning();
+    }
 
     // Notify all admins that a new account is awaiting approval.
     try {
@@ -496,25 +528,9 @@ router.post("/register", async (req, res) => {
     return;
 
     // Legacy SMS MFA branch below is no longer reachable (kept as a
-    // reference until the next cleanup pass).
-    // eslint-disable-next-line no-unreachable
-    const mfaToken = signMfaToken({ userId: user.id, email: user.email, role: user.role });
-    // This SMS branch is unreachable legacy code; TS skips flow-narrowing in
-    // unreachable blocks, so coerce phone to a definite string up front.
-    const userPhone = user.phone ?? "";
-    if (!userPhone) {
-      res.status(201).json({ mfaPending: true, requirePhone: true, mfaToken });
-      return;
-    }
-    const result = await sendSmsOtp(userPhone);
-    res.status(201).json({
-      mfaPending: true,
-      mfaToken,
-      phone: maskPhone(userPhone),
-      smsFailed: result.failed ?? false,
-      devMode: result.devMode,
-      ...(result.devMode ? { code: result.code } : {}),
-    });
+    // reference until the next cleanup pass). It is intentionally omitted
+    // here because the new approval-flow returns earlier with a pending
+    // registration response.
   } catch (err) {
     console.error("Register error:", err);
     res.status(500).json({ error: "InternalServerError", message: "Registration failed" });
