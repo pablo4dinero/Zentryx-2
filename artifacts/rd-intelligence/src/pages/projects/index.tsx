@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
-import { useListProjects, useCreateProject, useDeleteProject, useListUsers, useUpdateProject } from "@/api-client";
+import { useListProjects, useCreateProject, useDeleteProject, useListUsers, useUpdateProject, useGetCurrentUser } from "@/api-client";
+import { getAllowedSections } from "@/lib/roles";
 import { PageLoader } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,7 +27,15 @@ import { CustomOptionsSelect } from "@/components/ui/CustomOptionsSelect";
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function ProjectsList() {
   const [searchTerm, setSearchQuery] = useState("");
+  const { data: currentUser } = useGetCurrentUser();
+  const allowedProjectSections = getAllowedSections("/projects", currentUser?.role);
+  const canSeeExport = !allowedProjectSections || allowedProjectSections.includes("export");
   const [activeTab, setActiveTab] = useState<"projects" | "export">("projects");
+
+  useEffect(() => {
+    if (activeTab === "export" && !canSeeExport) setActiveTab("projects");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allowedProjectSections]);
   const [view, setView] = useState<ViewType>("list");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [productTypeFilter, setProductTypeFilter] = useState<string>("all");
@@ -280,12 +289,14 @@ export default function ProjectsList() {
           >
             Projects
           </button>
-          <button
-            onClick={() => setActiveTab("export")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === "export" ? "bg-primary text-white" : "text-muted-foreground hover:text-foreground"}`}
-          >
-            <Download className="w-4 h-4" /> Export Data
-          </button>
+          {canSeeExport && (
+            <button
+              onClick={() => setActiveTab("export")}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === "export" ? "bg-primary text-white" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              <Download className="w-4 h-4" /> Export Data
+            </button>
+          )}
         </div>
 
         {activeTab === "projects" && (

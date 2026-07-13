@@ -7,7 +7,8 @@ import {
   ChevronDown, X, Users, Package, Target, AlertCircle, CheckCircle2, Clock,
   BarChart3, PieChart, Building2, Eye, Star, AlertTriangle, Trash2
 } from "lucide-react";
-import { useListUsers } from "@/api-client";
+import { useListUsers, useGetCurrentUser } from "@/api-client";
+import { getAllowedSections } from "@/lib/roles";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
@@ -916,13 +917,25 @@ function AccountsPage() {
   );
 }
 
-const SF_TABS = ["Accounts", "New Production Orders", "Charts", "Forecast"] as const;
-type SfTab = typeof SF_TABS[number];
+const ALL_SF_TABS = ["Accounts", "New Production Orders", "Charts", "Forecast"] as const;
+type SfTab = typeof ALL_SF_TABS[number];
 
 export default function SalesForce() {
   const [activeTab, setActiveTab] = useState<SfTab>("Accounts");
   const { theme } = useTheme();
   const isLight = theme === "light";
+  const { data: currentUser } = useGetCurrentUser();
+  const allowedSfSections = getAllowedSections("/sales-force", currentUser?.role);
+  const SF_TABS = (allowedSfSections
+    ? ALL_SF_TABS.filter(t => allowedSfSections.includes(t))
+    : ALL_SF_TABS) as readonly SfTab[];
+
+  useEffect(() => {
+    if (SF_TABS.length > 0 && !SF_TABS.includes(activeTab)) {
+      setActiveTab(SF_TABS[0]);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allowedSfSections]);
 
   return (
     <div className="space-y-0">

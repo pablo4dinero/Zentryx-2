@@ -16,6 +16,8 @@ import {
 } from "recharts";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
+import { useGetCurrentUser } from "@/api-client";
+import { getAllowedSections } from "@/lib/roles";
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -297,16 +299,18 @@ function AgentModeSelector({
   onChange,
   size = "compact",
   isLight,
+  allowedModes,
 }: {
   selectedMode: AgentMode;
   onChange: (m: AgentMode) => void;
   size?: "large" | "compact";
   isLight: boolean;
+  allowedModes: string[] | null;
 }) {
   const allModes: { id: AgentMode; label: string; icon: React.ElementType; color: string; bg: string; desc: string }[] = [
     { id: "chat", ...CHAT_MODE_META },
     ...Object.entries(AGENT_META).map(([id, meta]) => ({ id: id as AgentId, ...meta })),
-  ];
+  ].filter(m => !allowedModes || allowedModes.includes(m.id));
 
   if (size === "large") {
     return (
@@ -1034,6 +1038,9 @@ export default function OraclePage() {
   const { theme } = useTheme();
   const isLight = theme === "light";
 
+  const { data: currentUser } = useGetCurrentUser();
+  const allowedOracleSections = getAllowedSections("/oracle", currentUser?.role);
+
   const [messages, setMessages]       = useState<OracleMessage[]>([]);
   const [query, setQuery]             = useState("");
   const [busy, setBusy]               = useState(false);
@@ -1046,6 +1053,14 @@ export default function OraclePage() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    if (allowedOracleSections && !allowedOracleSections.includes(selectedMode)) {
+      const fallback = allowedOracleSections.includes("chat") ? "chat" : (allowedOracleSections[0] as AgentMode | undefined) ?? "chat";
+      setSelectedMode(fallback);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allowedOracleSections]);
 
   const updateCurrent = useCallback((updater: (msg: OracleMessage) => OracleMessage) => {
     setMessages(prev => prev.map(m => m.id === currentIdRef.current ? updater(m) : m));
@@ -1267,6 +1282,7 @@ export default function OraclePage() {
               onChange={setSelectedMode}
               size="large"
               isLight={isLight}
+              allowedModes={allowedOracleSections}
             />
 
             {/* Ticker tape — replaces static grid */}
@@ -1301,6 +1317,7 @@ export default function OraclePage() {
             onChange={setSelectedMode}
             size="compact"
             isLight={isLight}
+            allowedModes={allowedOracleSections}
           />
         </div>
 

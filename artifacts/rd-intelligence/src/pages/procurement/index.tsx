@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ShoppingCart, Building2, FileText, Package, BarChart3, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
@@ -8,20 +8,34 @@ import RequestsTab from "./RequestsTab";
 import OrdersTab from "./OrdersTab";
 import AnalyticsTab from "./AnalyticsTab";
 import SalesForecastPage from "@/pages/sales-force/Forecast";
+import { useGetCurrentUser } from "@/api-client";
+import { getAllowedSections } from "@/lib/roles";
 
-const TABS = [
-  { id: "vendors", label: "Vendors", icon: Building2 },
-  { id: "requests", label: "Purchase Requests", icon: FileText },
-  { id: "orders", label: "Purchase Orders", icon: Package },
-  { id: "analytics", label: "Analytics", icon: BarChart3 },
-  { id: "forecast", label: "Sales Forecast", icon: TrendingUp },
+const ALL_TABS = [
+  { id: "vendors",   label: "Vendors",            icon: Building2 },
+  { id: "requests",  label: "Purchase Requests",   icon: FileText },
+  { id: "orders",    label: "Purchase Orders",     icon: Package },
+  { id: "analytics", label: "Analytics",           icon: BarChart3 },
+  { id: "forecast",  label: "Sales Forecast",      icon: TrendingUp },
 ] as const;
-type TabId = typeof TABS[number]["id"];
+type TabId = typeof ALL_TABS[number]["id"];
 
 export default function ProcurementPage() {
   const { theme } = useTheme();
   const isLight = theme === "light";
+  const { data: currentUser } = useGetCurrentUser();
+  const allowedSections = getAllowedSections("/procurement", currentUser?.role);
+  const TABS = allowedSections
+    ? ALL_TABS.filter(t => allowedSections.includes(t.id))
+    : ALL_TABS;
   const [activeTab, setActiveTab] = useState<TabId>("vendors");
+
+  useEffect(() => {
+    if (TABS.length > 0 && !TABS.some(t => t.id === activeTab)) {
+      setActiveTab(TABS[0].id);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allowedSections]);
 
   return (
     <div className="space-y-5">

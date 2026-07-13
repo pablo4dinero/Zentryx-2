@@ -12,7 +12,7 @@ import * as XLSX from "xlsx";
 import { useGetCurrentUser } from "@/api-client";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
-import { roleLabel, useServerRoles, createCustomRole, ZENTRYX_MODULES, getEffectiveAllowedPaths, setRoleModules, renameRole } from "@/lib/roles";
+import { roleLabel, useServerRoles, createCustomRole, ZENTRYX_MODULES, getEffectiveAllowedPaths, setRoleModules, renameRole, MODULE_SECTIONS } from "@/lib/roles";
 import { BASE, apiHeaders, apiGet, apiPatch, apiPost, apiDelete } from "../lib/api";
 
 export function RolesTab({ isLight }: { isLight: boolean }) {
@@ -74,12 +74,74 @@ function RoleAccessRow({ role, isLight, expanded, onToggleExpand, onSaved, cache
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cacheVersion, role.value, role.label]);
 
-  const toggle = (path: string) =>
-    setSelected(s => (s.includes(path) ? s.filter(p => p !== path) : [...s, path]));
+  const toggle = (path: string) => {
+    setSelected(s => {
+      if (s.includes(path)) {
+        // Removing a module: also remove all its section paths
+        return s.filter(p => p !== path && !p.startsWith(`${path}/`));
+      }
+      return [...s, path];
+    });
+  };
+
+  // ── Section helpers ──────────────────────────────────────────────────────
+  /** True when the section is effectively visible (explicitly in selected, or no section config = all visible). */
+  const isSectionSelected = (modulePath: string, sectionValue: string): boolean => {
+    const prefix = `${modulePath}/`;
+    const hasAny = selected.some(p => p.startsWith(prefix));
+    if (!hasAny) return true; // default: all visible
+    return selected.includes(`${prefix}${sectionValue}`);
+  };
+
+  /** Toggle one section. On first restriction, stores ALL remaining sections explicitly. */
+  const toggleSection = (modulePath: string, sectionValue: string) => {
+    const sectionPath = `${modulePath}/${sectionValue}`;
+    const prefix = `${modulePath}/`;
+    const sections = MODULE_SECTIONS[modulePath] ?? [];
+    const hasAny = selected.some(p => p.startsWith(prefix));
+
+    if (!hasAny) {
+      // Going from "all visible" → explicit: store every section EXCEPT the one being unchecked
+      const rest = sections
+        .filter(s => s.value !== sectionValue)
+        .map(s => `${modulePath}/${s.value}`);
+      setSelected(s => [...s, ...rest]);
+    } else if (selected.includes(sectionPath)) {
+      setSelected(s => s.filter(p => p !== sectionPath));
+    } else {
+      setSelected(s => [...s, sectionPath]);
+    }
+  };
+
+  const selectAllSections = (modulePath: string) => {
+    // All sections visible = remove all section paths (no restriction)
+    setSelected(s => s.filter(p => !p.startsWith(`${modulePath}/`)));
+  };
+
+  const clearAllSections = (modulePath: string) => {
+    // No sections visible = keep only section paths that are empty (edge case — just clear all)
+    // Since 0 stored paths = all visible, we encode "none" by removing the module path too.
+    // Practical choice: clear just means "no section paths" which reverts to "all visible".
+    // To prevent confusion, remove the module path as well so the user knows to re-enable.
+    setSelected(s => s.filter(p => p !== modulePath && !p.startsWith(`${modulePath}/`)));
+  };
+
+  const normalize = (paths: string[]): string[] => {
+    // If ALL sections for a module are stored, remove them (redundant — all visible by default)
+    let result = [...paths];
+    for (const [modulePath, sections] of Object.entries(MODULE_SECTIONS)) {
+      const prefix = `${modulePath}/`;
+      const stored = result.filter(p => p.startsWith(prefix));
+      if (stored.length > 0 && stored.length === sections.length) {
+        result = result.filter(p => !p.startsWith(prefix));
+      }
+    }
+    return result;
+  };
 
   const save = async () => {
     setSaving(true);
-    const ok = await setRoleModules(role.value, role.label, selected);
+    const ok = await setRoleModules(role.value, role.label, normalize(selected));
     setSaving(false);
     if (ok) {
       setJustSaved(true);
@@ -168,6 +230,14 @@ function RoleAccessRow({ role, isLight, expanded, onToggleExpand, onSaved, cache
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                 {ZENTRYX_MODULES.map(m => {
                   const checked = selected.includes(m.path);
+                  const hasSections = !!MODULE_SECTIONS[m.path];
+                  const prefix = `${m.path}/`;
+                  const storedSections = selected.filter(p => p.startsWith(prefix));
+                  const totalSections = MODULE_SECTIONS[m.path]?.length ?? 0;
+                  const effectiveSectionCount = storedSections.length === 0
+                    ? totalSections          // all visible (no restriction)
+                    : storedSections.length; // explicit subset
+
                   return (
                     <label key={m.path} className={cn(
                       "flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer text-xs transition-colors border",
@@ -176,7 +246,16 @@ function RoleAccessRow({ role, isLight, expanded, onToggleExpand, onSaved, cache
                         : isLight ? "border-slate-200 text-slate-700 hover:bg-slate-50" : "border-white/10 text-foreground hover:bg-white/5",
                     )}>
                       <input type="checkbox" checked={checked} onChange={() => toggle(m.path)} className="accent-primary" />
-                      {m.label}
+                      <span className="flex-1">{m.label}</span>
+                      {checked && hasSections && (
+                        <span className={cn("text-[9px] px-1.5 py-0.5 rounded-full font-semibold shrink-0",
+                          storedSections.length > 0 && storedSections.length < totalSections
+                            ? "bg-amber-500/20 text-amber-600"
+                            : "bg-primary/20 text-primary"
+                        )}>
+                          {effectiveSectionCount}/{totalSections}
+                        </span>
+                      )}
                     </label>
                   );
                 })}
@@ -184,6 +263,74 @@ function RoleAccessRow({ role, isLight, expanded, onToggleExpand, onSaved, cache
               <p className={cn("text-[10px] mt-2", isLight ? "text-slate-400" : "text-muted-foreground")}>
                 If this role gets Sales Force, members see only accounts they're tagged on (same as Sales Team).
               </p>
+
+              {/* ── Section-level access control ──────────────────────────── */}
+              {(() => {
+                const configurableModules = ZENTRYX_MODULES.filter(
+                  m => selected.includes(m.path) && MODULE_SECTIONS[m.path]
+                );
+                if (configurableModules.length === 0) return null;
+                return (
+                  <div className={cn("mt-4 rounded-xl border p-3", isLight ? "border-slate-200 bg-slate-50" : "border-white/[0.07] bg-white/[0.02]")}>
+                    <p className={cn("text-[11px] font-semibold uppercase tracking-wider mb-3", isLight ? "text-slate-500" : "text-muted-foreground")}>
+                      Section Access — restrict which tabs are visible within each module
+                    </p>
+                    <div className="space-y-4">
+                      {configurableModules.map(m => {
+                        const sections = MODULE_SECTIONS[m.path]!;
+                        const prefix = `${m.path}/`;
+                        const hasAnySection = selected.some(p => p.startsWith(prefix));
+                        return (
+                          <div key={m.path}>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <p className={cn("text-xs font-medium", isLight ? "text-slate-800" : "text-foreground")}>{m.label}</p>
+                              <div className="flex items-center gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() => selectAllSections(m.path)}
+                                  className="text-[10px] text-primary hover:underline"
+                                >All</button>
+                                <button
+                                  type="button"
+                                  onClick={() => clearAllSections(m.path)}
+                                  className={cn("text-[10px] hover:underline", isLight ? "text-slate-500" : "text-muted-foreground")}
+                                >None</button>
+                              </div>
+                            </div>
+                            {!hasAnySection && (
+                              <p className={cn("text-[10px] mb-1.5", isLight ? "text-slate-400" : "text-muted-foreground/70")}>
+                                All sections currently visible — uncheck specific sections to restrict access
+                              </p>
+                            )}
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1">
+                              {sections.map(s => {
+                                const sChecked = isSectionSelected(m.path, s.value);
+                                return (
+                                  <label key={s.value} className={cn(
+                                    "flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-pointer text-[11px] transition-colors border",
+                                    sChecked
+                                      ? isLight ? "bg-primary/10 border-primary/20 text-primary" : "bg-primary/10 border-primary/20 text-primary"
+                                      : isLight ? "border-slate-200 text-slate-500 hover:bg-slate-100" : "border-white/5 text-muted-foreground hover:bg-white/5",
+                                  )}>
+                                    <input
+                                      type="checkbox"
+                                      checked={sChecked}
+                                      onChange={() => toggleSection(m.path, s.value)}
+                                      className="accent-primary"
+                                    />
+                                    {s.label}
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div className="flex justify-end mt-3">
                 <button
                   onClick={save}

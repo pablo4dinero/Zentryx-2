@@ -280,3 +280,71 @@ export function isMdpPrivileged(role: string | undefined): boolean {
   const r = (role || "").toLowerCase();
   return ["admin", "executive", "manager", "operations_team", "sales_team", "npd_team"].includes(r);
 }
+
+// ── Section-level access control ───────────────────────────────────────────
+// Each module path that has sub-sections (tabs / modes) the admin can restrict.
+// Value strings must exactly match the tab/mode IDs used by each page.
+
+export const MODULE_SECTIONS: Record<string, { value: string; label: string }[]> = {
+  "/materials-demand-planning": [
+    { value: "customer-products",    label: "Customer Products" },
+    { value: "monthly-orders",       label: "Monthly Orders" },
+    { value: "production-orders",    label: "Production Orders" },
+    { value: "production-planning",  label: "Production Planning" },
+    { value: "production-history",   label: "Production History" },
+    { value: "strategy-evaluator",   label: "Strategy Evaluator" },
+    { value: "production-analytics", label: "Analytics" },
+    { value: "forecast",             label: "Forecast" },
+  ],
+  "/oracle": [
+    { value: "chat",         label: "Chat Mode" },
+    { value: "formulation",  label: "Formulation" },
+    { value: "sensory",      label: "Sensory" },
+    { value: "compliance",   label: "Compliance" },
+    { value: "trendScout",   label: "Trends" },
+    { value: "risk",         label: "Risk" },
+    { value: "optimizer",    label: "Optimizer" },
+    { value: "experiment",   label: "Experiment" },
+    { value: "insight",      label: "Insights" },
+  ],
+  "/procurement": [
+    { value: "vendors",   label: "Vendors" },
+    { value: "requests",  label: "Purchase Requests" },
+    { value: "orders",    label: "Purchase Orders" },
+    { value: "analytics", label: "Analytics" },
+    { value: "forecast",  label: "Sales Forecast" },
+  ],
+  "/sales-force": [
+    { value: "Accounts",               label: "Accounts" },
+    { value: "New Production Orders",  label: "New Production Orders" },
+    { value: "Charts",                 label: "Charts" },
+    { value: "Forecast",               label: "Forecast" },
+  ],
+  "/projects": [
+    { value: "projects", label: "Projects" },
+    { value: "export",   label: "Export Data" },
+  ],
+};
+
+/**
+ * Returns the set of section values a user is allowed to see for a module.
+ * Returns `null` when there is no section-level restriction (show all).
+ * Returns `string[]` when the admin has explicitly configured sections for this role.
+ *
+ * Section paths are stored in `allowedPaths` as `modulePath/sectionValue`
+ * (e.g. `/materials-demand-planning/customer-products`).
+ */
+export function getAllowedSections(
+  modulePath: string,
+  roleValue: string | null | undefined,
+): string[] | null {
+  if (!roleValue || roleValue === "admin") return null;
+  const allowed = getCustomRoleAllowedPaths(roleValue);
+  if (!allowed) return null; // built-in role with no explicit config — show all
+  const sections = MODULE_SECTIONS[modulePath];
+  if (!sections) return null; // module has no defined sections
+  const prefix = `${modulePath}/`;
+  const stored = allowed.filter(p => p.startsWith(prefix));
+  if (stored.length === 0) return null; // module allowed but no section restriction
+  return stored.map(p => p.slice(prefix.length));
+}

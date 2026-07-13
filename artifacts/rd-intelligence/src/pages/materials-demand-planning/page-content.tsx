@@ -6,10 +6,11 @@ import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, Tabl
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
-import { useListUsers } from "@/api-client";
+import { useListUsers, useGetCurrentUser } from "@/api-client";
 import { displayLabel, useServerProductTypes } from "@/lib/project-options";
 import { CustomOptionsSelect } from "@/components/ui/CustomOptionsSelect";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { getAllowedSections } from "@/lib/roles";
 import SalesForecastPage from "@/pages/sales-force/Forecast";
 import StrategyEvaluatorTab from "@/pages/strategy-evaluator";
 import { ProductionAnalyticsTab } from "./production-analytics";
@@ -27,6 +28,8 @@ export function MaterialsDemandPlanningPageContent(props: { productsQuery: UseQu
   const { productsQuery } = props;
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { data: currentUser } = useGetCurrentUser();
+  const allowedMdpSections = getAllowedSections("/materials-demand-planning", currentUser?.role);
   const [activeTab, setActiveTab] = React.useState("customer-products");
   const [search, setSearch] = React.useState("");
   const [urgencyFilter, setUrgencyFilter] = React.useState("all");
@@ -304,17 +307,28 @@ export function MaterialsDemandPlanningPageContent(props: { productsQuery: UseQu
     openEditForm(account);
   };
 
-  const MDP_TABS = [
-    { value: "customer-products", label: "Customer Products" },
-    { value: "monthly-orders", label: "Monthly Orders" },
-    { value: "production-orders", label: "Production Orders" },
-    { value: "production-planning", label: "Production Planning" },
-    { value: "production-history", label: "Production History" },
-    { value: "strategy-evaluator", label: "Strategy Evaluator" },
-    { value: "production-analytics", label: "Analytics", beta: true },
-    { value: "forecast", label: "Forecast" },
-  ] as const;
-  type MdpTab = typeof MDP_TABS[number]["value"];
+  // Reset active tab if it becomes hidden due to section restriction changes
+  React.useEffect(() => {
+    if (MDP_TABS.length > 0 && !MDP_TABS.some(t => t.value === activeTab)) {
+      setActiveTab(MDP_TABS[0].value);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allowedMdpSections]);
+
+  const ALL_MDP_TABS = [
+    { value: "customer-products",    label: "Customer Products" },
+    { value: "monthly-orders",       label: "Monthly Orders" },
+    { value: "production-orders",    label: "Production Orders" },
+    { value: "production-planning",  label: "Production Planning" },
+    { value: "production-history",   label: "Production History" },
+    { value: "strategy-evaluator",   label: "Strategy Evaluator" },
+    { value: "production-analytics", label: "Analytics", beta: true as true },
+    { value: "forecast",             label: "Forecast" },
+  ];
+  const MDP_TABS = allowedMdpSections
+    ? ALL_MDP_TABS.filter(t => allowedMdpSections.includes(t.value))
+    : ALL_MDP_TABS;
+  type MdpTab = typeof ALL_MDP_TABS[number]["value"];
 
   return (
     <div className="space-y-0">
