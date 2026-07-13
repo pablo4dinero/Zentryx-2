@@ -1172,6 +1172,49 @@ router.post("/monthly-orders", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+// Upsert status for a specific production order (idempotent). Creates the
+// status record on first change, updates it on subsequent changes.
+// MUST be registered before /:id so Express doesn't swallow "by-production-order" as an id.
+router.put("/monthly-orders/by-production-order/:productionOrderId", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const productionOrderId = Number(req.params.productionOrderId);
+    const body = req.body as any;
+    const [existing] = await db.select().from(mdpMonthlyOrdersTable)
+      .where(eq(mdpMonthlyOrdersTable.productionOrderId, productionOrderId)).limit(1);
+    let result;
+    if (existing) {
+      [result] = await db.update(mdpMonthlyOrdersTable).set({
+        productionStatus: body.productionStatus ?? existing.productionStatus,
+        distributionType: body.distributionType ?? existing.distributionType,
+        packingStatus: body.packingStatus ?? existing.packingStatus,
+        deliveryStatus: body.deliveryStatus ?? existing.deliveryStatus,
+        updatedAt: new Date(),
+      }).where(eq(mdpMonthlyOrdersTable.id, existing.id)).returning();
+    } else {
+      [result] = await db.insert(mdpMonthlyOrdersTable).values({
+        productionOrderId,
+        month: body.month ?? "",
+        accountId: body.accountId ?? null,
+        customerName: body.customerName ?? "",
+        productDescription: body.productDescription ?? "",
+        volumeKg: body.volumeKg ?? null,
+        dateOrdered: body.dateOrdered ?? null,
+        expectedDeliveryDate: body.expectedDeliveryDate ?? null,
+        productionStatus: body.productionStatus ?? "Pending",
+        distributionType: body.distributionType ?? "Delivery",
+        packingStatus: body.packingStatus ?? "Not Packed",
+        deliveryStatus: body.deliveryStatus ?? "No",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }).returning();
+    }
+    res.json(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
 router.put("/monthly-orders/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
     const id = Number(req.params.id);

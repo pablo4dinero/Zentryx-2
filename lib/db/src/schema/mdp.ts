@@ -144,6 +144,9 @@ export const mdpMonthlyOrdersTable = pgTable("mdp_monthly_orders", {
   distributionType: text("distribution_type").default("Pick Up"),
   packingStatus: text("packing_status").default("Not Packed"),
   deliveryStatus: text("delivery_status").default("No"),
+  // Links this status record to a specific account_production_orders row.
+  // NULL for legacy manually-created rows.
+  productionOrderId: integer("production_order_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
