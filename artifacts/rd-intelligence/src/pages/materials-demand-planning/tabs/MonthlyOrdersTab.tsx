@@ -470,7 +470,10 @@ export function MonthlyOrdersTab() {
     const totalVolume = customerGroups
       .flatMap(g => g.productGroups.flatMap(pg => pg.orders))
       .reduce((sum, o) => sum + (Number(o.volume) || 0), 0);
-    return { customers: customerGroups.length, products: uniqueProducts, totalVolume };
+    // Count unique company names — the same company may appear as multiple groups
+    // because accountsTable has one row per (company + product).
+    const uniqueCustomers = new Set(customerGroups.map(g => g.customerName)).size;
+    return { customers: uniqueCustomers, products: uniqueProducts, totalVolume };
   }, [customerGroups]);
 
   // ── Pagination ───────────────────────────────────────────────────────────
