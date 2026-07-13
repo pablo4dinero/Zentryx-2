@@ -56,6 +56,7 @@ router.get("/", requireAuth, async (req: AuthRequest, res) => {
       expectedDeliveryDate: accountProductionOrdersTable.expectedDeliveryDate,
       dateDelivered: accountProductionOrdersTable.dateDelivered,
       createdAt: accountProductionOrdersTable.createdAt,
+      updatedAt: accountProductionOrdersTable.updatedAt,
     })
       .from(accountProductionOrdersTable)
       .leftJoin(accountsTable, eq(accountProductionOrdersTable.accountId, accountsTable.id))
