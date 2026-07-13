@@ -824,6 +824,61 @@ router.put("/floor-assignments/:id/produce", requireAuth, async (req: AuthReques
       producedAt: new Date(),
     }).where(eq(mdpFloorAssignmentsTable.id, id)).returning();
 
+    // Sync productionStatus = "Produced" to the linked Monthly Orders record.
+    // Chain: floorAssignment.productionOrderId → mdpProductionOrders.id → .salesOrderId → mdpMonthlyOrders.productionOrderId
+    if (existing.productionOrderId) {
+      const [mdpOrder] = await db.select()
+        .from(mdpProductionOrdersTable)
+        .where(eq(mdpProductionOrdersTable.id, existing.productionOrderId))
+        .limit(1);
+
+      if (mdpOrder?.salesOrderId) {
+        const salesOrderId = mdpOrder.salesOrderId;
+        const [existingMonthly] = await db.select()
+          .from(mdpMonthlyOrdersTable)
+          .where(eq(mdpMonthlyOrdersTable.productionOrderId, salesOrderId))
+          .limit(1);
+
+        if (existingMonthly) {
+          await db.update(mdpMonthlyOrdersTable)
+            .set({ productionStatus: "Produced", updatedAt: new Date() })
+            .where(eq(mdpMonthlyOrdersTable.productionOrderId, salesOrderId));
+        } else {
+          // No Monthly Orders record yet — create a minimal one so the status is visible
+          const [salesOrder] = await db.select()
+            .from(accountProductionOrdersTable)
+            .where(eq(accountProductionOrdersTable.id, salesOrderId))
+            .limit(1);
+
+          if (salesOrder) {
+            const [account] = await db.select()
+              .from(accountsTable)
+              .where(eq(accountsTable.id, salesOrder.accountId))
+              .limit(1);
+
+            const parts = (salesOrder.dateOrdered ?? "").split("/");
+            const month = parts.length === 3
+              ? `${parts[2]}-${parts[1].padStart(2, "0")}`
+              : `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+
+            await db.insert(mdpMonthlyOrdersTable).values({
+              month,
+              accountId: salesOrder.accountId,
+              customerName: account?.company ?? "",
+              productDescription: account?.productName ?? "",
+              volumeKg: salesOrder.volume ? String(salesOrder.volume) : null,
+              dateOrdered: salesOrder.dateOrdered,
+              expectedDeliveryDate: salesOrder.expectedDeliveryDate,
+              productionStatus: "Produced",
+              productionOrderId: salesOrderId,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            });
+          }
+        }
+      }
+    }
+
     res.json(updated);
   } catch (err) {
     console.error(err);
@@ -870,7 +925,30 @@ router.get("/produced-orders", requireAuth, async (req: AuthRequest, res) => {
       : gte(mdpProducedOrdersTable.producedAt, cutoff);
 
     const producedOrders = await db.select().from(mdpProducedOrdersTable).where(condition);
-    res.json(producedOrders);
+
+    // Enrich each produced order with productionStatus from mdpMonthlyOrders.
+    // Chain: produced.productionOrderId (= mdpProductionOrders.id) → .salesOrderId → mdpMonthlyOrders.productionOrderId
+    const mdpOrderIds = producedOrders.map(o => o.productionOrderId).filter((id): id is number => id != null);
+    const mdpOrderRows = mdpOrderIds.length
+      ? await db.select({ id: mdpProductionOrdersTable.id, salesOrderId: mdpProductionOrdersTable.salesOrderId })
+          .from(mdpProductionOrdersTable).where(inArray(mdpProductionOrdersTable.id, mdpOrderIds))
+      : [];
+    const salesIds = mdpOrderRows.map(o => o.salesOrderId).filter((id): id is number => id != null);
+    const monthlyRows = salesIds.length
+      ? await db.select({ productionOrderId: mdpMonthlyOrdersTable.productionOrderId, productionStatus: mdpMonthlyOrdersTable.productionStatus })
+          .from(mdpMonthlyOrdersTable).where(inArray(mdpMonthlyOrdersTable.productionOrderId, salesIds))
+      : [];
+    const mdpIdToSalesId = new Map<number, number>(mdpOrderRows.map(o => [o.id, o.salesOrderId as number]));
+    const salesIdToStatus = new Map<number, string>(monthlyRows.filter(o => o.productionOrderId != null).map(o => [o.productionOrderId as number, o.productionStatus ?? "Pending"]));
+
+    const enriched = producedOrders.map(o => ({
+      ...o,
+      productionStatus: o.productionOrderId != null
+        ? (salesIdToStatus.get(mdpIdToSalesId.get(o.productionOrderId) ?? -1) ?? null)
+        : null,
+    }));
+
+    res.json(enriched);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "InternalServerError" });
@@ -998,6 +1076,37 @@ router.put("/produced-orders/:id/deliver", requireAuth, async (req: AuthRequest,
     }
 
     res.json(updated);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+// Update the Monthly Orders productionStatus from Production History.
+// Chain: produced.productionOrderId → mdpProductionOrders.salesOrderId → mdpMonthlyOrders
+router.put("/produced-orders/:id/production-status", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const id = Number(req.params.id);
+    const status: string = (req.body as any)?.status ?? "Pending";
+
+    const [produced] = await db.select().from(mdpProducedOrdersTable)
+      .where(eq(mdpProducedOrdersTable.id, id)).limit(1);
+    if (!produced) { res.status(404).json({ error: "NotFound" }); return; }
+
+    if (produced.productionOrderId) {
+      const [mdpOrder] = await db.select()
+        .from(mdpProductionOrdersTable)
+        .where(eq(mdpProductionOrdersTable.id, produced.productionOrderId))
+        .limit(1);
+
+      if (mdpOrder?.salesOrderId) {
+        await db.update(mdpMonthlyOrdersTable)
+          .set({ productionStatus: status, updatedAt: new Date() })
+          .where(eq(mdpMonthlyOrdersTable.productionOrderId, mdpOrder.salesOrderId));
+      }
+    }
+
+    res.json({ success: true, status });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "InternalServerError" });

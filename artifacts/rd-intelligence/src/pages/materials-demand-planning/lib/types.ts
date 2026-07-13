@@ -94,6 +94,7 @@ export type ProducedOrder = {
   producedAt: string;
   deliveryStatus: string;
   deliveredAt?: string | null;
+  productionStatus?: string | null; // from mdpMonthlyOrders via the production order chain
 };
 
 export type WorkingWeek = {

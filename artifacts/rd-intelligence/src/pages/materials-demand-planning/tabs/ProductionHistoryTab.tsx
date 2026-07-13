@@ -93,23 +93,23 @@ export function ProductionHistoryTab() {
     onError: () => toast({ title: "Error", description: "Could not clear history.", variant: "destructive" }),
   });
 
-  const deliverMutation = useMutation({
+  const updateProductionStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: number; status: string }) => {
-      const res = await fetch(`${BASE}api/mdp/produced-orders/${id}/deliver`, {
+      const res = await fetch(`${BASE}api/mdp/produced-orders/${id}/production-status`, {
         method: "PUT",
         headers: authHeaders(),
         body: JSON.stringify({ status }),
       });
       if (!res.ok) {
         const error = await res.json().catch(() => ({}));
-        throw new Error(error.error || "Failed to update delivery status");
+        throw new Error(error.error || "Failed to update production status");
       }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/produced-orders", view] });
-      queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
-      toast({ title: "Status updated", description: "Production order status has been updated." });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/monthly-orders/all"] });
+      toast({ title: "Status updated", description: "Production status synced to Monthly Orders." });
     },
     onError: (error: any) => {
       toast({ title: "Could not update status", description: error?.message || "Try again.", variant: "destructive" });
@@ -429,14 +429,20 @@ export function ProductionHistoryTab() {
                       <td className="px-3 py-3 text-right font-semibold text-sm">{Number(order.volume ?? 0).toLocaleString()}</td>
                       <td className="px-3 py-3 text-xs text-muted-foreground">{formatDateTime(order.producedAt)}</td>
                       <td className="px-3 py-3">
-                        <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold border",
-                          order.deliveryStatus === "Delivered" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
-                          order.deliveryStatus === "Stored in Warehouse" ? "bg-blue-500/10 text-blue-400 border-blue-500/20" :
-                          order.deliveryStatus === "In process" ? "bg-violet-500/10 text-violet-400 border-violet-500/20" :
-                          "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                        )}>
-                          {order.deliveryStatus}
-                        </span>
+                        {(() => {
+                          const status = order.productionStatus ?? order.deliveryStatus;
+                          const cls =
+                            status === "Produced"     ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
+                            status === "In Process"   ? "bg-blue-500/10 text-blue-400 border-blue-500/20" :
+                            status === "Warehouse"    ? "bg-purple-500/10 text-purple-400 border-purple-500/20" :
+                            status === "Dispatch"     ? "bg-sky-500/10 text-sky-400 border-sky-500/20" :
+                            /* Pending / fallback */    "bg-amber-500/10 text-amber-400 border-amber-500/20";
+                          return (
+                            <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold border", cls)}>
+                              {status}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="px-3 py-3 text-right">
                         <DropdownMenu>
@@ -445,10 +451,12 @@ export function ProductionHistoryTab() {
                               isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5"
                             )}>Update Status ▾</button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-[210px]">
-                            <DropdownMenuItem onClick={() => deliverMutation.mutate({ id: order.id, status: "Delivered" })}>Mark as Delivered</DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => deliverMutation.mutate({ id: order.id, status: "Stored in Warehouse" })}>Stored in Warehouse</DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => deliverMutation.mutate({ id: order.id, status: "In process" })}>In process</DropdownMenuItem>
+                          <DropdownMenuContent align="end" className="w-[180px]">
+                            <DropdownMenuItem onClick={() => updateProductionStatusMutation.mutate({ id: order.id, status: "Pending" })}>Pending</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateProductionStatusMutation.mutate({ id: order.id, status: "In Process" })}>In Process</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateProductionStatusMutation.mutate({ id: order.id, status: "Produced" })}>Produced</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateProductionStatusMutation.mutate({ id: order.id, status: "Warehouse" })}>Warehouse</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateProductionStatusMutation.mutate({ id: order.id, status: "Dispatch" })}>Dispatch</DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                               onClick={() => {
