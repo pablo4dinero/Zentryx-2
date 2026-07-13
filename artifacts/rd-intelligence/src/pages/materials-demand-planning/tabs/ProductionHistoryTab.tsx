@@ -11,16 +11,17 @@ import type { Account, ProducedOrder, ProductionHistoryView, ProductionOrder } f
 import { BASE } from "../lib/constants";
 import { authHeaders, formatDateTime, getHistoryRangeLabel, getCurrentWeekLabel } from "../lib/helpers";
 import { downloadProductionHistoryCsv, downloadProductionHistoryXlsx } from "../lib/exports";
+import { isMdpPrivileged } from "@/lib/roles";
 
 export function ProductionHistoryTab() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { theme } = useTheme();
   const isLight = theme === "light";
-  // Only admins can clear lists or delete individual rows. Everyone else can
-  // still update delivery status / Return to Floor Planning.
+  // Admin, executive, manager, and operations_team can clear lists or delete individual rows.
+  // Everyone else can still update delivery status / Return to Floor Planning.
   const { data: currentUser } = useGetCurrentUser();
-  const isAdmin = ((currentUser?.role as string | undefined) ?? "").toLowerCase() === "admin";
+  const isAdmin = isMdpPrivileged(currentUser?.role);
   const [view, setView] = React.useState<ProductionHistoryView>("weekly");
   const [selectedWeek, setSelectedWeek] = React.useState<string>(getCurrentWeekLabel());
   const [pendingSearch, setPendingSearch] = React.useState("");

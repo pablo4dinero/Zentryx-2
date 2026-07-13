@@ -24,6 +24,7 @@ import { BASE, DEFAULT_BLEND_SPEEDS, FLOOR_STATUSES, LS_BLEND_SPEEDS, LS_ORDER_B
 import { authHeaders, blendSpeedFactor, calcPriorityScore, floorStatusColor, formatSwitchDuration, getMicrobialColor, getWorkingWeeksForMonth, parseBlendSpeedsFromStorage } from "../lib/helpers";
 import { VolumeTag } from "../components/Badges";
 import { PartialAssignModal } from "../components/PartialAssignModal";
+import { isMdpPrivileged } from "@/lib/roles";
 
 type PlanningViewMode = "weekly" | "daily" | "monthly";
 
@@ -120,7 +121,7 @@ export function ProductionPlanningTab() {
   const { toast } = useToast();
   const { onWsMessage } = useCall();
   const { data: currentUser } = useGetCurrentUser();
-  const isAdmin = ((currentUser?.role as string | undefined) ?? "").toLowerCase() === "admin";
+  const isAdmin = isMdpPrivileged(currentUser?.role);
 
   // Instant cache invalidation when another user changes planning data
   React.useEffect(() => {

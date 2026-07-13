@@ -231,7 +231,7 @@ router.get("/production-floors", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.post("/production-floors", requireAuth, requireRole("admin"), async (req: AuthRequest, res) => {
+router.post("/production-floors", requireAuth, requireRole("admin", "executive", "manager", "operations_team", "sales_team", "npd_team"), async (req: AuthRequest, res) => {
   try {
     const body = req.body as any;
     const [created] = await db.insert(mdpProductionFloorsTable).values({
