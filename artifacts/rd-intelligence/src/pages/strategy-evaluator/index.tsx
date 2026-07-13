@@ -134,7 +134,6 @@ export default function StrategyEvaluatorTab() {
   const [floorOverrides, setFloorOverrides] = useState<Map<string, string>>(new Map());
   const [dayRenames, setDayRenames] = useState<Map<string, string>>(new Map());
   const [productRenames, setProductRenames] = useState<Map<string, string>>(new Map());
-  const [editingDayIdx, setEditingDayIdx] = useState<number | null>(null);
   const [editingProductKey, setEditingProductKey] = useState<string | null>(null);
   const [rowTypeOverrides, setRowTypeOverrides] = useState<Map<string, string>>(new Map());
 
@@ -312,7 +311,9 @@ export default function StrategyEvaluatorTab() {
   const handleConfirmProducts = useCallback(() => {
     const products: ConfirmedProduct[] = [];
     let rowIdx = 0;
-    parsedDays.forEach((day) => {
+    parsedDays.forEach((day, dayIdx) => {
+      const selectedDay = dayRenames.get(`day-${dayIdx}`) || day.dayName;
+      const isWeekend = selectedDay === "Saturday";
       day.floors.forEach((floor) => {
         floor.products.forEach((product) => {
           const lookup = productLookup.get(product.name.toLowerCase());
@@ -324,9 +325,9 @@ export default function StrategyEvaluatorTab() {
           const floorWarning = productType ? !checkFloorCompatibility(finalFloor, productType, product.volume) : false;
 
           products.push({
-            dayName: day.dayName,
+            dayName: selectedDay,
             date: day.date,
-            isWeekend: day.isWeekend,
+            isWeekend,
             floorName: finalFloor,
             productName: product.name,
             volume: product.volume,
@@ -340,7 +341,7 @@ export default function StrategyEvaluatorTab() {
     });
     setConfirmedProducts(products);
     setStep(2);
-  }, [parsedDays, floorOverrides, rowTypeOverrides]);
+  }, [parsedDays, floorOverrides, rowTypeOverrides, dayRenames]);
 
   const getAIInsight = useCallback(async () => {
     const uploadedTotal = confirmedProducts.reduce((sum, p) => sum + p.volume, 0);
@@ -550,48 +551,23 @@ export default function StrategyEvaluatorTab() {
 
                       const dayKey = `day-${row.dayIdx}`;
                       const productKey = `product-${row.dayIdx}-${row.prodIdx}`;
-                      const isEditingDay = editingDayIdx === row.dayIdx;
                       const isEditingProduct = editingProductKey === productKey;
 
                       return (
                       <tr key={idx} className={isLight ? "border-t border-slate-200" : "border-t border-white/5"}>
                         <td className="px-4 py-2 text-xs">
-                          {isEditingDay ? (
-                            <div className="flex gap-1 items-center">
-                              <input
-                                autoFocus
-                                type="text"
-                                defaultValue={row.dayName}
-                                onBlur={(e) => {
-                                  if (e.target.value.trim()) {
-                                    setDayRenames(new Map(dayRenames).set(dayKey, e.target.value));
-                                  }
-                                  setEditingDayIdx(null);
-                                }}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") {
-                                    if (e.currentTarget.value.trim()) {
-                                      setDayRenames(new Map(dayRenames).set(dayKey, e.currentTarget.value));
-                                    }
-                                    setEditingDayIdx(null);
-                                  } else if (e.key === "Escape") {
-                                    setEditingDayIdx(null);
-                                  }
-                                }}
-                                className="text-xs px-2 py-1 rounded border border-slate-300 dark:border-white/20 bg-white dark:bg-black/30 w-20"
-                              />
-                            </div>
-                          ) : (
-                            <div className="flex gap-1 items-center group">
-                              <span>{row.dayName}</span>
-                              <button
-                                onClick={() => setEditingDayIdx(row.dayIdx)}
-                                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-200 dark:hover:bg-white/10 rounded"
-                              >
-                                <Edit2 className="w-3 h-3" />
-                              </button>
-                            </div>
-                          )}
+                          <select
+                            value={dayRenames.get(dayKey) || (["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].includes(row.originalDayName) ? row.originalDayName : "Monday")}
+                            onChange={(e) => setDayRenames(new Map(dayRenames).set(dayKey, e.target.value))}
+                            className="text-xs px-2 py-1 rounded border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20"
+                          >
+                            <option value="Monday">Monday</option>
+                            <option value="Tuesday">Tuesday</option>
+                            <option value="Wednesday">Wednesday</option>
+                            <option value="Thursday">Thursday</option>
+                            <option value="Friday">Friday</option>
+                            <option value="Saturday">Saturday</option>
+                          </select>
                         </td>
                         <td className="px-4 py-2">
                           <select
