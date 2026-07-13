@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Download, Search, Users, Package, TrendingUp, ChevronLeft, ChevronRight } from "lucide-react";
+import { Download, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { PageLoader } from "@/components/ui/spinner";
 import { useToast } from "@/hooks/use-toast";
@@ -565,45 +565,23 @@ export function MonthlyOrdersTab() {
       {/* ── Summary boxes ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
-          {
-            icon: Users,
-            label: "Total Customers",
-            value: summaryStats.customers.toLocaleString(),
-            accent: isLight ? "border-blue-200 bg-blue-50/60" : "border-blue-500/20 bg-blue-500/5",
-            iconCls: "text-blue-500",
-          },
-          {
-            icon: Package,
-            label: "Total Products",
-            value: summaryStats.products.toLocaleString(),
-            accent: isLight ? "border-emerald-200 bg-emerald-50/60" : "border-emerald-500/20 bg-emerald-500/5",
-            iconCls: "text-emerald-500",
-          },
-          {
-            icon: TrendingUp,
-            label: "Total Volume Produced",
-            value: `${summaryStats.totalVolume.toLocaleString()} KG`,
-            accent: isLight ? "border-violet-200 bg-violet-50/60" : "border-violet-500/20 bg-violet-500/5",
-            iconCls: "text-violet-500",
-          },
-        ].map(box => {
-          const Icon = box.icon;
-          return (
-            <div
-              key={box.label}
-              className={cn("rounded-2xl border p-5 flex items-center gap-4", box.accent)}
-            >
-              <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
-                isLight ? "bg-white shadow-sm" : "bg-white/5")}>
-                <Icon className={cn("w-5 h-5", box.iconCls)} />
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-foreground leading-tight">{box.value}</div>
-                <div className="text-xs text-muted-foreground mt-0.5">{box.label}</div>
-              </div>
+          { label: "Total Customers",     value: summaryStats.customers.toLocaleString() },
+          { label: "Total Products",      value: summaryStats.products.toLocaleString() },
+          { label: "Total Volume Produced", value: `${summaryStats.totalVolume.toLocaleString()} KG` },
+        ].map(box => (
+          <div
+            key={box.label}
+            className={cn(
+              "rounded-2xl border p-5",
+              isLight ? "bg-white border-slate-200" : "bg-black/20 border-white/10"
+            )}
+          >
+            <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2">
+              {box.label}
             </div>
-          );
-        })}
+            <div className="text-2xl font-bold text-foreground">{box.value}</div>
+          </div>
+        ))}
       </div>
 
       {/* ── Controls row ── */}
@@ -613,7 +591,7 @@ export function MonthlyOrdersTab() {
         <div className="flex flex-wrap items-end gap-3">
 
           {/* Period mode toggle + matching selector */}
-          <div className="flex items-end gap-2">
+          <div className="flex items-end gap-5">
             {/* Mode toggle */}
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Period</label>
