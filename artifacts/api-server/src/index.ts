@@ -137,6 +137,7 @@ async function createTablesIfNotExist() {
         updated_at TIMESTAMP NOT NULL DEFAULT NOW()
       );
     `));
+    await db.execute(sql.raw(`ALTER TABLE mdp_monthly_orders ADD COLUMN IF NOT EXISTS production_order_id INTEGER;`));
     await db.execute(sql.raw(`
       CREATE TABLE IF NOT EXISTS product_types (
         id SERIAL PRIMARY KEY,
