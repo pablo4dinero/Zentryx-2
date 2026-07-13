@@ -51,6 +51,20 @@ function formatDMY(dmy: string | null | undefined): string {
   return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
+function dmyToIso(dmy: string | null | undefined): string {
+  if (!dmy) return "";
+  const parts = dmy.split("/");
+  if (parts.length !== 3) return "";
+  const [d, m, y] = parts;
+  return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+}
+
+function isoToDmy(iso: string): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return "";
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
 /** Extract YYYY-MM from a dd/mm/yyyy string */
 function dmyToYYYYMM(dmy: string | null | undefined): string {
   if (!dmy) return "";
@@ -203,6 +217,35 @@ export function MonthlyOrdersTab() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/monthly-orders/all"] });
+    },
+  });
+
+  // ── Delivery date mutation (writes back to the production order) ─────────
+
+  const updateDeliveryDate = useMutation({
+    mutationFn: async ({ orderId, dateDelivered }: { orderId: number; dateDelivered: string | null }) => {
+      const res = await fetch(`${BASE}api/production-orders/${orderId}`, {
+        method: "PUT",
+        headers: authHeaders(),
+        body: JSON.stringify({ dateDelivered }),
+      });
+      if (!res.ok) throw new Error("Failed to update delivery date");
+      return res.json();
+    },
+    onMutate: async ({ orderId, dateDelivered }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/production-orders/all"] });
+      const previous = queryClient.getQueryData<ProductionOrder[]>(["/api/production-orders/all"]);
+      queryClient.setQueryData<ProductionOrder[]>(["/api/production-orders/all"], old =>
+        old ? old.map(o => o.id === orderId ? { ...o, dateDelivered } : o) : old
+      );
+      return { previous };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.previous) queryClient.setQueryData(["/api/production-orders/all"], ctx.previous);
+      toast({ title: "Update failed", description: "Could not save delivery date", variant: "destructive" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/production-orders/all"] });
     },
   });
 
@@ -414,7 +457,7 @@ export function MonthlyOrdersTab() {
                             <div className="flex items-center gap-2">
                               <span className="font-bold text-foreground">{group.customerName}</span>
                               <Badge variant="outline" className="text-[10px]">
-                                {group.orders.length} product{group.orders.length !== 1 ? "s" : ""}
+                                {group.orders.length} order{group.orders.length !== 1 ? "s" : ""}
                               </Badge>
                             </div>
                           ) : (
@@ -429,7 +472,20 @@ export function MonthlyOrdersTab() {
                         </td>
                         <td className="px-4 py-3 text-xs text-muted-foreground">{formatDMY(order.dateOrdered)}</td>
                         <td className="px-4 py-3 text-xs text-muted-foreground">{formatDMY(order.expectedDeliveryDate)}</td>
-                        <td className="px-4 py-3 text-xs text-muted-foreground">{formatDMY(order.dateDelivered)}</td>
+                        <td className="px-4 py-3">
+                          <input
+                            type="date"
+                            value={dmyToIso(order.dateDelivered)}
+                            onChange={e => {
+                              const dmy = e.target.value ? isoToDmy(e.target.value) : null;
+                              updateDeliveryDate.mutate({ orderId: order.id, dateDelivered: dmy });
+                            }}
+                            className={cn(
+                              "h-8 rounded-lg border px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary/40 [color-scheme:light] dark:[color-scheme:dark]",
+                              isLight ? "border-slate-200 bg-white text-slate-700" : "border-white/10 bg-black/20 text-foreground"
+                            )}
+                          />
+                        </td>
 
                         {/* Editable status dropdowns */}
                         <td className="px-4 py-3">
