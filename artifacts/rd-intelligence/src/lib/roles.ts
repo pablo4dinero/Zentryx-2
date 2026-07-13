@@ -273,7 +273,11 @@ export function getBlockedPaths(role: string, jobPos: string): string[] {
  */
 export function getEffectiveAllowedPaths(roleValue: string, jobPos = ""): string[] {
   const blocked = getBlockedPaths(roleValue, jobPos);
-  return ALL_MODULE_PATHS.filter(p => !blocked.includes(p));
+  const modulePaths = ALL_MODULE_PATHS.filter(p => !blocked.includes(p));
+  // Also carry through stored section paths (modulePath/sectionValue entries).
+  const stored = getCustomRoleAllowedPaths(roleValue);
+  const sectionPaths = stored ? stored.filter(p => p.indexOf("/", 1) !== -1) : [];
+  return [...modulePaths, ...sectionPaths];
 }
 
 export function isMdpPrivileged(role: string | undefined): boolean {
