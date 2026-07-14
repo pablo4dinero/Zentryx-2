@@ -189,11 +189,11 @@ function CostTargetField({ value, onSave, isLight }: { value: string; onSave: (v
   const [val, setVal] = useState(value);
   const [displayVal, setDisplayVal] = useState(value);
   const [targetCurrency, setTargetCurrency] = useState(() => {
-    try { return localStorage.getItem("rd_cost_currency") || "NGN"; } catch { return "NGN"; }
+    try { return localStorage.getItem("rd_cost_currency") || "USD"; } catch { return "USD"; }
   });
   const [showOverride, setShowOverride] = useState(false);
   const [overrideInput, setOverrideInput] = useState("");
-  const { convert, isLoading, isManualOverride, getLastUpdated, setManualNGN, refresh } = useExchangeRate();
+  const { convert, isLoading, isManualOverride, getLastUpdated, setManualNGN, refresh, ngnRate } = useExchangeRate();
 
   useEffect(() => { setVal(value); setDisplayVal(value); }, [value]);
 
@@ -205,7 +205,8 @@ function CostTargetField({ value, onSave, isLight }: { value: string; onSave: (v
   const cancel = () => { setVal(displayVal); setEditing(false); };
 
   const activeAmount = parseFloat(editing ? val : displayVal) || 0;
-  const converted = activeAmount > 0 ? convert(activeAmount, targetCurrency) : null;
+  // value is in ₦ — divide by ngnRate to get USD equivalent before converting
+  const converted = (activeAmount > 0 && ngnRate) ? convert(activeAmount / ngnRate, targetCurrency) : null;
   const currencyMeta = CURRENCY_OPTIONS.find(c => c.code === targetCurrency);
   const lastUpdated = getLastUpdated();
   const changeCurrency = (code: string) => {
@@ -266,7 +267,7 @@ function SellingPriceField({ value, onSave, isLight }: { value: string; onSave: 
   const [displayVal, setDisplayVal] = useState(value);
   const [showOverride, setShowOverride] = useState(false);
   const [overrideInput, setOverrideInput] = useState("");
-  const { convert, isLoading, isManualOverride, getLastUpdated, setManualNGN, refresh } = useExchangeRate();
+  const { convert, isLoading, isManualOverride, getLastUpdated, setManualNGN, refresh, ngnRate } = useExchangeRate();
 
   useEffect(() => { setVal(value); setDisplayVal(value); }, [value]);
 
@@ -278,7 +279,8 @@ function SellingPriceField({ value, onSave, isLight }: { value: string; onSave: 
   const cancel = () => { setVal(displayVal); setEditing(false); };
 
   const activeAmount = parseFloat(editing ? val : displayVal) || 0;
-  const converted = activeAmount > 0 ? convert(activeAmount, "NGN") : null;
+  // value is in ₦ — divide by ngnRate to get USD equivalent before converting to USD
+  const converted = (activeAmount > 0 && ngnRate) ? convert(activeAmount / ngnRate, "USD") : null;
   const lastUpdated = getLastUpdated();
   const applyOverride = () => {
     const v = parseFloat(overrideInput);
@@ -306,7 +308,7 @@ function SellingPriceField({ value, onSave, isLight }: { value: string; onSave: 
             <button onClick={cancel} className={cn("p-1.5 shrink-0", isLight ? "text-gray-400 hover:text-gray-600" : "text-muted-foreground hover:text-foreground")}><X className="w-4 h-4" /></button>
           </div>
           {activeAmount > 0 && (
-            <ConversionBar converted={converted} currency="NGN" currencyMeta={{ code: "NGN", label: "Nigerian Naira", flag: "🇳🇬" }} isLoading={isLoading} lastUpdated={lastUpdated} isManualOverride={isManualOverride} showOverride={showOverride} setShowOverride={setShowOverride} overrideInput={overrideInput} setOverrideInput={setOverrideInput} applyOverride={applyOverride} clearOverride={clearOverride} refresh={refresh} isLight={isLight} />
+            <ConversionBar converted={converted} currency="USD" currencyMeta={{ code: "USD", label: "US Dollar", flag: "🇺🇸" }} isLoading={isLoading} lastUpdated={lastUpdated} isManualOverride={isManualOverride} showOverride={showOverride} setShowOverride={setShowOverride} overrideInput={overrideInput} setOverrideInput={setOverrideInput} applyOverride={applyOverride} clearOverride={clearOverride} refresh={refresh} isLight={isLight} />
           )}
         </div>
       ) : (
@@ -320,7 +322,7 @@ function SellingPriceField({ value, onSave, isLight }: { value: string; onSave: 
             </button>
           </div>
           {activeAmount > 0 && (
-            <ConversionBar converted={converted} currency="NGN" currencyMeta={{ code: "NGN", label: "Nigerian Naira", flag: "🇳🇬" }} isLoading={isLoading} lastUpdated={lastUpdated} isManualOverride={isManualOverride} showOverride={showOverride} setShowOverride={setShowOverride} overrideInput={overrideInput} setOverrideInput={setOverrideInput} applyOverride={applyOverride} clearOverride={clearOverride} refresh={refresh} isLight={isLight} />
+            <ConversionBar converted={converted} currency="USD" currencyMeta={{ code: "USD", label: "US Dollar", flag: "🇺🇸" }} isLoading={isLoading} lastUpdated={lastUpdated} isManualOverride={isManualOverride} showOverride={showOverride} setShowOverride={setShowOverride} overrideInput={overrideInput} setOverrideInput={setOverrideInput} applyOverride={applyOverride} clearOverride={clearOverride} refresh={refresh} isLight={isLight} />
           )}
         </div>
       )}
