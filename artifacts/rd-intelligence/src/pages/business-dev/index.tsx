@@ -147,7 +147,7 @@ export default function BusinessDev() {
   const { toast } = useToast();
   const { theme } = useTheme();
   const isLight = theme === "light";
-  const { fmtNGN } = useExchangeRate();
+  const { fmtNGN, ngnRate } = useExchangeRate();
 
   const stageOpts    = useServerOptionList("stage");
   const statusOpts   = useServerOptionList("status");
@@ -482,7 +482,8 @@ function PortfolioView({ items, isLight, fmtNGN, onUpdate, onDelete, onEdit, sta
 }
 
 /* ─────────────────────────────── List View ──────────────────────────────── */
-function ListView({ items, isLight, fmtNGN, onUpdate, onDelete, onEdit }: any) {
+function ListView({ items, isLight, fmtNGN: _fmtNGN, onUpdate, onDelete, onEdit }: any) {
+  const { ngnRate } = useExchangeRate();
   if (items.length === 0) return null;
   return (
     <div className={cn("rounded-2xl border overflow-hidden", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-card/60")}>
@@ -553,7 +554,8 @@ type SortKey = "name" | "stage" | "status" | "priority" | "targetDate" | "custom
 
 const PRIORITY_ORDER: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1 };
 
-function MatrixView({ items, isLight, fmtNGN, onUpdate, onDelete, onEdit }: any) {
+function MatrixView({ items, isLight, fmtNGN: _fmtNGN, onUpdate, onDelete, onEdit }: any) {
+  const { ngnRate } = useExchangeRate();
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
@@ -644,12 +646,12 @@ function MatrixView({ items, isLight, fmtNGN, onUpdate, onDelete, onEdit }: any)
               <td className={cn(tdCls, "text-xs")}>{item.productType || "—"}</td>
               <td className={cn(tdCls, "text-xs")}>
                 {item.costTarget ? (() => {
-                  const usd = parseFloat(item.costTarget);
-                  const ngn = fmtNGN(usd);
+                  const val = parseFloat(item.costTarget);
+                  const usdEquiv = ngnRate ? (val / ngnRate).toFixed(2) : null;
                   return (
                     <div className="leading-tight">
-                      <span className="font-semibold text-green-500">${usd.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                      {ngn !== "—" && <p className="text-[10px] text-muted-foreground/70 mt-0.5">{ngn}</p>}
+                      <span className="font-semibold text-green-500">₦{val.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                      {usdEquiv && <p className="text-[10px] text-muted-foreground/70 mt-0.5">${usdEquiv} USD</p>}
                     </div>
                   );
                 })() : "—"}
@@ -686,7 +688,8 @@ function MatrixView({ items, isLight, fmtNGN, onUpdate, onDelete, onEdit }: any)
 }
 
 /* ─────────────────────────────── Portfolio Card ────────────────────────── */
-function BDCard({ item, isLight, fmtNGN, onUpdate, onDelete, onEdit, stageOpts, statusOpts }: { item: any; isLight: boolean; fmtNGN: (v: number) => string; onUpdate: any; onDelete: any; onEdit: any; stageOpts: CustomOptionsHandle; statusOpts: CustomOptionsHandle }) {
+function BDCard({ item, isLight, fmtNGN: _fmtNGN, onUpdate, onDelete, onEdit, stageOpts, statusOpts }: { item: any; isLight: boolean; fmtNGN: (v: number) => string; onUpdate: any; onDelete: any; onEdit: any; stageOpts: CustomOptionsHandle; statusOpts: CustomOptionsHandle }) {
+  const { ngnRate } = useExchangeRate();
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleVal, setTitleVal] = useState(item.name);
 
@@ -771,12 +774,12 @@ function BDCard({ item, isLight, fmtNGN, onUpdate, onDelete, onEdit, stageOpts, 
             title="Set due date" />
         </div>
         {item.costTarget && (() => {
-          const usd = parseFloat(item.costTarget);
-          const ngn = fmtNGN(usd);
+          const val = parseFloat(item.costTarget);
+          const usdEquiv = ngnRate ? (val / ngnRate).toFixed(2) : null;
           return (
             <div className="text-right leading-tight">
-              <span className="text-green-500 font-semibold">${usd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              {ngn !== "—" && <p className={cn("text-[10px] mt-0.5", isLight ? "text-slate-400" : "text-muted-foreground/70")}>{ngn}</p>}
+              <span className="text-green-500 font-semibold">₦{val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              {usdEquiv && <p className={cn("text-[10px] mt-0.5", isLight ? "text-slate-400" : "text-muted-foreground/70")}>${usdEquiv} USD</p>}
             </div>
           );
         })()}
@@ -853,7 +856,7 @@ function EditBDModal({ item, users, onUpdate, onClose, stageOpts, statusOpts, pr
             <div className="space-y-1.5"><label className={lbl}>Name</label><input value={form.customerName} onChange={e => setF("customerName", e.target.value)} className={cls} placeholder="Customer name" /></div>
             <div className="space-y-1.5"><label className={lbl}>Email</label><input type="email" value={form.customerEmail} onChange={e => setF("customerEmail", e.target.value)} className={cls} placeholder="email@example.com" /></div>
             <div className="space-y-1.5"><label className={lbl}>Phone</label><input value={form.customerPhone} onChange={e => setF("customerPhone", e.target.value)} className={cls} placeholder="+27 xx xxx xxxx" /></div>
-            <div className="space-y-1.5"><label className={lbl}>Cost Target (USD $)</label><input type="number" value={form.costTarget} onChange={e => setF("costTarget", e.target.value)} className={cls} placeholder="0.00" /></div>
+            <div className="space-y-1.5"><label className={lbl}>Cost Target (NGN ₦)</label><input type="number" value={form.costTarget} onChange={e => setF("costTarget", e.target.value)} className={cls} placeholder="0.00" /></div>
             <div className="space-y-1.5"><label className={lbl}>Start Date</label><input type="date" value={form.startDate} onChange={e => setF("startDate", e.target.value)} className={cls} /></div>
             <div className="space-y-1.5"><label className={lbl}>Due Date</label><input type="date" value={form.targetDate} onChange={e => setF("targetDate", e.target.value)} className={cls} /></div>
           </div>
@@ -944,7 +947,7 @@ function CreateBDModal({ users, onCreate, stageOpts, statusOpts, priorityOpts, t
             <div className="space-y-1.5"><label className={lbl}>Customer Name</label><input value={form.customerName} onChange={e => setF("customerName", e.target.value)} placeholder="Customer name" className={cls} /></div>
             <div className="space-y-1.5"><label className={lbl}>Email</label><input type="email" value={form.customerEmail} onChange={e => setF("customerEmail", e.target.value)} placeholder="email@example.com" className={cls} /></div>
             <div className="space-y-1.5"><label className={lbl}>Phone</label><input value={form.customerPhone} onChange={e => setF("customerPhone", e.target.value)} placeholder="+27 xx xxx xxxx" className={cls} /></div>
-            <div className="space-y-1.5"><label className={lbl}>Cost Target (USD $)</label><input type="number" value={form.costTarget} onChange={e => setF("costTarget", e.target.value)} placeholder="0.00" className={cls} /></div>
+            <div className="space-y-1.5"><label className={lbl}>Cost Target (NGN ₦)</label><input type="number" value={form.costTarget} onChange={e => setF("costTarget", e.target.value)} placeholder="0.00" className={cls} /></div>
             <div className="space-y-1.5"><label className={lbl}>Start Date</label><input type="date" value={form.startDate} onChange={e => setF("startDate", e.target.value)} className={cls} /></div>
             <div className="space-y-1.5"><label className={lbl}>Due Date</label><input type="date" value={form.targetDate} onChange={e => setF("targetDate", e.target.value)} className={cls} /></div>
           </div>

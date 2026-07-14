@@ -125,7 +125,7 @@ export default function ProjectsList() {
   };
 
   const buildExportRows = (projs: any[]) => {
-    const headers = ["ID", "Name", "Stage", "Status", "Product Type", "Customer Name", "Customer Email", "Customer Phone", "Cost Target ($)", "Selling Price ($)", "Volume (kg/Month)", "Revenue/Month ($)", "Start Date", "Due Date", "Assignees", "Tasks", "Progress %", "Created At"];
+    const headers = ["ID", "Name", "Stage", "Status", "Product Type", "Customer Name", "Customer Email", "Customer Phone", "Cost Target (₦)", "Selling Price (₦)", "Volume (kg/Month)", "Revenue/Month (₦)", "Start Date", "Due Date", "Assignees", "Tasks", "Progress %", "Created At"];
     const rows = projs.map(p => {
       const sp = p.sellingPrice ? parseFloat(p.sellingPrice) : null;
       const vol = p.volumeKgPerMonth ? parseFloat(p.volumeKgPerMonth) : null;
@@ -811,11 +811,11 @@ function CreateProjectModal({
               <p className={cn("text-sm font-semibold uppercase tracking-wide mb-3", isCpmLight ? "text-gray-500" : "text-muted-foreground")}>Financial Details</p>
             </div>
             <div className="space-y-1.5">
-              <label className={labelCls}>Cost Target ($)</label>
+              <label className={labelCls}>Cost Target (₦)</label>
               <input type="number" value={form.costTarget} onChange={e => setF("costTarget", e.target.value)} placeholder="0.00" className={inputCls} />
             </div>
             <div className="space-y-1.5">
-              <label className={labelCls}>Selling Price (USD $)</label>
+              <label className={labelCls}>Selling Price (₦)</label>
               <input type="number" value={form.sellingPrice} onChange={e => setF("sellingPrice", e.target.value)} placeholder="0.00" className={inputCls} />
             </div>
             <div className="space-y-1.5">

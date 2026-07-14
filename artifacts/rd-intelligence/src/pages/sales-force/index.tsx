@@ -147,8 +147,8 @@ function ExportModal({ accounts, onClose }: { accounts: any[]; onClose: () => vo
     { key: "productName", label: "Product Name" }, { key: "productType", label: "Product Type" },
     { key: "accountManagerNames", label: "Account Managers" }, { key: "contactPerson", label: "Contact Person" },
     { key: "cpPhone", label: "CP Phone" }, { key: "cpEmail", label: "CP Email" },
-    { key: "customerType", label: "Customer Type" }, { key: "targetPrice", label: "Target Price ($/kg)" },
-    { key: "sellingPrice", label: "Selling Price ($/kg)" }, { key: "volume", label: "Volume (kg/month)" },
+    { key: "customerType", label: "Customer Type" }, { key: "targetPrice", label: "Target Price (₦/kg)" },
+    { key: "sellingPrice", label: "Selling Price (₦/kg)" }, { key: "volume", label: "Volume (kg/month)" },
     { key: "urgencyLevel", label: "Urgency" }, { key: "competitorReference", label: "Competitor Reference" },
     { key: "application", label: "Application" }, { key: "margin", label: "Margin (%)" },
     { key: "approvalStatus", label: "Approval Status" }, { key: "priorityScore", label: "Priority Score" },
@@ -411,7 +411,7 @@ function AddAccountModal({ onSuccess }: { onSuccess: () => void }) {
                       <input value={form.application} onChange={e => setF("application", e.target.value)} placeholder="e.g. Noodles, Chips" className={iCls} />
                     </div>
                     <div>
-                      <label className={lCls}>Target Price ($/kg)</label>
+                      <label className={lCls}>Target Price (₦/kg)</label>
                       <input value={form.targetPrice} onChange={e => setF("targetPrice", e.target.value)} placeholder="0.00" type="number" step="0.01" min="0" className={iCls} />
                       {form.targetPrice && <p className="text-xs text-emerald-400 mt-1">{fmtNGN(parseFloat(form.targetPrice))}/kg</p>}
                     </div>
@@ -515,7 +515,7 @@ function AccountCard({ account, onClick, onDelete }: { account: any; onClick: ()
         {account.targetPrice && (
           <div className="flex items-center justify-between text-xs">
             <span className="text-muted-foreground">Target Price</span>
-            <span className="text-foreground">${parseFloat(account.targetPrice).toFixed(2)}/kg</span>
+            <span className="text-foreground">₦{parseFloat(account.targetPrice).toFixed(2)}/kg</span>
           </div>
         )}
         {account.accountManagerNames?.length > 0 && (

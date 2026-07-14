@@ -75,7 +75,7 @@ export function AnalyticsView({ projects }: Props) {
     { label: "Success Rate", value: `${stats.successRate}%`, icon: <TrendingUp className="w-5 h-5" />, color: "from-violet-600 to-violet-400", bg: "rgba(124,58,237,0.12)" },
     { label: "Avg Progress", value: `${stats.avgProgress}%`, icon: <CheckCircle className="w-5 h-5" />, color: "from-blue-600 to-blue-400", bg: "rgba(59,130,246,0.12)" },
     { label: "Active Projects", value: stats.active, icon: <Clock className="w-5 h-5" />, color: "from-amber-500 to-amber-300", bg: "rgba(245,158,11,0.12)" },
-    { label: "Avg Cost Target", value: stats.avgCost ? `R${stats.avgCost.toLocaleString()}` : "—", icon: <DollarSign className="w-5 h-5" />, color: "from-emerald-500 to-emerald-300", bg: "rgba(16,185,129,0.12)" },
+    { label: "Avg Cost Target", value: stats.avgCost ? `₦${stats.avgCost.toLocaleString()}` : "—", icon: <DollarSign className="w-5 h-5" />, color: "from-emerald-500 to-emerald-300", bg: "rgba(16,185,129,0.12)" },
   ];
 
   return (
@@ -155,7 +155,7 @@ export function AnalyticsView({ projects }: Props) {
                 <YAxis yAxisId="right" orientation="right" tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} />
                 <Tooltip contentStyle={tooltipStyle} />
                 <Legend formatter={(v) => <span style={{ color: "#94a3b8", fontSize: 11 }}>{v}</span>} />
-                <Bar yAxisId="left" dataKey="cost" name="Cost (R)" fill="#7c3aed" radius={[4, 4, 0, 0]} />
+                <Bar yAxisId="left" dataKey="cost" name="Cost (₦)" fill="#7c3aed" radius={[4, 4, 0, 0]} />
                 <Bar yAxisId="right" dataKey="progress" name="Progress %" fill="#3b82f6" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>

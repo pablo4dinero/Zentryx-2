@@ -223,13 +223,13 @@ function CostTargetField({ value, onSave, isLight }: { value: string; onSave: (v
   return (
     <div className={cn("glass-card rounded-xl p-4 group/field relative", isLight ? "bg-white border border-gray-200" : "")}>
       <div className={cn("flex items-center gap-2 mb-1.5 text-xs uppercase tracking-wide font-medium", isLight ? "text-gray-600" : "text-muted-foreground")}>
-        <DollarSign className="w-3.5 h-3.5" /> Cost Target (USD $)
+        <DollarSign className="w-3.5 h-3.5" /> Cost Target (₦)
       </div>
       {editing ? (
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
-              <span className={cn("absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium", isLight ? "text-gray-600" : "text-muted-foreground")}>$</span>
+              <span className={cn("absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium", isLight ? "text-gray-600" : "text-muted-foreground")}>₦</span>
               <input type="number" value={val} onChange={e => setVal(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); }}
                 className={cn(cls, "pl-7", isLight ? "border-gray-300 bg-white text-gray-900" : "")} placeholder="0.00" autoFocus step="0.01" min="0" />
@@ -245,7 +245,7 @@ function CostTargetField({ value, onSave, isLight }: { value: string; onSave: (v
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2 group/val">
             <span className={cn("text-sm font-bold", !displayVal ? (isLight ? "text-gray-400 italic" : "text-muted-foreground italic") : (isLight ? "text-green-600" : "text-green-400"))}>
-              {displayVal ? `$${parseFloat(displayVal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "Not set"}
+              {displayVal ? `₦${parseFloat(displayVal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "Not set"}
             </span>
             <button onClick={() => setEditing(true)} className={cn("opacity-0 group-hover/field:opacity-100 p-1 transition-opacity shrink-0", isLight ? "text-gray-400 hover:text-gray-600" : "text-muted-foreground hover:text-foreground")}>
               <Edit3 className="w-3.5 h-3.5" />
@@ -291,13 +291,13 @@ function SellingPriceField({ value, onSave, isLight }: { value: string; onSave: 
   return (
     <div className={cn("glass-card rounded-xl p-4 group/field relative", isLight ? "bg-white border border-gray-200" : "")}>
       <div className={cn("flex items-center gap-2 mb-1.5 text-xs uppercase tracking-wide font-medium", isLight ? "text-gray-600" : "text-muted-foreground")}>
-        <TrendingUp className="w-3.5 h-3.5" /> Selling Price (USD $)
+        <TrendingUp className="w-3.5 h-3.5" /> Selling Price (₦)
       </div>
       {editing ? (
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
-              <span className={cn("absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium", isLight ? "text-gray-600" : "text-muted-foreground")}>$</span>
+              <span className={cn("absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium", isLight ? "text-gray-600" : "text-muted-foreground")}>₦</span>
               <input type="number" value={val} onChange={e => setVal(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); }}
                 className={cn(cls, "pl-7", isLight ? "border-gray-300 bg-white text-gray-900" : "")} placeholder="0.00" autoFocus step="0.01" min="0" />
@@ -313,7 +313,7 @@ function SellingPriceField({ value, onSave, isLight }: { value: string; onSave: 
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2 group/val">
             <span className={cn("text-sm font-bold", !displayVal ? (isLight ? "text-gray-400 italic" : "text-muted-foreground italic") : (isLight ? "text-purple-600" : "text-violet-400"))}>
-              {displayVal ? `$${parseFloat(displayVal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "Not set"}
+              {displayVal ? `₦${parseFloat(displayVal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "Not set"}
             </span>
             <button onClick={() => setEditing(true)} className={cn("opacity-0 group-hover/field:opacity-100 p-1 transition-opacity shrink-0", isLight ? "text-gray-400 hover:text-gray-600" : "text-muted-foreground hover:text-foreground")}>
               <Edit3 className="w-3.5 h-3.5" />
@@ -533,17 +533,17 @@ export default function ProjectDetail() {
               </div>
             )}
             {(project as any).costTarget && (
-              <div className="text-green-400 font-medium text-xs">Cost: ${parseFloat(String((project as any).costTarget)).toLocaleString()}</div>
+              <div className="text-green-400 font-medium text-xs">Cost: ₦{parseFloat(String((project as any).costTarget)).toLocaleString()}</div>
             )}
             {(project as any).sellingPrice && (
               <div className="text-violet-400 font-bold">
-                <TrendingUp className="w-3 h-3 inline mr-0.5" />${parseFloat(String((project as any).sellingPrice)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                <TrendingUp className="w-3 h-3 inline mr-0.5" />₦{parseFloat(String((project as any).sellingPrice)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </div>
             )}
             {(project as any).sellingPrice && (project as any).volumeKgPerMonth && (
               <div className="text-xs text-emerald-400 font-semibold">
                 <Zap className="w-3 h-3 inline mr-0.5" />
-                ${(parseFloat(String((project as any).sellingPrice)) * parseFloat(String((project as any).volumeKgPerMonth))).toLocaleString()}/mo
+                ₦{(parseFloat(String((project as any).sellingPrice)) * parseFloat(String((project as any).volumeKgPerMonth))).toLocaleString()}/mo
               </div>
             )}
           </div>
@@ -732,7 +732,7 @@ function RevenueScreen({ sellingPrice, volume, projectName, onGoToInfo }: {
                 <TrendingUp className="w-7 h-7 text-emerald-400" />
               </div>
               <p className="text-muted-foreground text-sm mb-2">No financial data set yet</p>
-              <p className="text-xs text-muted-foreground/60 mb-4">Set <strong className="text-emerald-400">Selling Price ($)</strong> and <strong className="text-emerald-400">Volume (kg/Month)</strong> in Project Info to calculate revenue.</p>
+              <p className="text-xs text-muted-foreground/60 mb-4">Set <strong className="text-emerald-400">Selling Price (₦)</strong> and <strong className="text-emerald-400">Volume (kg/Month)</strong> in Project Info to calculate revenue.</p>
               <button onClick={onGoToInfo} className="px-4 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs hover:bg-emerald-500/20 transition-all">
                 Go to Project Info →
               </button>
@@ -742,8 +742,8 @@ function RevenueScreen({ sellingPrice, volume, projectName, onGoToInfo }: {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
                 <div className={cn("rounded-xl border p-4", isLight ? "bg-gray-50 border-gray-200" : "bg-black/40 border-white/10")}>
                   <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-2 font-mono">Selling Price</p>
-                  <p className="font-mono text-2xl font-bold text-violet-400">${sellingPrice!.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-                  <p className="text-[10px] text-muted-foreground mt-1 font-mono">USD per kg</p>
+                  <p className="font-mono text-2xl font-bold text-violet-400">₦{sellingPrice!.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                  <p className="text-[10px] text-muted-foreground mt-1 font-mono">NGN per kg</p>
                 </div>
                 <div className={cn("rounded-xl border p-4", isLight ? "bg-gray-50 border-gray-200" : "bg-black/40 border-white/10")}>
                   <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-2 font-mono">Volume</p>
@@ -755,19 +755,19 @@ function RevenueScreen({ sellingPrice, volume, projectName, onGoToInfo }: {
               <div className={cn("rounded-2xl border p-6 text-center", isLight ? "bg-emerald-50 border-emerald-200" : "bg-black/60 border-emerald-500/30")}>
                 <p className="text-[10px] text-emerald-400/60 uppercase tracking-[0.4em] font-mono mb-3">Monthly Revenue</p>
                 <div className="text-5xl font-mono font-black text-emerald-400 mb-2 tabular-nums" style={{ textShadow: "0 0 30px rgba(16,185,129,0.5), 0 0 60px rgba(16,185,129,0.2)" }}>
-                  ${revenue!.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  ₦{revenue!.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </div>
                 <p className="text-xs text-muted-foreground font-mono">
-                  ${sellingPrice!.toLocaleString()} × {volume!.toLocaleString()} kg
+                  ₦{sellingPrice!.toLocaleString()} × {volume!.toLocaleString()} kg
                 </p>
                 <div className="mt-4 pt-4 border-t border-emerald-500/10 grid grid-cols-2 gap-4 text-left">
                   <div>
                     <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-widest">Annual Revenue</p>
-                    <p className="text-lg font-mono font-bold text-emerald-300 mt-0.5">${(revenue! * 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                    <p className="text-lg font-mono font-bold text-emerald-300 mt-0.5">₦{(revenue! * 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
                   </div>
                   <div>
                     <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-widest">Daily Avg</p>
-                    <p className="text-lg font-mono font-bold text-emerald-300 mt-0.5">${(revenue! / 30).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                    <p className="text-lg font-mono font-bold text-emerald-300 mt-0.5">₦{(revenue! / 30).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
                   </div>
                 </div>
               </div>

@@ -171,7 +171,7 @@ function KanbanBoard({ accountId, account }: { accountId: number; account: any }
   const { toast } = useToast();
   const { data: users = [] } = useListUsers();
   const api = useApiCall();
-  const { fmtNGN } = useExchangeRate();
+  const { ngnRate } = useExchangeRate();
   const [addingIn, setAddingIn] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState("");
   const [revenueView, setRevenueView] = useState<"monthly" | "yearly">("monthly");
@@ -317,8 +317,8 @@ function KanbanBoard({ accountId, account }: { accountId: number; account: any }
           <div className="text-right">
             {allDone ? (
               <>
-                <p className="text-xl font-bold text-emerald-400">${(revenueView === "monthly" ? monthlyRevenue : yearlyRevenue).toLocaleString()}</p>
-                <p className="text-[10px] text-emerald-400/60">{fmtNGN(revenueView === "monthly" ? monthlyRevenue : yearlyRevenue)}</p>
+                <p className="text-xl font-bold text-emerald-400">₦{(revenueView === "monthly" ? monthlyRevenue : yearlyRevenue).toLocaleString()}</p>
+                <p className="text-[10px] text-emerald-400/60">{ngnRate ? `≈ $${((revenueView === "monthly" ? monthlyRevenue : yearlyRevenue) / ngnRate).toLocaleString(undefined, { maximumFractionDigits: 2 })} USD` : ""}</p>
               </>
             ) : (
               <p className="text-xs text-muted-foreground">Complete all tasks to unlock</p>
@@ -683,9 +683,9 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
 
   const exportTable = () => {
     const data = sortedOrds.map(o => ({
-      "Price ($/kg)": o.price, "Volume (kg)": o.volume, "Date Ordered": o.dateOrdered,
+      "Price (₦/kg)": o.price, "Volume (kg)": o.volume, "Date Ordered": o.dateOrdered,
       "Expected Delivery": o.expectedDeliveryDate || "",
-      "Date Delivered": o.dateDelivered, "Income ($)": (parseFloat(o.price || 0) * parseFloat(o.volume || 0)).toFixed(2),
+      "Date Delivered": o.dateDelivered, "Income (₦)": (parseFloat(o.price || 0) * parseFloat(o.volume || 0)).toFixed(2),
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
@@ -709,7 +709,7 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
   }));
   const totalIncome = localOrders.reduce((sum, o) => sum + parseFloat(o.price || 0) * parseFloat(o.volume || 0), 0);
   const effectiveRate = manualNgnRate ? parseFloat(manualNgnRate) : ngnRate;
-  const totalNgn = effectiveRate ? totalIncome * effectiveRate : null;
+  const totalUsd = effectiveRate ? totalIncome / effectiveRate : null;
 
   const sortedOrds = [...localOrders].sort((a, b) => {
       let av: any, bv: any;
@@ -777,9 +777,9 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
     const income = price * volume;
     return (
       <div style={{ background: tooltipCfg.background, border: tooltipCfg.border, borderRadius: tooltipCfg.borderRadius, padding: "8px 12px", fontSize: 12, color: tooltipCfg.color || "#e2e8f0" }}>
-        <p style={{ marginBottom: 4 }}><span style={{ color: "#a78bfa", fontWeight: 600 }}>Price ($/KG):</span> {price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+        <p style={{ marginBottom: 4 }}><span style={{ color: "#a78bfa", fontWeight: 600 }}>Price (₦/KG):</span> {price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
         <p style={{ marginBottom: 4 }}><span style={{ color: "#38bdf8", fontWeight: 600 }}>Volume (kg):</span> {volume.toLocaleString()}</p>
-        <p><span style={{ color: "#34d399", fontWeight: 600 }}>Income:</span> ${income.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+        <p><span style={{ color: "#34d399", fontWeight: 600 }}>Income:</span> ₦{income.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
       </div>
     );
   };
@@ -790,7 +790,7 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
     return (
       <div style={{ background: tooltipCfg.background, border: tooltipCfg.border, borderRadius: tooltipCfg.borderRadius, padding: "8px 12px", fontSize: 12, color: tooltipCfg.color || "#e2e8f0" }}>
         <p style={{ marginBottom: 4 }}><span style={{ color: "#38bdf8", fontWeight: 600 }}>Volume:</span> {Number(d?.volume || 0).toLocaleString()} kg</p>
-        <p><span style={{ color: "#34d399", fontWeight: 600 }}>Price:</span> ${Number(d?.price || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/kg</p>
+        <p><span style={{ color: "#34d399", fontWeight: 600 }}>Price:</span> ₦{Number(d?.price || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/kg</p>
       </div>
     );
   };
@@ -798,7 +798,7 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
   const renderChart = (id: string, height: number) => {
     if (id === "revenue_trend") return (
       <ResponsiveContainer width="100%" height={height}>
-        <LineChart data={revenueByDate}><CartesianGrid strokeDasharray="3 3" stroke={gridStroke} /><XAxis dataKey="date" tick={{ fill: axisColor, fontSize: 10 }} /><YAxis tick={{ fill: axisColor, fontSize: 11 }} tickFormatter={v => `$${v}`} /><Tooltip contentStyle={tooltipCfg} formatter={(v: any) => [`$${Number(v).toLocaleString()}`, "Income"]} /><Line type="monotone" dataKey="income" stroke="#10b981" strokeWidth={2} dot={{ fill: "#10b981", r: 3 }} /></LineChart>
+        <LineChart data={revenueByDate}><CartesianGrid strokeDasharray="3 3" stroke={gridStroke} /><XAxis dataKey="date" tick={{ fill: axisColor, fontSize: 10 }} /><YAxis tick={{ fill: axisColor, fontSize: 11 }} tickFormatter={v => `₦${v}`} /><Tooltip contentStyle={tooltipCfg} formatter={(v: any) => [`₦${Number(v).toLocaleString()}`, "Income"]} /><Line type="monotone" dataKey="income" stroke="#10b981" strokeWidth={2} dot={{ fill: "#10b981", r: 3 }} /></LineChart>
       </ResponsiveContainer>
     );
     if (id === "lead_time") return (
@@ -809,7 +809,7 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
     if (id === "price_volume") return (
       <ResponsiveContainer width="100%" height={height}>
         <ScatterChart><CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
-          <XAxis dataKey="x" name="Price" tick={{ fill: axisColor, fontSize: 11 }} label={{ value: "Price ($/kg)", position: "insideBottom", fill: axisColor, fontSize: 11 }} />
+          <XAxis dataKey="x" name="Price" tick={{ fill: axisColor, fontSize: 11 }} label={{ value: "Price (₦/kg)", position: "insideBottom", fill: axisColor, fontSize: 11 }} />
           <YAxis dataKey="y" name="Volume" tick={{ fill: axisColor, fontSize: 11 }} />
           <ZAxis dataKey="z" range={[40, 400]} />
           <Tooltip content={<PriceVolumeTooltip />} cursor={{ strokeDasharray: "3 3" }} />
@@ -819,7 +819,7 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
     );
     if (id === "income_by_month") return (
       <ResponsiveContainer width="100%" height={height}>
-        <BarChart data={incomeByMonth}><CartesianGrid strokeDasharray="3 3" stroke={gridStroke} /><XAxis dataKey="month" tick={{ fill: axisColor, fontSize: 10 }} /><YAxis tick={{ fill: axisColor, fontSize: 11 }} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} /><Tooltip contentStyle={tooltipCfg} formatter={(v: any) => [`$${Number(v).toLocaleString()}`, "Income"]} /><Bar dataKey="income" fill="#06b6d4" radius={[4, 4, 0, 0]} /></BarChart>
+        <BarChart data={incomeByMonth}><CartesianGrid strokeDasharray="3 3" stroke={gridStroke} /><XAxis dataKey="month" tick={{ fill: axisColor, fontSize: 10 }} /><YAxis tick={{ fill: axisColor, fontSize: 11 }} tickFormatter={v => `₦${(v / 1000).toFixed(0)}k`} /><Tooltip contentStyle={tooltipCfg} formatter={(v: any) => [`₦${Number(v).toLocaleString()}`, "Income"]} /><Bar dataKey="income" fill="#06b6d4" radius={[4, 4, 0, 0]} /></BarChart>
       </ResponsiveContainer>
     );
     if (id === "order_frequency") return (
@@ -871,9 +871,9 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
           <div>
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Total Income</p>
             <p className="text-2xl font-bold text-emerald-400">
-              ${totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              ₦{totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
-            {totalNgn && <p className="text-sm text-amber-400 mt-0.5">≈ ₦{totalNgn.toLocaleString(undefined, { maximumFractionDigits: 0 })} NGN</p>}
+            {totalUsd && <p className="text-sm text-amber-400 mt-0.5">≈ ${totalUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })} USD</p>}
             {localOrders.length > 0 && <p className="text-xs text-muted-foreground mt-1">Across {localOrders.length} order{localOrders.length !== 1 ? "s" : ""}</p>}
           </div>
           <button onClick={() => setShowRateInput(r => !r)} className="text-xs text-primary hover:underline shrink-0">Set Rate</button>
@@ -996,7 +996,7 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
               <thead className="bg-white/5 border-b border-white/5">
                   <tr>
                     {[
-                      { col: "price", label: "Price ($/kg)" },
+                      { col: "price", label: "Price (₦/kg)" },
                       { col: "volume", label: "Volume (kg)" },
                       { col: "dateOrdered", label: "Date Ordered" },
                       { col: "expectedDeliveryDate", label: "Expected Delivery" },
@@ -1040,7 +1040,7 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
                         className="w-28 bg-transparent text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1 h-7 placeholder:text-muted-foreground/40" />
                     </td>
                     <td className="px-3 py-2 text-emerald-400 font-medium">
-                      ${(parseFloat(o.price || 0) * parseFloat(o.volume || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ₦{(parseFloat(o.price || 0) * parseFloat(o.volume || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                     <td className="px-3 py-2">
                       <button onClick={() => deleteRow(o.id)} className="p-1 hover:bg-red-500/10 rounded text-muted-foreground hover:text-red-400 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
@@ -1115,7 +1115,7 @@ function AccountInfoTab({ account, accountId }: { account: any; accountId: numbe
   const api = useApiCall();
   const { toast } = useToast();
   const { data: users = [] } = useListUsers();
-  const { fmtNGN } = useExchangeRate();
+  const { ngnRate } = useExchangeRate();
   const [manSearch, setManSearch] = useState("");
   const [form, setForm] = useState<any>(account);
   const [dirty, setDirty] = useState(false);
@@ -1151,16 +1151,16 @@ function AccountInfoTab({ account, accountId }: { account: any; accountId: numbe
           ["Company", "company", "text"], ["Product Name", "productName", "text"],
           ["Contact Person", "contactPerson", "text"], ["CP Phone", "cpPhone", "text"],
           ["CP Email", "cpEmail", "email"], ["Application", "application", "text"],
-          ["Target Price ($/kg)", "targetPrice", "number"], ["Volume (kg/month)", "volume", "number"],
-          ["Selling Price ($/kg)", "sellingPrice", "number"], ["Margin (%)", "margin", "text"],
+          ["Target Price (₦/kg)", "targetPrice", "number"], ["Volume (kg/month)", "volume", "number"],
+          ["Selling Price (₦/kg)", "sellingPrice", "number"], ["Margin (%)", "margin", "text"],
           ["Competitor Reference", "competitorReference", "text"],
         ].map(([label, key, type]) => (
           <div key={key}>
             <label className={lCls}>{label}</label>
             <input type={type} value={form[key] || ""} onChange={e => setF(key, e.target.value)} className={iCls}
               step={type === "number" ? "0.01" : undefined} />
-            {(key === "targetPrice" || key === "sellingPrice") && form[key] && (
-              <p className="text-xs text-emerald-400 mt-1">{fmtNGN(parseFloat(form[key]))}/kg</p>
+            {(key === "targetPrice" || key === "sellingPrice") && form[key] && ngnRate && (
+              <p className="text-xs text-emerald-400 mt-1">≈ ${(parseFloat(form[key]) / ngnRate).toFixed(2)} USD/kg</p>
             )}
           </div>
         ))}
@@ -1223,7 +1223,7 @@ function AccountInfoTab({ account, accountId }: { account: any; accountId: numbe
 function TasksInfoPanel({ account, accountId }: { account: any; accountId: number }) {
   const queryClient = useQueryClient();
   const api = useApiCall();
-  const { fmtNGN } = useExchangeRate();
+  const { ngnRate } = useExchangeRate();
   const { toast } = useToast();
   const [editing, setEditing] = useState<Record<string, string>>({});
   const [dirty, setDirty] = useState(false);
@@ -1265,8 +1265,8 @@ function TasksInfoPanel({ account, accountId }: { account: any; accountId: numbe
         {[
           ["Account Manager(s)", null],
           ["Customer Type", "customerType"],
-          ["Target Price ($/kg)", "targetPrice"],
-          ["Selling Price ($/kg)", "sellingPrice"],
+          ["Target Price (₦/kg)", "targetPrice"],
+          ["Selling Price (₦/kg)", "sellingPrice"],
           ["Margin (%)", "margin"],
         ].map(([l, k]) => (
           <div key={String(l)} className="glass-card rounded-xl px-3 py-2.5 border border-white/5">
@@ -1279,8 +1279,8 @@ function TasksInfoPanel({ account, accountId }: { account: any; accountId: numbe
                   type={k === "targetPrice" || k === "sellingPrice" ? "number" : "text"}
                   step={k === "targetPrice" || k === "sellingPrice" ? "0.01" : undefined}
                   className="w-full bg-transparent text-sm text-foreground focus:outline-none mt-0.5" />
-                {(k === "targetPrice" || k === "sellingPrice") && merged?.[k] && (
-                  <p className="text-[10px] text-emerald-400">{fmtNGN(parseFloat(merged[k]))}/kg</p>
+                {(k === "targetPrice" || k === "sellingPrice") && merged?.[k] && ngnRate && (
+                  <p className="text-[10px] text-emerald-400">≈ ${(parseFloat(merged[k]) / ngnRate).toFixed(2)} USD/kg</p>
                 )}
               </div>
             )}

@@ -86,14 +86,14 @@ const ProjectCard = memo(function ProjectCard({ project, onDelete, onDateChange 
             <div className="mb-3 p-2 rounded-lg bg-black/20 border border-white/5">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Selling Price</span>
-                <span className="text-xs font-semibold text-green-400">${sp.toLocaleString()}</span>
+                <span className="text-xs font-semibold text-green-400">₦{sp.toLocaleString()}</span>
               </div>
               {revenue && (
                 <div className="flex items-center justify-between mt-1">
                   <span className="text-[10px] text-muted-foreground uppercase tracking-wide flex items-center gap-1">
                     <TrendingUp className="w-2.5 h-2.5" /> Revenue/mo
                   </span>
-                  <span className="text-xs font-bold text-violet-400">${revenue.toLocaleString()}</span>
+                  <span className="text-xs font-bold text-violet-400">₦{revenue.toLocaleString()}</span>
                 </div>
               )}
             </div>
