@@ -100,6 +100,7 @@ function InlineEdit({ value, onSave, type = "text", options, placeholder, icon, 
 
 const CURRENCY_OPTIONS = [
   { code: "NGN", label: "Nigerian Naira", flag: "🇳🇬" },
+  { code: "USD", label: "US Dollar", flag: "🇺🇸" },
   { code: "ZAR", label: "South African Rand", flag: "🇿🇦" },
   { code: "GBP", label: "British Pound", flag: "🇬🇧" },
   { code: "EUR", label: "Euro", flag: "🇪🇺" },
