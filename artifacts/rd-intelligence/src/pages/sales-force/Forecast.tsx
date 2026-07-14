@@ -758,7 +758,7 @@ function ExpandedChartModal({
 }
 
 export default function SalesForecastPage() {
-  const { fmtNGN } = useExchangeRate();
+  const { ngnRate } = useExchangeRate();
   const qc = useQueryClient();
 
   const [companyFilter, setCompanyFilter] = useState("all");
@@ -943,7 +943,7 @@ export default function SalesForecastPage() {
       {/* ── Row 1: Existing KPI Cards ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard icon={TrendingUp} label="Active Accounts" value={activeAcc.length.toString()} sub="generating revenue" color="bg-primary" />
-        <StatCard icon={DollarSign} label="Monthly Revenue (USD)" value={`$${(totalMonthlyRevenue / 1000).toFixed(1)}k`} sub={fmtNGN(totalMonthlyRevenue)} color="bg-emerald-600" />
+        <StatCard icon={DollarSign} label="Monthly Revenue (₦)" value={`₦${(totalMonthlyRevenue / 1000).toFixed(1)}k`} sub={ngnRate ? `≈ $${(totalMonthlyRevenue / ngnRate).toLocaleString(undefined, { maximumFractionDigits: 0 })} USD` : ""} color="bg-emerald-600" />
         <StatCard icon={Package} label="Total Volume" value={`${(totalVolume / 1000).toFixed(1)}t`} sub="kg/month across accounts" color="bg-blue-600" />
       </div>
 

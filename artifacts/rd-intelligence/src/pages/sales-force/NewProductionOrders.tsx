@@ -268,12 +268,12 @@ function ChartTooltip({ active, payload }: any) {
   if (!active || !payload?.length) return null;
   const item = payload[0];
   return (
-    <div className="rounded-xl p-3 border border-white/20 bg-black/80 backdrop-blur-sm text-xs shadow-xl">
-      <p className="font-semibold text-foreground mb-1">{item.name}</p>
+    <div className="rounded-xl p-3 border text-xs shadow-xl backdrop-blur-sm bg-white border-slate-200 text-gray-900 dark:bg-black/80 dark:border-white/20 dark:text-slate-200">
+      <p className="font-semibold mb-1">{item.name}</p>
       <p className="text-emerald-400">
-        Income: ${Number(item.value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        Income: ₦{Number(item.value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
       </p>
-      <p className="text-muted-foreground">{item.payload.percentage?.toFixed(1)}% of total</p>
+      <p className="text-gray-500 dark:text-slate-400">{item.payload.percentage?.toFixed(1)}% of total</p>
     </div>
   );
 }
@@ -361,7 +361,7 @@ function LeadingProductTypeChart({
         <div className="glass-card rounded-xl p-3 border border-white/5">
           <p className="text-[10px] uppercase tracking-widest text-muted-foreground leading-tight">Total Income</p>
           <p className="mt-1 text-sm font-bold text-foreground truncate">
-            ${totalIncome.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+            ₦{totalIncome.toLocaleString(undefined, { maximumFractionDigits: 0 })}
           </p>
         </div>
         <div className="glass-card rounded-xl p-3 border border-white/5">
@@ -681,12 +681,12 @@ export default function NewProductionOrdersPage() {
     const data = filteredOrders.map(order => ({
       "Account": order.accountCompany,
       "Product": order.productName,
-      "Price ($/kg)": order.price,
+      "Price (₦/kg)": order.price,
       "Volume (kg)": order.volume,
       "Date Ordered": order.dateOrdered,
       "Expected Delivery": order.expectedDeliveryDate || "",
       "Date Delivered": order.dateDelivered || "",
-      "Income ($)": (Number(order.price || 0) * Number(order.volume || 0)).toFixed(2),
+      "Income (₦)": (Number(order.price || 0) * Number(order.volume || 0)).toFixed(2),
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
@@ -756,7 +756,7 @@ export default function NewProductionOrdersPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-2 block">Price ($/kg)</label>
+                  <label className="text-xs font-medium text-muted-foreground mb-2 block">Price (₦/kg)</label>
                   <input
                     value={form.price}
                     onChange={e => setForm(f => ({ ...f, price: e.target.value }))}
@@ -830,15 +830,15 @@ export default function NewProductionOrdersPage() {
                   <Pencil className="w-3 h-3" />
                 </button>
               </div>
-              <p className="mt-2 text-2xl font-bold text-foreground">
-                ${totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              <p className="mt-2 text-xl font-bold text-foreground truncate">
+                ₦{totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
               <p className={cn(
                 "mt-1 text-xs",
                 exchange.ngnRate ? (isLight ? "text-emerald-600" : "text-emerald-400") : "text-muted-foreground italic",
               )}>
                 {exchange.ngnRate
-                  ? `≈ ${exchange.fmtNGN(totalIncome)}`
+                  ? `≈ $${(totalIncome / exchange.ngnRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`
                   : "Set Naira rate to convert"}
               </p>
               {exchange.ngnRate && (
@@ -1149,14 +1149,14 @@ export default function NewProductionOrdersPage() {
                         : "—"}
                     </td>
                     <td className="px-4 py-3">
-                      ${Number(order.price || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ₦{Number(order.price || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                     <td className="px-4 py-3">{Number(order.volume || 0).toLocaleString()}</td>
                     <td className="px-4 py-3">{order.dateOrdered || "—"}</td>
                     <td className="px-4 py-3">{order.expectedDeliveryDate || "—"}</td>
                     <td className="px-4 py-3">{order.dateDelivered || "—"}</td>
                     <td className="px-4 py-3 text-emerald-400">
-                      ${(Number(order.price || 0) * Number(order.volume || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ₦{(Number(order.price || 0) * Number(order.volume || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex items-center gap-1">
@@ -1225,7 +1225,7 @@ export default function NewProductionOrdersPage() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-2 block">Price ($/kg)</label>
+                  <label className="text-xs font-medium text-muted-foreground mb-2 block">Price (₦/kg)</label>
                   <input
                     value={editForm.price}
                     onChange={e => setEditForm(f => ({ ...f, price: e.target.value }))}
