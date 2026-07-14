@@ -189,7 +189,11 @@ function CostTargetField({ value, onSave, isLight }: { value: string; onSave: (v
   const [val, setVal] = useState(value);
   const [displayVal, setDisplayVal] = useState(value);
   const [targetCurrency, setTargetCurrency] = useState(() => {
-    try { return localStorage.getItem("rd_cost_currency") || "USD"; } catch { return "USD"; }
+    try {
+      const stored = localStorage.getItem("rd_cost_currency");
+      // If stored value is NGN (old default), treat as unset — base is now ₦ so NGN→NGN is meaningless
+      return (stored && stored !== "NGN") ? stored : "USD";
+    } catch { return "USD"; }
   });
   const [showOverride, setShowOverride] = useState(false);
   const [overrideInput, setOverrideInput] = useState("");
@@ -224,7 +228,7 @@ function CostTargetField({ value, onSave, isLight }: { value: string; onSave: (v
   return (
     <div className={cn("glass-card rounded-xl p-4 group/field relative", isLight ? "bg-white border border-gray-200" : "")}>
       <div className={cn("flex items-center gap-2 mb-1.5 text-xs uppercase tracking-wide font-medium", isLight ? "text-gray-600" : "text-muted-foreground")}>
-        <DollarSign className="w-3.5 h-3.5" /> Cost Target (₦)
+        Cost Target (₦)
       </div>
       {editing ? (
         <div className="space-y-2">
