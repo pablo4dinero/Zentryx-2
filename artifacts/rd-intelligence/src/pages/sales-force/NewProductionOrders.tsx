@@ -264,16 +264,21 @@ function AccountSearchSelect({
   );
 }
 
-function ChartTooltip({ active, payload }: any) {
+function ChartTooltip({ active, payload, isLight }: any) {
   if (!active || !payload?.length) return null;
   const item = payload[0];
   return (
-    <div className="rounded-xl p-3 border text-xs shadow-xl backdrop-blur-sm bg-white border-slate-200 text-gray-900 dark:bg-black/80 dark:border-white/20 dark:text-slate-200">
+    <div className={cn(
+      "rounded-xl p-3 border text-xs shadow-xl backdrop-blur-sm",
+      isLight
+        ? "bg-white border-slate-200 text-gray-900"
+        : "bg-black/80 border-white/20 text-slate-200",
+    )}>
       <p className="font-semibold mb-1">{item.name}</p>
       <p className="text-emerald-400">
         Income: ₦{Number(item.value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
       </p>
-      <p className="text-gray-500 dark:text-slate-400">{item.payload.percentage?.toFixed(1)}% of total</p>
+      <p className={isLight ? "text-gray-500" : "text-slate-400"}>{item.payload.percentage?.toFixed(1)}% of total</p>
     </div>
   );
 }
@@ -395,7 +400,7 @@ function LeadingProductTypeChart({
                   <Cell key={entry.key} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
                 ))}
               </Pie>
-              <Tooltip content={<ChartTooltip />} />
+              <Tooltip content={<ChartTooltip isLight={isChartLight} />} />
               <Legend
                 formatter={(value) => (
                   <span className="text-xs text-muted-foreground">{value}</span>
