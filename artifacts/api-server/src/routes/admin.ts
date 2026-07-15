@@ -13,6 +13,15 @@ import {
   adminMessageRecipientsTable,
   featureFlagsTable,
   featureFlagHistoryTable,
+  projectCommentsTable,
+  tasksTable,
+  formulationsTable,
+  businessDevTable,
+  eventsTable,
+  chatRoomsTable,
+  chatRoomMembersTable,
+  chatMessagesTable,
+  chatReadReceiptsTable,
 } from "@workspace/db";
 import { desc, eq, gte, and, sql, isNull, inArray } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../lib/auth";
@@ -159,10 +168,8 @@ router.patch("/users/:id", async (req: AuthRequest, res) => {
   }
 });
 
-// DELETE /users/:id — permanently erase a user and all their data.
-// Only hard-deletes accounts that are already soft-deleted (name contains
-// "(deleted)" or email matches the deleted-N-timestamp pattern) to prevent
-// accidental erasure of active users.
+// DELETE /users/:id — permanently erase a soft-deleted user and all their data.
+// Clears FK references in every dependent table before removing the user row.
 router.delete("/users/:id", async (req: AuthRequest, res) => {
   try {
     const id = parseInt(String(req.params.id));
@@ -176,6 +183,24 @@ router.delete("/users/:id", async (req: AuthRequest, res) => {
       res.status(403).json({ error: "Forbidden", message: "Only soft-deleted accounts can be permanently erased." });
       return;
     }
+
+    // Clear / remove all FK references before deleting the user row.
+    // Tables with onDelete: cascade/set null handle themselves automatically.
+    await Promise.all([
+      // Nullable FK → set null
+      db.update(tasksTable).set({ assigneeId: null }).where(eq(tasksTable.assigneeId, id)),
+      db.update(projectsTable).set({ leadId: null }).where(eq(projectsTable.leadId, id)),
+      db.update(chatRoomsTable).set({ createdById: null }).where(eq(chatRoomsTable.createdById, id)),
+      db.update(chatMessagesTable).set({ senderId: null as any }).where(eq(chatMessagesTable.senderId, id)),
+      db.update(formulationsTable).set({ createdById: null }).where(eq(formulationsTable.createdById, id)),
+      db.update(businessDevTable).set({ leadId: null }).where(eq(businessDevTable.leadId, id)),
+      db.update(eventsTable).set({ createdById: null }).where(eq(eventsTable.createdById, id)),
+      // notNull FK → delete the rows
+      db.delete(projectCommentsTable).where(eq(projectCommentsTable.authorId, id)),
+      db.delete(chatRoomMembersTable).where(eq(chatRoomMembersTable.userId, id)),
+      db.delete(chatReadReceiptsTable).where(eq(chatReadReceiptsTable.userId, id)),
+    ]);
+
     await db.delete(usersTable).where(eq(usersTable.id, id));
     res.json({ ok: true, deleted: id });
   } catch (err) {
