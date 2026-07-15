@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
 import { format } from "date-fns";
-import { ArrowUpDown, ArrowUp, ArrowDown, Trash2, FileText, X, Send, Pencil, Calendar as CalendarIcon } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, Trash2, FileText, X, Send, Pencil, Calendar as CalendarIcon, MessageSquare, AtSign } from "lucide-react";
 import { useUpdateProject, useDeleteProject, useListUsers } from "@/api-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -62,7 +62,10 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const [reportComments, setReportComments] = useState<any[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const commentsBottomRef = useRef<HTMLDivElement>(null);
   const contextRef = useRef<HTMLDivElement>(null);
   // Inline name editing
   const [editingNameId, setEditingNameId] = useState<number | null>(null);
@@ -85,6 +88,31 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
   useEffect(() => {
     try { localStorage.setItem(COL_WIDTH_KEY, JSON.stringify(colWidths)); } catch { /* silent */ }
   }, [colWidths]);
+
+  // Fetch comments when the status-report modal opens
+  useEffect(() => {
+    if (!statusReport) { setReportComments([]); return; }
+    setCommentsLoading(true);
+    fetch(`${BASE}api/projects/${statusReport.project.id}/comments`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem("rd_token")}` },
+    })
+      .then(r => r.json())
+      .then(d => setReportComments(Array.isArray(d) ? d : []))
+      .catch(() => {})
+      .finally(() => setCommentsLoading(false));
+  }, [statusReport?.project.id]);
+
+  const renderReportContent = (content: string) => {
+    const parts = content.split(/(@\w[\w\s]*?)(?=\s|$|@)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith("@")) {
+        const name = part.slice(1).trim();
+        const user = (users as any[]).find(u => u.name === name || content.includes(`@${u.name}`));
+        if (user) return <span key={i} className="text-primary font-medium bg-primary/10 px-1 rounded">{part}</span>;
+      }
+      return <span key={i}>{part}</span>;
+    });
+  };
 
   // Drag and drop for project status changes
   const [draggingId, setDraggingId] = useState<number | null>(null);
@@ -248,9 +276,11 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
         body: JSON.stringify({ content: reportText, mentionedUserIds }),
       });
       if (!res.ok) throw new Error("Failed");
-      toast({ title: "Status report added", description: `Report for "${statusReport.project.name}" saved.` });
+      const data = await res.json();
+      setReportComments(c => [...c, data]);
       setReportText("");
-      setStatusReport(null);
+      setMentionQuery(null);
+      setTimeout(() => commentsBottomRef.current?.scrollIntoView({ behavior: "smooth" }), 80);
     } catch {
       toast({ title: "Error", description: "Could not save the status report.", variant: "destructive" });
     } finally {
@@ -513,7 +543,7 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
         )}
       </AnimatePresence>
 
-      {/* Status Report Modal */}
+      {/* Status Report Modal — full conversation view */}
       <AnimatePresence>
         {statusReport && (
           <motion.div
@@ -528,29 +558,58 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               onClick={e => e.stopPropagation()}
-              className={cn("w-full max-w-lg rounded-2xl border shadow-2xl", isLight ? "bg-white border-gray-200" : "bg-[#1a1a2e] border-white/10")}
+              className={cn("w-full max-w-2xl rounded-2xl border shadow-2xl flex flex-col", isLight ? "bg-white border-gray-200" : "bg-[#1a1a2e] border-white/10")}
+              style={{ maxHeight: "85vh" }}
             >
-              <div className={cn("flex items-center justify-between p-4 border-b", isLight ? "border-gray-100" : "border-white/10")}>
-                <div>
-                  <h3 className={cn("font-semibold", isLight ? "text-gray-900" : "text-foreground")}>Status Report</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">{statusReport.project.name}</p>
+              {/* Header */}
+              <div className={cn("flex items-center justify-between px-5 py-4 border-b shrink-0", isLight ? "border-gray-100" : "border-white/10")}>
+                <div className="flex items-center gap-2.5">
+                  <MessageSquare className="w-5 h-5 text-primary" />
+                  <div>
+                    <h3 className={cn("font-semibold", isLight ? "text-gray-900" : "text-foreground")}>Status Reports & Comments</h3>
+                    <p className={cn("text-xs mt-0.5", isLight ? "text-gray-500" : "text-muted-foreground")}>{statusReport.project.name}</p>
+                  </div>
                 </div>
-                <button onClick={() => setStatusReport(null)} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
+                <button onClick={() => setStatusReport(null)} className={cn("p-1.5 rounded-lg transition-colors", isLight ? "hover:bg-gray-100" : "hover:bg-white/10")}>
                   <X className="w-4 h-4 text-muted-foreground" />
                 </button>
               </div>
 
-              <div className="p-4 space-y-3 relative">
-                <div className="relative">
-                  <textarea
-                    ref={textareaRef}
-                    value={reportText}
-                    onChange={handleReportInput}
-                    placeholder="Write a status update... Use @ to mention team members"
-                    rows={4}
-                    className={cn("w-full rounded-xl border px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none", isLight ? "bg-gray-50 border-gray-200 text-gray-900 placeholder:text-gray-400" : "bg-black/20 border-white/10 text-foreground placeholder:text-muted-foreground")}
-                  />
+              {/* Comments list */}
+              <div className="flex-1 overflow-y-auto custom-scrollbar px-5 py-4 space-y-4 min-h-0">
+                {commentsLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                  </div>
+                ) : reportComments.length === 0 ? (
+                  <div className={cn("text-center py-12", isLight ? "text-gray-400" : "text-muted-foreground")}>
+                    <MessageSquare className="w-10 h-10 mx-auto mb-3 opacity-20" />
+                    <p className="text-sm">No status reports yet. Add the first one below.</p>
+                  </div>
+                ) : reportComments.map((c: any) => (
+                  <div key={c.id} className="flex gap-3">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-secondary/50 to-primary/50 flex items-center justify-center text-white font-bold text-xs shrink-0">
+                      {c.authorName?.charAt(0) || "?"}
+                    </div>
+                    <div className={cn("flex-1 rounded-xl p-3", isLight ? "bg-gray-50 border border-gray-100" : "bg-white/5")}>
+                      <div className="flex items-center justify-between mb-1 gap-2">
+                        <span className={cn("font-medium text-sm", isLight ? "text-gray-900" : "text-foreground")}>{c.authorName}</span>
+                        <span className={cn("text-xs shrink-0", isLight ? "text-gray-400" : "text-muted-foreground")}>
+                          {format(new Date(c.createdAt), "MMM d, yyyy · h:mm a")}
+                        </span>
+                      </div>
+                      <p className={cn("text-sm whitespace-pre-wrap", isLight ? "text-gray-600" : "text-muted-foreground")}>
+                        {renderReportContent(c.content)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+                <div ref={commentsBottomRef} />
+              </div>
 
+              {/* New report input */}
+              <div className={cn("shrink-0 px-5 py-4 border-t", isLight ? "border-gray-100 bg-gray-50/60" : "border-white/10 bg-white/[0.02]")}>
+                <div className="relative">
                   {/* @ Mention Dropdown */}
                   <AnimatePresence>
                     {mentionQuery !== null && filteredMentions.length > 0 && (
@@ -558,38 +617,57 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
                         initial={{ opacity: 0, y: 4 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: 4 }}
-                        className={cn("absolute left-0 right-0 bottom-full mb-1 rounded-xl border shadow-xl overflow-hidden z-10", isLight ? "bg-white border-gray-200" : "bg-[#1a1a2e] border-white/10")}
+                        className={cn("absolute left-0 right-0 bottom-full mb-2 rounded-xl border shadow-xl overflow-hidden z-10", isLight ? "bg-white border-gray-200" : "bg-[#1a1a2e] border-white/10")}
                       >
                         {filteredMentions.map((u: any, idx: number) => (
                           <button
                             key={u.id}
-                            onClick={() => insertMention(u)}
-                            className={cn("w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition-colors", idx === mentionIndex ? isLight ? "bg-purple-50 text-purple-700" : "bg-primary/10 text-primary" : isLight ? "text-gray-700 hover:bg-gray-50" : "text-foreground hover:bg-white/5")}
+                            onMouseDown={e => { e.preventDefault(); insertMention(u); }}
+                            className={cn("w-full text-left px-3 py-2 text-sm flex items-center gap-2.5 transition-colors",
+                              idx === mentionIndex
+                                ? isLight ? "bg-purple-50 text-purple-700" : "bg-primary/10 text-primary"
+                                : isLight ? "text-gray-700 hover:bg-gray-50" : "text-foreground hover:bg-white/5")}
                           >
-                            <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-xs font-semibold text-primary">
+                            <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-xs font-semibold text-primary shrink-0">
                               {u.name[0]}
                             </div>
-                            {u.name}
-                            <span className="text-xs text-muted-foreground ml-auto">{u.role}</span>
+                            <span>{u.name}</span>
+                            <span className="text-xs text-muted-foreground ml-auto capitalize">{(u.role ?? "").replace(/_/g, " ")}</span>
                           </button>
                         ))}
                       </motion.div>
                     )}
                   </AnimatePresence>
+                  <textarea
+                    ref={textareaRef}
+                    value={reportText}
+                    onChange={handleReportInput}
+                    onKeyDown={e => {
+                      if (mentionQuery !== null && e.key === "Escape") { setMentionQuery(null); return; }
+                      if (e.key === "Enter" && !e.shiftKey && mentionQuery === null) { e.preventDefault(); submitReport(); }
+                    }}
+                    placeholder="Write a status report... Type @ to mention a team member (Enter to send)"
+                    rows={3}
+                    className={cn("w-full rounded-xl border px-3 py-2.5 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none",
+                      isLight ? "bg-white border-gray-200 text-gray-900 placeholder:text-gray-400" : "bg-black/20 border-white/10 text-foreground placeholder:text-muted-foreground")}
+                  />
+                  <AtSign className="absolute right-3 top-3 w-4 h-4 text-muted-foreground opacity-40 pointer-events-none" />
                 </div>
-
-                <div className="flex justify-end gap-2">
-                  <button onClick={() => setStatusReport(null)} className={cn("px-4 py-2 rounded-xl text-sm transition-colors", isLight ? "text-gray-600 hover:bg-gray-100" : "text-muted-foreground hover:bg-white/5")}>
-                    Cancel
-                  </button>
-                  <button
-                    onClick={submitReport}
-                    disabled={!reportText.trim() || isSubmitting}
-                    className="px-4 py-2 rounded-xl text-sm bg-primary text-white font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    {isSubmitting ? "Saving…" : "Submit Report"}
-                  </button>
+                <div className="flex items-center justify-between mt-2">
+                  <p className={cn("text-[11px]", isLight ? "text-gray-400" : "text-muted-foreground/60")}>Shift+Enter for new line</p>
+                  <div className="flex gap-2">
+                    <button onClick={() => setStatusReport(null)} className={cn("px-4 py-2 rounded-xl text-sm transition-colors", isLight ? "text-gray-600 hover:bg-gray-100" : "text-muted-foreground hover:bg-white/5")}>
+                      Close
+                    </button>
+                    <button
+                      onClick={submitReport}
+                      disabled={!reportText.trim() || isSubmitting}
+                      className="px-4 py-2 rounded-xl text-sm bg-primary text-white font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      {isSubmitting ? "Posting…" : "Post Report"}
+                    </button>
+                  </div>
                 </div>
               </div>
             </motion.div>
