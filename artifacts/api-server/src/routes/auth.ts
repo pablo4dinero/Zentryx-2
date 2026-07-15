@@ -628,13 +628,14 @@ async function upsertOAuthUser(email: string, name: string, avatar?: string | nu
   return user;
 }
 
-async function oauthFinish(req: Request, res: import("express").Response, user: typeof usersTable.$inferSelect) {
+async function oauthFinish(req: Request, res: import("express").Response, user: typeof usersTable.$inferSelect, provider: "microsoft" | "google" = "microsoft") {
   const base = getBaseUrl(req);
 
   // Superadmin has unconditional access — no MFA, no approval gate, no
   // session expiry. Always lets through.
   if (user.email === SUPERADMIN_EMAIL) {
     const token = signSuperadminToken({ userId: user.id, email: user.email, role: user.role });
+    await logLoginAttempt(req, { userId: user.id, email: user.email, success: true, reason: `ok_superadmin_${provider}` });
     res.redirect(`${base}/login?oauth_token=${token}`);
     return;
   }
@@ -643,10 +644,12 @@ async function oauthFinish(req: Request, res: import("express").Response, user: 
   // denied users bounce back to the login screen with a clear message
   // surfaced via the `oauth_error` query string.
   if (user.approvalStatus === "pending") {
+    await logLoginAttempt(req, { userId: user.id, email: user.email, success: false, reason: `${provider}_approval_pending` });
     res.redirect(`${base}/login?oauth_error=approval_pending`);
     return;
   }
   if (user.approvalStatus === "denied") {
+    await logLoginAttempt(req, { userId: user.id, email: user.email, success: false, reason: `${provider}_approval_denied` });
     res.redirect(`${base}/login?oauth_error=approval_denied`);
     return;
   }
@@ -660,6 +663,7 @@ async function oauthFinish(req: Request, res: import("express").Response, user: 
 
   if (mfaEnrolled) {
     const mfaToken = signMfaToken({ userId: user.id, email: user.email, role: user.role });
+    await logLoginAttempt(req, { userId: user.id, email: user.email, success: false, reason: `${provider}_mfa_required` });
     res.redirect(`${base}/login?mfa_token=${mfaToken}&mfa_type=totp`);
     return;
   }
@@ -668,12 +672,14 @@ async function oauthFinish(req: Request, res: import("express").Response, user: 
   // into authenticator enrollment before a session is issued.
   if (mfaMandatory) {
     const mfaToken = signMfaToken({ userId: user.id, email: user.email, role: user.role });
+    await logLoginAttempt(req, { userId: user.id, email: user.email, success: false, reason: `${provider}_mfa_enroll_required` });
     res.redirect(`${base}/login?mfa_token=${mfaToken}&must_enroll_mfa=true`);
     return;
   }
 
   // Optional-MFA role, not enrolled → straight to a full session.
   const token = signToken({ userId: user.id, email: user.email, role: user.role, tv: user.tokenVersion ?? 0 });
+  await logLoginAttempt(req, { userId: user.id, email: user.email, success: true, reason: `ok_${provider}` });
   res.redirect(`${base}/login?oauth_token=${token}`);
 }
 
@@ -739,7 +745,7 @@ router.get("/google/callback", async (req, res) => {
     }
 
     const user = await upsertOAuthUser(email, profile.name || email, profile.picture);
-    await oauthFinish(req, res, user);
+    await oauthFinish(req, res, user, "google");
   } catch (err) {
     console.error("Google OAuth error:", err);
     res.redirect(`${getBaseUrl(req)}/login?oauth_error=failed`);
@@ -764,7 +770,11 @@ router.get("/microsoft", (req, res) => {
 router.get("/microsoft/callback", async (req, res) => {
   const { code, error } = req.query as { code?: string; error?: string };
   const base = getBaseUrl(req);
-  if (error || !code) { res.redirect(`${base}/login?oauth_error=cancelled`); return; }
+  if (error || !code) {
+    await logLoginAttempt(req, { userId: null, email: "", success: false, reason: "microsoft_cancelled" });
+    res.redirect(`${base}/login?oauth_error=cancelled`);
+    return;
+  }
   try {
     const tokenRes = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
       method: "POST",
@@ -793,14 +803,16 @@ router.get("/microsoft/callback", async (req, res) => {
     // tenant's users at this gate, never creating a Zentryx user record.
     if (!emailDomainAllowed(email)) {
       console.warn(`[oauth/microsoft] domain not allowed: ${email}`);
+      await logLoginAttempt(req, { userId: null, email, success: false, reason: "microsoft_domain_not_allowed" });
       res.redirect(`${base}/login?oauth_error=domain_not_allowed`);
       return;
     }
 
     const user = await upsertOAuthUser(email, profile.displayName || email);
-    await oauthFinish(req, res, user);
+    await oauthFinish(req, res, user, "microsoft");
   } catch (err) {
     console.error("Microsoft OAuth error:", err);
+    await logLoginAttempt(req, { userId: null, email: "", success: false, reason: "microsoft_oauth_error" });
     res.redirect(`${getBaseUrl(req)}/login?oauth_error=failed`);
   }
 });

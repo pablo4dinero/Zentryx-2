@@ -15,6 +15,12 @@ import { cn } from "@/lib/utils";
 import { roleLabel, useServerRoles, createCustomRole, ZENTRYX_MODULES, getEffectiveAllowedPaths, setRoleModules, renameRole } from "@/lib/roles";
 import { BASE, apiHeaders, apiGet, apiPatch, apiPost, apiDelete } from "../lib/api";
 
+const isDeletedAccount = (u: any) =>
+  (u.name ?? "").toLowerCase().includes("(deleted)") ||
+  (u.email ?? "").toLowerCase().startsWith("deleted-") ||
+  (u.email ?? "").toLowerCase().includes("@deleted.invalid") ||
+  (u.email ?? "").toLowerCase().includes("@delete");
+
 export function ApprovalsTab({ isLight }: { isLight: boolean }) {
   const [subTab, setSubTab] = useState<"exports" | "access" | "new-users">("new-users");
   const [exports, setExports] = useState<any[]>([]);
@@ -23,6 +29,10 @@ export function ApprovalsTab({ isLight }: { isLight: boolean }) {
   const [loading, setLoading] = useState(false);
   const [denyTargetId, setDenyTargetId] = useState<number | null>(null);
   const [denyReason, setDenyReason] = useState("");
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const pendingUsers = newUsers.filter(u => !isDeletedAccount(u));
+  const deletedUsers = newUsers.filter(u => isDeletedAccount(u));
 
   const load = async () => {
     setLoading(true);
@@ -44,6 +54,14 @@ export function ApprovalsTab({ isLight }: { isLight: boolean }) {
     setDenyTargetId(null);
     setDenyReason("");
     await load();
+  };
+  const permanentlyDelete = async (id: number) => {
+    if (!confirm("Permanently delete this account? This cannot be undone.")) return;
+    setDeletingId(id);
+    try {
+      await apiDelete(`/admin/users/${id}`);
+      setNewUsers(prev => prev.filter(u => u.id !== id));
+    } finally { setDeletingId(null); }
   };
 
   const statusBadge = (s: string) => {
@@ -77,69 +95,99 @@ export function ApprovalsTab({ isLight }: { isLight: boolean }) {
       </div>
 
       {subTab === "new-users" && (
-        <div className={cn("glass-card rounded-2xl border overflow-hidden", isLight ? "border-slate-200 bg-white" : "border-white/5")}>
-          {loading && <div className="p-6 text-center text-sm text-muted-foreground">Loading…</div>}
-          {!loading && newUsers.length === 0 && (
-            <div className="p-8 text-center">
-              <UserCheck className={cn("w-8 h-8 mx-auto mb-2", isLight ? "text-slate-300" : "text-muted-foreground/40")} />
-              <p className={cn("text-sm", isLight ? "text-slate-500" : "text-muted-foreground")}>No new users awaiting approval.</p>
+        <div className="space-y-6">
+          {loading && <div className={cn("glass-card rounded-2xl border p-6 text-center text-sm", isLight ? "border-slate-200 bg-white" : "border-white/5")}><span className="text-muted-foreground">Loading…</span></div>}
+
+          {/* ── Pending Approval ── */}
+          {!loading && (
+            <div className={cn("glass-card rounded-2xl border overflow-hidden", isLight ? "border-slate-200 bg-white" : "border-white/5")}>
+              <div className={cn("flex items-center gap-2 px-4 py-3 border-b", isLight ? "border-slate-100 bg-slate-50" : "border-white/5 bg-white/[0.02]")}>
+                <UserCheck className="w-4 h-4 text-primary" />
+                <p className={cn("text-xs font-semibold uppercase tracking-wider", isLight ? "text-slate-600" : "text-muted-foreground")}>
+                  Pending Approval <span className="ml-1 px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-bold">{pendingUsers.length}</span>
+                </p>
+              </div>
+              {pendingUsers.length === 0 ? (
+                <div className="p-8 text-center">
+                  <UserCheck className={cn("w-8 h-8 mx-auto mb-2", isLight ? "text-slate-300" : "text-muted-foreground/40")} />
+                  <p className={cn("text-sm", isLight ? "text-slate-500" : "text-muted-foreground")}>No new users awaiting approval.</p>
+                </div>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {pendingUsers.map((u) => (
+                    <li key={u.id} className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className={cn("w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shrink-0", isLight ? "bg-primary/10 text-primary" : "bg-primary/20 text-primary")}>
+                          {(u.name || "?").charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={cn("font-semibold text-sm truncate", isLight ? "text-slate-900" : "text-foreground")}>{u.name}</p>
+                          <p className={cn("text-xs truncate", isLight ? "text-slate-500" : "text-muted-foreground")}>{u.email}</p>
+                          <p className={cn("text-[10px] mt-0.5", isLight ? "text-slate-400" : "text-muted-foreground/70")}>
+                            Requested {new Date(u.createdAt).toLocaleString()}
+                            {u.phone ? ` · ☎ ${u.phone}` : ""}
+                          </p>
+                        </div>
+                        <button onClick={() => approveNewUser(u.id)} className="px-3 py-1.5 rounded-lg bg-emerald-500 text-white text-xs font-semibold hover:bg-emerald-600 transition-colors">Approve</button>
+                        <button onClick={() => { setDenyTargetId(u.id); setDenyReason(""); }} className={cn("px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors", isLight ? "border border-slate-200 text-slate-600 hover:bg-slate-100" : "border border-white/10 text-muted-foreground hover:bg-white/5")}>Deny</button>
+                      </div>
+                      {denyTargetId === u.id && (
+                        <div className={cn("mt-3 rounded-lg border p-3 space-y-2", isLight ? "border-rose-200 bg-rose-50" : "border-rose-500/30 bg-rose-500/5")}>
+                          <p className={cn("text-xs font-semibold", isLight ? "text-rose-800" : "text-rose-300")}>Why are you denying access?</p>
+                          <input autoFocus value={denyReason} onChange={(e) => setDenyReason(e.target.value)} placeholder="e.g. external email, not an employee"
+                            className={cn("w-full h-9 rounded-lg border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/40", isLight ? "bg-white border-rose-200 text-slate-900" : "bg-black/20 border-rose-500/30 text-foreground")} />
+                          <div className="flex justify-end gap-2">
+                            <button onClick={() => { setDenyTargetId(null); setDenyReason(""); }} className={cn("px-3 py-1 rounded-lg text-xs", isLight ? "text-slate-600 hover:bg-slate-100" : "text-muted-foreground hover:bg-white/5")}>Cancel</button>
+                            <button onClick={() => denyNewUser(u.id)} disabled={!denyReason.trim()} className="px-3 py-1 rounded-lg bg-rose-500 text-white text-xs font-semibold hover:bg-rose-600 disabled:opacity-50">Confirm deny</button>
+                          </div>
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
-          {!loading && newUsers.length > 0 && (
-            <ul className="divide-y divide-border">
-              {newUsers.map((u) => (
-                <li key={u.id} className="px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <div className={cn("w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shrink-0", isLight ? "bg-primary/10 text-primary" : "bg-primary/20 text-primary")}>
-                      {(u.name || "?").charAt(0).toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className={cn("font-semibold text-sm truncate", isLight ? "text-slate-900" : "text-foreground")}>{u.name}</p>
-                      <p className={cn("text-xs truncate", isLight ? "text-slate-500" : "text-muted-foreground")}>{u.email}</p>
-                      <p className={cn("text-[10px] mt-0.5", isLight ? "text-slate-400" : "text-muted-foreground/70")}>
-                        Requested {new Date(u.createdAt).toLocaleString()}
-                        {u.phone ? ` · ☎ ${u.phone}` : ""}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => approveNewUser(u.id)}
-                      className="px-3 py-1.5 rounded-lg bg-emerald-500 text-white text-xs font-semibold hover:bg-emerald-600 transition-colors"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      onClick={() => { setDenyTargetId(u.id); setDenyReason(""); }}
-                      className={cn("px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors", isLight ? "border border-slate-200 text-slate-600 hover:bg-slate-100" : "border border-white/10 text-muted-foreground hover:bg-white/5")}
-                    >
-                      Deny
-                    </button>
-                  </div>
 
-                  {denyTargetId === u.id && (
-                    <div className={cn("mt-3 rounded-lg border p-3 space-y-2", isLight ? "border-rose-200 bg-rose-50" : "border-rose-500/30 bg-rose-500/5")}>
-                      <p className={cn("text-xs font-semibold", isLight ? "text-rose-800" : "text-rose-300")}>Why are you denying access?</p>
-                      <input
-                        autoFocus
-                        value={denyReason}
-                        onChange={(e) => setDenyReason(e.target.value)}
-                        placeholder="e.g. external email, not an employee"
-                        className={cn("w-full h-9 rounded-lg border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/40", isLight ? "bg-white border-rose-200 text-slate-900" : "bg-black/20 border-rose-500/30 text-foreground")}
-                      />
-                      <div className="flex justify-end gap-2">
-                        <button onClick={() => { setDenyTargetId(null); setDenyReason(""); }} className={cn("px-3 py-1 rounded-lg text-xs", isLight ? "text-slate-600 hover:bg-slate-100" : "text-muted-foreground hover:bg-white/5")}>Cancel</button>
-                        <button
-                          onClick={() => denyNewUser(u.id)}
-                          disabled={!denyReason.trim()}
-                          className="px-3 py-1 rounded-lg bg-rose-500 text-white text-xs font-semibold hover:bg-rose-600 disabled:opacity-50"
-                        >
-                          Confirm deny
-                        </button>
+          {/* ── Deleted Accounts ── */}
+          {!loading && deletedUsers.length > 0 && (
+            <div className={cn("glass-card rounded-2xl border overflow-hidden", isLight ? "border-rose-200 bg-white" : "border-rose-500/20")}>
+              <div className={cn("flex items-center gap-2 px-4 py-3 border-b", isLight ? "border-rose-100 bg-rose-50" : "border-rose-500/20 bg-rose-500/5")}>
+                <UserX className="w-4 h-4 text-rose-500" />
+                <p className="text-xs font-semibold uppercase tracking-wider text-rose-500">
+                  Deleted Accounts <span className="ml-1 px-1.5 py-0.5 rounded-full bg-rose-500/10 text-rose-500 font-bold">{deletedUsers.length}</span>
+                </p>
+                <p className={cn("ml-auto text-[10px]", isLight ? "text-slate-400" : "text-muted-foreground/60")}>
+                  These accounts were deleted. Use "Permanently Delete" to erase them entirely.
+                </p>
+              </div>
+              <ul className="divide-y" style={{ borderColor: isLight ? "#fecdd3" : "rgba(239,68,68,0.15)" }}>
+                {deletedUsers.map((u) => (
+                  <li key={u.id} className="px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <div className={cn("w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shrink-0", isLight ? "bg-rose-100 text-rose-400" : "bg-rose-500/10 text-rose-400")}>
+                        {(u.name || "?").charAt(0).toUpperCase()}
                       </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={cn("font-semibold text-sm truncate", isLight ? "text-slate-700" : "text-foreground/80")}>{u.name}</p>
+                        <p className={cn("text-xs truncate", isLight ? "text-slate-400" : "text-muted-foreground/70")}>{u.email}</p>
+                        <p className={cn("text-[10px] mt-0.5", isLight ? "text-slate-400" : "text-muted-foreground/60")}>
+                          Deleted account · Originally registered {new Date(u.createdAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => permanentlyDelete(u.id)}
+                        disabled={deletingId === u.id}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 transition-colors disabled:opacity-50"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        {deletingId === u.id ? "Deleting…" : "Permanently Delete"}
+                      </button>
                     </div>
-                  )}
-                </li>
-              ))}
-            </ul>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
       )}

@@ -15,6 +15,13 @@ import { cn } from "@/lib/utils";
 import { roleLabel, useServerRoles, createCustomRole, ZENTRYX_MODULES, getEffectiveAllowedPaths, setRoleModules, renameRole } from "@/lib/roles";
 import { BASE, apiHeaders, apiGet, apiPatch, apiPost, apiDelete } from "../lib/api";
 
+function parseMethod(reason: string | null | undefined): { label: string; color: string } {
+  const r = (reason ?? "").toLowerCase();
+  if (r.includes("microsoft")) return { label: "Outlook", color: "bg-blue-500/10 text-blue-500 border-blue-500/20" };
+  if (r.includes("google")) return { label: "Google", color: "bg-rose-500/10 text-rose-500 border-rose-500/20" };
+  return { label: "Password", color: "bg-slate-500/10 text-slate-500 border-slate-500/20" };
+}
+
 export function SecurityTab({ isLight }: { isLight: boolean }) {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -201,18 +208,21 @@ export function SecurityTab({ isLight }: { isLight: boolean }) {
         )}
         {!loading && filteredRows.length > 0 && (
           <div className="overflow-x-auto custom-scrollbar">
-            <table className="w-full text-sm min-w-[760px]">
+            <table className="w-full text-sm min-w-[900px]">
               <thead className={cn("text-xs uppercase", isLight ? "bg-slate-50 text-slate-500" : "bg-white/5 text-muted-foreground")}>
                 <tr>
                   <th className="px-4 py-3 text-left font-medium">When</th>
                   <th className="px-4 py-3 text-left font-medium">User / Email</th>
                   <th className="px-4 py-3 text-left font-medium">Result</th>
+                  <th className="px-4 py-3 text-left font-medium">Via</th>
                   <th className="px-4 py-3 text-left font-medium">IP</th>
                   <th className="px-4 py-3 text-left font-medium">Agent</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredRows.map(r => (
+                {filteredRows.map(r => {
+                  const method = parseMethod(r.reason);
+                  return (
                   <tr key={r.id} className={cn("border-t", isLight ? "border-slate-100" : "border-white/5")}>
                     <td className="px-4 py-3">
                       <p className={cn("text-xs", isLight ? "text-slate-700" : "text-foreground")}>
@@ -236,6 +246,11 @@ export function SecurityTab({ isLight }: { isLight: boolean }) {
                       )}
                     </td>
                     <td className="px-4 py-3">
+                      <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border", method.color)}>
+                        {method.label}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
                       <span className={cn("text-xs flex items-center gap-1", isLight ? "text-slate-600" : "text-muted-foreground")}>
                         <Globe className="w-3 h-3" /> {r.ipAddress || "—"}
                       </span>
@@ -246,7 +261,8 @@ export function SecurityTab({ isLight }: { isLight: boolean }) {
                       </span>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
