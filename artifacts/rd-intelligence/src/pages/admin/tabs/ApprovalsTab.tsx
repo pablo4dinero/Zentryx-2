@@ -30,6 +30,7 @@ export function ApprovalsTab({ isLight }: { isLight: boolean }) {
   const [denyTargetId, setDenyTargetId] = useState<number | null>(null);
   const [denyReason, setDenyReason] = useState("");
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   const pendingUsers = newUsers.filter(u => !isDeletedAccount(u));
   const deletedUsers = newUsers.filter(u => isDeletedAccount(u));
@@ -56,12 +57,17 @@ export function ApprovalsTab({ isLight }: { isLight: boolean }) {
     await load();
   };
   const permanentlyDelete = async (id: number) => {
-    if (!confirm("Permanently delete this account? This cannot be undone.")) return;
     setDeletingId(id);
+    setConfirmDeleteId(null);
     try {
-      await apiDelete(`/admin/users/${id}`);
+      const result = await apiDelete(`/admin/users/${id}`);
+      if (result?.error) throw new Error(result.message || result.error);
       setNewUsers(prev => prev.filter(u => u.id !== id));
-    } finally { setDeletingId(null); }
+    } catch (err: any) {
+      alert(`Failed to delete account: ${err?.message || "Unknown error"}`);
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const statusBadge = (s: string) => {
@@ -175,14 +181,34 @@ export function ApprovalsTab({ isLight }: { isLight: boolean }) {
                           Deleted account · Originally registered {new Date(u.createdAt).toLocaleDateString()}
                         </p>
                       </div>
-                      <button
-                        onClick={() => permanentlyDelete(u.id)}
-                        disabled={deletingId === u.id}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 transition-colors disabled:opacity-50"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        {deletingId === u.id ? "Deleting…" : "Permanently Delete"}
-                      </button>
+                      {confirmDeleteId === u.id ? (
+                        <div className="flex items-center gap-2">
+                          <span className={cn("text-xs font-semibold", isLight ? "text-rose-700" : "text-rose-400")}>Sure?</span>
+                          <button
+                            onClick={() => permanentlyDelete(u.id)}
+                            disabled={deletingId === u.id}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 transition-colors disabled:opacity-50"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            {deletingId === u.id ? "Deleting…" : "Confirm"}
+                          </button>
+                          <button
+                            onClick={() => setConfirmDeleteId(null)}
+                            className={cn("px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors", isLight ? "border border-slate-200 text-slate-600 hover:bg-slate-100" : "border border-white/10 text-muted-foreground hover:bg-white/5")}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmDeleteId(u.id)}
+                          disabled={deletingId === u.id}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 transition-colors disabled:opacity-50"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Permanently Delete
+                        </button>
+                      )}
                     </div>
                   </li>
                 ))}

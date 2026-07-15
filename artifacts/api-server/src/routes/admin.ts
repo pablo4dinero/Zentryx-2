@@ -159,6 +159,31 @@ router.patch("/users/:id", async (req: AuthRequest, res) => {
   }
 });
 
+// DELETE /users/:id — permanently erase a user and all their data.
+// Only hard-deletes accounts that are already soft-deleted (name contains
+// "(deleted)" or email matches the deleted-N-timestamp pattern) to prevent
+// accidental erasure of active users.
+router.delete("/users/:id", async (req: AuthRequest, res) => {
+  try {
+    const id = parseInt(String(req.params.id));
+    if (Number.isNaN(id)) { res.status(400).json({ error: "BadRequest" }); return; }
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, id)).limit(1);
+    if (!user) { res.status(404).json({ error: "NotFound" }); return; }
+    const name = (user.name ?? "").toLowerCase();
+    const email = (user.email ?? "").toLowerCase();
+    const isDeleted = name.includes("(deleted)") || email.startsWith("deleted-") || email.includes("@deleted.invalid") || email.includes("@delete");
+    if (!isDeleted) {
+      res.status(403).json({ error: "Forbidden", message: "Only soft-deleted accounts can be permanently erased." });
+      return;
+    }
+    await db.delete(usersTable).where(eq(usersTable.id, id));
+    res.json({ ok: true, deleted: id });
+  } catch (err) {
+    console.error("[admin] user.delete failed", err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
 // ─── First-time admin approval queue ────────────────────────────────
 // GET /pending-approvals — list every user with approvalStatus = pending
 router.get("/pending-approvals", async (_req: AuthRequest, res) => {
