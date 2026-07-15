@@ -72,7 +72,7 @@ function LiveTicker({ activities, isLight }: { activities: any[]; isLight: boole
         <span className={cn("text-[10px] font-bold uppercase tracking-widest", isLight ? "text-red-600" : "text-red-400")}>Live</span>
       </div>
       <div className="flex-1 overflow-hidden">
-        <div className="flex animate-[ticker_40s_linear_infinite] whitespace-nowrap">
+        <div className="flex animate-[ticker_6.7s_linear_infinite] whitespace-nowrap">
           {[...tickerItems, ...tickerItems].map((a, i) => (
             <span key={i} className={cn("inline-flex items-center gap-1.5 text-xs px-4", isLight ? "text-slate-500" : "text-muted-foreground")}>
               <span className={cn("font-semibold", isLight ? "text-slate-900" : "text-foreground")}>{a.user?.name || "System"}</span>
