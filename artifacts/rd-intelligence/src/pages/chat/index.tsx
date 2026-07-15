@@ -79,6 +79,16 @@ export default function ChatRoom() {
   // Polled from /chat/presence; drives the Online/Offline indicator.
   const [onlineIds, setOnlineIds] = useState<Set<number>>(new Set());
 
+  // DM conversations the user has explicitly deleted — persisted in
+  // localStorage so they don't reappear after the room list refreshes.
+  // Re-surfaces when the other person sends a new message (hasUnread).
+  const [dismissedDmRoomIds, setDismissedDmRoomIds] = useState<Set<number>>(() => {
+    try { return new Set<number>(JSON.parse(localStorage.getItem("rd_dismissed_dms") || "[]")); }
+    catch { return new Set<number>(); }
+  });
+  // State for the right-click context menu on people rows
+  const [dmContextMenu, setDmContextMenu] = useState<{ x: number; y: number; person: any } | null>(null);
+
   // Cache messages per room so switching rooms restores instantly and bad fetches don't wipe history
   const msgCacheRef = useRef<Record<number, any[]>>({});
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
@@ -306,6 +316,15 @@ export default function ChatRoom() {
   const selectRoom = (room: any) => {
     justSwitchedRoomRef.current = true;
     setActiveRoom(room);
+    // Un-dismiss if user explicitly re-opens a DM they previously deleted
+    if (!room.isGroup) {
+      setDismissedDmRoomIds(prev => {
+        if (!prev.has(room.id)) return prev;
+        const n = new Set(prev); n.delete(room.id);
+        localStorage.setItem("rd_dismissed_dms", JSON.stringify([...n]));
+        return n;
+      });
+    }
     // Restore cached messages instantly to avoid a blank flash; fresh data arrives via loadMessages
     setMessages(msgCacheRef.current[room.id] ?? []);
     setShowPinnedMsgs(false);
@@ -475,6 +494,15 @@ export default function ChatRoom() {
   const createPrivateRoom = async (userId: number, userName: string) => {
     const room = await api.post("/chat/rooms", { name: userName, isGroup: false, memberIds: [userId] });
     setRooms(prev => { const exists = prev.find((r: any) => r.id === room.id); return exists ? prev : [...prev, room]; });
+    // Un-dismiss when the user actively starts (or re-opens) a conversation
+    if (room?.id) {
+      setDismissedDmRoomIds(prev => {
+        if (!prev.has(room.id)) return prev;
+        const n = new Set(prev); n.delete(room.id);
+        localStorage.setItem("rd_dismissed_dms", JSON.stringify([...n]));
+        return n;
+      });
+    }
     selectRoom(room);
   };
 
@@ -521,6 +549,30 @@ export default function ChatRoom() {
     toast({ title: "Chat history cleared", description: "Only new messages will be shown." });
   };
 
+  const clearDmHistory = (roomId: number) => {
+    localStorage.setItem(getClearKey(roomId), new Date().toISOString());
+    if (activeRoom?.id === roomId) setMessages([]);
+    toast({ title: "Chat history cleared", description: "Only new messages will be shown." });
+  };
+
+  const deleteDm = async (person: any) => {
+    const room = person.dmRoom;
+    if (!room) return;
+    try { await api.del(`/chat/rooms/${room.id}`); } catch {}
+    setDismissedDmRoomIds(prev => {
+      const n = new Set(prev); n.add(room.id);
+      localStorage.setItem("rd_dismissed_dms", JSON.stringify([...n]));
+      return n;
+    });
+    setRooms(prev => prev.filter((r: any) => r.id !== room.id));
+    if (activeRoom?.id === room.id) {
+      setActiveRoom(null);
+      setMessages([]);
+      if (pollRef.current) clearInterval(pollRef.current);
+    }
+    toast({ title: "Conversation deleted" });
+  };
+
   const visibleMessages = (() => {
     if (!activeRoom) return messages;
     const cleared = localStorage.getItem(getClearKey(activeRoom.id));
@@ -528,6 +580,15 @@ export default function ChatRoom() {
     const clearedAt = new Date(cleared);
     return messages.filter((m: any) => new Date(m.createdAt) > clearedAt);
   })();
+
+  // Close the DM context menu when the user clicks or right-clicks anywhere else
+  useEffect(() => {
+    if (!dmContextMenu) return;
+    const close = () => setDmContextMenu(null);
+    document.addEventListener("click", close);
+    document.addEventListener("contextmenu", close);
+    return () => { document.removeEventListener("click", close); document.removeEventListener("contextmenu", close); };
+  }, [dmContextMenu]);
 
   const sortRooms = (list: any[]) => {
     const pinned = list.filter(r => isRoomPinned(r.id));
@@ -674,7 +735,11 @@ export default function ChatRoom() {
         u.name.toLowerCase().includes(searchLower)
         || (u.email ?? "").toLowerCase().includes(searchLower),
       )
-    : peopleList.filter((u: any) => u.dmRoom || u.lastMessageAt || u.hasUnread);
+    : peopleList.filter((u: any) => {
+        // Keep hidden if dismissed and no new unread messages have arrived
+        if (u.dmRoom && dismissedDmRoomIds.has(u.dmRoom.id) && !u.hasUnread) return false;
+        return u.dmRoom || u.lastMessageAt || u.hasUnread;
+      });
 
   const pinnedMessages = visibleMessages.filter((m: any) => isMsgPinned(m.id));
 
@@ -895,6 +960,7 @@ export default function ChatRoom() {
             return (
               <button key={person.id}
                 onClick={() => createPrivateRoom(person.id, person.name)}
+                onContextMenu={(e) => { e.preventDefault(); setDmContextMenu({ x: e.clientX, y: e.clientY, person }); }}
                 style={isActive && isLight ? { color: "#ffffff" } : undefined}
                 className={cn(
                   "relative w-[calc(100%-8px)] mx-1 flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-sm text-left transition-all",
@@ -1702,6 +1768,68 @@ export default function ChatRoom() {
               </button>
             </div>
           </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+
+    {/* DM right-click context menu */}
+    <AnimatePresence>
+      {dmContextMenu && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.92, y: -4 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.9 }}
+          transition={{ duration: 0.12 }}
+          className={cn(
+            "fixed z-[999] w-52 rounded-xl border shadow-2xl overflow-hidden",
+            isLight ? "bg-white border-slate-200" : "glass-panel border-white/10",
+          )}
+          style={{
+            top: Math.min(dmContextMenu.y, window.innerHeight - 270),
+            left: Math.min(dmContextMenu.x, window.innerWidth - 224),
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+          {dmContextMenu.person.dmRoom && (
+            <button
+              onClick={() => { startCall(dmContextMenu.person.id, dmContextMenu.person.name, "audio"); setDmContextMenu(null); }}
+              className={cn("w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-left transition-colors", isLight ? "text-slate-700 hover:bg-slate-50" : "text-muted-foreground hover:bg-white/5 hover:text-foreground")}
+            >
+              <Phone className="w-4 h-4 text-emerald-500" /> Call
+            </button>
+          )}
+          {dmContextMenu.person.dmRoom && (
+            <button
+              onClick={() => { startCall(dmContextMenu.person.id, dmContextMenu.person.name, "video"); setDmContextMenu(null); }}
+              className={cn("w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-left transition-colors", isLight ? "text-slate-700 hover:bg-slate-50" : "text-muted-foreground hover:bg-white/5 hover:text-foreground")}
+            >
+              <Video className="w-4 h-4 text-primary" /> Video Call
+            </button>
+          )}
+          <div className={cn("border-t", isLight ? "border-slate-100" : "border-white/5")} />
+          <button
+            onClick={() => { setProfileUser(dmContextMenu.person); setDmContextMenu(null); }}
+            className={cn("w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-left transition-colors", isLight ? "text-slate-700 hover:bg-slate-50" : "text-muted-foreground hover:bg-white/5 hover:text-foreground")}
+          >
+            <UserCircle className="w-4 h-4 text-blue-500" /> View Profile
+          </button>
+          {dmContextMenu.person.dmRoom && (
+            <>
+              <div className={cn("border-t", isLight ? "border-slate-100" : "border-white/5")} />
+              <button
+                onClick={() => { clearDmHistory(dmContextMenu.person.dmRoom.id); setDmContextMenu(null); }}
+                className={cn("w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-left transition-colors", isLight ? "text-slate-700 hover:bg-slate-50" : "text-muted-foreground hover:bg-white/5 hover:text-foreground")}
+              >
+                <X className="w-4 h-4 text-amber-500" /> Clear Conversation
+              </button>
+              <button
+                onClick={() => { deleteDm(dmContextMenu.person); setDmContextMenu(null); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-left text-destructive hover:bg-destructive/10 transition-colors"
+              >
+                <Trash2 className="w-4 h-4" /> Delete Conversation
+              </button>
+            </>
+          )}
         </motion.div>
       )}
     </AnimatePresence>

@@ -611,7 +611,7 @@ export function MaterialsDemandPlanningPageContent(props: { productsQuery: UseQu
                                 <input value={formValues.application} onChange={e => setFormValues(p => ({ ...p, application: e.target.value }))} placeholder="e.g. Noodles, Chips" className={iCls} />
                               </div>
                               <div>
-                                <label className={lCls}>Target Price ($/kg)</label>
+                                <label className={lCls}>Target Price (₦/kg)</label>
                                 <input value={formValues.targetPrice} onChange={e => setFormValues(p => ({ ...p, targetPrice: e.target.value }))} placeholder="0.00" type="number" step="0.01" min="0" className={iCls} />
                               </div>
                               <div>
@@ -740,7 +740,7 @@ export function MaterialsDemandPlanningPageContent(props: { productsQuery: UseQu
                                 <input value={formValues.application} onChange={e => setFormValues(p => ({ ...p, application: e.target.value }))} placeholder="e.g. Noodles, Chips" className={iCls} />
                               </div>
                               <div>
-                                <label className={lCls}>Target Price ($/kg)</label>
+                                <label className={lCls}>Target Price (₦/kg)</label>
                                 <input value={formValues.targetPrice} onChange={e => setFormValues(p => ({ ...p, targetPrice: e.target.value }))} placeholder="0.00" type="number" step="0.01" min="0" className={iCls} />
                               </div>
                               <div>
