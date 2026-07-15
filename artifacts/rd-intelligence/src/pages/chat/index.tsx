@@ -395,6 +395,14 @@ export default function ChatRoom() {
   const deleteRoom = async (room: any) => {
     if (!confirm(`Are you sure you want to ${room.createdById === currentUserId ? "delete" : "leave"} "${room.name}"?`)) return;
     await api.del(`/chat/rooms/${room.id}`);
+    // Persist DM dismissal so refreshRooms() can't bring it back
+    if (!room.isGroup) {
+      setDismissedDmRoomIds(prev => {
+        const n = new Set(prev); n.add(room.id);
+        localStorage.setItem("rd_dismissed_dms", JSON.stringify([...n]));
+        return n;
+      });
+    }
     setRooms(prev => prev.filter((r: any) => r.id !== room.id));
     if (activeRoom?.id === room.id) {
       setActiveRoom(null);
@@ -703,7 +711,16 @@ export default function ChatRoom() {
 
 
   // Build people list: all users with DM room info, sorted by chosen mode
-  const peopleList = users.filter((u: any) => u.id !== currentUserId).map((u: any) => {
+  const peopleList = users.filter((u: any) => {
+    if (u.id === currentUserId) return false;
+    // Exclude soft-deleted accounts — server marks them with "(deleted)" in
+    // the display name and a "deleted-N-timestamp@..." email.
+    const name = (u.name ?? "").toLowerCase();
+    const email = (u.email ?? "").toLowerCase();
+    if (name.includes("(deleted)")) return false;
+    if (email.startsWith("deleted-") || email.includes("@delete")) return false;
+    return true;
+  }).map((u: any) => {
     // Match the DM room by membership (server now returns memberUserIds for
     // every room). The old name-based match merged any two users that shared
     // a first name (e.g. two "Paul"s) into the same conversation thread.
@@ -960,7 +977,7 @@ export default function ChatRoom() {
             return (
               <button key={person.id}
                 onClick={() => createPrivateRoom(person.id, person.name)}
-                onContextMenu={(e) => { e.preventDefault(); setDmContextMenu({ x: e.clientX, y: e.clientY, person }); }}
+                onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setDmContextMenu({ x: e.clientX, y: e.clientY, person }); }}
                 style={isActive && isLight ? { color: "#ffffff" } : undefined}
                 className={cn(
                   "relative w-[calc(100%-8px)] mx-1 flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-sm text-left transition-all",
@@ -1789,6 +1806,7 @@ export default function ChatRoom() {
             left: Math.min(dmContextMenu.x, window.innerWidth - 224),
           }}
           onClick={e => e.stopPropagation()}
+          onContextMenu={e => { e.preventDefault(); e.stopPropagation(); }}
         >
           {dmContextMenu.person.dmRoom && (
             <button
