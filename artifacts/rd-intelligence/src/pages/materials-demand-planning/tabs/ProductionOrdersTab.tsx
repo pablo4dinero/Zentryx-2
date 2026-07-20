@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Download, Search, Loader2, Settings, X } from "lucide-react";
+import { Plus, Download, Search, Loader2, Settings, X, StickyNote, Filter, Save, Trash2 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { PageLoader } from "@/components/ui/spinner";
@@ -34,6 +34,13 @@ export function ProductionOrdersTab() {
     catch { return {}; }
   });
   const [isConfigOpen, setIsConfigOpen] = React.useState(false);
+  const [filterPlan, setFilterPlan] = React.useState<"all" | "planned" | "unplanned">("all");
+  const [notesById, setNotesById] = React.useState<Record<number, string>>(() => {
+    try { return JSON.parse(localStorage.getItem("rd_order_notes_v1") || "{}"); }
+    catch { return {}; }
+  });
+  const [activeNoteId, setActiveNoteId] = React.useState<number | null>(null);
+  const [noteInput, setNoteInput] = React.useState("");
   const [isNewOrderOpen, setIsNewOrderOpen] = React.useState(false);
   const [newOrderForm, setNewOrderForm] = React.useState({
     accountId: "", volume: "", price: "", expectedDeliveryDateDate: "",
@@ -238,14 +245,39 @@ export function ProductionOrdersTab() {
     }
   };
 
+  const openNote = (orderId: number) => {
+    setActiveNoteId(orderId);
+    setNoteInput(notesById[orderId] ?? "");
+  };
+
+  const saveNote = () => {
+    if (activeNoteId === null) return;
+    const next = { ...notesById, [activeNoteId]: noteInput };
+    setNotesById(next);
+    localStorage.setItem("rd_order_notes_v1", JSON.stringify(next));
+    setActiveNoteId(null);
+  };
+
+  const deleteNote = () => {
+    if (activeNoteId === null) return;
+    const next = { ...notesById };
+    delete next[activeNoteId];
+    setNotesById(next);
+    localStorage.setItem("rd_order_notes_v1", JSON.stringify(next));
+    setNoteInput("");
+    setActiveNoteId(null);
+  };
+
   const tableOrders = React.useMemo(() => {
     const term = searchOrders.trim().toLowerCase();
     return mergedOrders.filter((order) => {
+      if (filterPlan === "planned" && !order.isPlanned) return false;
+      if (filterPlan === "unplanned" && order.isPlanned) return false;
       if (!term) return true;
       return [order.accountCompany ?? "", order.productName ?? "", order.productType ?? "", String(order.volume ?? ""), order.dateOrdered ?? ""]
         .join(" ").toLowerCase().includes(term);
     });
-  }, [mergedOrders, searchOrders]);
+  }, [mergedOrders, searchOrders, filterPlan]);
 
   if (ordersLoading) return <PageLoader />;
 
@@ -281,9 +313,26 @@ export function ProductionOrdersTab() {
         </div>
       </div>
 
-      <div className="relative w-64">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <input value={searchOrders} onChange={e => setSearchOrders(e.target.value)} placeholder="Search orders..." className={cn("h-9 pl-9 pr-4 rounded-xl border text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/50", isLight ? "bg-white border-slate-200 text-slate-800 placeholder:text-slate-400" : "bg-black/20 border-white/10 text-foreground placeholder:text-muted-foreground")} />
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative w-64">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input value={searchOrders} onChange={e => setSearchOrders(e.target.value)} placeholder="Search orders..." className={cn("h-9 pl-9 pr-4 rounded-xl border text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/50", isLight ? "bg-white border-slate-200 text-slate-800 placeholder:text-slate-400" : "bg-black/20 border-white/10 text-foreground placeholder:text-muted-foreground")} />
+        </div>
+        <div className="relative">
+          <Filter className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <select
+            value={filterPlan}
+            onChange={e => setFilterPlan(e.target.value as any)}
+            className={cn("h-9 pl-8 pr-8 rounded-xl border text-sm appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/50",
+              isLight ? "bg-white border-slate-200 text-slate-800" : "bg-black/20 border-white/10 text-foreground",
+              filterPlan !== "all" && "border-primary/50 text-primary"
+            )}
+          >
+            <option value="all">All Orders</option>
+            <option value="planned">Planned Only</option>
+            <option value="unplanned">Unplanned Only</option>
+          </select>
+        </div>
       </div>
 
       <div className={cn("glass-card rounded-2xl overflow-x-auto custom-scrollbar border", isLight ? "border-slate-200 bg-white" : "border-white/5 bg-white/5")}>
@@ -296,6 +345,7 @@ export function ProductionOrdersTab() {
               <th className="px-4 py-3 text-left font-medium">Order</th>
               <th className="px-4 py-3 text-left font-medium">Expected</th>
               <th className="px-4 py-3 text-left font-medium">Raw Material</th>
+              <th className="px-4 py-3 text-left font-medium">Note</th>
               <th className="px-4 py-3 text-left font-medium">Microbial Analysis</th>
               <th className="px-4 py-3 text-left font-medium">Blend Speed</th>
               <th className="px-4 py-3 text-left font-medium">Priority Score</th>
@@ -304,7 +354,7 @@ export function ProductionOrdersTab() {
           </thead>
           <tbody>
             {tableOrders.length === 0 ? (
-              <tr><td colSpan={10} className="py-8 text-center text-muted-foreground">No production orders found.</td></tr>
+              <tr><td colSpan={11} className="py-8 text-center text-muted-foreground">No production orders found.</td></tr>
             ) : (
               tableOrders.map((order) => {
                 const microbial = microbialById[order.id] ?? order.microbialAnalysis ?? "Normal";
@@ -334,6 +384,23 @@ export function ProductionOrdersTab() {
                         <option value="Not Available" className="bg-black text-white">Not Available</option>
                         <option value="Pending" className="bg-black text-white">Pending</option>
                       </select>
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => openNote(order.id)}
+                        title={notesById[order.id] ? "View / edit note" : "Add note"}
+                        className={cn(
+                          "relative p-1.5 rounded-lg transition-colors",
+                          notesById[order.id]
+                            ? "text-amber-400 hover:text-amber-300 hover:bg-amber-500/10"
+                            : isLight ? "text-slate-400 hover:text-slate-600 hover:bg-slate-100" : "text-muted-foreground hover:text-foreground hover:bg-white/10"
+                        )}
+                      >
+                        <StickyNote className="w-4 h-4" />
+                        {notesById[order.id] && (
+                          <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-400" />
+                        )}
+                      </button>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -374,15 +441,26 @@ export function ProductionOrdersTab() {
                       })()}
                     </td>
                     <td className="px-4 py-3">
-                      <button onClick={() => planned ? handleUnplan(order.id) : handlePlanNow(order.id)}
-                        className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all whitespace-nowrap",
-                          planned
-                            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-red-500/10 hover:border-red-500/20 hover:text-red-400"
-                            : isLight ? "border-slate-200 text-slate-700 hover:bg-primary/10 hover:border-primary/30 hover:text-primary"
-                              : "border-white/10 text-muted-foreground hover:bg-primary/10 hover:border-primary/30 hover:text-primary"
-                        )}>
-                        {planned ? "✓ Un-plan" : "Plan Now"}
-                      </button>
+                      {(() => {
+                        const canPlan = rawMaterial === "Available";
+                        return (
+                          <button
+                            onClick={() => planned ? handleUnplan(order.id) : handlePlanNow(order.id)}
+                            disabled={!planned && !canPlan}
+                            title={!planned && !canPlan ? `Raw material is "${rawMaterial}" — set to Available to plan` : undefined}
+                            className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all whitespace-nowrap",
+                              planned
+                                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-red-500/10 hover:border-red-500/20 hover:text-red-400"
+                                : !canPlan
+                                  ? isLight ? "border-slate-200 bg-slate-50 text-slate-300 cursor-not-allowed" : "border-white/5 bg-white/[0.02] text-muted-foreground/30 cursor-not-allowed"
+                                  : isLight ? "border-slate-200 text-slate-700 hover:bg-primary/10 hover:border-primary/30 hover:text-primary"
+                                    : "border-white/10 text-muted-foreground hover:bg-primary/10 hover:border-primary/30 hover:text-primary"
+                            )}
+                          >
+                            {planned ? "✓ Un-plan" : "Plan Now"}
+                          </button>
+                        );
+                      })()}
                     </td>
                   </tr>
                 );
@@ -394,6 +472,64 @@ export function ProductionOrdersTab() {
           Showing {tableOrders.length} of {mergedOrders.length} production orders
         </div>
       </div>
+
+      {/* ── Note Popup ── */}
+      <AnimatePresence>
+        {activeNoteId !== null && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setActiveNoteId(null)}>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              onClick={e => e.stopPropagation()}
+              className={cn("w-full max-w-sm rounded-2xl border shadow-2xl", isLight ? "bg-white border-slate-200" : "bg-[#1a1a2e] border-white/10")}
+            >
+              <div className={cn("flex items-center justify-between px-4 py-3 border-b", isLight ? "border-slate-100" : "border-white/5")}>
+                <div className="flex items-center gap-2">
+                  <StickyNote className="w-4 h-4 text-amber-400" />
+                  <p className={cn("text-sm font-semibold", isLight ? "text-slate-800" : "text-foreground")}>
+                    Order Note
+                  </p>
+                </div>
+                <button onClick={() => setActiveNoteId(null)} className={cn("p-1 rounded-lg transition-colors", isLight ? "hover:bg-slate-100 text-slate-400" : "hover:bg-white/10 text-muted-foreground")}>
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-4">
+                <textarea
+                  autoFocus
+                  value={noteInput}
+                  onChange={e => setNoteInput(e.target.value)}
+                  placeholder="Type a note for this production order…"
+                  rows={5}
+                  className={cn("w-full rounded-xl border px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-400/40 placeholder:text-muted-foreground/50",
+                    isLight ? "bg-amber-50/50 border-amber-200 text-slate-800" : "bg-black/20 border-white/10 text-foreground"
+                  )}
+                />
+              </div>
+              <div className={cn("flex gap-2 px-4 pb-4")}>
+                <button
+                  onClick={saveNote}
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-white text-xs font-semibold transition-colors"
+                >
+                  <Save className="w-3.5 h-3.5" /> Save Note
+                </button>
+                <button
+                  onClick={deleteNote}
+                  disabled={!notesById[activeNoteId]}
+                  className={cn("inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl border text-xs font-semibold transition-colors",
+                    notesById[activeNoteId]
+                      ? "border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
+                      : isLight ? "border-slate-200 text-slate-300 cursor-not-allowed" : "border-white/5 text-muted-foreground/30 cursor-not-allowed"
+                  )}
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Delete Note
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* ── Configuration Dialog ── */}
       <AnimatePresence>
