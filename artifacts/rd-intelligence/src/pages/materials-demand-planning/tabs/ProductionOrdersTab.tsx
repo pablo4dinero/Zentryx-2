@@ -478,9 +478,10 @@ export function ProductionOrdersTab() {
         {activeNoteId !== null && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setActiveNoteId(null)}>
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.08 }}
               onClick={e => e.stopPropagation()}
               className={cn("w-full max-w-sm rounded-2xl border shadow-2xl", isLight ? "bg-white border-slate-200" : "bg-[#1a1a2e] border-white/10")}
             >
