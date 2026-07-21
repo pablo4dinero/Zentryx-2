@@ -35,12 +35,9 @@ export function ProductionOrdersTab() {
   });
   const [isConfigOpen, setIsConfigOpen] = React.useState(false);
   const [filterPlan, setFilterPlan] = React.useState<"all" | "planned" | "unplanned">("all");
-  const [notesById, setNotesById] = React.useState<Record<number, string>>(() => {
-    try { return JSON.parse(localStorage.getItem("rd_order_notes_v1") || "{}"); }
-    catch { return {}; }
-  });
   const [activeNoteId, setActiveNoteId] = React.useState<number | null>(null);
   const [noteInput, setNoteInput] = React.useState("");
+  const [savingNote, setSavingNote] = React.useState(false);
   const [isNewOrderOpen, setIsNewOrderOpen] = React.useState(false);
   const [newOrderForm, setNewOrderForm] = React.useState({
     accountId: "", volume: "", price: "", expectedDeliveryDateDate: "",
@@ -246,26 +243,36 @@ export function ProductionOrdersTab() {
   };
 
   const openNote = (orderId: number) => {
+    const order = mergedOrders.find(o => o.id === orderId);
     setActiveNoteId(orderId);
-    setNoteInput(notesById[orderId] ?? "");
+    setNoteInput(order?.remarks ?? "");
   };
 
-  const saveNote = () => {
+  const saveNote = async () => {
     if (activeNoteId === null) return;
-    const next = { ...notesById, [activeNoteId]: noteInput };
-    setNotesById(next);
-    localStorage.setItem("rd_order_notes_v1", JSON.stringify(next));
-    setActiveNoteId(null);
+    setSavingNote(true);
+    try {
+      await productionUpdate.mutateAsync({ orderId: activeNoteId, changes: { remarks: noteInput } });
+      setActiveNoteId(null);
+    } catch {
+      toast({ title: "Could not save note", variant: "destructive" });
+    } finally {
+      setSavingNote(false);
+    }
   };
 
-  const deleteNote = () => {
+  const deleteNote = async () => {
     if (activeNoteId === null) return;
-    const next = { ...notesById };
-    delete next[activeNoteId];
-    setNotesById(next);
-    localStorage.setItem("rd_order_notes_v1", JSON.stringify(next));
-    setNoteInput("");
-    setActiveNoteId(null);
+    setSavingNote(true);
+    try {
+      await productionUpdate.mutateAsync({ orderId: activeNoteId, changes: { remarks: "" } });
+      setNoteInput("");
+      setActiveNoteId(null);
+    } catch {
+      toast({ title: "Could not delete note", variant: "destructive" });
+    } finally {
+      setSavingNote(false);
+    }
   };
 
   const tableOrders = React.useMemo(() => {
@@ -388,16 +395,16 @@ export function ProductionOrdersTab() {
                     <td className="px-4 py-3">
                       <button
                         onClick={() => openNote(order.id)}
-                        title={notesById[order.id] ? "View / edit note" : "Add note"}
+                        title={order.remarks ? "View / edit note" : "Add note"}
                         className={cn(
                           "relative p-1.5 rounded-lg transition-colors",
-                          notesById[order.id]
+                          order.remarks
                             ? "text-amber-400 hover:text-amber-300 hover:bg-amber-500/10"
                             : isLight ? "text-slate-400 hover:text-slate-600 hover:bg-slate-100" : "text-muted-foreground hover:text-foreground hover:bg-white/10"
                         )}
                       >
                         <StickyNote className="w-4 h-4" />
-                        {notesById[order.id] && (
+                        {order.remarks && (
                           <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-400" />
                         )}
                       </button>
@@ -511,16 +518,18 @@ export function ProductionOrdersTab() {
               <div className={cn("flex gap-2 px-4 pb-4")}>
                 <button
                   onClick={saveNote}
-                  className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-white text-xs font-semibold transition-colors"
+                  disabled={savingNote}
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-white text-xs font-semibold transition-colors disabled:opacity-60"
                 >
-                  <Save className="w-3.5 h-3.5" /> Save Note
+                  {savingNote ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                  {savingNote ? "Saving…" : "Save Note"}
                 </button>
                 <button
                   onClick={deleteNote}
-                  disabled={!notesById[activeNoteId]}
+                  disabled={savingNote || !mergedOrders.find(o => o.id === activeNoteId)?.remarks}
                   className={cn("inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl border text-xs font-semibold transition-colors",
-                    notesById[activeNoteId]
-                      ? "border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
+                    mergedOrders.find(o => o.id === activeNoteId)?.remarks
+                      ? "border-rose-500/30 text-rose-400 hover:bg-rose-500/10 disabled:opacity-60"
                       : isLight ? "border-slate-200 text-slate-300 cursor-not-allowed" : "border-white/5 text-muted-foreground/30 cursor-not-allowed"
                   )}
                 >
