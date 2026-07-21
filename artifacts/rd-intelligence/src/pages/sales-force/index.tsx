@@ -299,7 +299,7 @@ function AddAccountModal({ onSuccess }: { onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const { data: users } = useListUsers();
-  const { fmtNGN } = useExchangeRate();
+  const { ngnRate } = useExchangeRate();
   const { toast } = useToast();
   const [manSearch, setManSearch] = useState("");
   const typeOpts = useServerProductTypes();
@@ -413,7 +413,7 @@ function AddAccountModal({ onSuccess }: { onSuccess: () => void }) {
                     <div>
                       <label className={lCls}>Target Price (₦/kg)</label>
                       <input value={form.targetPrice} onChange={e => setF("targetPrice", e.target.value)} placeholder="0.00" type="number" step="0.01" min="0" className={iCls} />
-                      {form.targetPrice && <p className="text-xs text-emerald-400 mt-1">{fmtNGN(parseFloat(form.targetPrice))}/kg</p>}
+                      {form.targetPrice && ngnRate && <p className="text-xs text-emerald-400 mt-1">≈ ${(parseFloat(form.targetPrice) / ngnRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD/kg</p>}
                     </div>
                     <div>
                       <label className={lCls}>Volume (kg/month)</label>
