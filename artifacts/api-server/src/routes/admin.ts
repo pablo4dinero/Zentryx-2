@@ -191,11 +191,11 @@ router.delete("/users/:id", async (req: AuthRequest, res) => {
       db.update(tasksTable).set({ assigneeId: null }).where(eq(tasksTable.assigneeId, id)),
       db.update(projectsTable).set({ leadId: null }).where(eq(projectsTable.leadId, id)),
       db.update(chatRoomsTable).set({ createdById: null }).where(eq(chatRoomsTable.createdById, id)),
-      db.update(chatMessagesTable).set({ senderId: null as any }).where(eq(chatMessagesTable.senderId, id)),
       db.update(formulationsTable).set({ createdById: null }).where(eq(formulationsTable.createdById, id)),
       db.update(businessDevTable).set({ leadId: null }).where(eq(businessDevTable.leadId, id)),
       db.update(eventsTable).set({ createdById: null }).where(eq(eventsTable.createdById, id)),
-      // notNull FK → delete the rows
+      // notNull FK → delete the rows (cannot be nullified)
+      db.delete(chatMessagesTable).where(eq(chatMessagesTable.senderId, id)),
       db.delete(projectCommentsTable).where(eq(projectCommentsTable.authorId, id)),
       db.delete(chatRoomMembersTable).where(eq(chatRoomMembersTable.userId, id)),
       db.delete(chatReadReceiptsTable).where(eq(chatReadReceiptsTable.userId, id)),
