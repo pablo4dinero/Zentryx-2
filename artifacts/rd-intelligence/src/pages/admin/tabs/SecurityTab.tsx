@@ -22,37 +22,40 @@ function parseMethod(reason: string | null | undefined): { label: string; color:
   return { label: "Password", color: "bg-slate-500/10 text-slate-500 border-slate-500/20" };
 }
 
+const TIME_PAGES = [
+  { label: "Last 24 hours",   hours: 24 },
+  { label: "Last 3 days",     hours: 72 },
+  { label: "Last 7 days",     hours: 168 },
+  { label: "Last 2 weeks",    hours: 336 },
+  { label: "Last month",      hours: 30 * 24 },
+  { label: "Last 3 months",   hours: 90 * 24 },
+  { label: "Last 6 months",   hours: 180 * 24 },
+  { label: "Last year",       hours: 365 * 24 },
+];
+
 export function SecurityTab({ isLight }: { isLight: boolean }) {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [timeRange, setTimeRange] = useState<"2h" | "1d" | "3d" | "7d" | "1m" | "3m" | "6m" | "1y">("1d");
+  const [pageIndex, setPageIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchField, setSearchField] = useState<"all" | "user" | "result" | "ip" | "agent">("all");
 
-  const getHoursBack = (range: string): number => {
-    switch (range) {
-      case "2h": return 2;
-      case "1d": return 24;
-      case "3d": return 72;
-      case "7d": return 168;
-      case "1m": return 30 * 24;
-      case "3m": return 90 * 24;
-      case "6m": return 180 * 24;
-      case "1y": return 365 * 24;
-      default: return 24;
-    }
-  };
+  const currentPage = TIME_PAGES[pageIndex];
 
-  const load = async () => {
+  const load = async (idx = pageIndex) => {
     setLoading(true);
     try {
-      const hours = getHoursBack(timeRange);
-      const qs = `?hours=${hours}&limit=500`;
-      setRows((await apiGet(`/admin/login-attempts${qs}`)) || []);
+      const hours = TIME_PAGES[idx].hours;
+      setRows((await apiGet(`/admin/login-attempts?hours=${hours}&limit=500`)) || []);
     } finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [timeRange]);
+  const goToPage = (idx: number) => {
+    setPageIndex(idx);
+    load(idx);
+  };
+
+  useEffect(() => { load(0); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
   const filteredRows = useMemo(() => {
     if (!searchQuery.trim()) return rows;
@@ -117,25 +120,38 @@ export function SecurityTab({ isLight }: { isLight: boolean }) {
     <div className="space-y-4">
       {/* Controls */}
       <div className="space-y-3">
-        {/* Time Range & Search Row */}
-        <div className="flex flex-col sm:flex-row gap-3">
-          {/* Time Range Selector */}
-          <select
-            value={timeRange}
-            onChange={e => setTimeRange(e.target.value as any)}
-            className={cn("px-3 py-2 rounded-xl text-sm border transition-colors",
-              isLight ? "bg-white border-slate-200 text-slate-900" : "bg-white/5 border-white/10 text-foreground")}
+        {/* Time Range Pagination */}
+        <div className={cn("flex items-center gap-3 px-4 py-3 rounded-2xl border", isLight ? "bg-white border-slate-200" : "bg-white/5 border-white/10")}>
+          <button
+            onClick={() => goToPage(pageIndex - 1)}
+            disabled={pageIndex === 0 || loading}
+            className={cn("inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors disabled:opacity-30",
+              isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}
           >
-            <option value="2h">Last 2 Hours</option>
-            <option value="1d">Last 24 Hours</option>
-            <option value="3d">Last 3 Days</option>
-            <option value="7d">Last 7 Days</option>
-            <option value="1m">Last 1 Month</option>
-            <option value="3m">Last 3 Months</option>
-            <option value="6m">Last 6 Months</option>
-            <option value="1y">Last 1 Year</option>
-          </select>
+            ← Previous
+          </button>
+          <div className="flex-1 text-center">
+            <p className={cn("text-sm font-semibold", isLight ? "text-slate-800" : "text-foreground")}>{currentPage.label}</p>
+            <div className="flex items-center justify-center gap-1 mt-1.5">
+              {TIME_PAGES.map((_, i) => (
+                <button key={i} onClick={() => goToPage(i)}
+                  className={cn("w-1.5 h-1.5 rounded-full transition-all", i === pageIndex ? "bg-primary w-4" : isLight ? "bg-slate-300 hover:bg-slate-400" : "bg-white/20 hover:bg-white/40")}
+                />
+              ))}
+            </div>
+          </div>
+          <button
+            onClick={() => goToPage(pageIndex + 1)}
+            disabled={pageIndex === TIME_PAGES.length - 1 || loading}
+            className={cn("inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors disabled:opacity-30",
+              isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}
+          >
+            Next →
+          </button>
+        </div>
 
+        {/* Search Row */}
+        <div className="flex flex-col sm:flex-row gap-3">
           {/* Search Field Selector */}
           <select
             value={searchField}
@@ -167,7 +183,7 @@ export function SecurityTab({ isLight }: { isLight: boolean }) {
         {/* Action Buttons */}
         <div className="flex gap-2 flex-wrap">
           <button
-            onClick={load}
+            onClick={() => load()}
             disabled={loading}
             className={cn("inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors",
               isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5 disabled:opacity-50")}
@@ -271,9 +287,16 @@ export function SecurityTab({ isLight }: { isLight: boolean }) {
 
       {/* Results info */}
       {!loading && rows.length > 0 && (
-        <p className="text-xs text-muted-foreground">
-          Showing {filteredRows.length} of {rows.length} entries
-        </p>
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">
+            Showing {filteredRows.length} of {rows.length} entries · {currentPage.label}
+          </p>
+          {pageIndex < TIME_PAGES.length - 1 && (
+            <button onClick={() => goToPage(pageIndex + 1)} className="text-xs text-primary hover:underline">
+              Load {TIME_PAGES[pageIndex + 1].label} →
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
