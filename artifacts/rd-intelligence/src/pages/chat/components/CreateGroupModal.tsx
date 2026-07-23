@@ -43,7 +43,11 @@ export function CreateGroupModal({ users, onCreate }: { users: any[]; onCreate: 
           <div className="space-y-2">
             <label className={cn("text-sm font-medium", isCgLight ? "text-gray-900" : "")}>Add Members</label>
             <div className="space-y-1 max-h-48 overflow-y-auto custom-scrollbar">
-              {users.map((u: any) => (
+              {users.filter((u: any) => {
+                const name = (u.name ?? "").toLowerCase();
+                const email = (u.email ?? "").toLowerCase();
+                return !name.includes("(deleted)") && !email.startsWith("deleted-") && !email.includes("@deleted.invalid") && !email.includes("@delete");
+              }).map((u: any) => (
                 <button key={u.id} type="button" onClick={() => toggle(u.id)}
                   className={cn("w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors",
                     selected.includes(u.id) ? "bg-primary/10 text-primary"
