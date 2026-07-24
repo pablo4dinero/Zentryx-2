@@ -557,11 +557,239 @@ function outcomeLabel(value: string) {
   return OUTCOME_PRESETS.find(o => o.value === value)?.label ?? value;
 }
 
+const CAL_MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const CAL_DAYS = ["Su","Mo","Tu","We","Th","Fr","Sa"];
+
+function toLocalISOString(d: Date) {
+  return d.getFullYear() + "-" +
+    String(d.getMonth() + 1).padStart(2, "0") + "-" +
+    String(d.getDate()).padStart(2, "0") + "T" +
+    String(d.getHours()).padStart(2, "0") + ":" +
+    String(d.getMinutes()).padStart(2, "0");
+}
+
+function DateTimePicker({ value, onChange, isLight }: { value: string; onChange: (v: string) => void; isLight: boolean }) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const selected = value ? new Date(value) : null;
+  const refDate  = selected ?? new Date();
+
+  const [viewYear,  setViewYear]  = useState(refDate.getFullYear());
+  const [viewMonth, setViewMonth] = useState(refDate.getMonth());
+
+  const h24  = refDate.getHours();
+  const min  = refDate.getMinutes();
+  const ampm = h24 >= 12 ? "PM" : "AM";
+  const h12  = h24 % 12 || 12;
+
+  const emit = (year: number, month: number, day: number, hour24: number, minute: number) => {
+    onChange(toLocalISOString(new Date(year, month, day, hour24, minute)));
+  };
+
+  const changeHour = (delta: number) => {
+    const newH12 = ((h12 - 1 + delta + 12) % 12) + 1;
+    const newH24 = ampm === "AM" ? (newH12 === 12 ? 0 : newH12) : (newH12 === 12 ? 12 : newH12 + 12);
+    emit(refDate.getFullYear(), refDate.getMonth(), refDate.getDate(), newH24, min);
+  };
+
+  const changeMinute = (delta: number) => {
+    emit(refDate.getFullYear(), refDate.getMonth(), refDate.getDate(), h24, (min + delta + 60) % 60);
+  };
+
+  const toggleAmPm = () => {
+    const newH24 = ampm === "AM"
+      ? (h12 === 12 ? 12 : h12 + 12)
+      : (h12 === 12 ? 0  : h12);
+    emit(refDate.getFullYear(), refDate.getMonth(), refDate.getDate(), newH24, min);
+  };
+
+  const selectDay = (year: number, month: number, day: number) => {
+    emit(year, month, day, h24, min);
+  };
+
+  const goToToday = () => {
+    const n = new Date();
+    setViewYear(n.getFullYear());
+    setViewMonth(n.getMonth());
+    emit(n.getFullYear(), n.getMonth(), n.getDate(), n.getHours(), n.getMinutes());
+  };
+
+  const prevMonth = () => {
+    if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
+    else setViewMonth(m => m - 1);
+  };
+  const nextMonth = () => {
+    if (viewMonth === 11) { setViewYear(y => y + 1); setViewMonth(0); }
+    else setViewMonth(m => m + 1);
+  };
+
+  // Build calendar grid
+  const firstDow     = new Date(viewYear, viewMonth, 1).getDay();
+  const daysInMonth  = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const daysInPrev   = new Date(viewYear, viewMonth, 0).getDate();
+
+  type Cell = { year: number; month: number; day: number; cur: boolean };
+  const cells: Cell[] = [];
+  for (let i = firstDow - 1; i >= 0; i--)
+    cells.push({ year: viewMonth === 0 ? viewYear - 1 : viewYear, month: (viewMonth - 1 + 12) % 12, day: daysInPrev - i, cur: false });
+  for (let d = 1; d <= daysInMonth; d++)
+    cells.push({ year: viewYear, month: viewMonth, day: d, cur: true });
+  let overflow = 1;
+  while (cells.length % 7 !== 0)
+    cells.push({ year: viewMonth === 11 ? viewYear + 1 : viewYear, month: (viewMonth + 1) % 12, day: overflow++, cur: false });
+
+  const today = new Date();
+  const isSel    = (y: number, m: number, d: number) => selected && selected.getFullYear() === y && selected.getMonth() === m && selected.getDate() === d;
+  const isToday  = (y: number, m: number, d: number) => today.getFullYear() === y && today.getMonth() === m && today.getDate() === d;
+
+  // Theme tokens
+  const popBg    = isLight ? "bg-white border-slate-200 shadow-xl"  : "bg-[#16162a] border-white/10 shadow-2xl";
+  const headTxt  = isLight ? "text-slate-900"   : "text-foreground";
+  const mutedTxt = isLight ? "text-slate-400"   : "text-muted-foreground";
+  const cellBase = isLight ? "text-slate-700"   : "text-foreground/80";
+  const cellOther= isLight ? "text-slate-300"   : "text-foreground/20";
+  const cellHov  = isLight ? "hover:bg-slate-100" : "hover:bg-white/10";
+  const spinBtn  = isLight ? "bg-slate-100 hover:bg-slate-200 text-slate-700" : "bg-white/5 hover:bg-white/10 text-foreground";
+  const divider  = isLight ? "border-slate-100" : "border-white/5";
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => {
+          if (!open && value) { const d = new Date(value); setViewYear(d.getFullYear()); setViewMonth(d.getMonth()); }
+          setOpen(o => !o);
+        }}
+        className={cn(
+          "w-full flex items-center justify-between px-3 py-2 rounded-lg border text-sm transition-colors text-left",
+          isLight ? "bg-white border-slate-200 text-slate-900 hover:border-slate-300 focus:outline-none focus:border-primary/50"
+                  : "bg-white/5 border-white/10 text-foreground hover:border-white/20 focus:outline-none focus:border-primary/50",
+        )}
+      >
+        <span className={selected ? "" : mutedTxt}>
+          {selected ? format(selected, "MM/dd/yyyy hh:mm aa") : "Select date & time"}
+        </span>
+        <CalendarDays className="w-4 h-4 shrink-0 opacity-40 ml-2" />
+      </button>
+
+      {open && (
+        <div className={cn("absolute z-50 mt-1 rounded-2xl border p-4 w-[280px]", popBg)} style={{ right: 0 }}>
+          {/* Month nav */}
+          <div className="flex items-center justify-between mb-3">
+            <button onClick={prevMonth} className={cn("p-1.5 rounded-lg transition-colors", spinBtn)}>
+              <ChevronUp className="w-3.5 h-3.5 -rotate-90" />
+            </button>
+            <span className={cn("text-sm font-semibold select-none", headTxt)}>
+              {CAL_MONTHS[viewMonth]} {viewYear}
+            </span>
+            <button onClick={nextMonth} className={cn("p-1.5 rounded-lg transition-colors", spinBtn)}>
+              <ChevronUp className="w-3.5 h-3.5 rotate-90" />
+            </button>
+          </div>
+
+          {/* Day headers */}
+          <div className="grid grid-cols-7 mb-1">
+            {CAL_DAYS.map(d => (
+              <div key={d} className={cn("text-center text-[10px] font-semibold py-0.5 select-none", mutedTxt)}>{d}</div>
+            ))}
+          </div>
+
+          {/* Calendar cells */}
+          <div className="grid grid-cols-7 gap-y-0.5">
+            {cells.map((cell, i) => {
+              const sel   = isSel(cell.year, cell.month, cell.day);
+              const today = isToday(cell.year, cell.month, cell.day);
+              return (
+                <button
+                  key={i}
+                  onClick={() => selectDay(cell.year, cell.month, cell.day)}
+                  className={cn(
+                    "h-8 w-full text-xs rounded-lg flex items-center justify-center transition-colors font-medium select-none",
+                    sel   ? "bg-primary text-white"
+                    : today ? (isLight ? "text-primary font-bold ring-1 ring-primary/30" : "text-primary font-bold ring-1 ring-primary/30")
+                    : cell.cur ? cellBase : cellOther,
+                    !sel && cellHov,
+                  )}
+                >
+                  {cell.day}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className={cn("border-t my-3", divider)} />
+
+          {/* Time picker */}
+          <div className="flex items-center justify-center gap-2">
+            {/* Hour */}
+            <div className="flex flex-col items-center gap-0.5">
+              <button onClick={() => changeHour(1)}  className={cn("p-1.5 rounded-lg transition-colors", spinBtn)}><ChevronUp   className="w-3.5 h-3.5" /></button>
+              <div className={cn("w-10 text-center text-lg font-mono font-bold tabular-nums", headTxt)}>{String(h12).padStart(2, "0")}</div>
+              <button onClick={() => changeHour(-1)} className={cn("p-1.5 rounded-lg transition-colors", spinBtn)}><ChevronDown className="w-3.5 h-3.5" /></button>
+            </div>
+
+            <span className={cn("text-xl font-bold select-none pb-0.5", headTxt)}>:</span>
+
+            {/* Minute */}
+            <div className="flex flex-col items-center gap-0.5">
+              <button onClick={() => changeMinute(1)}  className={cn("p-1.5 rounded-lg transition-colors", spinBtn)}><ChevronUp   className="w-3.5 h-3.5" /></button>
+              <div className={cn("w-10 text-center text-lg font-mono font-bold tabular-nums", headTxt)}>{String(min).padStart(2, "0")}</div>
+              <button onClick={() => changeMinute(-1)} className={cn("p-1.5 rounded-lg transition-colors", spinBtn)}><ChevronDown className="w-3.5 h-3.5" /></button>
+            </div>
+
+            {/* AM / PM */}
+            <div className="flex flex-col gap-1 ml-1">
+              {(["AM", "PM"] as const).map(period => (
+                <button
+                  key={period}
+                  onClick={toggleAmPm}
+                  className={cn(
+                    "px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors",
+                    ampm === period
+                      ? "bg-primary/10 border-primary/20 text-primary"
+                      : isLight ? "border-slate-200 text-slate-500 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5"
+                  )}
+                >
+                  {period}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className={cn("flex justify-between mt-3 pt-2.5 border-t", divider)}>
+            <button
+              onClick={() => { onChange(""); setOpen(false); }}
+              className={cn("text-xs font-medium transition-colors", mutedTxt, isLight ? "hover:text-slate-700" : "hover:text-foreground")}
+            >
+              Clear
+            </button>
+            <button onClick={goToToday} className="text-xs font-medium text-primary hover:text-primary/80 transition-colors">
+              Today
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CallReportsTab({ accountId }: { accountId: number }) {
   const queryClient = useQueryClient();
   const api = useApiCall();
   const { data: currentUser } = useGetCurrentUser();
   const { canAccess } = useFeatureFlags();
+  const { isLight } = useTheme();
   const userRole = (currentUser as any)?.role;
   const userId  = (currentUser as any)?.id;
   const canSee  = canAccess("call_reports", userRole);
@@ -572,7 +800,7 @@ function CallReportsTab({ accountId }: { accountId: number }) {
   const [commentInputs, setCommentInputs] = useState<Record<number, string>>({});
   const [openComments, setOpenComments] = useState<Set<number>>(new Set());
   const [sendingComment, setSendingComment] = useState<number | null>(null);
-  const [formWidth, setFormWidth] = useState(600);
+  const [formWidth, setFormWidth] = useState(450);
   const isDragging = useRef(false);
   const dragStartX = useRef(0);
   const dragStartWidth = useRef(0);
@@ -867,9 +1095,11 @@ function CallReportsTab({ accountId }: { accountId: number }) {
           {/* Date */}
           <div>
             <label className="text-xs text-muted-foreground mb-1.5 block">Date &amp; Time <span className="text-red-400">*</span></label>
-            <input type="datetime-local" value={form.calledAt}
-              onChange={e => setForm(f => ({ ...f, calledAt: e.target.value }))}
-              className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/50 w-full" />
+            <DateTimePicker
+              value={form.calledAt}
+              onChange={v => setForm(f => ({ ...f, calledAt: v }))}
+              isLight={isLight}
+            />
           </div>
 
           {/* Outcome */}
