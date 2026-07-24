@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { accountsTable, accountTasksTable, accountProductionOrdersTable, accountStatusReportsTable, todayProductionOrdersTable, usersTable, callReportsTable, callReportCommentsTable } from "@workspace/db";
+import { accountsTable, accountTasksTable, accountProductionOrdersTable, accountStatusReportsTable, todayProductionOrdersTable, usersTable, callReportsTable, callReportCommentsTable, notificationsTable } from "@workspace/db";
 import { eq, asc, desc, inArray } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../lib/auth";
 import { logActivity } from "../lib/activity";
@@ -477,6 +477,43 @@ router.post("/admin/remove-from-all-accounts", requireAuth, async (req: AuthRequ
 
 // ── Call Reports ──────────────────────────────────────────────────────────────
 
+// IMPORTANT: This route must be registered BEFORE /:id/call-reports so Express
+// does not treat the literal "all" string as an account ID.
+router.get("/call-reports/all", requireAuth, async (req, res) => {
+  try {
+    const rows = await db
+      .select({
+        id: callReportsTable.id,
+        accountId: callReportsTable.accountId,
+        callType: callReportsTable.callType,
+        outcome: callReportsTable.outcome,
+        summary: callReportsTable.summary,
+        nextSteps: callReportsTable.nextSteps,
+        calledAt: callReportsTable.calledAt,
+        createdById: callReportsTable.createdById,
+        createdByName: callReportsTable.createdByName,
+        createdAt: callReportsTable.createdAt,
+        updatedAt: callReportsTable.updatedAt,
+        accountName: accountsTable.company,
+      })
+      .from(callReportsTable)
+      .leftJoin(accountsTable, eq(callReportsTable.accountId, accountsTable.id))
+      .orderBy(desc(callReportsTable.calledAt));
+
+    const reportIds = rows.map(r => r.id);
+    const comments = reportIds.length > 0
+      ? await db.select().from(callReportCommentsTable)
+          .where(inArray(callReportCommentsTable.reportId, reportIds))
+          .orderBy(asc(callReportCommentsTable.createdAt))
+      : [];
+
+    res.json(rows.map(r => ({ ...r, comments: comments.filter(c => c.reportId === r.id) })));
+  } catch (err) {
+    console.error("[call-reports] all failed", err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
 router.get("/:id/call-reports", requireAuth, async (req, res) => {
   try {
     const accountId = parseInt(String(req.params.id));
@@ -520,6 +557,33 @@ router.post("/:id/call-reports", requireAuth, async (req: AuthRequest, res) => {
     }).returning();
 
     res.status(201).json({ ...report, comments: [] });
+
+    // Send notifications to relevant users — wrapped in try/catch so failures
+    // never affect the already-sent response.
+    try {
+      const [acct] = await db.select({ company: accountsTable.company })
+        .from(accountsTable).where(eq(accountsTable.id, accountId)).limit(1);
+      const accountCompany = acct?.company ?? "an account";
+
+      const notifUsers = await db.select({ id: usersTable.id })
+        .from(usersTable)
+        .where(inArray(usersTable.role, ["admin", "executive", "manager", "sales_team"]));
+
+      const targets = notifUsers.filter(u => u.id !== req.user?.userId);
+      if (targets.length > 0) {
+        await db.insert(notificationsTable).values(
+          targets.map(u => ({
+            userId: u.id,
+            type: "system" as const,
+            title: "New Call Report",
+            message: `${createdByName || "Someone"} logged a ${callType} with ${accountCompany}`,
+            link: "/sales-force",
+          }))
+        );
+      }
+    } catch (notifErr) {
+      console.error("[call-reports] notification insert failed", notifErr);
+    }
   } catch (err) {
     console.error("[call-reports] create failed", err);
     res.status(500).json({ error: "InternalServerError" });

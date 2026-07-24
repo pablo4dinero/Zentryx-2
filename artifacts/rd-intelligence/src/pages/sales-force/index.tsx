@@ -18,6 +18,7 @@ import * as XLSX from "xlsx";
 import SalesChartsPage from "./Charts";
 import SalesForecastPage from "./Forecast";
 import NewProductionOrdersPage from "./NewProductionOrders";
+import SalesForceCallReports from "./CallReports";
 import { useCustomOptions, DEFAULT_PRODUCT_TYPES, displayLabel, useServerProductTypes } from "@/lib/project-options";
 import { CustomOptionsSelect } from "@/components/ui/CustomOptionsSelect";
 
@@ -917,7 +918,7 @@ function AccountsPage() {
   );
 }
 
-const ALL_SF_TABS = ["Accounts", "New Production Orders", "Charts", "Forecast"] as const;
+const ALL_SF_TABS = ["Accounts", "New Production Orders", "Charts", "Forecast", "Call Reports"] as const;
 type SfTab = typeof ALL_SF_TABS[number];
 
 export default function SalesForce() {
@@ -970,6 +971,7 @@ export default function SalesForce() {
           {activeTab === "New Production Orders" && <NewProductionOrdersPage />}
           {activeTab === "Charts" && <SalesChartsPage />}
           {activeTab === "Forecast" && <SalesForecastPage />}
+          {activeTab === "Call Reports" && <SalesForceCallReports />}
         </motion.div>
       </AnimatePresence>
     </div>
