@@ -572,6 +572,32 @@ function CallReportsTab({ accountId }: { accountId: number }) {
   const [commentInputs, setCommentInputs] = useState<Record<number, string>>({});
   const [openComments, setOpenComments] = useState<Set<number>>(new Set());
   const [sendingComment, setSendingComment] = useState<number | null>(null);
+  const [formWidth, setFormWidth] = useState(600);
+  const isDragging = useRef(false);
+  const dragStartX = useRef(0);
+  const dragStartWidth = useRef(0);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!isDragging.current) return;
+      const delta = dragStartX.current - e.clientX;
+      setFormWidth(Math.max(280, Math.min(900, dragStartWidth.current + delta)));
+    };
+    const onUp = () => { isDragging.current = false; };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    return () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+  }, []);
+
+  const onDragHandleMouseDown = (e: React.MouseEvent) => {
+    isDragging.current = true;
+    dragStartX.current = e.clientX;
+    dragStartWidth.current = formWidth;
+    e.preventDefault();
+  };
 
   const { data: reportsRaw = [], isLoading, isError: reportsError } = useQuery({
     queryKey: [`/api/accounts/${accountId}/call-reports`],
@@ -665,9 +691,9 @@ function CallReportsTab({ accountId }: { accountId: number }) {
   );
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-5 items-start">
+    <div className="flex gap-0 items-start">
       {/* Left: timeline */}
-      <div className="space-y-3 min-w-0">
+      <div className="flex-1 space-y-3 min-w-0">
         <div>
           <h3 className="font-semibold text-sm text-foreground">Call Reports</h3>
           <p className="text-xs text-muted-foreground mt-0.5">{reports.length} log{reports.length !== 1 ? "s" : ""} recorded</p>
@@ -800,8 +826,17 @@ function CallReportsTab({ accountId }: { accountId: number }) {
         </div>
       </div>
 
+      {/* Drag handle */}
+      <div
+        onMouseDown={onDragHandleMouseDown}
+        className="w-3 self-stretch cursor-col-resize shrink-0 flex items-start justify-center pt-1 group"
+        style={{ userSelect: "none" }}
+      >
+        <div className="w-0.5 min-h-[200px] h-full rounded-full bg-white/10 group-hover:bg-primary/40 transition-colors" />
+      </div>
+
       {/* Right: persistent form */}
-      <div className="lg:sticky lg:top-4">
+      <div className="sticky top-4 shrink-0" style={{ width: formWidth }}>
         <div className="glass-card rounded-2xl p-5 border border-white/10 space-y-4">
           <div className="flex items-center justify-between">
             <h4 className="font-semibold text-sm text-foreground">{editingId ? "Edit Report" : "Log a Call"}</h4>
