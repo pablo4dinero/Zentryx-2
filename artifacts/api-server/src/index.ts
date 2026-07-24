@@ -461,6 +461,44 @@ async function createTablesIfNotExist() {
         ('production_analytics', 'Production Analytics', 'Learn from actual production data and optimize constraints', true, 'analytics')
       ON CONFLICT (feature_name) DO NOTHING;
     `));
+    // allowed_roles column for per-flag role visibility control
+    await db.execute(sql.raw(`
+      ALTER TABLE feature_flags
+        ADD COLUMN IF NOT EXISTS allowed_roles JSONB;
+    `));
+    // Seed the call_reports feature flag
+    await db.execute(sql.raw(`
+      INSERT INTO feature_flags (feature_name, display_name, description, enabled, category)
+      VALUES ('call_reports', 'Call Reports', 'Enable the Call Reports tab in the Sales Force account detail page', true, 'sales')
+      ON CONFLICT (feature_name) DO NOTHING;
+    `));
+
+    // Call Reports — sales team interaction logs
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS call_reports (
+        id SERIAL PRIMARY KEY,
+        account_id INTEGER NOT NULL,
+        call_type TEXT NOT NULL,
+        outcome TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        next_steps TEXT,
+        called_at TIMESTAMP NOT NULL,
+        created_by_id INTEGER,
+        created_by_name TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `));
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS call_report_comments (
+        id SERIAL PRIMARY KEY,
+        report_id INTEGER NOT NULL,
+        author_id INTEGER,
+        author_name TEXT,
+        content TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `));
 
     // Convert users.role from the fixed `user_role` enum to free TEXT so
     // admins can assign custom roles beyond the 9 built-ins. Idempotent:
