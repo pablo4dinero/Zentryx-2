@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Search, Download, Trash2, Maximize2, Minimize2, Edit3, X, Calendar, ChevronDown, Pencil, RefreshCw, History, ChevronRight, SlidersHorizontal, Check } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts";
@@ -740,10 +741,20 @@ export default function NewProductionOrdersPage() {
   const prefsKey     = `po_col_prefs_${userId}`;
   const [colPrefs, setColPrefs] = useState<ColPrefs>(() => loadColPrefs(userId));
   const [showColToggle, setShowColToggle] = useState(false);
+  const [colTogglePos, setColTogglePos] = useState<{ top: number; right: number } | null>(null);
+  const colButtonRef   = useRef<HTMLButtonElement>(null);
   const colToggleRef   = useRef<HTMLDivElement>(null);
   const draggingColRef = useRef<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
   const resizingRef = useRef<{ key: string; startX: number; startWidth: number } | null>(null);
+
+  const openColToggle = () => {
+    if (colButtonRef.current) {
+      const r = colButtonRef.current.getBoundingClientRect();
+      setColTogglePos({ top: r.bottom + 8, right: window.innerWidth - r.right });
+    }
+    setShowColToggle(true);
+  };
 
   // Column resize – global mouse listeners
   useEffect(() => {
@@ -768,7 +779,9 @@ export default function NewProductionOrdersPage() {
   useEffect(() => {
     if (!showColToggle) return;
     const h = (e: MouseEvent) => {
-      if (colToggleRef.current && !colToggleRef.current.contains(e.target as Node)) setShowColToggle(false);
+      const t = e.target as Node;
+      if (colToggleRef.current?.contains(t) || colButtonRef.current?.contains(t)) return;
+      setShowColToggle(false);
     };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
@@ -1281,66 +1294,70 @@ export default function NewProductionOrdersPage() {
           </div>
           <div className="flex items-center gap-3">
             {/* Column visibility + order toggle */}
-            <div ref={colToggleRef} className="relative">
-              <button
-                onClick={() => setShowColToggle(v => !v)}
+            <button
+              ref={colButtonRef}
+              onClick={() => showColToggle ? setShowColToggle(false) : openColToggle()}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors",
+                showColToggle
+                  ? "bg-primary/10 border-primary/20 text-primary"
+                  : isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5",
+              )}
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              Columns
+            </button>
+            {showColToggle && colTogglePos && createPortal(
+              <div
+                ref={colToggleRef}
+                style={{ position: "fixed", top: colTogglePos.top, right: colTogglePos.right, zIndex: 9999 }}
                 className={cn(
-                  "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors",
-                  showColToggle
-                    ? "bg-primary/10 border-primary/20 text-primary"
-                    : isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5",
+                  "rounded-xl border shadow-2xl p-3 w-60",
+                  isLight ? "bg-white border-slate-200" : "bg-[#16162a] border-white/10",
                 )}
               >
-                <SlidersHorizontal className="w-3.5 h-3.5" />
-                Columns
-              </button>
-              {showColToggle && (
-                <div className={cn(
-                  "absolute right-0 top-[calc(100%+8px)] z-[200] rounded-xl border shadow-2xl p-3 w-60",
-                  isLight ? "bg-white border-slate-200" : "bg-[#16162a] border-white/10",
-                )}>
-                  <div className="flex items-center justify-between mb-2.5">
-                    <p className={cn("text-xs font-semibold", isLight ? "text-slate-700" : "text-foreground")}>
-                      Visible Columns
-                    </p>
-                    <button
-                      onClick={() => setColPrefs({ order: [...DEFAULT_COL_ORDER], widths: { ...DEFAULT_COL_WIDTHS }, visible: { ...DEFAULT_COL_VIS } })}
-                      className="text-[10px] text-primary hover:underline"
-                    >
-                      Reset all
-                    </button>
-                  </div>
-                  <p className={cn("text-[10px] mb-2.5", isLight ? "text-slate-400" : "text-muted-foreground")}>
-                    Drag column headers to reorder. Drag edges to resize.
+                <div className="flex items-center justify-between mb-2.5">
+                  <p className={cn("text-xs font-semibold", isLight ? "text-slate-700" : "text-foreground")}>
+                    Visible Columns
                   </p>
-                  <div className="space-y-0.5">
-                    {ALL_COLUMNS.map(col => {
-                      const vis = colPrefs.visible[col.key] !== false;
-                      return (
-                        <button
-                          key={col.key}
-                          onClick={() => setColPrefs(p => ({ ...p, visible: { ...p.visible, [col.key]: !vis } }))}
-                          className={cn(
-                            "w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs transition-colors text-left",
-                            isLight ? "hover:bg-slate-50" : "hover:bg-white/5",
-                          )}
-                        >
-                          <div className={cn(
-                            "w-3.5 h-3.5 rounded flex items-center justify-center border shrink-0",
-                            vis ? "bg-primary border-primary" : isLight ? "border-slate-300" : "border-white/20",
-                          )}>
-                            {vis && <Check className="w-2 h-2 text-white" />}
-                          </div>
-                          <span className={cn(vis ? (isLight ? "text-slate-800" : "text-foreground") : (isLight ? "text-slate-400" : "text-muted-foreground"))}>
-                            {col.label}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <button
+                    onClick={() => setColPrefs({ order: [...DEFAULT_COL_ORDER], widths: { ...DEFAULT_COL_WIDTHS }, visible: { ...DEFAULT_COL_VIS } })}
+                    className="text-[10px] text-primary hover:underline"
+                  >
+                    Reset all
+                  </button>
                 </div>
-              )}
-            </div>
+                <p className={cn("text-[10px] mb-2.5", isLight ? "text-slate-400" : "text-muted-foreground")}>
+                  Drag column headers to reorder. Drag edges to resize.
+                </p>
+                <div className="space-y-0.5">
+                  {ALL_COLUMNS.map(col => {
+                    const vis = colPrefs.visible[col.key] !== false;
+                    return (
+                      <button
+                        key={col.key}
+                        onClick={() => setColPrefs(p => ({ ...p, visible: { ...p.visible, [col.key]: !vis } }))}
+                        className={cn(
+                          "w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs transition-colors text-left",
+                          isLight ? "hover:bg-slate-50" : "hover:bg-white/5",
+                        )}
+                      >
+                        <div className={cn(
+                          "w-3.5 h-3.5 rounded flex items-center justify-center border shrink-0",
+                          vis ? "bg-primary border-primary" : isLight ? "border-slate-300" : "border-white/20",
+                        )}>
+                          {vis && <Check className="w-2 h-2 text-white" />}
+                        </div>
+                        <span className={cn(vis ? (isLight ? "text-slate-800" : "text-foreground") : (isLight ? "text-slate-400" : "text-muted-foreground"))}>
+                          {col.label}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>,
+              document.body
+            )}
             <p className="text-xs text-muted-foreground">Updated {filteredOrders.length} orders</p>
           </div>
         </div>
