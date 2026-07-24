@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { accountsTable, accountTasksTable, accountProductionOrdersTable, accountStatusReportsTable, todayProductionOrdersTable, usersTable } from "@workspace/db";
-import { eq, asc, desc } from "drizzle-orm";
+import { accountsTable, accountTasksTable, accountProductionOrdersTable, accountStatusReportsTable, todayProductionOrdersTable, usersTable, callReportsTable, callReportCommentsTable } from "@workspace/db";
+import { eq, asc, desc, inArray } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../lib/auth";
 import { logActivity } from "../lib/activity";
 import { sanitize } from "../lib/sanitize";
@@ -471,6 +471,129 @@ router.post("/admin/remove-from-all-accounts", requireAuth, async (req: AuthRequ
     });
   } catch (err) {
     console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+// ── Call Reports ──────────────────────────────────────────────────────────────
+
+router.get("/:id/call-reports", requireAuth, async (req, res) => {
+  try {
+    const accountId = parseInt(String(req.params.id));
+    const reports = await db.select().from(callReportsTable)
+      .where(eq(callReportsTable.accountId, accountId))
+      .orderBy(desc(callReportsTable.calledAt));
+
+    const reportIds = reports.map(r => r.id);
+    const comments = reportIds.length > 0
+      ? await db.select().from(callReportCommentsTable)
+          .where(inArray(callReportCommentsTable.reportId, reportIds))
+          .orderBy(asc(callReportCommentsTable.createdAt))
+      : [];
+
+    res.json(reports.map(r => ({ ...r, comments: comments.filter(c => c.reportId === r.id) })));
+  } catch (err) {
+    console.error("[call-reports] list failed", err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+router.post("/:id/call-reports", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const accountId = parseInt(String(req.params.id));
+    const { callType, outcome, summary, nextSteps, calledAt, createdByName } = req.body;
+
+    if (!callType || !outcome || !summary || !calledAt) {
+      res.status(400).json({ error: "BadRequest", message: "callType, outcome, summary, calledAt are required" });
+      return;
+    }
+
+    const [report] = await db.insert(callReportsTable).values({
+      accountId,
+      callType: sanitize(callType),
+      outcome: sanitize(outcome),
+      summary: sanitize(summary),
+      nextSteps: nextSteps ? sanitize(nextSteps) : null,
+      calledAt: new Date(calledAt),
+      createdById: req.user?.userId ?? null,
+      createdByName: createdByName ? sanitize(createdByName) : null,
+    }).returning();
+
+    res.status(201).json({ ...report, comments: [] });
+  } catch (err) {
+    console.error("[call-reports] create failed", err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+router.patch("/:id/call-reports/:reportId", requireAuth, async (req, res) => {
+  try {
+    const reportId = parseInt(String(req.params.reportId));
+    const { callType, outcome, summary, nextSteps, calledAt } = req.body;
+
+    const updates: Record<string, any> = { updatedAt: new Date() };
+    if (callType !== undefined) updates.callType = sanitize(callType);
+    if (outcome !== undefined) updates.outcome = sanitize(outcome);
+    if (summary !== undefined) updates.summary = sanitize(summary);
+    if (nextSteps !== undefined) updates.nextSteps = nextSteps ? sanitize(nextSteps) : null;
+    if (calledAt !== undefined) updates.calledAt = new Date(calledAt);
+
+    const [updated] = await db.update(callReportsTable)
+      .set(updates)
+      .where(eq(callReportsTable.id, reportId))
+      .returning();
+
+    if (!updated) { res.status(404).json({ error: "NotFound" }); return; }
+    res.json(updated);
+  } catch (err) {
+    console.error("[call-reports] update failed", err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+router.delete("/:id/call-reports/:reportId", requireAuth, async (req, res) => {
+  try {
+    const reportId = parseInt(String(req.params.reportId));
+    await db.delete(callReportCommentsTable).where(eq(callReportCommentsTable.reportId, reportId));
+    await db.delete(callReportsTable).where(eq(callReportsTable.id, reportId));
+    res.status(204).send();
+  } catch (err) {
+    console.error("[call-reports] delete failed", err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+router.post("/:id/call-reports/:reportId/comments", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const reportId = parseInt(String(req.params.reportId));
+    const { content, authorName } = req.body;
+
+    if (!content?.trim()) {
+      res.status(400).json({ error: "BadRequest", message: "content is required" });
+      return;
+    }
+
+    const [comment] = await db.insert(callReportCommentsTable).values({
+      reportId,
+      authorId: req.user?.userId ?? null,
+      authorName: authorName ? sanitize(authorName) : null,
+      content: sanitize(content),
+    }).returning();
+
+    res.status(201).json(comment);
+  } catch (err) {
+    console.error("[call-reports] comment create failed", err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+router.delete("/:id/call-reports/:reportId/comments/:commentId", requireAuth, async (req, res) => {
+  try {
+    const commentId = parseInt(String(req.params.commentId));
+    await db.delete(callReportCommentsTable).where(eq(callReportCommentsTable.id, commentId));
+    res.status(204).send();
+  } catch (err) {
+    console.error("[call-reports] comment delete failed", err);
     res.status(500).json({ error: "InternalServerError" });
   }
 });

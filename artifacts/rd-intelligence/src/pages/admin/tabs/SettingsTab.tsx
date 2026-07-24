@@ -56,6 +56,31 @@ export function SettingsTab({ isLight }: { isLight: boolean }) {
     }
   };
 
+  const updateAllowedRoles = async (featureName: string, allowedRoles: string[] | null) => {
+    setToggling(featureName);
+    try {
+      const flag = flags.find(f => f.featureName === featureName);
+      const result = await apiPatch(`/admin/feature-flags/${featureName}`, {
+        enabled: flag?.enabled ?? true,
+        allowedRoles,
+      });
+      setFlags(prev => prev.map(f => f.featureName === featureName ? result : f));
+    } finally {
+      setToggling(null);
+    }
+  };
+
+  const ROLE_OPTIONS = [
+    { value: "executive", label: "Executive" },
+    { value: "manager", label: "Manager" },
+    { value: "sales_team", label: "Sales Team" },
+    { value: "npd_team", label: "NPD Team" },
+    { value: "operations_team", label: "Operations Team" },
+    { value: "qc_team", label: "QC Team" },
+    { value: "support_staff", label: "Support Staff" },
+    { value: "viewer", label: "Viewer" },
+  ];
+
   if (loading) return <SkeletonGrid isLight={isLight} />;
 
   const grouped = flags.reduce((acc: Record<string, any[]>, flag: any) => {
@@ -128,6 +153,49 @@ export function SettingsTab({ isLight }: { isLight: boolean }) {
                   ) : null}
                   {flag.enabled ? "Enabled" : "Disabled"}
                 </button>
+              </div>
+
+              {/* Role visibility selector */}
+              <div className={cn("mt-3 pt-3 border-t", isLight ? "border-slate-100" : "border-white/5")}>
+                <p className={cn("text-[10px] uppercase tracking-wider mb-2 font-medium", isLight ? "text-slate-500" : "text-muted-foreground")}>
+                  Visible to
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    onClick={() => updateAllowedRoles(flag.featureName, null)}
+                    disabled={toggling === flag.featureName}
+                    className={cn(
+                      "px-2.5 py-1 rounded-full text-[10px] font-semibold border transition-colors",
+                      !flag.allowedRoles?.length
+                        ? "bg-primary/10 border-primary/20 text-primary"
+                        : isLight ? "border-slate-200 text-slate-500 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5"
+                    )}
+                  >
+                    All roles
+                  </button>
+                  {ROLE_OPTIONS.map(role => {
+                    const active = Array.isArray(flag.allowedRoles) && flag.allowedRoles.includes(role.value);
+                    return (
+                      <button
+                        key={role.value}
+                        onClick={() => {
+                          const current: string[] = Array.isArray(flag.allowedRoles) ? flag.allowedRoles : [];
+                          const next = active ? current.filter(r => r !== role.value) : [...current, role.value];
+                          updateAllowedRoles(flag.featureName, next.length === 0 ? null : next);
+                        }}
+                        disabled={toggling === flag.featureName}
+                        className={cn(
+                          "px-2.5 py-1 rounded-full text-[10px] font-semibold border transition-colors",
+                          active
+                            ? "bg-primary/10 border-primary/20 text-primary"
+                            : isLight ? "border-slate-200 text-slate-500 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5"
+                        )}
+                      >
+                        {role.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             ))}
           </div>

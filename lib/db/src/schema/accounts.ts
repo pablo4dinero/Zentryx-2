@@ -105,8 +105,33 @@ export const accountForecastsTable = pgTable("account_forecasts", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+export const callReportsTable = pgTable("call_reports", {
+  id: serial("id").primaryKey(),
+  accountId: integer("account_id").notNull(),
+  callType: text("call_type").notNull(),
+  outcome: text("outcome").notNull(),
+  summary: text("summary").notNull(),
+  nextSteps: text("next_steps"),
+  calledAt: timestamp("called_at").notNull(),
+  createdById: integer("created_by_id"),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const callReportCommentsTable = pgTable("call_report_comments", {
+  id: serial("id").primaryKey(),
+  reportId: integer("report_id").notNull(),
+  authorId: integer("author_id"),
+  authorName: text("author_name"),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export type Account = typeof accountsTable.$inferSelect;
 export type AccountTask = typeof accountTasksTable.$inferSelect;
 export type AccountProductionOrder = typeof accountProductionOrdersTable.$inferSelect;
 export type AccountStatusReport = typeof accountStatusReportsTable.$inferSelect;
 export type AccountForecast = typeof accountForecastsTable.$inferSelect;
+export type CallReport = typeof callReportsTable.$inferSelect;
+export type CallReportComment = typeof callReportCommentsTable.$inferSelect;

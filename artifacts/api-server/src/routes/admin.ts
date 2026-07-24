@@ -524,6 +524,7 @@ router.get("/feature-flags", async (_req: AuthRequest, res) => {
       description: featureFlagsTable.description,
       enabled: featureFlagsTable.enabled,
       category: featureFlagsTable.category,
+      allowedRoles: featureFlagsTable.allowedRoles,
       updatedByUserId: featureFlagsTable.updatedByUserId,
       updatedAt: featureFlagsTable.updatedAt,
     }).from(featureFlagsTable).orderBy(featureFlagsTable.category, featureFlagsTable.featureName);
@@ -566,6 +567,13 @@ router.post("/feature-flags/init", async (req: AuthRequest, res) => {
         enabled: true,
         category: "analytics",
       },
+      {
+        featureName: "call_reports",
+        displayName: "Call Reports",
+        description: "Enable the Call Reports tab in the Sales Force account detail page",
+        enabled: true,
+        category: "sales",
+      },
     ];
 
     for (const flag of defaults) {
@@ -579,15 +587,15 @@ router.post("/feature-flags/init", async (req: AuthRequest, res) => {
   }
 });
 
-// PATCH /feature-flags/:featureName — toggle a feature flag
+// PATCH /feature-flags/:featureName — toggle a feature flag or update allowed roles
 router.patch("/feature-flags/:featureName", async (req: AuthRequest, res) => {
   try {
     const featureName = String(req.params.featureName);
-    const { enabled, reason } = req.body as { enabled?: boolean; reason?: string };
+    const { enabled, reason, allowedRoles } = req.body as { enabled?: boolean; reason?: string; allowedRoles?: string[] | null };
     const userId = req.user!.userId;
 
-    if (typeof enabled !== "boolean") {
-      res.status(400).json({ error: "BadRequest", message: "enabled must be boolean" });
+    if (typeof enabled !== "boolean" && allowedRoles === undefined) {
+      res.status(400).json({ error: "BadRequest", message: "enabled (boolean) or allowedRoles is required" });
       return;
     }
 
@@ -603,19 +611,26 @@ router.patch("/feature-flags/:featureName", async (req: AuthRequest, res) => {
       return;
     }
 
+    const updates: Record<string, any> = { updatedByUserId: userId, updatedAt: new Date() };
+    if (typeof enabled === "boolean") updates.enabled = enabled;
+    if (allowedRoles !== undefined) updates.allowedRoles = allowedRoles;
+
     const [updated] = await db.update(featureFlagsTable)
-      .set({ enabled, updatedByUserId: userId, updatedAt: new Date() })
+      .set(updates)
       .where(eq(featureFlagsTable.featureName, featureName))
       .returning();
 
-    await db.insert(featureFlagHistoryTable).values({
-      featureName,
-      previousValue: flag.enabled,
-      newValue: enabled,
-      changedByUserId: userId,
-      changedByName: me.name,
-      reason: reason || null,
-    });
+    // Only log history when the enabled state actually changed
+    if (typeof enabled === "boolean" && enabled !== flag.enabled) {
+      await db.insert(featureFlagHistoryTable).values({
+        featureName,
+        previousValue: flag.enabled,
+        newValue: enabled,
+        changedByUserId: userId,
+        changedByName: me.name,
+        reason: reason || null,
+      });
+    }
 
     res.json(updated);
   } catch (err) {

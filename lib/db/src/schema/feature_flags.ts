@@ -1,4 +1,4 @@
-import { pgTable, serial, text, boolean, timestamp, integer, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, boolean, timestamp, integer, uniqueIndex, json } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
@@ -10,6 +10,7 @@ export const featureFlagsTable = pgTable("feature_flags", {
   description: text("description").notNull(),
   enabled: boolean("enabled").notNull().default(false),
   category: text("category").notNull().default("optimization"),
+  allowedRoles: json("allowed_roles").$type<string[]>(),
   updatedByUserId: integer("updated_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   createdAt: timestamp("created_at").notNull().defaultNow(),

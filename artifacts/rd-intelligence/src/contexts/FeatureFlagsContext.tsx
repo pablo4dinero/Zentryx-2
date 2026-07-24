@@ -12,13 +12,13 @@ interface FeatureFlagsContextType {
 const FeatureFlagsContext = createContext<FeatureFlagsContextType | undefined>(undefined);
 
 export function FeatureFlagsProvider({ children }: { children: React.ReactNode }) {
-  const { flags = {}, isLoading } = useFeatureFlags() || { flags: {}, isLoading: false };
+  const { isEnabled, isLoading } = useFeatureFlags();
 
   const value: FeatureFlagsContextType = {
-    efficiencyScoreEnabled: flags?.efficiency_score ?? true,
-    floorEfficiencyEnabled: flags?.floor_efficiency_dashboard ?? true,
-    downtimeAlertsEnabled: flags?.downtime_alerts ?? true,
-    productionAnalyticsEnabled: flags?.production_analytics ?? true,
+    efficiencyScoreEnabled: isEnabled("efficiency_score", true),
+    floorEfficiencyEnabled: isEnabled("floor_efficiency_dashboard", true),
+    downtimeAlertsEnabled: isEnabled("downtime_alerts", true),
+    productionAnalyticsEnabled: isEnabled("production_analytics", true),
     isLoading,
   };
 
@@ -32,7 +32,6 @@ export function FeatureFlagsProvider({ children }: { children: React.ReactNode }
 export function useFeatureFlagsContext(): FeatureFlagsContextType {
   const context = useContext(FeatureFlagsContext);
   if (context === undefined) {
-    // Return defaults if context not provided
     return {
       efficiencyScoreEnabled: true,
       floorEfficiencyEnabled: true,
