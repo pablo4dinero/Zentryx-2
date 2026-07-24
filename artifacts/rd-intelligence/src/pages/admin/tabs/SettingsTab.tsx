@@ -122,40 +122,41 @@ export function SettingsTab({ isLight }: { isLight: boolean }) {
             {categoryFlags.map((flag: any) => (
               <div
                 key={flag.featureName}
-                className={cn("glass-card rounded-xl p-4 border flex items-start justify-between", isLight ? "border-slate-200 bg-white" : "border-white/5")}
+                className={cn("glass-card rounded-xl p-4 border", isLight ? "border-slate-200 bg-white" : "border-white/5")}
               >
-                <div className="flex-1">
-                  <p className={cn("font-semibold text-sm", isLight ? "text-slate-900" : "text-foreground")}>
-                    {flag.displayName}
-                  </p>
-                  <p className={cn("text-xs mt-1", isLight ? "text-slate-500" : "text-muted-foreground")}>
-                    {flag.description}
-                  </p>
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <p className={cn("font-semibold text-sm", isLight ? "text-slate-900" : "text-foreground")}>
+                      {flag.displayName}
+                    </p>
+                    <p className={cn("text-xs mt-1", isLight ? "text-slate-500" : "text-muted-foreground")}>
+                      {flag.description}
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => toggleFlag(flag.featureName, flag.enabled)}
+                    disabled={toggling === flag.featureName}
+                    className={cn(
+                      "ml-4 shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors",
+                      flag.enabled
+                        ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 hover:bg-emerald-500/20"
+                        : isLight
+                          ? "border-slate-200 text-slate-600 hover:bg-slate-50"
+                          : "border-white/10 text-muted-foreground hover:bg-white/5",
+                      toggling === flag.featureName && "opacity-50",
+                    )}
+                  >
+                    {toggling === flag.featureName ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin inline mr-1" />
+                    ) : flag.enabled ? (
+                      <Check className="w-3.5 h-3.5 inline mr-1" />
+                    ) : null}
+                    {flag.enabled ? "Enabled" : "Disabled"}
+                  </button>
                 </div>
 
-                <button
-                  onClick={() => toggleFlag(flag.featureName, flag.enabled)}
-                  disabled={toggling === flag.featureName}
-                  className={cn(
-                    "ml-4 shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors",
-                    flag.enabled
-                      ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 hover:bg-emerald-500/20"
-                      : isLight
-                        ? "border-slate-200 text-slate-600 hover:bg-slate-50"
-                        : "border-white/10 text-muted-foreground hover:bg-white/5",
-                    toggling === flag.featureName && "opacity-50",
-                  )}
-                >
-                  {toggling === flag.featureName ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin inline mr-1" />
-                  ) : flag.enabled ? (
-                    <Check className="w-3.5 h-3.5 inline mr-1" />
-                  ) : null}
-                  {flag.enabled ? "Enabled" : "Disabled"}
-                </button>
-              </div>
-
-              {/* Role visibility selector */}
+                {/* Role visibility selector */}
               <div className={cn("mt-3 pt-3 border-t", isLight ? "border-slate-100" : "border-white/5")}>
                 <p className={cn("text-[10px] uppercase tracking-wider mb-2 font-medium", isLight ? "text-slate-500" : "text-muted-foreground")}>
                   Visible to
@@ -196,6 +197,7 @@ export function SettingsTab({ isLight }: { isLight: boolean }) {
                     );
                   })}
                 </div>
+              </div>
               </div>
             ))}
           </div>
