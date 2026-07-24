@@ -946,15 +946,33 @@ function CallReportsTab({ accountId }: { accountId: number }) {
           </div>
         )}
 
-        <div className="space-y-3">
-          {(reports as any[]).map((r: any) => {
+        <div className="relative">
+          {/* Vertical connector line */}
+          {reports.length > 1 && (
+            <div className="absolute left-[13px] top-5 bottom-5 w-px bg-primary/20 rounded-full" />
+          )}
+
+          <div className="space-y-4">
+          {(reports as any[]).map((r: any, idx: number) => {
             const ct = CALL_TYPES.find(c => c.value === r.callType) ?? CALL_TYPES[1];
             const CtIcon = ct.icon;
             const isOwn = userId === r.createdById;
             const commentsOpen = openComments.has(r.id);
 
             return (
-              <div key={r.id} className={cn("glass-card rounded-2xl border overflow-hidden transition-colors", editingId === r.id ? "border-primary/30" : "border-white/5")}>
+              <div key={r.id} className="relative pl-8">
+                {/* Timeline dot */}
+                <div className={cn(
+                  "absolute left-[7px] top-[18px] w-[13px] h-[13px] rounded-full border-2 z-10 transition-colors",
+                  editingId === r.id
+                    ? "bg-primary border-primary shadow-[0_0_8px_rgba(139,92,246,0.6)]"
+                    : idx === 0
+                      ? "bg-primary border-primary/60 shadow-[0_0_6px_rgba(139,92,246,0.4)]"
+                      : "bg-primary/50 border-primary/30",
+                  "ring-[3px] ring-background"
+                )} />
+
+              <div className={cn("glass-card rounded-2xl border overflow-hidden transition-colors", editingId === r.id ? "border-primary/30" : "border-white/5")}>
                 <div className="flex items-start gap-3 p-4">
                   <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center border shrink-0 mt-0.5", ct.color)}>
                     <CtIcon className="w-4 h-4" />
@@ -1049,8 +1067,10 @@ function CallReportsTab({ accountId }: { accountId: number }) {
                   </AnimatePresence>
                 </div>
               </div>
+              </div>
             );
           })}
+          </div>
         </div>
       </div>
 
