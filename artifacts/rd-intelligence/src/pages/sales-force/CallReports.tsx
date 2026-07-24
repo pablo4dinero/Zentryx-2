@@ -487,18 +487,19 @@ export default function SalesForceCallReports() {
     return () => document.removeEventListener("mousedown", h);
   }, [accountDropOpen]);
 
+  // ── Form state ──────────────────────────────────────────────────────────────
+  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
+  const [form,         setForm]         = useState(BLANK_FORM());
+  const [submitting,   setSubmitting]   = useState(false);
+  const [formError,    setFormError]    = useState("");
+
+  // Derived after selectedAccountId is declared
   const filteredAccountOptions = (accounts as any[]).filter((a: any) => {
     if (!accountSearch.trim()) return true;
     const q = accountSearch.toLowerCase();
     return (a.company ?? "").toLowerCase().includes(q) || (a.productName ?? "").toLowerCase().includes(q);
   });
   const selectedAccount = (accounts as any[]).find((a: any) => a.id === selectedAccountId);
-
-  // ── Form state ──────────────────────────────────────────────────────────────
-  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
-  const [form,         setForm]         = useState(BLANK_FORM());
-  const [submitting,   setSubmitting]   = useState(false);
-  const [formError,    setFormError]    = useState("");
 
   const resetForm = () => {
     setForm(BLANK_FORM());
