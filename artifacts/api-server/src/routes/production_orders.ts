@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import {
   accountsTable, accountProductionOrdersTable, todayProductionOrdersTable, usersTable,
   mdpProductionOrdersTable, mdpFloorAssignmentsTable, mdpProductSwitchDowntimesTable, mdpProducedOrdersTable,
+  productionOrderEventsTable,
 } from "@workspace/db";
 import { eq, desc, inArray } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../lib/auth";
@@ -57,6 +58,7 @@ router.get("/", requireAuth, async (req: AuthRequest, res) => {
       dateDelivered: accountProductionOrdersTable.dateDelivered,
       createdAt: accountProductionOrdersTable.createdAt,
       updatedAt: accountProductionOrdersTable.updatedAt,
+      createdByName: accountProductionOrdersTable.createdByName,
     })
       .from(accountProductionOrdersTable)
       .leftJoin(accountsTable, eq(accountProductionOrdersTable.accountId, accountsTable.id))
@@ -106,6 +108,8 @@ router.post("/today", requireAuth, async (req: AuthRequest, res) => {
       return;
     }
 
+    const [actor] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, req.user!.userId)).limit(1);
+
     const [order] = await db.insert(accountProductionOrdersTable).values({
       accountId,
       price: price !== undefined && price !== "" ? String(price) : null,
@@ -113,6 +117,8 @@ router.post("/today", requireAuth, async (req: AuthRequest, res) => {
       dateOrdered,
       expectedDeliveryDate: expectedDeliveryDate || null,
       dateDelivered: dateDelivered || null,
+      createdById: req.user!.userId,
+      createdByName: actor?.name ?? null,
     }).returning();
 
     await db.insert(todayProductionOrdersTable).values({
@@ -126,6 +132,18 @@ router.post("/today", requireAuth, async (req: AuthRequest, res) => {
       expectedDeliveryDate: order.expectedDeliveryDate || null,
       dateDelivered: order.dateDelivered || null,
     });
+
+    try {
+      await db.insert(productionOrderEventsTable).values({
+        orderId: order.id,
+        eventType: "created",
+        actorId: req.user!.userId,
+        actorName: actor?.name ?? "Unknown",
+        module: "Sales Force",
+        section: "New Production Orders",
+        description: `Order created for ${account.company}${account.productName ? ` — ${account.productName}` : ""}`,
+      });
+    } catch { /* non-fatal */ }
 
     logger.info({ orderId: order.id }, "[Mail] Queuing production order notification");
     db.select({ name: usersTable.name, email: usersTable.email })
@@ -162,6 +180,19 @@ router.delete("/today/:id", requireAuth, async (req: AuthRequest, res) => {
     await db.delete(accountProductionOrdersTable).where(eq(accountProductionOrdersTable.id, row.productionOrderId));
     await db.delete(todayProductionOrdersTable).where(eq(todayProductionOrdersTable.id, id));
     res.status(204).send();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+router.get("/:id/events", requireAuth, async (req, res) => {
+  try {
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
+    const events = await db.select().from(productionOrderEventsTable)
+      .where(eq(productionOrderEventsTable.orderId, id))
+      .orderBy(desc(productionOrderEventsTable.createdAt));
+    res.json(events);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "InternalServerError" });
@@ -208,6 +239,19 @@ router.put("/:id", requireAuth, async (req: AuthRequest, res) => {
       res.status(404).json({ error: "NotFound" });
       return;
     }
+
+    try {
+      const [actor] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, (req as AuthRequest).user!.userId)).limit(1);
+      await db.insert(productionOrderEventsTable).values({
+        orderId: id,
+        eventType: "edited",
+        actorId: (req as AuthRequest).user!.userId,
+        actorName: actor?.name ?? "Unknown",
+        module: "Sales Force",
+        section: "New Production Orders",
+        description: `Order edited: ${Object.keys(updates).filter(k => k !== "updatedAt").join(", ")} updated`,
+      });
+    } catch { /* non-fatal */ }
 
     // Mirror price/volume/dates onto the today_production_orders cache row so
     // the daily list and any joined views stay in sync.

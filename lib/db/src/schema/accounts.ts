@@ -59,7 +59,22 @@ export const accountProductionOrdersTable = pgTable("account_production_orders",
   dateDelivered: text("date_delivered"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  createdById: integer("created_by_id"),
+  createdByName: text("created_by_name"),
 });
+
+export const productionOrderEventsTable = pgTable("production_order_events", {
+  id: serial("id").primaryKey(),
+  orderId: integer("order_id").notNull(),
+  eventType: text("event_type").notNull(), // 'created' | 'edited' | 'planned' | 'deleted'
+  actorId: integer("actor_id"),
+  actorName: text("actor_name").notNull(),
+  module: text("module"),
+  section: text("section"),
+  description: text("description"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export type ProductionOrderEvent = typeof productionOrderEventsTable.$inferSelect;
 
 export const todayProductionOrdersTable = pgTable("today_production_orders", {
   id: serial("id").primaryKey(),

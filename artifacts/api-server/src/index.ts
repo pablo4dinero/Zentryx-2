@@ -563,6 +563,26 @@ async function createTablesIfNotExist() {
         );
     `));
 
+    // Production order events log
+    await db.execute(sql.raw(`
+      ALTER TABLE account_production_orders
+        ADD COLUMN IF NOT EXISTS created_by_id INTEGER,
+        ADD COLUMN IF NOT EXISTS created_by_name TEXT;
+    `));
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS production_order_events (
+        id SERIAL PRIMARY KEY,
+        order_id INTEGER NOT NULL,
+        event_type TEXT NOT NULL,
+        actor_id INTEGER,
+        actor_name TEXT NOT NULL,
+        module TEXT,
+        section TEXT,
+        description TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `));
+
     logger.info("Database tables created or verified successfully");
   } catch (err) {
     logger.error({ err }, "Failed to create database tables");

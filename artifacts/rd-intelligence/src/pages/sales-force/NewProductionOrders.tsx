@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Search, Download, Trash2, Maximize2, Minimize2, Edit3, X, Calendar, ChevronDown, Pencil, RefreshCw } from "lucide-react";
+import { Plus, Search, Download, Trash2, Maximize2, Minimize2, Edit3, X, Calendar, ChevronDown, Pencil, RefreshCw, History, ChevronRight } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
@@ -35,6 +35,7 @@ type TodayOrder = {
   expectedDeliveryDate: string | null;
   dateDelivered: string | null;
   createdAt: string;
+  createdByName?: string | null;
 };
 
 type Account = {
@@ -581,6 +582,11 @@ export default function NewProductionOrdersPage() {
     },
   });
 
+  const [eventsOrderId, setEventsOrderId]   = useState<number | null>(null);
+  const [eventsOrder, setEventsOrder]       = useState<TodayOrder | null>(null);
+  const [contextMenu, setContextMenu]       = useState<{ x: number; y: number; order: TodayOrder } | null>(null);
+  const contextMenuRef                      = useRef<HTMLDivElement>(null);
+
   const [editingOrder, setEditingOrder] = useState<TodayOrder | null>(null);
   const [editForm, setEditForm] = useState({
     accountId: "",
@@ -600,6 +606,26 @@ export default function NewProductionOrdersPage() {
       dateDelivered: order.dateDelivered ?? "",
     });
   };
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const h = (e: MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) setContextMenu(null);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [contextMenu]);
+
+  const { data: orderEvents = [], isLoading: eventsLoading } = useQuery({
+    queryKey: [`/api/production-orders/${eventsOrderId}/events`],
+    queryFn: async () => {
+      if (!eventsOrderId) return [];
+      const res = await fetch(`${BASE}api/production-orders/${eventsOrderId}/events`, { headers: authHeaders() });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: eventsOrderId !== null,
+  });
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, body }: { id: number; body: Record<string, unknown> }) => {
@@ -639,6 +665,16 @@ export default function NewProductionOrdersPage() {
   const accountTypeMap = useMemo(() => {
     const map: Record<number, string | null> = {};
     accounts.forEach(a => { map[a.id] = a.productType; });
+    return map;
+  }, [accounts]);
+
+  const accountManagerMap = useMemo(() => {
+    const map: Record<number, string> = {};
+    (accounts as any[]).forEach((a: any) => {
+      if (Array.isArray(a.accountManagerNames) && a.accountManagerNames.length > 0) {
+        map[a.id] = a.accountManagerNames[0]; // primary manager
+      }
+    });
     return map;
   }, [accounts]);
 
@@ -1136,16 +1172,26 @@ export default function NewProductionOrdersPage() {
                   <th className="px-4 py-3">Product Type</th>
                   <th className="px-4 py-3">Price</th>
                   <th className="px-4 py-3">Volume</th>
+                  <th className="px-4 py-3">Time Created</th>
                   <th className="px-4 py-3">Ordered</th>
                   <th className="px-4 py-3">Expected</th>
+                  <th className="px-4 py-3">Created By</th>
                   <th className="px-4 py-3">Delivered</th>
+                  <th className="px-4 py-3">Manager</th>
                   <th className="px-4 py-3">Income</th>
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
                 {filteredOrders.map(order => (
-                  <tr key={order.id} className="hover:bg-white/5">
+                  <tr
+                    key={order.id}
+                    className="hover:bg-white/5 cursor-context-menu"
+                    onContextMenu={e => {
+                      e.preventDefault();
+                      setContextMenu({ x: e.clientX, y: e.clientY, order });
+                    }}
+                  >
                     <td className="px-4 py-3 text-foreground">{order.accountCompany || "Unknown"}</td>
                     <td className="px-4 py-3 text-foreground">{order.productName || "—"}</td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">
@@ -1157,9 +1203,16 @@ export default function NewProductionOrdersPage() {
                       ₦{Number(order.price || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                     <td className="px-4 py-3">{Number(order.volume || 0).toLocaleString()}</td>
+                    <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">
+                      {order.createdAt
+                        ? new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                        : "—"}
+                    </td>
                     <td className="px-4 py-3">{order.dateOrdered || "—"}</td>
                     <td className="px-4 py-3">{order.expectedDeliveryDate || "—"}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{order.createdByName || "—"}</td>
                     <td className="px-4 py-3">{order.dateDelivered || "—"}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{accountManagerMap[order.accountId] || "—"}</td>
                     <td className="px-4 py-3 text-emerald-400">
                       ₦{(Number(order.price || 0) * Number(order.volume || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
@@ -1288,6 +1341,133 @@ export default function NewProductionOrdersPage() {
               >
                 {updating ? "Saving…" : "Save Changes"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Right-click context menu */}
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          className={cn(
+            "fixed z-[100] rounded-xl border shadow-xl py-1 min-w-[160px]",
+            isLight ? "bg-white border-slate-200" : "bg-[#16162a] border-white/10",
+          )}
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          <button
+            onClick={() => {
+              setEventsOrderId(contextMenu.order.id);
+              setEventsOrder(contextMenu.order);
+              setContextMenu(null);
+            }}
+            className={cn(
+              "w-full flex items-center gap-2.5 px-4 py-2 text-sm transition-colors",
+              isLight ? "text-slate-700 hover:bg-slate-50" : "text-foreground hover:bg-white/5",
+            )}
+          >
+            <History className="w-4 h-4 text-primary" />
+            Events
+          </button>
+        </div>
+      )}
+
+      {/* Events slide-in panel */}
+      {eventsOrderId !== null && (
+        <div className="fixed inset-0 z-[90] flex" onClick={() => { setEventsOrderId(null); setEventsOrder(null); }}>
+          {/* Backdrop */}
+          <div className="flex-1 bg-black/40" />
+          {/* Panel */}
+          <div
+            className={cn(
+              "w-full max-w-md h-full overflow-y-auto shadow-2xl flex flex-col",
+              isLight ? "bg-white" : "bg-[#16162a]",
+            )}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className={cn("flex items-center justify-between p-5 border-b", isLight ? "border-slate-100" : "border-white/5")}>
+              <div>
+                <h3 className={cn("font-bold text-base", isLight ? "text-slate-900" : "text-foreground")}>Order Events</h3>
+                <p className={cn("text-xs mt-0.5", isLight ? "text-slate-500" : "text-muted-foreground")}>
+                  {eventsOrder?.accountCompany || "Account"} — {eventsOrder?.productName || "Product"}
+                </p>
+              </div>
+              <button
+                onClick={() => { setEventsOrderId(null); setEventsOrder(null); }}
+                className={cn("p-1.5 rounded-lg transition-colors", isLight ? "hover:bg-slate-100 text-slate-400" : "hover:bg-white/10 text-muted-foreground")}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Event list */}
+            <div className="flex-1 p-5">
+              {eventsLoading && (
+                <div className="flex items-center justify-center h-40">
+                  <RefreshCw className="w-6 h-6 animate-spin text-muted-foreground opacity-40" />
+                </div>
+              )}
+              {!eventsLoading && (orderEvents as any[]).length === 0 && (
+                <div className="flex flex-col items-center justify-center h-40 text-muted-foreground gap-2">
+                  <History className="w-10 h-10 opacity-20" />
+                  <p className="text-sm">No events recorded yet.</p>
+                </div>
+              )}
+              {!eventsLoading && (orderEvents as any[]).length > 0 && (
+                <div className="relative">
+                  {(orderEvents as any[]).length > 1 && (
+                    <div className="absolute left-[9px] top-4 bottom-4 w-px bg-primary/20 rounded-full" />
+                  )}
+                  <div className="space-y-5">
+                    {(orderEvents as any[]).map((ev: any, idx: number) => (
+                      <div key={ev.id} className="relative pl-7">
+                        {/* Timeline dot */}
+                        <div className={cn(
+                          "absolute left-[3px] top-1 w-[13px] h-[13px] rounded-full border-2 z-10 ring-[3px]",
+                          isLight ? "ring-white" : "ring-[#16162a]",
+                          idx === 0 ? "bg-primary border-primary/60" : "bg-primary/40 border-primary/20",
+                        )} />
+                        <div className={cn("rounded-xl border p-3", isLight ? "border-slate-100 bg-slate-50" : "border-white/5 bg-white/[0.02]")}>
+                          {/* Event type badge + timestamp */}
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className={cn(
+                              "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full",
+                              ev.eventType === "created"  ? "bg-emerald-500/10 text-emerald-500" :
+                              ev.eventType === "edited"   ? "bg-blue-500/10 text-blue-400" :
+                              ev.eventType === "planned"  ? "bg-purple-500/10 text-purple-400" :
+                              ev.eventType === "deleted"  ? "bg-red-500/10 text-red-400" :
+                              "bg-primary/10 text-primary",
+                            )}>
+                              {ev.eventType}
+                            </span>
+                            <span className={cn("text-[10px]", isLight ? "text-slate-400" : "text-muted-foreground")}>
+                              {new Date(ev.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                          </div>
+                          {/* Actor */}
+                          <p className={cn("text-xs font-semibold", isLight ? "text-slate-800" : "text-foreground")}>
+                            {ev.actorName}
+                          </p>
+                          {/* Module / section */}
+                          {(ev.module || ev.section) && (
+                            <p className={cn("text-[10px] mt-0.5", isLight ? "text-slate-500" : "text-muted-foreground")}>
+                              {[ev.module, ev.section].filter(Boolean).join(" › ")}
+                            </p>
+                          )}
+                          {/* Description */}
+                          {ev.description && (
+                            <p className={cn("text-xs mt-1.5 leading-relaxed", isLight ? "text-slate-600" : "text-foreground/70")}>
+                              {ev.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
