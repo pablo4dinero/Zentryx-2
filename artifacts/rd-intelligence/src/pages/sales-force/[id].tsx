@@ -547,7 +547,7 @@ const OUTCOME_PRESETS = [
   { value: "stalled",          label: "Stalled",          color: "text-red-500 border-red-500/20 bg-red-500/10" },
 ];
 
-const BLANK_FORM = { callType: "phone", outcome: "", summary: "", nextSteps: "", calledAt: "" };
+const BLANK_FORM = () => ({ callType: "phone", outcome: "", summary: "", nextSteps: "", calledAt: new Date().toISOString().slice(0, 16) });
 
 function outcomeStyle(value: string) {
   const p = OUTCOME_PRESETS.find(o => o.value === value);
@@ -566,9 +566,8 @@ function CallReportsTab({ accountId }: { accountId: number }) {
   const userId  = (currentUser as any)?.id;
   const canSee  = canAccess("call_reports", userRole);
 
-  const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [form, setForm] = useState({ ...BLANK_FORM });
+  const [form, setForm] = useState(BLANK_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [commentInputs, setCommentInputs] = useState<Record<number, string>>({});
   const [openComments, setOpenComments] = useState<Set<number>>(new Set());
@@ -584,7 +583,7 @@ function CallReportsTab({ accountId }: { accountId: number }) {
   });
   const reports: any[] = Array.isArray(reportsRaw) ? reportsRaw : [];
 
-  const resetForm = () => { setForm({ ...BLANK_FORM }); setShowForm(false); setEditingId(null); };
+  const resetForm = () => { setForm(BLANK_FORM()); setEditingId(null); };
 
   const startEdit = (r: any) => {
     setForm({
@@ -595,7 +594,6 @@ function CallReportsTab({ accountId }: { accountId: number }) {
       calledAt: r.calledAt ? new Date(r.calledAt).toISOString().slice(0, 16) : "",
     });
     setEditingId(r.id);
-    setShowForm(true);
   };
 
   const handleSubmit = async () => {
@@ -666,246 +664,220 @@ function CallReportsTab({ accountId }: { accountId: number }) {
     </div>
   );
 
-  const nowISO = new Date().toISOString().slice(0, 16);
-
   return (
-    <div className="space-y-4 max-w-3xl">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-5 items-start">
+      {/* Left: timeline */}
+      <div className="space-y-3 min-w-0">
         <div>
           <h3 className="font-semibold text-sm text-foreground">Call Reports</h3>
           <p className="text-xs text-muted-foreground mt-0.5">{reports.length} log{reports.length !== 1 ? "s" : ""} recorded</p>
         </div>
-        {!showForm && (
-          <button
-            onClick={() => { setForm({ ...BLANK_FORM, calledAt: nowISO }); setShowForm(true); setEditingId(null); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-xl text-xs font-semibold hover:bg-primary/90 transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" /> Log a Call
-          </button>
+
+        {isLoading && (
+          <div className="flex flex-col items-center justify-center h-40 text-muted-foreground gap-2">
+            <Clock className="w-8 h-8 opacity-20 animate-pulse" />
+            <p className="text-sm">Loading reports…</p>
+          </div>
         )}
+        {reportsError && (
+          <div className="flex flex-col items-center justify-center h-40 text-muted-foreground gap-2">
+            <AlertCircle className="w-8 h-8 opacity-40 text-red-400" />
+            <p className="text-sm">Could not load call reports. The feature may still be setting up.</p>
+          </div>
+        )}
+        {!isLoading && !reportsError && reports.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-40 text-muted-foreground gap-2">
+            <Phone className="w-10 h-10 opacity-20" />
+            <p className="text-sm">No call reports yet. Use the form to log the first one.</p>
+          </div>
+        )}
+
+        <div className="space-y-3">
+          {(reports as any[]).map((r: any) => {
+            const ct = CALL_TYPES.find(c => c.value === r.callType) ?? CALL_TYPES[1];
+            const CtIcon = ct.icon;
+            const isOwn = userId === r.createdById;
+            const commentsOpen = openComments.has(r.id);
+
+            return (
+              <div key={r.id} className={cn("glass-card rounded-2xl border overflow-hidden transition-colors", editingId === r.id ? "border-primary/30" : "border-white/5")}>
+                <div className="flex items-start gap-3 p-4">
+                  <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center border shrink-0 mt-0.5", ct.color)}>
+                    <CtIcon className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                      <span className={cn("text-[10px] font-semibold px-2 py-0.5 rounded-full border", ct.color)}>{ct.label}</span>
+                      <span className={cn("text-[10px] font-semibold px-2 py-0.5 rounded-full border", outcomeStyle(r.outcome))}>
+                        {outcomeLabel(r.outcome)}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                      <span className="font-medium text-foreground/70">{r.createdByName ?? "Unknown"}</span>
+                      <span className="opacity-40">·</span>
+                      <span className="flex items-center gap-1">
+                        <CalendarDays className="w-3 h-3" />
+                        {r.calledAt ? format(new Date(r.calledAt), "MMM d, yyyy 'at' h:mm a") : "—"}
+                      </span>
+                      <span className="opacity-40">·</span>
+                      <span>{r.calledAt ? formatDistanceToNow(new Date(r.calledAt), { addSuffix: true }) : ""}</span>
+                    </div>
+                  </div>
+                  {isOwn && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => startEdit(r)}
+                        className="p-1.5 hover:bg-white/10 rounded-lg text-muted-foreground hover:text-foreground transition-colors" title="Edit">
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={() => deleteReport(r.id)}
+                        className="p-1.5 hover:bg-red-500/10 rounded-lg text-muted-foreground hover:text-red-400 transition-colors" title="Delete">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="px-4 pb-3">
+                  <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">{r.summary}</p>
+                  {r.nextSteps && (
+                    <div className="mt-3 p-3 bg-white/[0.03] rounded-lg border border-white/5">
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 font-medium">Next Steps</p>
+                      <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">{r.nextSteps}</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="border-t border-white/5 px-4 py-2.5">
+                  <button onClick={() => toggleComments(r.id)}
+                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    {r.comments?.length > 0 ? `${r.comments.length} comment${r.comments.length > 1 ? "s" : ""}` : "Add comment"}
+                    {commentsOpen ? <ChevronUp className="w-3 h-3 ml-0.5" /> : <ChevronDown className="w-3 h-3 ml-0.5" />}
+                  </button>
+                  <AnimatePresence>
+                    {commentsOpen && (
+                      <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.12 }} className="overflow-hidden">
+                        <div className="pt-3 space-y-2">
+                          {(r.comments ?? []).map((c: any) => (
+                            <div key={c.id} className="flex items-start gap-2 group">
+                              <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center shrink-0 text-[8px] font-bold text-primary mt-0.5">
+                                {(c.authorName ?? "?").charAt(0).toUpperCase()}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <span className="text-xs font-semibold text-foreground">{c.authorName ?? "Unknown"}</span>
+                                <span className="text-xs text-muted-foreground ml-2">{c.content}</span>
+                              </div>
+                              {userId === c.authorId && (
+                                <button onClick={() => deleteComment(r.id, c.id)}
+                                  className="opacity-0 group-hover:opacity-100 p-0.5 text-muted-foreground hover:text-red-400 transition-all shrink-0">
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                          <div className="flex items-center gap-2 pt-1">
+                            <input
+                              value={commentInputs[r.id] ?? ""}
+                              onChange={e => setCommentInputs(prev => ({ ...prev, [r.id]: e.target.value }))}
+                              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addComment(r.id); } }}
+                              placeholder="Write a comment…"
+                              className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary/50 placeholder:text-muted-foreground" />
+                            <button onClick={() => addComment(r.id)}
+                              disabled={!commentInputs[r.id]?.trim() || sendingComment === r.id}
+                              className="p-1.5 bg-primary rounded-lg text-white disabled:opacity-40 shrink-0 transition-opacity">
+                              <Send className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Form */}
-      <AnimatePresence>
-        {showForm && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.15 }}
-            className="glass-card rounded-2xl p-5 border border-white/10 space-y-4"
-          >
-            <div className="flex items-center justify-between">
-              <h4 className="font-semibold text-sm text-foreground">{editingId ? "Edit Call Report" : "Log a Call"}</h4>
-              <button onClick={resetForm} className="p-1 hover:bg-white/10 rounded-lg text-muted-foreground hover:text-foreground">
+      {/* Right: persistent form */}
+      <div className="lg:sticky lg:top-4">
+        <div className="glass-card rounded-2xl p-5 border border-white/10 space-y-4">
+          <div className="flex items-center justify-between">
+            <h4 className="font-semibold text-sm text-foreground">{editingId ? "Edit Report" : "Log a Call"}</h4>
+            {editingId && (
+              <button onClick={resetForm} className="p-1 hover:bg-white/10 rounded-lg text-muted-foreground hover:text-foreground" title="Cancel edit">
                 <X className="w-4 h-4" />
               </button>
-            </div>
+            )}
+          </div>
 
-            {/* Call Type */}
-            <div>
-              <label className="text-xs text-muted-foreground mb-2 block">Call Type</label>
-              <div className="flex flex-wrap gap-2">
-                {CALL_TYPES.map(ct => {
-                  const Icon = ct.icon;
-                  return (
-                    <button key={ct.value} onClick={() => setForm(f => ({ ...f, callType: ct.value }))}
-                      className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors",
-                        form.callType === ct.value ? ct.color : "border-white/10 text-muted-foreground hover:bg-white/5")}>
-                      <Icon className="w-3.5 h-3.5" /> {ct.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Date */}
-            <div>
-              <label className="text-xs text-muted-foreground mb-1.5 block">Date &amp; Time <span className="text-red-400">*</span></label>
-              <input type="datetime-local" value={form.calledAt}
-                onChange={e => setForm(f => ({ ...f, calledAt: e.target.value }))}
-                className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/50 w-full sm:w-auto" />
-            </div>
-
-            {/* Outcome */}
-            <div>
-              <label className="text-xs text-muted-foreground mb-2 block">Outcome <span className="text-red-400">*</span></label>
-              <div className="flex flex-wrap gap-2 mb-2">
-                {OUTCOME_PRESETS.map(op => (
-                  <button key={op.value} onClick={() => setForm(f => ({ ...f, outcome: op.value }))}
-                    className={cn("px-3 py-1 rounded-full text-xs font-semibold border transition-colors",
-                      form.outcome === op.value ? op.color : "border-white/10 text-muted-foreground hover:bg-white/5")}>
-                    {op.label}
+          {/* Call Type */}
+          <div>
+            <label className="text-xs text-muted-foreground mb-2 block">Call Type</label>
+            <div className="flex flex-wrap gap-1.5">
+              {CALL_TYPES.map(ct => {
+                const Icon = ct.icon;
+                return (
+                  <button key={ct.value} onClick={() => setForm(f => ({ ...f, callType: ct.value }))}
+                    className={cn("flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors",
+                      form.callType === ct.value ? ct.color : "border-white/10 text-muted-foreground hover:bg-white/5")}>
+                    <Icon className="w-3 h-3" /> {ct.label}
                   </button>
-                ))}
-              </div>
-              <input value={form.outcome} onChange={e => setForm(f => ({ ...f, outcome: e.target.value }))}
-                placeholder="Or type a custom outcome…"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/50 placeholder:text-muted-foreground" />
+                );
+              })}
             </div>
+          </div>
 
-            {/* Summary */}
-            <div>
-              <label className="text-xs text-muted-foreground mb-1.5 block">Summary <span className="text-red-400">*</span></label>
-              <textarea rows={3} value={form.summary} onChange={e => setForm(f => ({ ...f, summary: e.target.value }))}
-                placeholder="What happened during this call / visit?"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/50 resize-none placeholder:text-muted-foreground" />
-            </div>
+          {/* Date */}
+          <div>
+            <label className="text-xs text-muted-foreground mb-1.5 block">Date &amp; Time <span className="text-red-400">*</span></label>
+            <input type="datetime-local" value={form.calledAt}
+              onChange={e => setForm(f => ({ ...f, calledAt: e.target.value }))}
+              className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/50 w-full" />
+          </div>
 
-            {/* Next Steps */}
-            <div>
-              <label className="text-xs text-muted-foreground mb-1.5 block">Next Steps <span className="opacity-50">(optional)</span></label>
-              <textarea rows={2} value={form.nextSteps} onChange={e => setForm(f => ({ ...f, nextSteps: e.target.value }))}
-                placeholder="What needs to happen next?"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/50 resize-none placeholder:text-muted-foreground" />
-            </div>
-
-            <div className="flex justify-end gap-2 pt-1">
-              <button onClick={resetForm} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors">Cancel</button>
-              <button
-                onClick={handleSubmit}
-                disabled={!form.summary.trim() || !form.outcome.trim() || !form.calledAt || submitting}
-                className="px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
-              >
-                {submitting ? "Saving…" : editingId ? "Update" : "Log Call"}
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Timeline */}
-      {isLoading && (
-        <div className="flex flex-col items-center justify-center h-40 text-muted-foreground gap-2">
-          <Clock className="w-8 h-8 opacity-20 animate-pulse" />
-          <p className="text-sm">Loading reports…</p>
-        </div>
-      )}
-
-      {reportsError && (
-        <div className="flex flex-col items-center justify-center h-40 text-muted-foreground gap-2">
-          <AlertCircle className="w-8 h-8 opacity-40 text-red-400" />
-          <p className="text-sm">Could not load call reports. The feature may still be setting up.</p>
-        </div>
-      )}
-
-      {!isLoading && !reportsError && reports.length === 0 && (
-        <div className="flex flex-col items-center justify-center h-40 text-muted-foreground gap-2">
-          <Phone className="w-10 h-10 opacity-20" />
-          <p className="text-sm">No call reports yet. Log the first one.</p>
-        </div>
-      )}
-
-      <div className="space-y-3">
-        {(reports as any[]).map((r: any) => {
-          const ct = CALL_TYPES.find(c => c.value === r.callType) ?? CALL_TYPES[1];
-          const CtIcon = ct.icon;
-          const isOwn = userId === r.createdById;
-          const commentsOpen = openComments.has(r.id);
-
-          return (
-            <div key={r.id} className="glass-card rounded-2xl border border-white/5 overflow-hidden">
-              {/* Header */}
-              <div className="flex items-start gap-3 p-4">
-                <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center border shrink-0 mt-0.5", ct.color)}>
-                  <CtIcon className="w-4 h-4" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2 mb-1">
-                    <span className={cn("text-[10px] font-semibold px-2 py-0.5 rounded-full border", ct.color)}>{ct.label}</span>
-                    <span className={cn("text-[10px] font-semibold px-2 py-0.5 rounded-full border", outcomeStyle(r.outcome))}>
-                      {outcomeLabel(r.outcome)}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-                    <span className="font-medium text-foreground/70">{r.createdByName ?? "Unknown"}</span>
-                    <span className="opacity-40">·</span>
-                    <span className="flex items-center gap-1">
-                      <CalendarDays className="w-3 h-3" />
-                      {r.calledAt ? format(new Date(r.calledAt), "MMM d, yyyy 'at' h:mm a") : "—"}
-                    </span>
-                    <span className="opacity-40">·</span>
-                    <span>{r.calledAt ? formatDistanceToNow(new Date(r.calledAt), { addSuffix: true }) : ""}</span>
-                  </div>
-                </div>
-                {isOwn && (
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button onClick={() => startEdit(r)}
-                      className="p-1.5 hover:bg-white/10 rounded-lg text-muted-foreground hover:text-foreground transition-colors" title="Edit">
-                      <Edit3 className="w-3.5 h-3.5" />
-                    </button>
-                    <button onClick={() => deleteReport(r.id)}
-                      className="p-1.5 hover:bg-red-500/10 rounded-lg text-muted-foreground hover:text-red-400 transition-colors" title="Delete">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Summary */}
-              <div className="px-4 pb-3">
-                <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">{r.summary}</p>
-                {r.nextSteps && (
-                  <div className="mt-3 p-3 bg-white/[0.03] rounded-lg border border-white/5">
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 font-medium">Next Steps</p>
-                    <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">{r.nextSteps}</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Comments */}
-              <div className="border-t border-white/5 px-4 py-2.5">
-                <button onClick={() => toggleComments(r.id)}
-                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  {r.comments?.length > 0 ? `${r.comments.length} comment${r.comments.length > 1 ? "s" : ""}` : "Add comment"}
-                  {commentsOpen ? <ChevronUp className="w-3 h-3 ml-0.5" /> : <ChevronDown className="w-3 h-3 ml-0.5" />}
+          {/* Outcome */}
+          <div>
+            <label className="text-xs text-muted-foreground mb-2 block">Outcome <span className="text-red-400">*</span></label>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {OUTCOME_PRESETS.map(op => (
+                <button key={op.value} onClick={() => setForm(f => ({ ...f, outcome: op.value }))}
+                  className={cn("px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors",
+                    form.outcome === op.value ? op.color : "border-white/10 text-muted-foreground hover:bg-white/5")}>
+                  {op.label}
                 </button>
-
-                <AnimatePresence>
-                  {commentsOpen && (
-                    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
-                      transition={{ duration: 0.12 }} className="overflow-hidden">
-                      <div className="pt-3 space-y-2">
-                        {(r.comments ?? []).map((c: any) => (
-                          <div key={c.id} className="flex items-start gap-2 group">
-                            <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center shrink-0 text-[8px] font-bold text-primary mt-0.5">
-                              {(c.authorName ?? "?").charAt(0).toUpperCase()}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <span className="text-xs font-semibold text-foreground">{c.authorName ?? "Unknown"}</span>
-                              <span className="text-xs text-muted-foreground ml-2">{c.content}</span>
-                            </div>
-                            {userId === c.authorId && (
-                              <button onClick={() => deleteComment(r.id, c.id)}
-                                className="opacity-0 group-hover:opacity-100 p-0.5 text-muted-foreground hover:text-red-400 transition-all shrink-0">
-                                <X className="w-3 h-3" />
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                        <div className="flex items-center gap-2 pt-1">
-                          <input
-                            value={commentInputs[r.id] ?? ""}
-                            onChange={e => setCommentInputs(prev => ({ ...prev, [r.id]: e.target.value }))}
-                            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addComment(r.id); } }}
-                            placeholder="Write a comment…"
-                            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary/50 placeholder:text-muted-foreground" />
-                          <button onClick={() => addComment(r.id)}
-                            disabled={!commentInputs[r.id]?.trim() || sendingComment === r.id}
-                            className="p-1.5 bg-primary rounded-lg text-white disabled:opacity-40 shrink-0 transition-opacity">
-                            <Send className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
+              ))}
             </div>
-          );
-        })}
+            <input value={form.outcome} onChange={e => setForm(f => ({ ...f, outcome: e.target.value }))}
+              placeholder="Or type a custom outcome…"
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/50 placeholder:text-muted-foreground" />
+          </div>
+
+          {/* Summary */}
+          <div>
+            <label className="text-xs text-muted-foreground mb-1.5 block">Summary <span className="text-red-400">*</span></label>
+            <textarea rows={3} value={form.summary} onChange={e => setForm(f => ({ ...f, summary: e.target.value }))}
+              placeholder="What happened during this call / visit?"
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/50 resize-none placeholder:text-muted-foreground" />
+          </div>
+
+          {/* Next Steps */}
+          <div>
+            <label className="text-xs text-muted-foreground mb-1.5 block">Next Steps <span className="opacity-50">(optional)</span></label>
+            <textarea rows={2} value={form.nextSteps} onChange={e => setForm(f => ({ ...f, nextSteps: e.target.value }))}
+              placeholder="What needs to happen next?"
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/50 resize-none placeholder:text-muted-foreground" />
+          </div>
+
+          <button
+            onClick={handleSubmit}
+            disabled={!form.summary.trim() || !form.outcome.trim() || !form.calledAt || submitting}
+            className="w-full py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+          >
+            {submitting ? "Saving…" : editingId ? "Update Report" : "Log Call"}
+          </button>
+        </div>
       </div>
     </div>
   );
