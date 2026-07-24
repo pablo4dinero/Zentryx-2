@@ -1,6 +1,6 @@
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Search, Download, Trash2, Maximize2, Minimize2, Edit3, X, Calendar, ChevronDown, Pencil, RefreshCw, History, ChevronRight } from "lucide-react";
+import { Plus, Search, Download, Trash2, Maximize2, Minimize2, Edit3, X, Calendar, ChevronDown, Pencil, RefreshCw, History, ChevronRight, SlidersHorizontal, Check } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
@@ -22,6 +22,62 @@ const PRODUCT_TYPE_LABELS: Record<string, string> = {
   sweet_flavours: "Sweet Flavours",
   savoury_flavour: "Savoury Flavour",
 };
+
+// ─── Column customization ────────────────────────────────────────────────────
+
+type ColumnKey =
+  | "account" | "product" | "productType" | "price" | "volume"
+  | "timeCreated" | "ordered" | "expected" | "createdBy" | "delivered"
+  | "manager" | "income";
+
+type ColPrefs = {
+  order: ColumnKey[];
+  widths: Record<string, number>;
+  visible: Record<string, boolean>;
+};
+
+const ALL_COLUMNS: { key: ColumnKey; label: string; defaultWidth: number }[] = [
+  { key: "account",     label: "Account",      defaultWidth: 130 },
+  { key: "product",     label: "Product",      defaultWidth: 130 },
+  { key: "productType", label: "Product Type", defaultWidth: 130 },
+  { key: "price",       label: "Price",        defaultWidth: 110 },
+  { key: "volume",      label: "Volume",       defaultWidth: 90  },
+  { key: "timeCreated", label: "Time Created", defaultWidth: 120 },
+  { key: "ordered",     label: "Ordered",      defaultWidth: 110 },
+  { key: "expected",    label: "Expected",     defaultWidth: 110 },
+  { key: "createdBy",   label: "Created By",   defaultWidth: 130 },
+  { key: "delivered",   label: "Delivered",    defaultWidth: 110 },
+  { key: "manager",     label: "Manager",      defaultWidth: 130 },
+  { key: "income",      label: "Income",       defaultWidth: 150 },
+];
+
+const DEFAULT_COL_ORDER  = ALL_COLUMNS.map(c => c.key) as ColumnKey[];
+const DEFAULT_COL_WIDTHS = Object.fromEntries(ALL_COLUMNS.map(c => [c.key, c.defaultWidth])) as Record<string, number>;
+const DEFAULT_COL_VIS    = Object.fromEntries(ALL_COLUMNS.map(c => [c.key, true])) as Record<string, boolean>;
+
+function getUserIdFromToken(): string {
+  try {
+    const token = localStorage.getItem("rd_token");
+    if (!token) return "anon";
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    return String(payload.userId ?? payload.sub ?? "anon");
+  } catch { return "anon"; }
+}
+
+function loadColPrefs(userId: string): ColPrefs {
+  try {
+    const raw = localStorage.getItem(`po_col_prefs_${userId}`);
+    if (!raw) return { order: DEFAULT_COL_ORDER, widths: { ...DEFAULT_COL_WIDTHS }, visible: { ...DEFAULT_COL_VIS } };
+    const s = JSON.parse(raw);
+    return {
+      order:   Array.isArray(s.order) ? s.order : DEFAULT_COL_ORDER,
+      widths:  { ...DEFAULT_COL_WIDTHS, ...(s.widths ?? {}) },
+      visible: { ...DEFAULT_COL_VIS,    ...(s.visible ?? {}) },
+    };
+  } catch { return { order: DEFAULT_COL_ORDER, widths: { ...DEFAULT_COL_WIDTHS }, visible: { ...DEFAULT_COL_VIS } }; }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 type TodayOrder = {
   id: number;
@@ -616,6 +672,74 @@ export default function NewProductionOrdersPage() {
     return () => document.removeEventListener("mousedown", h);
   }, [contextMenu]);
 
+  // Column resize – global mouse listeners
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!resizingRef.current) return;
+      const { key, startX, startWidth } = resizingRef.current;
+      const newW = Math.max(60, startWidth + (e.clientX - startX));
+      setColPrefs(p => ({ ...p, widths: { ...p.widths, [key]: newW } }));
+    };
+    const onUp = () => { resizingRef.current = null; };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    return () => { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); };
+  }, []);
+
+  // Persist column prefs per user
+  useEffect(() => {
+    localStorage.setItem(prefsKey, JSON.stringify(colPrefs));
+  }, [colPrefs, prefsKey]);
+
+  // Close column toggle on outside click
+  useEffect(() => {
+    if (!showColToggle) return;
+    const h = (e: MouseEvent) => {
+      if (colToggleRef.current && !colToggleRef.current.contains(e.target as Node)) setShowColToggle(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [showColToggle]);
+
+  const orderedVisibleCols = useMemo(
+    () => colPrefs.order
+      .map(key => ALL_COLUMNS.find(c => c.key === key)!)
+      .filter(c => c && colPrefs.visible[c.key] !== false),
+    [colPrefs.order, colPrefs.visible],
+  );
+
+  const renderCell = useCallback((key: ColumnKey, order: TodayOrder): React.ReactNode => {
+    switch (key) {
+      case "account":     return <span className="text-foreground">{order.accountCompany || "Unknown"}</span>;
+      case "product":     return <span className="text-foreground">{order.productName || "—"}</span>;
+      case "productType": return (
+        <span className="text-xs text-muted-foreground">
+          {accountTypeMap[order.accountId]
+            ? (PRODUCT_TYPE_LABELS[accountTypeMap[order.accountId]!] ?? accountTypeMap[order.accountId])
+            : "—"}
+        </span>
+      );
+      case "price":       return `₦${Number(order.price || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      case "volume":      return Number(order.volume || 0).toLocaleString();
+      case "timeCreated": return (
+        <span className="text-muted-foreground text-xs whitespace-nowrap">
+          {order.createdAt ? new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}
+        </span>
+      );
+      case "ordered":     return order.dateOrdered || "—";
+      case "expected":    return order.expectedDeliveryDate || "—";
+      case "createdBy":   return <span className="text-xs text-muted-foreground">{order.createdByName || "—"}</span>;
+      case "delivered":   return order.dateDelivered || "—";
+      case "manager":     return <span className="text-xs text-muted-foreground">{accountManagerMap[order.accountId] || "—"}</span>;
+      case "income":      return (
+        <span className="text-emerald-400">
+          ₦{(Number(order.price || 0) * Number(order.volume || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </span>
+      );
+      default: return "—";
+    }
+  }, [accountTypeMap, accountManagerMap]);
+
   const { data: orderEvents = [], isLoading: eventsLoading } = useQuery({
     queryKey: [`/api/production-orders/${eventsOrderId}/events`],
     queryFn: async () => {
@@ -672,11 +796,21 @@ export default function NewProductionOrdersPage() {
     const map: Record<number, string> = {};
     (accounts as any[]).forEach((a: any) => {
       if (Array.isArray(a.accountManagerNames) && a.accountManagerNames.length > 0) {
-        map[a.id] = a.accountManagerNames[0]; // primary manager
+        map[a.id] = a.accountManagerNames[0];
       }
     });
     return map;
   }, [accounts]);
+
+  // Column customization
+  const userId       = useRef(getUserIdFromToken()).current;
+  const prefsKey     = `po_col_prefs_${userId}`;
+  const [colPrefs, setColPrefs] = useState<ColPrefs>(() => loadColPrefs(userId));
+  const [showColToggle, setShowColToggle] = useState(false);
+  const colToggleRef   = useRef<HTMLDivElement>(null);
+  const draggingColRef = useRef<string | null>(null);
+  const [dragOverCol, setDragOverCol] = useState<string | null>(null);
+  const resizingRef = useRef<{ key: string; startX: number; startWidth: number } | null>(null);
 
   const tableOrders = useMemo(
     () => filterByPeriod(allOrders, viewMode, selectedMonth, selectedWeek),
@@ -1144,7 +1278,70 @@ export default function NewProductionOrdersPage() {
               Showing orders from the {viewMode === "daily" ? "current day" : viewMode === "weekly" ? "last 7 days" : "last 30 days"} across accounts.
             </p>
           </div>
-          <p className="text-xs text-muted-foreground">Updated {filteredOrders.length} orders</p>
+          <div className="flex items-center gap-3">
+            {/* Column visibility + order toggle */}
+            <div ref={colToggleRef} className="relative">
+              <button
+                onClick={() => setShowColToggle(v => !v)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors",
+                  showColToggle
+                    ? "bg-primary/10 border-primary/20 text-primary"
+                    : isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5",
+                )}
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                Columns
+              </button>
+              {showColToggle && (
+                <div className={cn(
+                  "absolute right-0 top-[calc(100%+8px)] z-[200] rounded-xl border shadow-2xl p-3 w-60",
+                  isLight ? "bg-white border-slate-200" : "bg-[#16162a] border-white/10",
+                )}>
+                  <div className="flex items-center justify-between mb-2.5">
+                    <p className={cn("text-xs font-semibold", isLight ? "text-slate-700" : "text-foreground")}>
+                      Visible Columns
+                    </p>
+                    <button
+                      onClick={() => setColPrefs({ order: [...DEFAULT_COL_ORDER], widths: { ...DEFAULT_COL_WIDTHS }, visible: { ...DEFAULT_COL_VIS } })}
+                      className="text-[10px] text-primary hover:underline"
+                    >
+                      Reset all
+                    </button>
+                  </div>
+                  <p className={cn("text-[10px] mb-2.5", isLight ? "text-slate-400" : "text-muted-foreground")}>
+                    Drag column headers to reorder. Drag edges to resize.
+                  </p>
+                  <div className="space-y-0.5">
+                    {ALL_COLUMNS.map(col => {
+                      const vis = colPrefs.visible[col.key] !== false;
+                      return (
+                        <button
+                          key={col.key}
+                          onClick={() => setColPrefs(p => ({ ...p, visible: { ...p.visible, [col.key]: !vis } }))}
+                          className={cn(
+                            "w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs transition-colors text-left",
+                            isLight ? "hover:bg-slate-50" : "hover:bg-white/5",
+                          )}
+                        >
+                          <div className={cn(
+                            "w-3.5 h-3.5 rounded flex items-center justify-center border shrink-0",
+                            vis ? "bg-primary border-primary" : isLight ? "border-slate-300" : "border-white/20",
+                          )}>
+                            {vis && <Check className="w-2 h-2 text-white" />}
+                          </div>
+                          <span className={cn(vis ? (isLight ? "text-slate-800" : "text-foreground") : (isLight ? "text-slate-400" : "text-muted-foreground"))}>
+                            {col.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">Updated {filteredOrders.length} orders</p>
+          </div>
         </div>
         {isLoading ? (
           <div className="flex items-center justify-center h-40 text-muted-foreground">
@@ -1164,21 +1361,65 @@ export default function NewProductionOrdersPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="text-sm" style={{ tableLayout: "fixed", width: orderedVisibleCols.reduce((s, c) => s + colPrefs.widths[c.key], 88) }}>
+              <colgroup>
+                {orderedVisibleCols.map(col => (
+                  <col key={col.key} style={{ width: colPrefs.widths[col.key] }} />
+                ))}
+                <col style={{ width: 88 }} />
+              </colgroup>
               <thead className="text-left text-xs uppercase tracking-[0.16em] text-muted-foreground bg-white/5 border-b border-white/5">
                 <tr>
-                  <th className="px-4 py-3">Account</th>
-                  <th className="px-4 py-3">Product</th>
-                  <th className="px-4 py-3">Product Type</th>
-                  <th className="px-4 py-3">Price</th>
-                  <th className="px-4 py-3">Volume</th>
-                  <th className="px-4 py-3">Time Created</th>
-                  <th className="px-4 py-3">Ordered</th>
-                  <th className="px-4 py-3">Expected</th>
-                  <th className="px-4 py-3">Created By</th>
-                  <th className="px-4 py-3">Delivered</th>
-                  <th className="px-4 py-3">Manager</th>
-                  <th className="px-4 py-3">Income</th>
+                  {orderedVisibleCols.map(col => (
+                    <th
+                      key={col.key}
+                      className={cn(
+                        "px-4 py-3 relative select-none cursor-grab active:cursor-grabbing whitespace-nowrap overflow-hidden",
+                        dragOverCol === col.key && "border-l-2 border-primary",
+                      )}
+                      draggable
+                      onDragStart={e => {
+                        if (resizingRef.current) { e.preventDefault(); return; }
+                        draggingColRef.current = col.key;
+                        e.dataTransfer.effectAllowed = "move";
+                      }}
+                      onDragEnd={() => { draggingColRef.current = null; setDragOverCol(null); }}
+                      onDragOver={e => {
+                        e.preventDefault();
+                        if (draggingColRef.current && draggingColRef.current !== col.key) setDragOverCol(col.key);
+                      }}
+                      onDragLeave={() => setDragOverCol(null)}
+                      onDrop={e => {
+                        e.preventDefault();
+                        const from = draggingColRef.current;
+                        const to = col.key;
+                        draggingColRef.current = null;
+                        setDragOverCol(null);
+                        if (!from || from === to) return;
+                        setColPrefs(p => {
+                          const next = [...p.order];
+                          const fi = next.indexOf(from as ColumnKey);
+                          const ti = next.indexOf(to as ColumnKey);
+                          if (fi === -1 || ti === -1) return p;
+                          next.splice(fi, 1);
+                          next.splice(ti, 0, from as ColumnKey);
+                          return { ...p, order: next };
+                        });
+                      }}
+                    >
+                      {col.label}
+                      {/* Resize handle */}
+                      <div
+                        className="absolute right-0 top-1/4 h-1/2 w-1 rounded-full cursor-col-resize opacity-0 hover:opacity-100 bg-primary/50 transition-opacity"
+                        draggable={false}
+                        onMouseDown={e => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          resizingRef.current = { key: col.key, startX: e.clientX, startWidth: colPrefs.widths[col.key] };
+                        }}
+                      />
+                    </th>
+                  ))}
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
@@ -1192,30 +1433,11 @@ export default function NewProductionOrdersPage() {
                       setContextMenu({ x: e.clientX, y: e.clientY, order });
                     }}
                   >
-                    <td className="px-4 py-3 text-foreground">{order.accountCompany || "Unknown"}</td>
-                    <td className="px-4 py-3 text-foreground">{order.productName || "—"}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {accountTypeMap[order.accountId]
-                        ? (PRODUCT_TYPE_LABELS[accountTypeMap[order.accountId]!] ?? accountTypeMap[order.accountId])
-                        : "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      ₦{Number(order.price || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </td>
-                    <td className="px-4 py-3">{Number(order.volume || 0).toLocaleString()}</td>
-                    <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">
-                      {order.createdAt
-                        ? new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                        : "—"}
-                    </td>
-                    <td className="px-4 py-3">{order.dateOrdered || "—"}</td>
-                    <td className="px-4 py-3">{order.expectedDeliveryDate || "—"}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">{order.createdByName || "—"}</td>
-                    <td className="px-4 py-3">{order.dateDelivered || "—"}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">{accountManagerMap[order.accountId] || "—"}</td>
-                    <td className="px-4 py-3 text-emerald-400">
-                      ₦{(Number(order.price || 0) * Number(order.volume || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </td>
+                    {orderedVisibleCols.map(col => (
+                      <td key={col.key} className="px-4 py-3 overflow-hidden">
+                        <div className="truncate">{renderCell(col.key, order)}</div>
+                      </td>
+                    ))}
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex items-center gap-1">
                         <button
