@@ -672,6 +672,79 @@ export default function NewProductionOrdersPage() {
     return () => document.removeEventListener("mousedown", h);
   }, [contextMenu]);
 
+
+  const { data: orderEvents = [], isLoading: eventsLoading } = useQuery({
+    queryKey: [`/api/production-orders/${eventsOrderId}/events`],
+    queryFn: async () => {
+      if (!eventsOrderId) return [];
+      const res = await fetch(`${BASE}api/production-orders/${eventsOrderId}/events`, { headers: authHeaders() });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: eventsOrderId !== null,
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, body }: { id: number; body: Record<string, unknown> }) => {
+      const res = await fetch(`${BASE}api/production-orders/${id}`, {
+        method: "PUT",
+        headers: authHeaders(),
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const errorBody = await res.text();
+        throw new Error(errorBody || "Failed to update production order");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/production-orders/all"] });
+      setEditingOrder(null);
+    },
+  });
+
+  const updating = updateMutation.status === "pending";
+
+  const saveEdit = () => {
+    if (!editingOrder) return;
+    const body: Record<string, unknown> = {
+      price: editForm.price,
+      volume: editForm.volume,
+      expectedDeliveryDate: editForm.expectedDeliveryDate || null,
+      dateDelivered: editForm.dateDelivered || null,
+    };
+    if (editForm.accountId && Number(editForm.accountId) !== editingOrder.accountId) {
+      body.accountId = Number(editForm.accountId);
+    }
+    updateMutation.mutate({ id: editingOrder.id, body });
+  };
+
+  const accountTypeMap = useMemo(() => {
+    const map: Record<number, string | null> = {};
+    accounts.forEach(a => { map[a.id] = a.productType; });
+    return map;
+  }, [accounts]);
+
+  const accountManagerMap = useMemo(() => {
+    const map: Record<number, string> = {};
+    (accounts as any[]).forEach((a: any) => {
+      if (Array.isArray(a.accountManagerNames) && a.accountManagerNames.length > 0) {
+        map[a.id] = a.accountManagerNames[0];
+      }
+    });
+    return map;
+  }, [accounts]);
+
+  // Column customization — state and refs
+  const userId       = useRef(getUserIdFromToken()).current;
+  const prefsKey     = `po_col_prefs_${userId}`;
+  const [colPrefs, setColPrefs] = useState<ColPrefs>(() => loadColPrefs(userId));
+  const [showColToggle, setShowColToggle] = useState(false);
+  const colToggleRef   = useRef<HTMLDivElement>(null);
+  const draggingColRef = useRef<string | null>(null);
+  const [dragOverCol, setDragOverCol] = useState<string | null>(null);
+  const resizingRef = useRef<{ key: string; startX: number; startWidth: number } | null>(null);
+
   // Column resize – global mouse listeners
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -739,78 +812,6 @@ export default function NewProductionOrdersPage() {
       default: return "—";
     }
   }, [accountTypeMap, accountManagerMap]);
-
-  const { data: orderEvents = [], isLoading: eventsLoading } = useQuery({
-    queryKey: [`/api/production-orders/${eventsOrderId}/events`],
-    queryFn: async () => {
-      if (!eventsOrderId) return [];
-      const res = await fetch(`${BASE}api/production-orders/${eventsOrderId}/events`, { headers: authHeaders() });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: eventsOrderId !== null,
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: async ({ id, body }: { id: number; body: Record<string, unknown> }) => {
-      const res = await fetch(`${BASE}api/production-orders/${id}`, {
-        method: "PUT",
-        headers: authHeaders(),
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const errorBody = await res.text();
-        throw new Error(errorBody || "Failed to update production order");
-      }
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/production-orders/all"] });
-      setEditingOrder(null);
-    },
-  });
-
-  const updating = updateMutation.status === "pending";
-
-  const saveEdit = () => {
-    if (!editingOrder) return;
-    const body: Record<string, unknown> = {
-      price: editForm.price,
-      volume: editForm.volume,
-      expectedDeliveryDate: editForm.expectedDeliveryDate || null,
-      dateDelivered: editForm.dateDelivered || null,
-    };
-    if (editForm.accountId && Number(editForm.accountId) !== editingOrder.accountId) {
-      body.accountId = Number(editForm.accountId);
-    }
-    updateMutation.mutate({ id: editingOrder.id, body });
-  };
-
-  const accountTypeMap = useMemo(() => {
-    const map: Record<number, string | null> = {};
-    accounts.forEach(a => { map[a.id] = a.productType; });
-    return map;
-  }, [accounts]);
-
-  const accountManagerMap = useMemo(() => {
-    const map: Record<number, string> = {};
-    (accounts as any[]).forEach((a: any) => {
-      if (Array.isArray(a.accountManagerNames) && a.accountManagerNames.length > 0) {
-        map[a.id] = a.accountManagerNames[0];
-      }
-    });
-    return map;
-  }, [accounts]);
-
-  // Column customization
-  const userId       = useRef(getUserIdFromToken()).current;
-  const prefsKey     = `po_col_prefs_${userId}`;
-  const [colPrefs, setColPrefs] = useState<ColPrefs>(() => loadColPrefs(userId));
-  const [showColToggle, setShowColToggle] = useState(false);
-  const colToggleRef   = useRef<HTMLDivElement>(null);
-  const draggingColRef = useRef<string | null>(null);
-  const [dragOverCol, setDragOverCol] = useState<string | null>(null);
-  const resizingRef = useRef<{ key: string; startX: number; startWidth: number } | null>(null);
 
   const tableOrders = useMemo(
     () => filterByPeriod(allOrders, viewMode, selectedMonth, selectedWeek),
