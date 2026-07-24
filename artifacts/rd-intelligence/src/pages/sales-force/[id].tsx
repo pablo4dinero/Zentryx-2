@@ -574,10 +574,15 @@ function CallReportsTab({ accountId }: { accountId: number }) {
   const [openComments, setOpenComments] = useState<Set<number>>(new Set());
   const [sendingComment, setSendingComment] = useState<number | null>(null);
 
-  const { data: reports = [], isLoading } = useQuery({
+  const { data: reportsRaw = [], isLoading, isError: reportsError } = useQuery({
     queryKey: [`/api/accounts/${accountId}/call-reports`],
-    queryFn: async () => { const r = await api(`api/accounts/${accountId}/call-reports`); return r.json(); },
+    queryFn: async () => {
+      const r = await api(`api/accounts/${accountId}/call-reports`);
+      if (!r.ok) throw new Error(`call-reports API error ${r.status}`);
+      return r.json();
+    },
   });
+  const reports: any[] = Array.isArray(reportsRaw) ? reportsRaw : [];
 
   const resetForm = () => { setForm({ ...BLANK_FORM }); setShowForm(false); setEditingId(null); };
 
@@ -669,7 +674,7 @@ function CallReportsTab({ accountId }: { accountId: number }) {
       <div className="flex items-center justify-between">
         <div>
           <h3 className="font-semibold text-sm text-foreground">Call Reports</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">{(reports as any[]).length} log{(reports as any[]).length !== 1 ? "s" : ""} recorded</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{reports.length} log{reports.length !== 1 ? "s" : ""} recorded</p>
         </div>
         {!showForm && (
           <button
@@ -778,7 +783,14 @@ function CallReportsTab({ accountId }: { accountId: number }) {
         </div>
       )}
 
-      {!isLoading && (reports as any[]).length === 0 && (
+      {reportsError && (
+        <div className="flex flex-col items-center justify-center h-40 text-muted-foreground gap-2">
+          <AlertCircle className="w-8 h-8 opacity-40 text-red-400" />
+          <p className="text-sm">Could not load call reports. The feature may still be setting up.</p>
+        </div>
+      )}
+
+      {!isLoading && !reportsError && reports.length === 0 && (
         <div className="flex flex-col items-center justify-center h-40 text-muted-foreground gap-2">
           <Phone className="w-10 h-10 opacity-20" />
           <p className="text-sm">No call reports yet. Log the first one.</p>
