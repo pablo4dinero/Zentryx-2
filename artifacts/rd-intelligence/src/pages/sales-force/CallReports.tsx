@@ -389,6 +389,41 @@ export default function SalesForceCallReports() {
   const { theme }    = useTheme();
   const isLight      = theme === "light";
   const { data: currentUser } = useGetCurrentUser();
+  const userId = (currentUser as any)?.id;
+
+  // ── Comment state ────────────────────────────────────────────────────────────
+  const [openComments,   setOpenComments]   = useState<Set<number>>(new Set());
+  const [commentInputs,  setCommentInputs]  = useState<Record<number, string>>({});
+  const [sendingComment, setSendingComment] = useState<number | null>(null);
+
+  const toggleComments = (reportId: number) => {
+    setOpenComments(prev => {
+      const next = new Set(prev);
+      next.has(reportId) ? next.delete(reportId) : next.add(reportId);
+      return next;
+    });
+  };
+
+  const addComment = async (reportId: number, accountId: number) => {
+    const text = commentInputs[reportId]?.trim();
+    if (!text) return;
+    setSendingComment(reportId);
+    try {
+      await api(`api/accounts/${accountId}/call-reports/${reportId}/comments`, {
+        method: "POST",
+        body: JSON.stringify({ content: text, authorName: (currentUser as any)?.name ?? "Unknown" }),
+      });
+      setCommentInputs(prev => ({ ...prev, [reportId]: "" }));
+      queryClient.invalidateQueries({ queryKey: ["all-call-reports"] });
+    } finally {
+      setSendingComment(null);
+    }
+  };
+
+  const deleteComment = async (reportId: number, accountId: number, commentId: number) => {
+    await api(`api/accounts/${accountId}/call-reports/${reportId}/comments/${commentId}`, { method: "DELETE" });
+    queryClient.invalidateQueries({ queryKey: ["all-call-reports"] });
+  };
 
   // ── Data queries ────────────────────────────────────────────────────────────
   const { data: reportsRaw = [], isLoading, isError } = useQuery({
@@ -865,14 +900,62 @@ export default function SalesForceCallReports() {
                         )}
                       </div>
 
-                      {/* Comment count footer */}
+                      {/* Comment section */}
                       <div className={cn("border-t px-4 py-2.5", isLight ? "border-slate-100" : "border-white/5")}>
-                        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <button
+                          onClick={() => toggleComments(r.id)}
+                          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        >
                           <MessageSquare className="w-3.5 h-3.5" />
                           {(r.comments?.length ?? 0) > 0
                             ? `${r.comments.length} comment${r.comments.length > 1 ? "s" : ""}`
-                            : "No comments"}
-                        </span>
+                            : "Add comment"}
+                          {openComments.has(r.id)
+                            ? <ChevronUp className="w-3 h-3 ml-0.5" />
+                            : <ChevronDown className="w-3 h-3 ml-0.5" />}
+                        </button>
+                        {openComments.has(r.id) && (
+                          <div className="pt-3 space-y-2">
+                            {(r.comments ?? []).map((c: any) => (
+                              <div key={c.id} className="flex items-start gap-2 group">
+                                <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center shrink-0 text-[8px] font-bold text-primary mt-0.5">
+                                  {(c.authorName ?? "?").charAt(0).toUpperCase()}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <span className="text-xs font-medium text-foreground">{c.authorName}</span>
+                                  <span className="text-xs text-muted-foreground ml-2">{c.content}</span>
+                                </div>
+                                {userId === c.authorId && (
+                                  <button
+                                    onClick={() => deleteComment(r.id, r.accountId, c.id)}
+                                    className="opacity-0 group-hover:opacity-100 p-0.5 text-muted-foreground hover:text-red-400 transition-all shrink-0"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                            <div className="flex items-center gap-2 pt-1">
+                              <input
+                                value={commentInputs[r.id] ?? ""}
+                                onChange={e => setCommentInputs(prev => ({ ...prev, [r.id]: e.target.value }))}
+                                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addComment(r.id, r.accountId); } }}
+                                placeholder="Write a comment…"
+                                className={cn(
+                                  "flex-1 border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-primary/50 placeholder:text-muted-foreground",
+                                  isLight ? "bg-white border-slate-200 text-gray-900" : "bg-white/5 border-white/10 text-foreground",
+                                )}
+                              />
+                              <button
+                                onClick={() => addComment(r.id, r.accountId)}
+                                disabled={!commentInputs[r.id]?.trim() || sendingComment === r.id}
+                                className="p-1.5 bg-primary rounded-lg text-white disabled:opacity-40 shrink-0 transition-opacity"
+                              >
+                                <Send className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

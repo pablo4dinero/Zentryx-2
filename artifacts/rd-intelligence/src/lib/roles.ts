@@ -250,7 +250,7 @@ export function getBlockedPaths(role: string, jobPos: string): string[] {
 
   // ── Consolidated 9-role tiers ─────────────────────────────────────
   if (r === "sales_team" || r === "commercial_team") return [...adminBlock, "/projects", "/weekly-activities", "/procurement"];
-  if (r === "npd_team") return [...adminBlock, "/sales-force"];
+  if (r === "npd_team") return [...adminBlock]; // sales-force tab access gated at section level (Call Reports only)
   if (r === "operations_team") return [...adminBlock, "/sales-force", "/projects", "/business-dev"];
   if (r === "qc_team") return [...adminBlock, "/sales-force", "/business-dev"];
   if (r === "support_staff") return [...adminBlock, "/sales-force", "/projects", "/business-dev", "/procurement", "/materials-demand-planning"];
@@ -323,11 +323,22 @@ export const MODULE_SECTIONS: Record<string, { value: string; label: string }[]>
     { value: "New Production Orders",  label: "New Production Orders" },
     { value: "Charts",                 label: "Charts" },
     { value: "Forecast",               label: "Forecast" },
+    { value: "Call Reports",           label: "Call Reports" },
   ],
   "/projects": [
     { value: "projects", label: "Projects" },
     { value: "export",   label: "Export Data" },
   ],
+};
+
+/**
+ * Hard-coded section restrictions for built-in roles that need access to a
+ * module but only to specific tabs within it.
+ */
+const BUILTIN_ROLE_SECTION_ALLOWLISTS: Record<string, Record<string, string[]>> = {
+  npd_team: {
+    "/sales-force": ["Call Reports"],
+  },
 };
 
 /**
@@ -343,6 +354,9 @@ export function getAllowedSections(
   roleValue: string | null | undefined,
 ): string[] | null {
   if (!roleValue || roleValue === "admin") return null;
+  // Built-in role tab-level restrictions (e.g. npd_team → Call Reports only)
+  const builtinSections = BUILTIN_ROLE_SECTION_ALLOWLISTS[roleValue]?.[modulePath];
+  if (builtinSections) return builtinSections;
   const allowed = getCustomRoleAllowedPaths(roleValue);
   if (!allowed) return null; // built-in role with no explicit config — show all
   const sections = MODULE_SECTIONS[modulePath];
