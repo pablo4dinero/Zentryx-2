@@ -272,7 +272,13 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
     try {
       const raw = localStorage.getItem(`proj_col_prefs_${userId}`);
       const s = raw ? JSON.parse(raw) : null;
-      return Array.isArray(s?.order) ? s.order : DEFAULT_COL_ORDER;
+      if (Array.isArray(s?.order)) {
+        // Append any columns added since the user last saved (e.g. "assignees")
+        const stored = s.order as ColKey[];
+        const newCols = DEFAULT_COL_ORDER.filter(k => !stored.includes(k));
+        return [...stored, ...newCols];
+      }
+      return DEFAULT_COL_ORDER;
     } catch { return DEFAULT_COL_ORDER; }
   });
   const [colVis, setColVis] = useState<Record<ColKey, boolean>>(() => {
