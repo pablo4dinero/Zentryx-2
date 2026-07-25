@@ -38,6 +38,7 @@ export function CustomOptionsSelect({
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   // Fixed-position coordinates for the portal-rendered panel so it escapes any
   // parent `overflow` clipping (e.g. the scrollable Add Account form).
   const [menuPos, setMenuPos] = useState<{ left: number; width: number; top: number; bottom: number; openUp: boolean } | null>(null);
@@ -79,6 +80,14 @@ export function CustomOptionsSelect({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, compact]);
+
+  // Focus the search input after the portal mounts. autoFocus alone doesn't
+  // work when the dropdown is rendered in a portal outside a modal's focus trap.
+  useEffect(() => {
+    if (!open) return;
+    const t = setTimeout(() => searchInputRef.current?.focus(), 20);
+    return () => clearTimeout(t);
+  }, [open]);
 
   useEffect(() => {
     if (!open) { setSearch(""); return; }
@@ -154,10 +163,11 @@ export function CustomOptionsSelect({
             <div className={cn("flex items-center gap-1.5 px-2 py-1 rounded-lg border", isLight ? "bg-slate-50 border-slate-200" : "bg-white/5 border-white/10")}>
               <Search className={cn("w-3 h-3 shrink-0", isLight ? "text-slate-400" : "text-muted-foreground")} />
               <input
-                autoFocus
+                ref={searchInputRef}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 onKeyDown={e => {
+                  e.stopPropagation();
                   if (e.key === "Enter" && search.trim() && !exactMatch) {
                     e.preventDefault();
                     addOption(search.trim());
@@ -167,6 +177,8 @@ export function CustomOptionsSelect({
                   }
                   if (e.key === "Escape") setOpen(false);
                 }}
+                onKeyUp={e => e.stopPropagation()}
+                onKeyPress={e => e.stopPropagation()}
                 placeholder="Search or add…"
                 className={cn("flex-1 min-w-0 text-xs bg-transparent border-none focus:outline-none", isLight ? "text-slate-900 placeholder:text-slate-400" : "text-foreground placeholder:text-muted-foreground")}
               />
