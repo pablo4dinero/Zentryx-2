@@ -1,8 +1,9 @@
 import { useState, useMemo, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
 import { format } from "date-fns";
-import { ArrowUpDown, ArrowUp, ArrowDown, Trash2, FileText, X, Send, Pencil, Calendar as CalendarIcon, MessageSquare, AtSign } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, Trash2, FileText, X, Send, Pencil, Calendar as CalendarIcon, MessageSquare, AtSign, SlidersHorizontal, Check } from "lucide-react";
 import { useUpdateProject, useDeleteProject, useListUsers } from "@/api-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -46,6 +47,33 @@ const STATUS_COLORS_LIGHT: Record<string, string> = {
   pushed_to_live: "bg-emerald-100 text-emerald-700 border-emerald-200",
 };
 
+// ─── Column customization ────────────────────────────────────────────────────
+
+type ColKey = "productType" | "customerName" | "stage" | "progress" | "status" | "targetDate" | "createdAt";
+
+const ALL_COL_DEFS: { key: ColKey; label: string; sortKey: SortKey }[] = [
+  { key: "productType",  label: "Type",       sortKey: "productType"  },
+  { key: "customerName", label: "Customer",   sortKey: "customerName" },
+  { key: "stage",        label: "Stage",      sortKey: "stage"        },
+  { key: "progress",     label: "Progress",   sortKey: "progress"     },
+  { key: "status",       label: "Status",     sortKey: "status"       },
+  { key: "targetDate",   label: "Due Date",   sortKey: "targetDate"   },
+  { key: "createdAt",    label: "Date Added", sortKey: "createdAt"    },
+];
+const DEFAULT_COL_ORDER = ALL_COL_DEFS.map(c => c.key) as ColKey[];
+const DEFAULT_COL_VIS   = Object.fromEntries(ALL_COL_DEFS.map(c => [c.key, true])) as Record<ColKey, boolean>;
+
+function getProjUserId(): string {
+  try {
+    const token = localStorage.getItem("rd_token");
+    if (!token) return "anon";
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    return String(payload.userId ?? payload.sub ?? "anon");
+  } catch { return "anon"; }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 interface Props {
   projects: any[];
   productTypeOpts: CustomOptionsHandle;
@@ -88,6 +116,58 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
   useEffect(() => {
     try { localStorage.setItem(COL_WIDTH_KEY, JSON.stringify(colWidths)); } catch { /* silent */ }
   }, [colWidths]);
+
+  // Column order + visibility — per user, per device
+  const userId = useRef(getProjUserId()).current;
+  const COL_PREFS_KEY = `proj_col_prefs_${userId}`;
+  const [colOrder, setColOrder] = useState<ColKey[]>(() => {
+    try {
+      const raw = localStorage.getItem(`proj_col_prefs_${userId}`);
+      const s = raw ? JSON.parse(raw) : null;
+      return Array.isArray(s?.order) ? s.order : DEFAULT_COL_ORDER;
+    } catch { return DEFAULT_COL_ORDER; }
+  });
+  const [colVis, setColVis] = useState<Record<ColKey, boolean>>(() => {
+    try {
+      const raw = localStorage.getItem(`proj_col_prefs_${userId}`);
+      const s = raw ? JSON.parse(raw) : null;
+      return s?.visible ? { ...DEFAULT_COL_VIS, ...s.visible } : DEFAULT_COL_VIS;
+    } catch { return DEFAULT_COL_VIS; }
+  });
+  const [showColToggle, setShowColToggle] = useState(false);
+  const [colTogglePos, setColTogglePos] = useState<{ top: number; right: number } | null>(null);
+  const colButtonRef = useRef<HTMLButtonElement>(null);
+  const colToggleRef = useRef<HTMLDivElement>(null);
+  const draggingColRef = useRef<ColKey | null>(null);
+  const [dragOverCol, setDragOverCol] = useState<ColKey | null>(null);
+
+  useEffect(() => {
+    try { localStorage.setItem(COL_PREFS_KEY, JSON.stringify({ order: colOrder, visible: colVis })); } catch { /* silent */ }
+  }, [colOrder, colVis, COL_PREFS_KEY]);
+
+  useEffect(() => {
+    if (!showColToggle) return;
+    const h = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (colToggleRef.current?.contains(t) || colButtonRef.current?.contains(t)) return;
+      setShowColToggle(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [showColToggle]);
+
+  const openColToggle = () => {
+    if (colButtonRef.current) {
+      const r = colButtonRef.current.getBoundingClientRect();
+      setColTogglePos({ top: r.bottom + 8, right: window.innerWidth - r.right });
+    }
+    setShowColToggle(true);
+  };
+
+  const orderedVisibleCols = useMemo(
+    () => colOrder.map(key => ALL_COL_DEFS.find(c => c.key === key)!).filter(c => c && colVis[c.key] !== false),
+    [colOrder, colVis],
+  );
 
   // Fetch comments when the status-report modal opens
   useEffect(() => {
@@ -295,24 +375,58 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
     return sortDir === "asc" ? <ArrowUp className="w-3 h-3 text-primary" /> : <ArrowDown className="w-3 h-3 text-primary" />;
   };
 
-  const Th = ({ k, label, widthKey }: { k: SortKey; label: string; widthKey?: string }) => {
-    const key = widthKey || (k as string);
-    const width = colWidths[key];
+  const Th = ({ k, label, widthKey, colKey }: { k: SortKey; label: string; widthKey?: string; colKey?: ColKey }) => {
+    const wKey = widthKey || (k as string);
+    const width = colWidths[wKey];
+    const isDraggable = !!colKey;
+    const isOver = colKey && dragOverCol === colKey;
     return (
       <th
         style={width ? { width, minWidth: width, maxWidth: width } : undefined}
-        className={`relative px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide cursor-pointer transition-colors ${isLight ? "text-gray-500 hover:text-gray-900" : "text-muted-foreground hover:text-foreground"}`}
+        className={cn(
+          "relative px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide transition-colors select-none",
+          isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
+          isOver && "border-l-2 border-primary",
+          isLight ? "text-gray-500 hover:text-gray-900" : "text-muted-foreground hover:text-foreground",
+        )}
         onClick={() => handleSort(k)}
+        draggable={isDraggable}
+        onDragStart={isDraggable && colKey ? e => {
+          draggingColRef.current = colKey;
+          e.dataTransfer.effectAllowed = "move";
+        } : undefined}
+        onDragEnd={isDraggable ? () => { draggingColRef.current = null; setDragOverCol(null); } : undefined}
+        onDragOver={isDraggable && colKey ? e => {
+          e.preventDefault();
+          if (draggingColRef.current && draggingColRef.current !== colKey) setDragOverCol(colKey);
+        } : undefined}
+        onDragLeave={isDraggable ? () => setDragOverCol(null) : undefined}
+        onDrop={isDraggable && colKey ? e => {
+          e.preventDefault();
+          const from = draggingColRef.current;
+          const to = colKey;
+          draggingColRef.current = null;
+          setDragOverCol(null);
+          if (!from || from === to) return;
+          setColOrder(prev => {
+            const next = [...prev];
+            const fi = next.indexOf(from);
+            const ti = next.indexOf(to);
+            if (fi === -1 || ti === -1) return prev;
+            next.splice(fi, 1);
+            next.splice(ti, 0, from);
+            return next;
+          });
+        } : undefined}
       >
         <div className="flex items-center gap-1.5 pr-3">
           {label}
           <SortIcon k={k} />
         </div>
-        {/* Resize handle — desktop drag affordance, hidden on small screens
-            because column widths matter less inside a horizontal scroller. */}
         <span
-          onMouseDown={e => resizeCol(key, e)}
+          onMouseDown={e => resizeCol(wKey, e)}
           onClick={e => e.stopPropagation()}
+          draggable={false}
           className="hidden lg:block absolute top-1 bottom-1 right-0 w-1.5 cursor-col-resize hover:bg-primary/40 active:bg-primary/60 transition-colors"
           title="Drag to resize column"
         />
@@ -320,178 +434,172 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
     );
   };
 
+  const renderCell = (colKey: ColKey, p: any) => {
+    const progress = p.taskCount > 0 ? Math.round((p.completedTaskCount / p.taskCount) * 100) : 0;
+    const statusColor = isLight
+      ? STATUS_COLORS_LIGHT[p.status] || "bg-gray-100 text-gray-700 border-gray-200"
+      : STATUS_COLORS[p.status] || "bg-white/5 text-muted-foreground border-white/10";
+    switch (colKey) {
+      case "productType":
+        return <CustomOptionsSelect compact value={p.productType || ""} onChange={v => updateField(p.id, "productType", v)} handle={productTypeOpts} placeholder="—" isLight={isLight} />;
+      case "customerName":
+        return (
+          <div>
+            <p className={cn("text-xs", isLight ? "text-gray-900" : "text-foreground")}>{p.customerName || "—"}</p>
+            {p.customerEmail && <p className="text-[10px] text-muted-foreground">{p.customerEmail}</p>}
+          </div>
+        );
+      case "stage":
+        return <CustomOptionsSelect compact value={p.stage || ""} onChange={v => updateField(p.id, "stage", v)} handle={stageOpts} displayFn={v => v.replace(/_/g, " ")} placeholder="—" isLight={isLight} />;
+      case "progress":
+        return (
+          <div className="flex items-center gap-2">
+            <div className={cn("w-16 h-1.5 rounded-full overflow-hidden shrink-0", isLight ? "bg-gray-200" : "bg-black/30")}>
+              <div className="h-full rounded-full" style={{ width: `${progress}%`, background: "linear-gradient(90deg, #7c3aed, #3b82f6)" }} />
+            </div>
+            <span className={cn("text-xs w-8", isLight ? "text-gray-900" : "text-foreground")}>{progress}%</span>
+          </div>
+        );
+      case "status":
+        return (
+          <CustomOptionsSelect compact value={p.status || ""} onChange={v => updateField(p.id, "status", v)} handle={statusOpts} displayFn={v => v.replace(/_/g, " ")} placeholder="—" isLight={isLight}
+            triggerClassName={cn("px-2.5 py-1 rounded-full border text-[11px] font-medium capitalize", statusColor)}
+          />
+        );
+      case "targetDate":
+        return (
+          <div className="relative inline-flex items-center gap-1.5 group/date">
+            <span className={cn("text-xs", isLight ? "text-gray-600" : "text-muted-foreground")}>
+              {p.targetDate ? format(new Date(p.targetDate), "MMM d, yyyy") : "—"}
+            </span>
+            <label className={cn("relative cursor-pointer p-1 rounded transition-opacity opacity-0 group-hover/date:opacity-100",
+              isLight ? "text-slate-400 hover:text-slate-700 hover:bg-slate-100" : "text-muted-foreground hover:text-foreground hover:bg-white/10")}>
+              <CalendarIcon className="w-3 h-3" />
+              <input type="date" value={p.targetDate ? format(new Date(p.targetDate), "yyyy-MM-dd") : ""}
+                onChange={e => updateField(p.id, "targetDate", e.target.value || null)}
+                onClick={e => e.stopPropagation()} className="absolute inset-0 opacity-0 cursor-pointer" />
+            </label>
+          </div>
+        );
+      case "createdAt":
+        return <span className={cn("text-xs", isLight ? "text-gray-600" : "text-muted-foreground")}>{p.createdAt ? format(new Date(p.createdAt), "MMM d, yyyy") : "—"}</span>;
+      default:
+        return null;
+    }
+  };
+
   return (
     <>
       <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
         <div className={cn("rounded-2xl border", isLight ? "bg-white border-gray-200 shadow-sm" : "glass-card border-white/10")}>
-          <div className="overflow-x-auto custom-scrollbar rounded-2xl">
-            <table className="w-full text-sm" style={{ tableLayout: "fixed", minWidth: 1280 }}>
+
+          {/* Columns toolbar */}
+          <div className={cn("flex items-center justify-end px-4 py-2.5 border-b", isLight ? "border-gray-100 bg-gray-50/60" : "border-white/5 bg-white/[0.01]")}>
+            <button
+              ref={colButtonRef}
+              onClick={() => showColToggle ? setShowColToggle(false) : openColToggle()}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors",
+                showColToggle
+                  ? "bg-primary/10 border-primary/20 text-primary"
+                  : isLight ? "border-gray-200 text-gray-600 hover:bg-gray-50" : "border-white/10 text-muted-foreground hover:bg-white/5",
+              )}
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              Columns
+            </button>
+          </div>
+
+          <div className="overflow-x-auto custom-scrollbar rounded-b-2xl">
+            <table className="w-full text-sm" style={{ tableLayout: "fixed", minWidth: 900 }}>
               <thead>
                 <tr className={cn("border-b", isLight ? "border-gray-200 bg-gray-50" : "border-white/10")} style={isLight ? {} : { background: "rgba(255,255,255,0.03)" }}>
                   <Th k="name" label="Name" />
-                  <Th k="productType" label="Type" />
-                  <Th k="customerName" label="Customer" />
-                  <Th k="stage" label="Stage" />
-                  <Th k="progress" label="Progress" />
-                  <Th k="status" label="Status" />
-                  <Th k="targetDate" label="Due Date" />
-                  <Th k="createdAt" label="Date Added" />
+                  {orderedVisibleCols.map(col => (
+                    <Th key={col.key} k={col.sortKey} label={col.label} widthKey={col.key} colKey={col.key} />
+                  ))}
                   <th style={{ width: colWidths.actions, minWidth: colWidths.actions }} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {sorted.map((p, i) => {
-                  const progress = p.taskCount > 0 ? Math.round((p.completedTaskCount / p.taskCount) * 100) : 0;
-                  const statusColor = isLight
-                    ? STATUS_COLORS_LIGHT[p.status] || "bg-gray-100 text-gray-700 border-gray-200"
-                    : STATUS_COLORS[p.status] || "bg-white/5 text-muted-foreground border-white/10";
-                  return (
-                    <motion.tr
-                      key={p.id}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: i * 0.025 }}
-                      onContextMenu={(e) => handleRightClick(e, p)}
-                      draggable
-                      onDragStart={(e) => {
-                        e.dataTransfer.setData("projectId", String(p.id));
-                        e.dataTransfer.effectAllowed = "move";
-                        setDraggingId(p.id);
-                      }}
-                      onDragEnd={() => setDraggingId(null)}
-                      style={{ opacity: draggingId === p.id ? 0.5 : 1 }}
-                      className={cn("border-b transition-colors group cursor-grab active:cursor-grabbing", isLight ? "border-gray-100 hover:bg-gray-50" : "border-white/5 hover:bg-white/[0.03]")}
-                    >
-                      <td className="px-4 py-3.5">
-                        {editingNameId === p.id ? (
-                          <input
-                            autoFocus
-                            value={editingNameValue}
-                            onChange={e => setEditingNameValue(e.target.value)}
-                            onBlur={() => commitName(p.id)}
-                            onKeyDown={e => {
-                              if (e.key === "Enter") { e.preventDefault(); commitName(p.id); }
-                              if (e.key === "Escape") setEditingNameId(null);
-                            }}
-                            onClick={e => e.stopPropagation()}
-                            className={cn("text-sm font-semibold w-full rounded-lg px-2 py-1 border focus:outline-none focus:ring-2 focus:ring-primary/50",
-                              isLight ? "bg-white border-slate-200 text-slate-900" : "bg-black/30 border-white/10 text-foreground")}
-                          />
-                        ) : (
-                          <div className="flex items-center gap-1.5 group/name">
-                            <Link href={`/projects/${p.id}`} className="flex-1 min-w-0">
-                              <p className={cn("text-sm font-semibold group-hover:text-primary transition-colors line-clamp-1", isLight ? "text-gray-900" : "text-foreground")}>{p.name}</p>
-                              {p.description && <p className="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">{p.description}</p>}
-                            </Link>
-                            <button
-                              type="button"
-                              onClick={e => { e.stopPropagation(); setEditingNameId(p.id); setEditingNameValue(p.name); }}
-                              title="Rename"
-                              className={cn("opacity-0 group-hover/name:opacity-100 p-1 rounded transition-opacity shrink-0",
-                                isLight ? "text-slate-400 hover:text-slate-700 hover:bg-slate-100" : "text-muted-foreground hover:text-foreground hover:bg-white/10"
-                              )}
-                            >
-                              <Pencil className="w-3 h-3" />
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <CustomOptionsSelect
-                          compact
-                          value={p.productType || ""}
-                          onChange={v => updateField(p.id, "productType", v)}
-                          handle={productTypeOpts}
-                          placeholder="—"
-                          isLight={isLight}
+                {sorted.map((p, i) => (
+                  <motion.tr
+                    key={p.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: i * 0.025 }}
+                    onContextMenu={(e) => handleRightClick(e, p)}
+                    draggable
+                    onDragStart={(e) => {
+                      (e as unknown as DragEvent).dataTransfer!.setData("projectId", String(p.id));
+                      (e as unknown as DragEvent).dataTransfer!.effectAllowed = "move";
+                      setDraggingId(p.id);
+                    }}
+                    onDragEnd={() => setDraggingId(null)}
+                    style={{ opacity: draggingId === p.id ? 0.5 : 1 }}
+                    className={cn("border-b transition-colors group cursor-grab active:cursor-grabbing", isLight ? "border-gray-100 hover:bg-gray-50" : "border-white/5 hover:bg-white/[0.03]")}
+                  >
+                    {/* Name — always first, pinned */}
+                    <td className="px-4 py-3.5">
+                      {editingNameId === p.id ? (
+                        <input
+                          autoFocus
+                          value={editingNameValue}
+                          onChange={e => setEditingNameValue(e.target.value)}
+                          onBlur={() => commitName(p.id)}
+                          onKeyDown={e => {
+                            if (e.key === "Enter") { e.preventDefault(); commitName(p.id); }
+                            if (e.key === "Escape") setEditingNameId(null);
+                          }}
+                          onClick={e => e.stopPropagation()}
+                          className={cn("text-sm font-semibold w-full rounded-lg px-2 py-1 border focus:outline-none focus:ring-2 focus:ring-primary/50",
+                            isLight ? "bg-white border-slate-200 text-slate-900" : "bg-black/30 border-white/10 text-foreground")}
                         />
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <div>
-                          <p className={cn("text-xs", isLight ? "text-gray-900" : "text-foreground")}>{p.customerName || "—"}</p>
-                          {p.customerEmail && <p className="text-[10px] text-muted-foreground">{p.customerEmail}</p>}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <CustomOptionsSelect
-                          compact
-                          value={p.stage || ""}
-                          onChange={v => updateField(p.id, "stage", v)}
-                          handle={stageOpts}
-                          displayFn={v => v.replace(/_/g, " ")}
-                          placeholder="—"
-                          isLight={isLight}
-                        />
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <div className="flex items-center gap-2">
-                          <div className={cn("w-16 h-1.5 rounded-full overflow-hidden shrink-0", isLight ? "bg-gray-200" : "bg-black/30")}>
-                            <div className="h-full rounded-full" style={{ width: `${progress}%`, background: "linear-gradient(90deg, #7c3aed, #3b82f6)" }} />
-                          </div>
-                          <span className={cn("text-xs w-8", isLight ? "text-gray-900" : "text-foreground")}>{progress}%</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <CustomOptionsSelect
-                          compact
-                          value={p.status || ""}
-                          onChange={v => updateField(p.id, "status", v)}
-                          handle={statusOpts}
-                          displayFn={v => v.replace(/_/g, " ")}
-                          placeholder="—"
-                          isLight={isLight}
-                          triggerClassName={cn(
-                            "px-2.5 py-1 rounded-full border text-[11px] font-medium capitalize",
-                            statusColor
-                          )}
-                        />
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <div className="relative inline-flex items-center gap-1.5 group/date">
-                          <span className={cn("text-xs", isLight ? "text-gray-600" : "text-muted-foreground")}>
-                            {p.targetDate ? format(new Date(p.targetDate), "MMM d, yyyy") : "—"}
-                          </span>
-                          <label className={cn("relative cursor-pointer p-1 rounded transition-opacity opacity-0 group-hover/date:opacity-100",
-                            isLight ? "text-slate-400 hover:text-slate-700 hover:bg-slate-100" : "text-muted-foreground hover:text-foreground hover:bg-white/10"
-                          )}>
-                            <CalendarIcon className="w-3 h-3" />
-                            <input
-                              type="date"
-                              value={p.targetDate ? format(new Date(p.targetDate), "yyyy-MM-dd") : ""}
-                              onChange={e => updateField(p.id, "targetDate", e.target.value || null)}
-                              onClick={e => e.stopPropagation()}
-                              className="absolute inset-0 opacity-0 cursor-pointer"
-                            />
-                          </label>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <span className={cn("text-xs", isLight ? "text-gray-600" : "text-muted-foreground")}>
-                          {p.createdAt ? format(new Date(p.createdAt), "MMM d, yyyy") : "—"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      ) : (
+                        <div className="flex items-center gap-1.5 group/name">
+                          <Link href={`/projects/${p.id}`} className="flex-1 min-w-0">
+                            <p className={cn("text-sm font-semibold group-hover:text-primary transition-colors line-clamp-1", isLight ? "text-gray-900" : "text-foreground")}>{p.name}</p>
+                            {p.description && <p className="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">{p.description}</p>}
+                          </Link>
                           <button
-                            onClick={(e) => { e.stopPropagation(); setStatusReport({ project: p }); setReportText(""); }}
-                            className={cn("p-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs", isLight ? "hover:bg-blue-50 text-blue-600" : "hover:bg-blue-500/10 text-blue-400")}
-                            title="Status Report"
+                            type="button"
+                            onClick={e => { e.stopPropagation(); setEditingNameId(p.id); setEditingNameValue(p.name); }}
+                            title="Rename"
+                            className={cn("opacity-0 group-hover/name:opacity-100 p-1 rounded transition-opacity shrink-0",
+                              isLight ? "text-slate-400 hover:text-slate-700 hover:bg-slate-100" : "text-muted-foreground hover:text-foreground hover:bg-white/10"
+                            )}
                           >
-                            <FileText className="w-3.5 h-3.5" />
-                            <span className="hidden sm:inline">Report</span>
-                          </button>
-                          <button
-                            onClick={(e) => handleDelete(e, p)}
-                            className={cn("p-1.5 rounded-lg transition-colors", isLight ? "hover:bg-red-50 text-red-500" : "hover:bg-red-500/10 text-red-400")}
-                            title="Delete Project"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Pencil className="w-3 h-3" />
                           </button>
                         </div>
-                      </td>
-                    </motion.tr>
-                  );
-                })}
+                      )}
+                    </td>
+                    {/* Dynamic columns */}
+                    {orderedVisibleCols.map(col => (
+                      <td key={col.key} className="px-4 py-3.5">{renderCell(col.key, p)}</td>
+                    ))}
+                    {/* Actions — always last, pinned */}
+                    <td className="px-4 py-3.5">
+                      <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setStatusReport({ project: p }); setReportText(""); }}
+                          className={cn("p-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs", isLight ? "hover:bg-blue-50 text-blue-600" : "hover:bg-blue-500/10 text-blue-400")}
+                          title="Status Report"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Report</span>
+                        </button>
+                        <button
+                          onClick={(e) => handleDelete(e, p)}
+                          className={cn("p-1.5 rounded-lg transition-colors", isLight ? "hover:bg-red-50 text-red-500" : "hover:bg-red-500/10 text-red-400")}
+                          title="Delete Project"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </motion.tr>
+                ))}
               </tbody>
             </table>
 
@@ -503,7 +611,7 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
           {sorted.length > 0 && (
             <div className={cn("px-4 py-2.5 border-t flex items-center justify-between", isLight ? "border-gray-100 bg-gray-50" : "border-white/5")} style={isLight ? {} : { background: "rgba(255,255,255,0.02)" }}>
               <p className="text-xs text-muted-foreground">{sorted.length} project{sorted.length !== 1 ? "s" : ""}</p>
-              <p className="text-xs text-muted-foreground hidden sm:block">Right-click a row to change status · Click headers to sort · Drag column edges to resize</p>
+              <p className="text-xs text-muted-foreground hidden sm:block">Right-click a row to change status · Click headers to sort · Drag headers to reorder · Drag edges to resize</p>
               <p className="text-xs text-muted-foreground sm:hidden">Swipe sideways to see more columns</p>
             </div>
           )}
@@ -676,6 +784,52 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Columns popover — portaled to escape overflow:hidden */}
+      {showColToggle && colTogglePos && createPortal(
+        <div
+          ref={colToggleRef}
+          style={{
+            position: "fixed",
+            top: colTogglePos.top,
+            right: colTogglePos.right,
+            zIndex: 200,
+            width: 220,
+          }}
+          className={cn("rounded-2xl border shadow-2xl overflow-hidden", isLight ? "bg-white border-gray-200" : "bg-[#1a1a2e] border-white/10")}
+        >
+          <div className={cn("px-3 py-2.5 border-b text-xs font-semibold uppercase tracking-wide", isLight ? "border-gray-100 text-gray-500" : "border-white/10 text-muted-foreground")}>
+            Toggle Columns
+          </div>
+          <div className="p-2 space-y-0.5 max-h-72 overflow-y-auto custom-scrollbar">
+            {ALL_COL_DEFS.map(col => {
+              const visible = colVis[col.key] ?? true;
+              return (
+                <button
+                  key={col.key}
+                  type="button"
+                  onClick={() => setColVis(prev => ({ ...prev, [col.key]: !visible }))}
+                  className={cn(
+                    "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-colors",
+                    isLight ? "hover:bg-gray-50 text-gray-700" : "hover:bg-white/5 text-foreground",
+                  )}
+                >
+                  <span className={cn("w-4 h-4 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors",
+                    visible ? "bg-primary border-primary" : isLight ? "border-gray-300" : "border-white/20"
+                  )}>
+                    {visible && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
+                  </span>
+                  {col.label}
+                </button>
+              );
+            })}
+          </div>
+          <div className={cn("px-3 py-2 border-t text-[10px] text-center", isLight ? "border-gray-100 text-gray-400" : "border-white/5 text-muted-foreground/60")}>
+            Drag column headers to reorder
+          </div>
+        </div>,
+        document.body
+      )}
     </>
   );
 }
