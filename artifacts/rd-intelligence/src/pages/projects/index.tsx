@@ -84,8 +84,12 @@ export default function ProjectsList() {
   }, [statusManageOpen]);
 
   const handleDateChange = (id: number, date: string) => {
+    queryClient.setQueriesData({ queryKey: ["/api/projects"] }, (old: any) => {
+      if (!Array.isArray(old)) return old;
+      return old.map(p => p.id === id ? { ...p, targetDate: date || null } : p);
+    });
     updateMutation.mutate({ id, data: { targetDate: date || null } as any }, {
-      onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/projects"] }),
+      onError: () => queryClient.invalidateQueries({ queryKey: ["/api/projects"] }),
     });
   };
 
@@ -118,9 +122,13 @@ export default function ProjectsList() {
     const projectId = Number(e.dataTransfer.getData("projectId"));
     if (!projectId || isNaN(projectId)) return;
     setDragOverStatus(null);
+    queryClient.setQueriesData({ queryKey: ["/api/projects"] }, (old: any) => {
+      if (!Array.isArray(old)) return old;
+      return old.map(p => p.id === projectId ? { ...p, status: targetStatus } : p);
+    });
     updateMutation.mutate(
       { id: projectId, data: { status: targetStatus } as any },
-      { onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/projects"] }) }
+      { onError: () => queryClient.invalidateQueries({ queryKey: ["/api/projects"] }) }
     );
   };
 

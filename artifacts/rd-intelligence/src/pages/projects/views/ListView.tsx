@@ -195,8 +195,10 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
   // on failure. Used by the inline editors (name / type / stage / status /
   // due date) in the table cells.
   const updateField = (projectId: number, field: string, value: any) => {
-    queryClient.setQueryData(["/api/projects"], (old: any[]) => {
-      if (!old) return old;
+    // setQueriesData uses prefix matching, so it hits ["/api/projects", {}] and
+    // any other param variants — setQueryData(["/api/projects"]) would miss them.
+    queryClient.setQueriesData({ queryKey: ["/api/projects"] }, (old: any) => {
+      if (!Array.isArray(old)) return old;
       return old.map(p => p.id === projectId ? { ...p, [field]: value } : p);
     });
     updateMutation.mutate({ id: projectId, data: { [field]: value } as any }, {
@@ -220,8 +222,8 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
     e.stopPropagation();
     if (!confirm(`Permanently delete "${project.name}"? This cannot be undone.`)) return;
     // Optimistic update
-    queryClient.setQueryData(["/api/projects"], (old: any[]) => {
-      if (!old) return old;
+    queryClient.setQueriesData({ queryKey: ["/api/projects"] }, (old: any) => {
+      if (!Array.isArray(old)) return old;
       return old.filter(p => p.id !== project.id);
     });
     deleteMutation.mutate({ id: project.id }, {
