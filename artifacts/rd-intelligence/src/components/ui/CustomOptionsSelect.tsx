@@ -81,12 +81,30 @@ export function CustomOptionsSelect({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, compact]);
 
-  // Focus the search input after the portal mounts. autoFocus alone doesn't
-  // work when the dropdown is rendered in a portal outside a modal's focus trap.
+  // Radix Dialog's FocusScope watches focusin/focusout in bubble phase and
+  // immediately restores focus inside the dialog whenever it leaves. Since our
+  // panel is portaled to document.body (outside the dialog DOM), Radix steals
+  // focus back the instant we give it to the search input.
+  // Fix: add capture-phase listeners (which fire before bubble phase) that call
+  // stopImmediatePropagation() when the focus transition is to/from our panel.
+  // This prevents Radix's handlers from ever seeing the event.
   useEffect(() => {
     if (!open) return;
+    const guard = (e: FocusEvent) => {
+      const panel = panelRef.current;
+      if (!panel) return;
+      if (panel.contains(e.relatedTarget as Node) || panel.contains(e.target as Node)) {
+        e.stopImmediatePropagation();
+      }
+    };
+    document.addEventListener("focusin", guard, true);
+    document.addEventListener("focusout", guard, true);
     const t = setTimeout(() => searchInputRef.current?.focus(), 20);
-    return () => clearTimeout(t);
+    return () => {
+      document.removeEventListener("focusin", guard, true);
+      document.removeEventListener("focusout", guard, true);
+      clearTimeout(t);
+    };
   }, [open]);
 
   useEffect(() => {
