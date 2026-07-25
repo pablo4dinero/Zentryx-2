@@ -232,8 +232,13 @@ export default function BusinessDev() {
       {/* Search + status filters — directly below view toggles */}
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
         <div className="relative w-full sm:w-72">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="Search BD items..." className="pl-9" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+          <Search className={cn("absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4", isLight ? "text-slate-400" : "text-muted-foreground")} />
+          <Input
+            placeholder="Search BD items..."
+            className={cn("pl-9", isLight ? "bg-white text-gray-900 placeholder:text-gray-400 border-slate-200" : "")}
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+          />
         </div>
         <div className="flex items-center gap-2 relative" data-bd-status-manage>
           {/* Mobile/tablet: one compact dropdown for the whole status list. */}

@@ -787,6 +787,9 @@ function RevenueScreen({ sellingPrice, volume, projectName, onGoToInfo }: {
 }
 
 function EditTaskModal({ task, onClose, onSave }: { task: any; onClose: () => void; onSave: (data: any) => void }) {
+  const { theme } = useTheme();
+  const isLight = theme === "light";
+
   const [form, setForm] = useState({
     title: task.title || "",
     description: task.description || "",
@@ -795,39 +798,73 @@ function EditTaskModal({ task, onClose, onSave }: { task: any; onClose: () => vo
     dueDate: task.dueDate ? format(new Date(task.dueDate), "yyyy-MM-dd") : "",
   });
   const setF = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }));
-  const cls = "flex h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground";
+
+  const inputCls = cn(
+    "flex h-10 w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50",
+    isLight
+      ? "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400"
+      : "border-white/10 bg-black/20 text-foreground placeholder:text-muted-foreground"
+  );
+  const labelCls = cn("text-sm font-medium", isLight ? "text-gray-700" : "");
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[480px] glass-panel border-white/10 bg-card/95">
-        <DialogHeader><DialogTitle className="font-display">Edit Task</DialogTitle></DialogHeader>
+      <DialogContent className={cn(
+        "sm:max-w-[480px]",
+        isLight ? "bg-white border-gray-200" : "glass-panel border-white/10 bg-card/95"
+      )}>
+        <DialogHeader>
+          <DialogTitle className={cn("font-display", isLight ? "text-gray-900" : "")}>Edit Task</DialogTitle>
+        </DialogHeader>
         <div className="space-y-4 mt-2">
-          <div className="space-y-1.5"><label className="text-sm font-medium">Title *</label>
-            <input value={form.title} onChange={e => setF("title", e.target.value)} className={cls} autoFocus />
+          <div className="space-y-1.5">
+            <label className={labelCls}>Title *</label>
+            <input value={form.title} onChange={e => setF("title", e.target.value)} className={inputCls} autoFocus />
           </div>
-          <div className="space-y-1.5"><label className="text-sm font-medium">Description</label>
+          <div className="space-y-1.5">
+            <label className={labelCls}>Description</label>
             <textarea value={form.description} onChange={e => setF("description", e.target.value)}
-              className="flex min-h-[80px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground resize-none"
+              className={cn(
+                "flex min-h-[80px] w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none",
+                isLight
+                  ? "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400"
+                  : "border-white/10 bg-black/20 text-foreground placeholder:text-muted-foreground"
+              )}
               placeholder="Task details..." />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5"><label className="text-sm font-medium">Priority</label>
-              <select value={form.priority} onChange={e => setF("priority", e.target.value)} className={cls}>
-                {["low", "medium", "high", "critical"].map(p => <option key={p} value={p} className="bg-white text-black capitalize">{p}</option>)}
+            <div className="space-y-1.5">
+              <label className={labelCls}>Priority</label>
+              <select value={form.priority} onChange={e => setF("priority", e.target.value)} className={inputCls}>
+                {["low", "medium", "high", "critical"].map(p => (
+                  <option key={p} value={p} className="bg-white text-black capitalize">{p}</option>
+                ))}
               </select>
             </div>
-            <div className="space-y-1.5"><label className="text-sm font-medium">Status</label>
-              <select value={form.status} onChange={e => setF("status", e.target.value)} className={cls}>
-                {TASK_STATUSES.map(s => <option key={s} value={s} className="bg-white text-black capitalize">{s.replace(/_/g,' ')}</option>)}
+            <div className="space-y-1.5">
+              <label className={labelCls}>Status</label>
+              <select value={form.status} onChange={e => setF("status", e.target.value)} className={inputCls}>
+                {TASK_STATUSES.map(s => (
+                  <option key={s} value={s} className="bg-white text-black capitalize">{s.replace(/_/g, " ")}</option>
+                ))}
               </select>
             </div>
-            <div className="space-y-1.5 col-span-2"><label className="text-sm font-medium">Due Date</label>
-              <input type="date" value={form.dueDate} onChange={e => setF("dueDate", e.target.value)} className={cls} />
+            <div className="space-y-1.5 col-span-2">
+              <label className={labelCls}>Due Date</label>
+              <input type="date" value={form.dueDate} onChange={e => setF("dueDate", e.target.value)} className={inputCls} />
             </div>
           </div>
           <div className="flex justify-end gap-3 pt-2">
-            <Button variant="ghost" onClick={onClose}>Cancel</Button>
-            <Button onClick={() => onSave({ ...form, dueDate: form.dueDate || null })} disabled={!form.title.trim()}>Save Task</Button>
+            <Button
+              variant="ghost"
+              onClick={onClose}
+              className={isLight ? "text-red-600 hover:text-red-700 hover:bg-red-50" : "text-red-400 hover:text-red-300 hover:bg-red-500/10"}
+            >
+              Cancel
+            </Button>
+            <Button onClick={() => onSave({ ...form, dueDate: form.dueDate || null })} disabled={!form.title.trim()}>
+              Save Task
+            </Button>
           </div>
         </div>
       </DialogContent>
