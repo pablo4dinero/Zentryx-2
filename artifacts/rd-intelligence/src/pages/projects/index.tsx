@@ -690,6 +690,7 @@ function CreateProjectModal({
     startDate: "", targetDate: "", costTarget: "", sellingPrice: "", volumeKgPerMonth: "",
     assigneeIds: [] as number[],
   });
+  const [assigneeSearch, setAssigneeSearch] = useState("");
 
   const setF = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }));
 
@@ -721,6 +722,7 @@ function CreateProjectModal({
         setOpen(false);
         toast({ title: "Project created!", description: form.name });
         setForm({ name: "", description: "", stage: "innovation", status: "in_progress", priority: "medium", productType: "", customerName: "", customerEmail: "", customerPhone: "", startDate: "", targetDate: "", costTarget: "", sellingPrice: "", volumeKgPerMonth: "", assigneeIds: [] });
+        setAssigneeSearch("");
       },
       onError: () => toast({ title: "Error", description: "Failed to create project", variant: "destructive" }),
     });
@@ -842,15 +844,51 @@ function CreateProjectModal({
 
           {users.length > 0 && (
             <div className="space-y-2">
-              <label className={labelCls}>Assignees</label>
-              <div className={`flex flex-wrap gap-2 p-3 rounded-xl border max-h-32 overflow-y-auto ${isCpmLight ? "border-gray-200 bg-gray-50" : "border-white/10 bg-black/10"}`}>
-                {users.map(u => (
-                  <button key={u.id} type="button" onClick={() => toggleAssignee(u.id)}
-                    className={cn("flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all border", form.assigneeIds.includes(u.id) ? "bg-primary text-white border-primary" : isCpmLight ? "border-gray-200 text-gray-600 hover:bg-gray-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5")}>
-                    <span className={cn("w-4 h-4 rounded-full flex items-center justify-center text-[10px]", isCpmLight ? "bg-gray-100 text-gray-700" : "bg-white/10")}>{u.name.charAt(0)}</span>
-                    {u.name}
+              <label className={labelCls}>
+                Assignees
+                {form.assigneeIds.length > 0 && (
+                  <span className="ml-2 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-primary text-white">{form.assigneeIds.length}</span>
+                )}
+              </label>
+              {/* Search */}
+              <div className={cn("flex items-center gap-2 px-3 py-2 rounded-xl border", isCpmLight ? "border-gray-200 bg-white" : "border-white/10 bg-black/10")}>
+                <Search className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                <input
+                  value={assigneeSearch}
+                  onChange={e => setAssigneeSearch(e.target.value)}
+                  onKeyDown={e => e.stopPropagation()}
+                  onKeyUp={e => e.stopPropagation()}
+                  placeholder="Search team members..."
+                  className={cn("flex-1 text-sm bg-transparent border-none focus:outline-none",
+                    isCpmLight ? "text-gray-900 placeholder:text-gray-400" : "text-foreground placeholder:text-muted-foreground")}
+                />
+                {assigneeSearch && (
+                  <button type="button" onClick={() => setAssigneeSearch("")}
+                    className="text-muted-foreground hover:text-foreground transition-colors">
+                    <span className="text-xs">✕</span>
                   </button>
-                ))}
+                )}
+              </div>
+              {/* User pills */}
+              <div className={cn("flex flex-wrap gap-2 p-3 rounded-xl border max-h-36 overflow-y-auto custom-scrollbar", isCpmLight ? "border-gray-200 bg-gray-50" : "border-white/10 bg-black/10")}>
+                {users
+                  .filter(u => !assigneeSearch.trim() || u.name.toLowerCase().includes(assigneeSearch.toLowerCase()))
+                  .map(u => (
+                    <button key={u.id} type="button" onClick={() => toggleAssignee(u.id)}
+                      className={cn("flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all border",
+                        form.assigneeIds.includes(u.id)
+                          ? "bg-primary text-white border-primary"
+                          : isCpmLight ? "border-gray-200 text-gray-600 hover:bg-gray-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5")}>
+                      <span className={cn("w-4 h-4 rounded-full flex items-center justify-center text-[10px]",
+                        form.assigneeIds.includes(u.id) ? "bg-white/20 text-white" : isCpmLight ? "bg-gray-100 text-gray-700" : "bg-white/10")}>
+                        {u.name.charAt(0)}
+                      </span>
+                      {u.name}
+                    </button>
+                  ))}
+                {users.filter(u => !assigneeSearch.trim() || u.name.toLowerCase().includes(assigneeSearch.toLowerCase())).length === 0 && (
+                  <p className="text-xs text-muted-foreground w-full text-center py-2">No team members match "{assigneeSearch}"</p>
+                )}
               </div>
             </div>
           )}
