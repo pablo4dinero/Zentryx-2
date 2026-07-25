@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
 import { format } from "date-fns";
-import { ArrowUpDown, ArrowUp, ArrowDown, Trash2, FileText, X, Send, Pencil, Calendar as CalendarIcon, MessageSquare, AtSign, SlidersHorizontal, Check } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, Trash2, FileText, X, Send, Pencil, Calendar as CalendarIcon, MessageSquare, AtSign, SlidersHorizontal, Check, UserPlus, Search } from "lucide-react";
 import { useUpdateProject, useDeleteProject, useListUsers } from "@/api-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { CustomOptionsSelect } from "@/components/ui/CustomOptionsSelect";
 import type { CustomOptionsHandle } from "@/lib/project-options";
 
-type SortKey = "name" | "stage" | "status" | "productType" | "customerName" | "targetDate" | "progress" | "createdAt";
+type SortKey = "name" | "stage" | "status" | "productType" | "customerName" | "targetDate" | "progress" | "createdAt" | "assignees";
 type SortDir = "asc" | "desc";
 
 const BASE = import.meta.env.BASE_URL;
@@ -49,16 +49,17 @@ const STATUS_COLORS_LIGHT: Record<string, string> = {
 
 // ─── Column customization ────────────────────────────────────────────────────
 
-type ColKey = "productType" | "customerName" | "stage" | "progress" | "status" | "targetDate" | "createdAt";
+type ColKey = "productType" | "customerName" | "stage" | "progress" | "status" | "targetDate" | "createdAt" | "assignees";
 
 const ALL_COL_DEFS: { key: ColKey; label: string; sortKey: SortKey }[] = [
-  { key: "productType",  label: "Type",       sortKey: "productType"  },
-  { key: "customerName", label: "Customer",   sortKey: "customerName" },
-  { key: "stage",        label: "Stage",      sortKey: "stage"        },
-  { key: "progress",     label: "Progress",   sortKey: "progress"     },
-  { key: "status",       label: "Status",     sortKey: "status"       },
-  { key: "targetDate",   label: "Due Date",   sortKey: "targetDate"   },
-  { key: "createdAt",    label: "Date Added", sortKey: "createdAt"    },
+  { key: "productType",  label: "Type",        sortKey: "productType"  },
+  { key: "customerName", label: "Customer",    sortKey: "customerName" },
+  { key: "stage",        label: "Stage",       sortKey: "stage"        },
+  { key: "progress",     label: "Progress",    sortKey: "progress"     },
+  { key: "status",       label: "Status",      sortKey: "status"       },
+  { key: "assignees",    label: "Assigned To", sortKey: "assignees"    },
+  { key: "targetDate",   label: "Due Date",    sortKey: "targetDate"   },
+  { key: "createdAt",    label: "Date Added",  sortKey: "createdAt"    },
 ];
 const DEFAULT_COL_ORDER = ALL_COL_DEFS.map(c => c.key) as ColKey[];
 const DEFAULT_COL_VIS   = Object.fromEntries(ALL_COL_DEFS.map(c => [c.key, true])) as Record<ColKey, boolean>;
@@ -70,6 +71,153 @@ function getProjUserId(): string {
     const payload = JSON.parse(atob(token.split(".")[1]));
     return String(payload.userId ?? payload.sub ?? "anon");
   } catch { return "anon"; }
+}
+
+// ─── AssigneePickerCell ──────────────────────────────────────────────────────
+
+function AssigneePickerCell({ project, users, isLight, onSave }: {
+  project: any;
+  users: any[];
+  isLight: boolean;
+  onSave: (ids: number[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const [search, setSearch] = useState("");
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  const assignees: any[] = project.assignees || [];
+  const assigneeIds: number[] = (project.assigneeIds?.length ? project.assigneeIds : assignees.map((a: any) => a.id)) || [];
+
+  const toggle = (uid: number) => {
+    const next = assigneeIds.includes(uid) ? assigneeIds.filter(id => id !== uid) : [...assigneeIds, uid];
+    onSave(next);
+  };
+
+  const openPicker = () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const top = window.innerHeight - r.bottom > 300 ? r.bottom + 4 : r.top - 304;
+    setPos({ top, left: Math.min(r.left, window.innerWidth - 264) });
+    setOpen(true);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (panelRef.current?.contains(t) || btnRef.current?.contains(t)) return;
+      setOpen(false); setSearch("");
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+
+  // Block Radix Dialog's bubble-phase focus trap via capture-phase interceptor
+  useEffect(() => {
+    if (!open) return;
+    const guard = (e: FocusEvent) => {
+      if (panelRef.current?.contains(e.relatedTarget as Node) || panelRef.current?.contains(e.target as Node))
+        e.stopImmediatePropagation();
+    };
+    document.addEventListener("focusin", guard, true);
+    document.addEventListener("focusout", guard, true);
+    const t = setTimeout(() => searchRef.current?.focus(), 20);
+    return () => {
+      document.removeEventListener("focusin", guard, true);
+      document.removeEventListener("focusout", guard, true);
+      clearTimeout(t);
+    };
+  }, [open]);
+
+  const filtered = users.filter(u => {
+    if (!search.trim()) return true;
+    return u.name?.toLowerCase().includes(search.toLowerCase()) ||
+           u.email?.toLowerCase().includes(search.toLowerCase());
+  });
+
+  const MAX_SHOWN = 3;
+  const shown = assignees.slice(0, MAX_SHOWN);
+  const extra = assignees.length - MAX_SHOWN;
+
+  return (
+    <div className="flex items-center gap-1">
+      {shown.map((a: any) => (
+        <div key={a.id} title={a.name}
+          className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 ring-2 ring-background"
+          style={{ background: `hsl(${(a.id * 47) % 360}, 55%, 48%)` }}>
+          {(a.name || "?")[0].toUpperCase()}
+        </div>
+      ))}
+      {extra > 0 && (
+        <div className={cn("w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0 ring-2 ring-background",
+          isLight ? "bg-gray-200 text-gray-600" : "bg-white/10 text-muted-foreground")}>
+          +{extra}
+        </div>
+      )}
+      <button ref={btnRef} type="button" onClick={openPicker} title="Manage assignees"
+        className={cn("w-6 h-6 rounded-full border-2 border-dashed flex items-center justify-center transition-colors shrink-0 ml-0.5",
+          isLight ? "border-gray-300 text-gray-400 hover:border-primary hover:text-primary" : "border-white/20 text-muted-foreground hover:border-primary hover:text-primary")}>
+        <UserPlus className="w-3 h-3" />
+      </button>
+
+      {open && pos && createPortal(
+        <div ref={panelRef}
+          style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 200, width: 256 }}
+          className={cn("rounded-xl border shadow-2xl overflow-hidden", isLight ? "bg-white border-gray-200" : "bg-[#1a1a2e] border-white/10")}>
+          <div className={cn("px-3 py-2.5 border-b font-semibold text-xs uppercase tracking-wide", isLight ? "border-gray-100 text-gray-500" : "border-white/10 text-muted-foreground")}>
+            Assignees
+          </div>
+          <div className={cn("p-2 border-b", isLight ? "border-gray-100" : "border-white/10")}>
+            <div className={cn("flex items-center gap-1.5 px-2 py-1.5 rounded-lg border", isLight ? "bg-slate-50 border-slate-200" : "bg-white/5 border-white/10")}>
+              <Search className="w-3 h-3 shrink-0 text-muted-foreground" />
+              <input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)}
+                onKeyDown={e => { e.stopPropagation(); if (e.key === "Escape") { setOpen(false); setSearch(""); } }}
+                onKeyUp={e => e.stopPropagation()}
+                placeholder="Search team members..."
+                className={cn("flex-1 min-w-0 text-xs bg-transparent border-none focus:outline-none",
+                  isLight ? "text-slate-900 placeholder:text-slate-400" : "text-foreground placeholder:text-muted-foreground")}
+              />
+            </div>
+          </div>
+          <div className="max-h-60 overflow-y-auto custom-scrollbar">
+            {filtered.length === 0 && (
+              <p className="text-center py-4 text-xs text-muted-foreground">No team members found</p>
+            )}
+            {filtered.map((u: any) => {
+              const assigned = assigneeIds.includes(u.id);
+              return (
+                <button key={u.id} type="button" onClick={() => toggle(u.id)}
+                  className={cn("w-full flex items-center gap-2.5 px-3 py-2 text-sm transition-colors",
+                    isLight ? "hover:bg-gray-50" : "hover:bg-white/5")}>
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
+                    style={{ background: `hsl(${(u.id * 47) % 360}, 55%, 48%)` }}>
+                    {(u.name || "?")[0].toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0 text-left">
+                    <p className={cn("text-xs font-medium truncate", isLight ? "text-gray-900" : "text-foreground")}>{u.name}</p>
+                    <p className="text-[10px] text-muted-foreground truncate capitalize">{(u.role || "").replace(/_/g, " ")}</p>
+                  </div>
+                  <div className={cn("w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors",
+                    assigned ? "bg-primary border-primary" : isLight ? "border-gray-300" : "border-white/20")}>
+                    {assigned && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          {assigneeIds.length > 0 && (
+            <div className={cn("px-3 py-2 border-t text-[10px]", isLight ? "border-gray-100 text-gray-400" : "border-white/5 text-muted-foreground/60")}>
+              {assigneeIds.length} assignee{assigneeIds.length !== 1 ? "s" : ""} — click to toggle
+            </div>
+          )}
+        </div>,
+        document.body
+      )}
+    </div>
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -105,7 +253,7 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
   const COL_WIDTH_KEY = "zentryx_project_list_col_widths";
   const DEFAULT_COL_WIDTHS: Record<string, number> = {
     name: 260, productType: 140, customerName: 200, stage: 140,
-    progress: 140, status: 150, targetDate: 130, createdAt: 130, actions: 110,
+    progress: 140, status: 150, assignees: 180, targetDate: 130, createdAt: 130, actions: 110,
   };
   const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
     try {
@@ -248,6 +396,9 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
       if (sortKey === "progress") {
         av = a.taskCount > 0 ? (a.completedTaskCount / a.taskCount) : 0;
         bv = b.taskCount > 0 ? (b.completedTaskCount / b.taskCount) : 0;
+      } else if (sortKey === "assignees") {
+        av = (a.assignees || []).map((x: any) => x.name).join(",").toLowerCase();
+        bv = (b.assignees || []).map((x: any) => x.name).join(",").toLowerCase();
       } else if (sortKey === "targetDate" || sortKey === "createdAt") {
         av = a[sortKey] ? new Date(a[sortKey]).getTime() : 0;
         bv = b[sortKey] ? new Date(b[sortKey]).getTime() : 0;
@@ -285,6 +436,20 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
       onError: () => {
         queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
         toast({ title: `Failed to update ${field}`, variant: "destructive" });
+      },
+    });
+  };
+
+  const updateAssignees = (projectId: number, newIds: number[]) => {
+    const newAssignees = (users as any[]).filter(u => newIds.includes(u.id));
+    queryClient.setQueriesData({ queryKey: ["/api/projects"] }, (old: any) => {
+      if (!Array.isArray(old)) return old;
+      return old.map(p => p.id === projectId ? { ...p, assigneeIds: newIds, assignees: newAssignees } : p);
+    });
+    updateMutation.mutate({ id: projectId, data: { assigneeIds: newIds } as any }, {
+      onError: () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+        toast({ title: "Failed to update assignees", variant: "destructive" });
       },
     });
   };
@@ -480,6 +645,15 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
                 onClick={e => e.stopPropagation()} className="absolute inset-0 opacity-0 cursor-pointer" />
             </label>
           </div>
+        );
+      case "assignees":
+        return (
+          <AssigneePickerCell
+            project={p}
+            users={users as any[]}
+            isLight={isLight}
+            onSave={(ids) => updateAssignees(p.id, ids)}
+          />
         );
       case "createdAt":
         return <span className={cn("text-xs", isLight ? "text-gray-600" : "text-muted-foreground")}>{p.createdAt ? format(new Date(p.createdAt), "MMM d, yyyy") : "—"}</span>;
