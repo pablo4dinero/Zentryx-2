@@ -254,7 +254,7 @@ export default function SalesChartsPage() {
                     className="w-full text-left px-3 py-2 rounded-xl bg-white/5 hover:bg-primary/10 border border-white/5 hover:border-primary/20 transition-all flex items-center justify-between group">
                     <div>
                       <p className="text-sm font-medium text-foreground group-hover:text-primary">{a.productName}</p>
-                      <p className="text-xs text-muted-foreground">{PRODUCT_TYPE_LABELS[a.productType]}</p>
+                      <p className="text-xs text-white/75">{PRODUCT_TYPE_LABELS[a.productType]}</p>
                     </div>
                     <TrendingUp className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary" />
                   </button>
@@ -281,7 +281,7 @@ export default function SalesChartsPage() {
                       className="w-full text-left px-3 py-2 rounded-xl bg-white/5 hover:bg-primary/10 border border-white/5 hover:border-primary/20 transition-all flex items-center justify-between group">
                       <div>
                         <p className="text-sm font-medium text-foreground group-hover:text-primary">{a.company} — {a.productName}</p>
-                        <p className="text-xs text-muted-foreground">{PRODUCT_TYPE_LABELS[a.productType] || a.productType}</p>
+                        <p className="text-xs text-white/75">{PRODUCT_TYPE_LABELS[a.productType] || a.productType}</p>
                       </div>
                       <TrendingUp className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary" />
                     </button>
@@ -327,7 +327,7 @@ export default function SalesChartsPage() {
                     className="w-full text-left px-3 py-2 rounded-xl bg-white/5 hover:bg-primary/10 border border-white/5 hover:border-primary/20 transition-all flex items-center justify-between group">
                     <div>
                       <p className="text-sm font-medium text-foreground group-hover:text-primary">{a.company} — {a.productName}</p>
-                      <p className="text-xs text-muted-foreground">{parseFloat(a.volume || 0).toLocaleString()} kg/mo</p>
+                      <p className="text-xs text-white/75">{parseFloat(a.volume || 0).toLocaleString()} kg/mo</p>
                     </div>
                     <TrendingUp className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary" />
                   </button>
