@@ -690,7 +690,7 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
             </button>
           </div>
 
-          <div className="overflow-x-auto custom-scrollbar rounded-b-2xl">
+          <div className="table-scroll custom-scrollbar rounded-b-2xl">
             <table className="w-full text-sm" style={{ tableLayout: "fixed", minWidth: 900 }}>
               <thead>
                 <tr className={cn("border-b", isLight ? "border-gray-200 bg-gray-50" : "border-white/10")} style={isLight ? {} : { background: "rgba(255,255,255,0.03)" }}>

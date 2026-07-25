@@ -189,7 +189,7 @@ export default function Team() {
       </div>
 
       <div className="glass-card rounded-2xl overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="table-scroll custom-scrollbar">
           <table className="w-full text-sm text-left">
             <thead className="text-xs text-muted-foreground bg-white/5 uppercase border-b border-white/5">
               <tr>

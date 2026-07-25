@@ -342,7 +342,7 @@ export function ProductionOrdersTab() {
         </div>
       </div>
 
-      <div className={cn("glass-card rounded-2xl overflow-x-auto custom-scrollbar border", isLight ? "border-slate-200 bg-white" : "border-white/5 bg-white/5")}>
+      <div className={cn("glass-card rounded-2xl table-scroll custom-scrollbar border", isLight ? "border-slate-200 bg-white" : "border-white/5 bg-white/5")}>
         <table className="w-full text-sm">
           <thead className={cn("text-xs text-muted-foreground border-b", isLight ? "bg-slate-50 border-slate-200" : "bg-white/5 border-white/5")}>
             <tr>

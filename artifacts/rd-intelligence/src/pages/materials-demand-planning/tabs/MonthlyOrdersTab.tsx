@@ -703,7 +703,7 @@ export function MonthlyOrdersTab() {
 
       {/* ── Table ── */}
       <div className={cn("border rounded-2xl overflow-hidden", isLight ? "bg-white border-slate-200" : "bg-black/20 border-white/10")}>
-        <div className="overflow-x-auto">
+        <div className="table-scroll custom-scrollbar">
           <table className="w-full text-sm min-w-[900px]">
             <thead>
               <tr className={cn("border-b", isLight ? "bg-slate-50 border-slate-100" : "bg-black/40 border-white/5")}>

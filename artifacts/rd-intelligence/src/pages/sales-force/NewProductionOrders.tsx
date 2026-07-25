@@ -1378,7 +1378,7 @@ export default function NewProductionOrdersPage() {
             </button>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="table-scroll custom-scrollbar">
             <table className="text-sm" style={{ tableLayout: "fixed", width: orderedVisibleCols.reduce((s, c) => s + colPrefs.widths[c.key], 88) }}>
               <colgroup>
                 {orderedVisibleCols.map(col => (

@@ -122,7 +122,7 @@ export function UsersTab({ isLight }: { isLight: boolean }) {
           <div className={cn("p-6 text-center text-sm", isLight ? "text-slate-500" : "text-muted-foreground")}>No users match.</div>
         )}
         {!loading && filtered.length > 0 && (
-          <div className="overflow-x-auto custom-scrollbar">
+          <div className="table-scroll custom-scrollbar">
             <table className="w-full text-sm min-w-[1000px]">
               <thead className={cn("text-xs uppercase", isLight ? "bg-slate-50 text-slate-500" : "bg-white/5 text-muted-foreground")}>
                 <tr>

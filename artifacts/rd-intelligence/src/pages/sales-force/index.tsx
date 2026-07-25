@@ -662,7 +662,7 @@ function MatrixView({ accounts, onClick }: { accounts: any[]; onClick: (a: any) 
   }));
 
   return (
-    <div className="overflow-x-auto">
+    <div className="table-scroll custom-scrollbar">
       <table className="w-full text-sm border-separate border-spacing-1">
         <thead>
           <tr>
@@ -887,7 +887,7 @@ function AccountsPage() {
           {filtered.map((a: any) => <AccountCard key={a.id} account={a} onClick={() => goToAccount(a)} onDelete={(e) => handleDelete(e, a.id, a.company)} />)}
         </div>
       ) : view === "list" ? (
-        <div className="glass-card rounded-2xl overflow-x-auto custom-scrollbar">
+        <div className="glass-card rounded-2xl table-scroll custom-scrollbar">
           <table className="w-full text-sm min-w-[720px]">
             <thead className="text-xs text-muted-foreground bg-white/5 border-b border-white/5">
               <tr>

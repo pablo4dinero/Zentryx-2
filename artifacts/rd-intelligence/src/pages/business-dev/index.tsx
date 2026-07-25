@@ -587,7 +587,7 @@ function MatrixView({ items, isLight, fmtNGN: _fmtNGN, onUpdate, onDelete, onEdi
   const sc = isLight ? STATUS_COLORS_LIGHT : STATUS_COLORS;
 
   return (
-    <div className={cn("rounded-2xl border overflow-x-auto", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-card/60")}>
+    <div className={cn("rounded-2xl border table-scroll custom-scrollbar", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-card/60")}>
       <table className="w-full min-w-[800px]">
         <thead>
           <tr className={cn("border-b", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5")}>

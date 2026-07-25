@@ -223,7 +223,7 @@ export function SecurityTab({ isLight }: { isLight: boolean }) {
           </div>
         )}
         {!loading && filteredRows.length > 0 && (
-          <div className="overflow-x-auto custom-scrollbar">
+          <div className="table-scroll custom-scrollbar">
             <table className="w-full text-sm min-w-[900px]">
               <thead className={cn("text-xs uppercase", isLight ? "bg-slate-50 text-slate-500" : "bg-white/5 text-muted-foreground")}>
                 <tr>

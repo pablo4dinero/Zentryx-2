@@ -257,7 +257,7 @@ export default function VendorsTab() {
         </div>
       ) : (
         <div className={cn("rounded-2xl border overflow-hidden", isLight ? "bg-white border-slate-200" : "glass-card border-white/10")}>
-          <div className="overflow-x-auto">
+          <div className="table-scroll custom-scrollbar">
             <table className="w-full text-sm">
               <thead>
                 <tr className={cn("text-left border-b", isLight ? "border-slate-100 bg-slate-50" : "border-white/8 bg-white/2")}>

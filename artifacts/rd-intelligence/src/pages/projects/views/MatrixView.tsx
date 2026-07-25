@@ -158,7 +158,7 @@ export function MatrixView({ projects }: Props) {
   return (
     <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
       <div className="glass-card rounded-2xl border border-white/10 overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="table-scroll custom-scrollbar">
           <table className="w-full">
             <thead>
               <tr className="border-b border-white/10" style={{ background: "rgba(255,255,255,0.03)" }}>

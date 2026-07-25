@@ -862,7 +862,7 @@ export default function StrategyEvaluatorTab() {
       </div>
 
       {/* Summary Table */}
-      <div className={cn("rounded-lg border overflow-x-auto", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/20")}>
+      <div className={cn("rounded-lg border table-scroll custom-scrollbar", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/20")}>
         <table className="w-full text-sm">
           <thead className={cn("", isLight ? "bg-slate-100" : "bg-white/5")}>
             <tr>

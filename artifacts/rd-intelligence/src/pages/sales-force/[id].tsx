@@ -1632,7 +1632,7 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
         </div>
       </div>
       <div className="glass-card rounded-2xl overflow-hidden border border-white/5">
-          <div className="overflow-x-auto">
+          <div className="table-scroll custom-scrollbar">
             <table className="w-full text-xs">
               <thead className="bg-white/5 border-b border-white/5">
                   <tr>

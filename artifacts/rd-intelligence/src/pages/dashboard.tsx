@@ -461,7 +461,7 @@ export default function Dashboard() {
         <div className={cn("p-6", isLight ? "border-b border-slate-200" : "border-b border-white/5")}>
           <h3 className={cn("text-lg font-semibold font-display", isLight ? "text-gray-900" : "")}>Recent Projects</h3>
         </div>
-        <div className="overflow-x-auto">
+        <div className="table-scroll custom-scrollbar">
           <table className="w-full text-sm text-left">
             <thead className={cn("text-xs uppercase", isLight ? "bg-slate-50 text-slate-500 border-b border-slate-200" : "text-muted-foreground bg-white/5")}>
               <tr>

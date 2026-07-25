@@ -937,7 +937,7 @@ export default function OrdersTab() {
         {isLoading ? (
           <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="table-scroll custom-scrollbar">
             <table className="w-full text-sm">
               <thead>
                 <tr className={cn("text-left border-b", isLight ? "border-slate-100 bg-slate-50" : "border-white/8 bg-white/2")}>

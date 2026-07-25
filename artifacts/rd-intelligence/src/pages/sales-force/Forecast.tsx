@@ -1038,7 +1038,7 @@ export default function SalesForecastPage() {
             <p className="text-muted-foreground text-sm">No forecasts match the current filters.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="table-scroll custom-scrollbar">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-white/5">

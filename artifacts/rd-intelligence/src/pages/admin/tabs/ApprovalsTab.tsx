@@ -230,7 +230,7 @@ export function ApprovalsTab({ isLight }: { isLight: boolean }) {
           {loading && <div className="p-6 text-center text-sm text-muted-foreground">Loading…</div>}
           {!loading && exports.length === 0 && <div className="p-6 text-center text-sm text-muted-foreground">No export requests yet.</div>}
           {!loading && exports.length > 0 && (
-            <div className="overflow-x-auto custom-scrollbar">
+            <div className="table-scroll custom-scrollbar">
               <table className="w-full text-sm min-w-[760px]">
                 <thead className={cn("text-xs uppercase", isLight ? "bg-slate-50 text-slate-500" : "bg-white/5 text-muted-foreground")}>
                   <tr>
@@ -269,7 +269,7 @@ export function ApprovalsTab({ isLight }: { isLight: boolean }) {
           {loading && <div className="p-6 text-center text-sm text-muted-foreground">Loading…</div>}
           {!loading && access.length === 0 && <div className="p-6 text-center text-sm text-muted-foreground">No access requests yet.</div>}
           {!loading && access.length > 0 && (
-            <div className="overflow-x-auto custom-scrollbar">
+            <div className="table-scroll custom-scrollbar">
               <table className="w-full text-sm min-w-[600px]">
                 <thead className={cn("text-xs uppercase", isLight ? "bg-slate-50 text-slate-500" : "bg-white/5 text-muted-foreground")}>
                   <tr>

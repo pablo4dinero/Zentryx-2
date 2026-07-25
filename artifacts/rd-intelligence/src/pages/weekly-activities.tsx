@@ -1174,7 +1174,7 @@ export default function WeeklyActivities() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="table-scroll custom-scrollbar">
               <table className="w-full text-sm">
                 <thead>
                   <tr className={cn("text-left border-b", isLight ? "border-slate-100 bg-slate-50/30" : "border-white/5 bg-white/2")}>

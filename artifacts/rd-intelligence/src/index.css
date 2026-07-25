@@ -398,6 +398,27 @@
     outline: none;
   }
 
+  /* Bounded table viewport ─────────────────────────────────────────────────
+     Replaces plain overflow-x-auto on table wrappers.  The container scrolls
+     both axes; the horizontal scrollbar sits at the bottom of the VISIBLE
+     area, not after all rows.  thead cells are made sticky so column headers
+     remain visible while scrolling vertically inside the container.         */
+  .table-scroll {
+    overflow-x: auto;
+    overflow-y: auto;
+    max-height: calc(100vh - 260px);
+    min-height: 120px;
+  }
+
+  .table-scroll thead th {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    /* Preserve the cell's own background so row content can't bleed through */
+    background-color: inherit;
+  }
+  /* ──────────────────────────────────────────────────────────────────────── */
+
   /* Scrollbar — Vertical & Horizontal */
   .custom-scrollbar::-webkit-scrollbar {
     width: 8px;
