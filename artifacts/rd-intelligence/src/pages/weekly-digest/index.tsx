@@ -5,7 +5,7 @@ import { useTheme } from "@/lib/theme";
 import {
   Sparkles, RefreshCw, TrendingUp, Phone, Briefcase, ClipboardList,
   Brain, Send, ChevronDown, ChevronUp, Calendar, Loader2,
-  Package, Users, CheckCircle, Clock, AlertCircle,
+  Package, CheckCircle, Clock, AlertCircle, FlaskConical,
 } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL;
@@ -31,6 +31,15 @@ interface DigestSections {
   weeklyActivities: {
     completed: number;
     ongoing: number;
+    insight: string;
+  };
+  projectPortfolio?: {
+    newProjects: number;
+    activeProjects: number;
+    completedProjects: number;
+    newTasks: number;
+    tasksCompleted: number;
+    tasksInProgress: number;
     insight: string;
   };
 }
@@ -148,6 +157,7 @@ function AskOracle({ digest, isLight }: { digest: WeeklyDigest; isLight: boolean
     if (!q || loading) return;
     setLoading(true); setError(""); setAnswer("");
     try {
+      const pp = digest.sections.projectPortfolio;
       const ctx = [
         `Week: ${digest.weekStartDate} to ${digest.weekEndDate}`,
         `Brief: ${digest.briefText}`,
@@ -155,7 +165,8 @@ function AskOracle({ digest, isLight }: { digest: WeeklyDigest; isLight: boolean
         `Call Reports: ${digest.sections.callReports.totalCalls} calls, ${digest.sections.callReports.successfulCalls} successful.`,
         `Business Dev: ${digest.sections.businessDev.newItems} new items this week.`,
         `Weekly Activities: ${digest.sections.weeklyActivities.completed} completed, ${digest.sections.weeklyActivities.ongoing} ongoing.`,
-      ].join("\n");
+        pp ? `Project Portfolio: ${pp.newProjects} new projects, ${pp.activeProjects} active, ${pp.newTasks} new tasks, ${pp.tasksCompleted} tasks completed this week.` : "",
+      ].filter(Boolean).join("\n");
 
       const res = await fetch(`${BASE}api/weekly-digest/ask`, {
         method: "POST",
@@ -178,7 +189,7 @@ function AskOracle({ digest, isLight }: { digest: WeeklyDigest; isLight: boolean
 
   return (
     <motion.div
-      custom={6}
+      custom={8}
       initial="hidden"
       animate="visible"
       variants={cardVariants}
@@ -508,9 +519,39 @@ export default function WeeklyDigestPage() {
             )}
           </SectionCard>
 
+          {/* Project Portfolio */}
+          {s?.projectPortfolio && (
+            <SectionCard
+              icon={FlaskConical} title="Project Portfolio" gradient="from-indigo-500 to-violet-500"
+              index={5} isLight={isLight}
+            >
+              <div className="pt-4 space-y-4">
+                <div className="flex flex-wrap gap-2">
+                  <StatPill label="Active Projects" value={s.projectPortfolio.activeProjects}
+                    color={isLight ? "bg-indigo-50 text-indigo-700 border-indigo-100" : "bg-indigo-500/10 text-indigo-300 border-indigo-500/20"} />
+                  <StatPill label="New This Week" value={s.projectPortfolio.newProjects}
+                    color={isLight ? "bg-violet-50 text-violet-700 border-violet-100" : "bg-violet-500/10 text-violet-300 border-violet-500/20"} />
+                  <StatPill label="Completed" value={s.projectPortfolio.completedProjects}
+                    color={isLight ? "bg-emerald-50 text-emerald-700 border-emerald-100" : "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"} />
+                </div>
+                <div className={cn("h-px", isLight ? "bg-slate-100" : "bg-white/5")} />
+                <p className={cn("text-xs font-semibold uppercase tracking-wide", isLight ? "text-slate-400" : "text-muted-foreground")}>Tasks</p>
+                <div className="flex flex-wrap gap-2">
+                  <StatPill label="New This Week" value={s.projectPortfolio.newTasks}
+                    color={isLight ? "bg-blue-50 text-blue-700 border-blue-100" : "bg-blue-500/10 text-blue-300 border-blue-500/20"} />
+                  <StatPill label="Completed" value={s.projectPortfolio.tasksCompleted}
+                    color={isLight ? "bg-teal-50 text-teal-700 border-teal-100" : "bg-teal-500/10 text-teal-300 border-teal-500/20"} />
+                  <StatPill label="In Progress" value={s.projectPortfolio.tasksInProgress}
+                    color={isLight ? "bg-amber-50 text-amber-700 border-amber-100" : "bg-amber-500/10 text-amber-300 border-amber-500/20"} />
+                </div>
+                <InsightBadge text={s.projectPortfolio.insight} isLight={isLight} />
+              </div>
+            </SectionCard>
+          )}
+
           {/* Oracle Insights summary */}
           <motion.div
-            custom={5}
+            custom={7}
             initial="hidden"
             animate="visible"
             variants={cardVariants}
@@ -529,6 +570,7 @@ export default function WeeklyDigestPage() {
                 { label: "Calls", icon: Phone, text: s?.callReports.insight, color: "text-emerald-400" },
                 { label: "BD", icon: Briefcase, text: s?.businessDev.insight, color: "text-amber-400" },
                 { label: "Activities", icon: ClipboardList, text: s?.weeklyActivities.insight, color: "text-rose-400" },
+                { label: "Projects", icon: FlaskConical, text: s?.projectPortfolio?.insight, color: "text-indigo-400" },
               ].filter(item => item.text).map((item, idx) => (
                 <div key={idx} className={cn("flex items-start gap-2.5 p-2.5 rounded-xl",
                   isLight ? "bg-slate-50 border border-slate-100" : "bg-white/[0.03] border border-white/5")}>

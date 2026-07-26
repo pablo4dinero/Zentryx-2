@@ -46,6 +46,8 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
       callsResult,
       bdResult,
       activitiesResult,
+      projectsResult,
+      tasksResult,
     ] = await Promise.all([
       db
         .select({ id: accountsTable.id, company: accountsTable.company, productType: (accountsTable as any).productType })
@@ -84,6 +86,22 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
         WHERE wr.start_date >= '${weekStartStr}'
         GROUP BY wa.status
       `)),
+
+      db.execute(sql.raw(`
+        SELECT
+          COUNT(*) FILTER (WHERE created_at >= '${weekStart.toISOString()}') AS new_this_week,
+          COUNT(*) FILTER (WHERE status NOT IN ('completed','cancelled')) AS active_total,
+          COUNT(*) FILTER (WHERE status = 'completed') AS completed_total
+        FROM projects
+      `)),
+
+      db.execute(sql.raw(`
+        SELECT
+          COUNT(*) FILTER (WHERE created_at >= '${weekStart.toISOString()}') AS new_this_week,
+          COUNT(*) FILTER (WHERE status = 'done' AND updated_at >= '${weekStart.toISOString()}') AS completed_this_week,
+          COUNT(*) FILTER (WHERE status = 'in_progress') AS in_progress_total
+        FROM tasks
+      `)),
     ]);
 
     // Summarise
@@ -108,6 +126,16 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
     const completedActivities = Number(actRows.find(r => r.status === "completed")?.cnt ?? 0);
     const ongoingActivities = Number(actRows.find(r => r.status === "ongoing")?.cnt ?? 0);
 
+    const projRow = (projectsResult.rows[0] as any) ?? {};
+    const newProjectsThisWeek = Number(projRow.new_this_week ?? 0);
+    const activeProjects = Number(projRow.active_total ?? 0);
+    const completedProjects = Number(projRow.completed_total ?? 0);
+
+    const taskRow = (tasksResult.rows[0] as any) ?? {};
+    const newTasksThisWeek = Number(taskRow.new_this_week ?? 0);
+    const tasksCompletedThisWeek = Number(taskRow.completed_this_week ?? 0);
+    const tasksInProgress = Number(taskRow.in_progress_total ?? 0);
+
     const ctx = {
       weekRange: `${weekStartStr} to ${weekEndStr}`,
       accounts: { total: totalAccounts, newThisWeek: newAccountCount },
@@ -115,22 +143,24 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
       callReports: { total: totalCalls, successful: successfulCalls },
       businessDev: { newItems: newBdItems },
       weeklyActivities: { completed: completedActivities, ongoing: ongoingActivities },
+      projectPortfolio: { newProjects: newProjectsThisWeek, activeProjects, completedProjects, newTasks: newTasksThisWeek, tasksCompleted: tasksCompletedThisWeek, tasksInProgress },
     };
 
     // Oracle narrative brief (Sonnet for quality)
     const briefText = await callModel(
       SONNET_MODEL,
-      "You are Oracle, the AI intelligence layer for Zentryx, a food science R&D company. Write a concise, professional weekly digest brief in exactly 3–4 sentences. Summarise business performance across sales, call activity, business development, and team activities. Reference specific numbers from the data. Use a confident, executive tone. Do not use bullet points.",
+      "You are Oracle, the AI intelligence layer for Zentryx, a food science R&D company. Write a concise, professional weekly digest brief in exactly 3–4 sentences. Summarise business performance across sales, call activity, business development, project portfolio, and team activities. Reference specific numbers from the data. Use a confident, executive tone. Do not use bullet points.",
       `Week data: ${JSON.stringify(ctx)}`,
       400,
     ).catch(() => "Oracle brief unavailable — regenerate to try again.");
 
     // Section insights in parallel (Haiku for speed/cost)
-    const [salesInsight, callInsight, bdInsight, activitiesInsight] = await Promise.allSettled([
+    const [salesInsight, callInsight, bdInsight, activitiesInsight, projectInsight] = await Promise.allSettled([
       callModel(HAIKU_MODEL, "You are Oracle. Write exactly one insight sentence about this sales and production data for a weekly digest. Be specific.", JSON.stringify({ accounts: ctx.accounts, productionOrders: ctx.productionOrders }), 120),
       callModel(HAIKU_MODEL, "You are Oracle. Write exactly one insight sentence about this call reports data for a weekly digest. Be specific.", JSON.stringify(ctx.callReports), 120),
       callModel(HAIKU_MODEL, "You are Oracle. Write exactly one insight sentence about this business development data for a weekly digest. Be specific.", JSON.stringify(ctx.businessDev), 120),
       callModel(HAIKU_MODEL, "You are Oracle. Write exactly one insight sentence about this weekly activities data for a weekly digest. Be specific.", JSON.stringify(ctx.weeklyActivities), 120),
+      callModel(HAIKU_MODEL, "You are Oracle. Write exactly one insight sentence about this project portfolio data for a weekly digest. Be specific.", JSON.stringify(ctx.projectPortfolio), 120),
     ]);
 
     const getText = (r: PromiseSettledResult<string>) => r.status === "fulfilled" ? r.value : "";
@@ -157,6 +187,15 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
         completed: completedActivities,
         ongoing: ongoingActivities,
         insight: getText(activitiesInsight),
+      },
+      projectPortfolio: {
+        newProjects: newProjectsThisWeek,
+        activeProjects,
+        completedProjects,
+        newTasks: newTasksThisWeek,
+        tasksCompleted: tasksCompletedThisWeek,
+        tasksInProgress,
+        insight: getText(projectInsight),
       },
     };
 
