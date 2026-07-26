@@ -837,14 +837,17 @@ export default function WeeklyDigestPage() {
               animate={reducedMotion ? {} : { rotate: 360 }}
               transition={{ duration: 7, repeat: Infinity, ease: "linear" }}
             />
-            <div className={cn("relative rounded-[14px] overflow-hidden", isLight ? "bg-white" : "bg-background")}>
+            <div
+              className={cn("relative rounded-[14px] overflow-hidden", isLight ? "bg-white" : "")}
+              style={!isLight ? { background: "linear-gradient(160deg, #0e0b1e 0%, #100c22 60%, #0b0918 100%)" } : undefined}
+            >
               {/* Dot grid */}
               <div
                 className="absolute inset-0 pointer-events-none"
                 style={{
                   backgroundImage: isLight
-                    ? "radial-gradient(circle, rgba(139,92,246,0.07) 1px, transparent 1px)"
-                    : "radial-gradient(circle, rgba(139,92,246,0.13) 1px, transparent 1px)",
+                    ? "radial-gradient(circle, rgba(139,92,246,0.10) 1px, transparent 1px)"
+                    : "radial-gradient(circle, rgba(167,139,250,0.22) 1px, transparent 1px)",
                   backgroundSize: "22px 22px",
                 }}
               />
@@ -852,37 +855,70 @@ export default function WeeklyDigestPage() {
               <motion.div
                 className="absolute pointer-events-none rounded-full"
                 style={{
-                  width: "62%", height: "62%", top: "-22%", left: "-8%",
+                  width: "70%", height: "70%", top: "-25%", left: "-12%",
                   background: isLight
-                    ? "radial-gradient(circle, rgba(139,92,246,0.07) 0%, transparent 68%)"
-                    : "radial-gradient(circle, rgba(139,92,246,0.17) 0%, transparent 68%)",
+                    ? "radial-gradient(circle, rgba(139,92,246,0.10) 0%, transparent 65%)"
+                    : "radial-gradient(circle, rgba(139,92,246,0.42) 0%, transparent 65%)",
                 }}
-                animate={reducedMotion ? {} : { x: [0, 22, -10, 6, 0], y: [0, 14, 22, -6, 0], scale: [1, 1.07, 0.94, 1.05, 1] }}
+                animate={reducedMotion ? {} : { x: [0, 24, -12, 8, 0], y: [0, 16, 24, -8, 0], scale: [1, 1.08, 0.93, 1.06, 1] }}
                 transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
               />
               <motion.div
                 className="absolute pointer-events-none rounded-full"
                 style={{
-                  width: "50%", height: "50%", bottom: "-14%", right: "-6%",
+                  width: "55%", height: "55%", bottom: "-16%", right: "-8%",
                   background: isLight
-                    ? "radial-gradient(circle, rgba(217,70,239,0.05) 0%, transparent 68%)"
-                    : "radial-gradient(circle, rgba(217,70,239,0.13) 0%, transparent 68%)",
+                    ? "radial-gradient(circle, rgba(217,70,239,0.07) 0%, transparent 65%)"
+                    : "radial-gradient(circle, rgba(217,70,239,0.35) 0%, transparent 65%)",
                 }}
-                animate={reducedMotion ? {} : { x: [0, -14, 10, -6, 0], y: [0, -18, 8, 6, 0], scale: [1, 0.93, 1.08, 0.97, 1] }}
+                animate={reducedMotion ? {} : { x: [0, -16, 12, -8, 0], y: [0, -20, 10, 8, 0], scale: [1, 0.92, 1.10, 0.96, 1] }}
                 transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
               />
               <motion.div
                 className="absolute pointer-events-none rounded-full"
                 style={{
-                  width: "38%", height: "38%", top: "38%", right: "22%",
+                  width: "45%", height: "45%", top: "30%", right: "15%",
                   background: isLight
-                    ? "radial-gradient(circle, rgba(99,102,241,0.05) 0%, transparent 68%)"
-                    : "radial-gradient(circle, rgba(99,102,241,0.10) 0%, transparent 68%)",
+                    ? "radial-gradient(circle, rgba(99,102,241,0.07) 0%, transparent 65%)"
+                    : "radial-gradient(circle, rgba(99,102,241,0.28) 0%, transparent 65%)",
                 }}
-                animate={reducedMotion ? {} : { x: [0, 12, -16, 4, 0], y: [0, -10, 14, -4, 0], scale: [1, 1.12, 0.90, 1.05, 1] }}
+                animate={reducedMotion ? {} : { x: [0, 14, -18, 6, 0], y: [0, -12, 16, -6, 0], scale: [1, 1.14, 0.88, 1.07, 1] }}
                 transition={{ duration: 26, repeat: Infinity, ease: "easeInOut" }}
               />
-              <div className="absolute inset-0 bg-gradient-to-br from-violet-600/8 via-purple-600/4 to-transparent pointer-events-none" />
+              {/* Sparkles */}
+              {!reducedMotion && (
+                <>
+                  {[
+                    { top: "10%",  left: "18%",  delay: 0,    dur: 2.8, size: 10 },
+                    { top: "22%",  left: "78%",  delay: 1.1,  dur: 3.3, size: 8  },
+                    { top: "55%",  left: "32%",  delay: 1.7,  dur: 2.5, size: 9  },
+                    { top: "74%",  left: "65%",  delay: 0.4,  dur: 3.5, size: 7  },
+                    { top: "16%",  left: "54%",  delay: 2.3,  dur: 2.9, size: 8  },
+                    { top: "83%",  left: "22%",  delay: 0.9,  dur: 3.1, size: 10 },
+                    { top: "40%",  left: "88%",  delay: 1.5,  dur: 2.6, size: 7  },
+                    { top: "62%",  left: "8%",   delay: 0.6,  dur: 3.0, size: 9  },
+                  ].map((s, i) => (
+                    <motion.span
+                      key={i}
+                      className="absolute pointer-events-none select-none"
+                      style={{
+                        top: s.top, left: s.left,
+                        fontSize: s.size,
+                        lineHeight: 1,
+                        color: isLight ? "rgba(139,92,246,0.75)" : "rgba(220,200,255,0.95)",
+                        textShadow: isLight
+                          ? "0 0 6px rgba(139,92,246,0.5)"
+                          : "0 0 10px rgba(200,170,255,0.9), 0 0 20px rgba(167,139,250,0.5)",
+                      }}
+                      animate={{ scale: [0, 1, 0.6, 1, 0], opacity: [0, 1, 0.6, 1, 0], rotate: [0, 0, 45, 45, 90] }}
+                      transition={{ duration: s.dur, delay: s.delay, repeat: Infinity, ease: "easeInOut" }}
+                    >
+                      ✦
+                    </motion.span>
+                  ))}
+                </>
+              )}
+              <div className="absolute inset-0 bg-gradient-to-br from-violet-600/10 via-purple-600/5 to-transparent pointer-events-none" />
               <div className="relative p-5">
                 <div className="flex items-center gap-2 mb-3">
                   <motion.div
