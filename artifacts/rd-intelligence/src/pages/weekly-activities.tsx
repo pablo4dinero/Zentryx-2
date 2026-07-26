@@ -80,34 +80,54 @@ function ddmmyyyyToISO(val: string): string {
 }
 
 // ─── NotifyModal ──────────────────────────────────────────────────────────────
-function NotifyModal({ onClose, users }: { onClose: () => void; users: any[] }) {
+function NotifyModal({ onClose, users, samplesSent }: { onClose: () => void; users: any[]; samplesSent: string }) {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<number[]>([]);
-  const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+  const [sendError, setSendError] = useState("");
   const { theme: _notifyTheme } = useTheme();
   const isNotifyLight = _notifyTheme === "light";
 
+  const hasContent = samplesSent.trim().length > 0;
   const filtered = users.filter(u => u.name.toLowerCase().includes(search.toLowerCase()));
   const toggle = (id: number) =>
     setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
   const send = async () => {
-    if (!selected.length) return;
+    if (!selected.length || !hasContent) return;
     setSending(true);
+    setSendError("");
     try {
+      // For each recipient: find/create a DM room then send the samples text as a chat message
+      await Promise.all(selected.map(async (userId) => {
+        const roomRes = await fetch(`${BASE}api/chat/rooms`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ isGroup: false, memberIds: [userId] }),
+        });
+        if (!roomRes.ok) throw new Error("Could not open DM room");
+        const room = await roomRes.json();
+        await fetch(`${BASE}api/chat/rooms/${room.id}/messages`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ content: samplesSent, messageType: "text" }),
+        });
+      }));
+      // Also push an app notification so it surfaces in the notification panel
       await fetch(`${BASE}api/weekly-activities/notify`, {
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify({
           userIds: selected,
-          title: "Weekly Activity Update",
-          message: message || "You have a new weekly activity notification.",
+          title: "Samples Sent",
+          message: samplesSent.length > 300 ? samplesSent.slice(0, 300) + "…" : samplesSent,
         }),
       });
       setSent(true);
       setTimeout(onClose, 1500);
+    } catch (e: any) {
+      setSendError(e.message || "Something went wrong. Please try again.");
     } finally { setSending(false); }
   };
 
@@ -128,6 +148,32 @@ function NotifyModal({ onClose, users }: { onClose: () => void; users: any[] }) 
             </button>
           </div>
 
+          {/* Samples text preview — shows exactly what will be sent */}
+          <div className={cn("mb-4 rounded-xl border text-xs",
+            hasContent
+              ? isNotifyLight ? "bg-slate-50 border-slate-200" : "bg-black/20 border-white/10"
+              : isNotifyLight ? "bg-amber-50 border-amber-200" : "bg-amber-500/10 border-amber-500/20"
+          )}>
+            <div className={cn("px-3 py-1.5 border-b text-[10px] font-semibold uppercase tracking-wide flex items-center gap-1.5",
+              hasContent
+                ? isNotifyLight ? "border-slate-200 text-slate-400" : "border-white/10 text-muted-foreground"
+                : isNotifyLight ? "border-amber-200 text-amber-600" : "border-amber-500/20 text-amber-400"
+            )}>
+              <Send className="w-3 h-3" />
+              Message that will be sent
+            </div>
+            {hasContent ? (
+              <p className={cn("px-3 py-2.5 whitespace-pre-wrap leading-relaxed max-h-32 overflow-y-auto custom-scrollbar",
+                isNotifyLight ? "text-slate-700" : "text-slate-300")}>
+                {samplesSent}
+              </p>
+            ) : (
+              <p className={cn("px-3 py-2.5 text-center", isNotifyLight ? "text-amber-700" : "text-amber-400")}>
+                No samples text entered yet — fill in the Samples Sent box first.
+              </p>
+            )}
+          </div>
+
           <div className="relative mb-3">
             <input type="text" placeholder="Search staff…" value={search}
               onChange={e => setSearch(e.target.value)}
@@ -136,7 +182,7 @@ function NotifyModal({ onClose, users }: { onClose: () => void; users: any[] }) 
               )} />
           </div>
 
-          <div className="space-y-1 max-h-52 overflow-y-auto custom-scrollbar mb-4">
+          <div className="space-y-1 max-h-48 overflow-y-auto custom-scrollbar mb-4">
             {filtered.map(u => (
               <button key={u.id} onClick={() => toggle(u.id)}
                 className={cn("w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-all border",
@@ -154,15 +200,9 @@ function NotifyModal({ onClose, users }: { onClose: () => void; users: any[] }) 
             ))}
           </div>
 
-          <textarea
-            placeholder="Optional message…"
-            rows={2}
-            value={message}
-            onChange={e => setMessage(e.target.value)}
-            className={cn("w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none mb-4",
-              isNotifyLight ? "bg-white border-gray-200 text-gray-900 placeholder:text-gray-400" : "bg-black/20 border-white/10 text-foreground placeholder:text-muted-foreground"
-            )}
-          />
+          {sendError && (
+            <p className="text-xs text-destructive mb-3">{sendError}</p>
+          )}
 
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">{selected.length} selected</span>
@@ -172,11 +212,11 @@ function NotifyModal({ onClose, users }: { onClose: () => void; users: any[] }) 
               )}>
                 Cancel
               </button>
-              <button onClick={send} disabled={!selected.length || sending || sent}
+              <button onClick={send} disabled={!selected.length || sending || sent || !hasContent}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-50">
                 {sent ? <><Check className="w-3.5 h-3.5" /> Sent!</>
                   : sending ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Sending…</>
-                  : <><Send className="w-3.5 h-3.5" /> Send Notification</>}
+                  : <><Send className="w-3.5 h-3.5" /> Send to Chat</>}
               </button>
             </div>
           </div>
@@ -1376,7 +1416,7 @@ export default function WeeklyActivities() {
         <PurchaseRequestsSection isLight={isLight} onOpenModal={() => setShowPRModal(true)} />
       )}
 
-      {showNotify && <NotifyModal onClose={() => setShowNotify(false)} users={users} />}
+      {showNotify && <NotifyModal onClose={() => setShowNotify(false)} users={users} samplesSent={draftSamples} />}
       {showPRModal && <NewRequestModal onClose={() => setShowPRModal(false)} isLight={isLight} />}
 
       {/* Product-type dropdown rendered in a portal so it escapes table overflow clipping */}
