@@ -467,9 +467,14 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
 
       const st = String(r.status || "").toLowerCase();
       let badgeStatus: string;
-      if (st === "completed" || st === "pushed_to_live" || st === "approved") badgeStatus = "completed";
-      else if (st === "on_hold" || st === "awaiting_feedback") badgeStatus = "on_track";
-      else badgeStatus = "ongoing";
+      if (st === "completed")             badgeStatus = "completed";
+      else if (st === "pushed_to_live")   badgeStatus = "pushed_to_live";
+      else if (st === "approved")         badgeStatus = "approved";
+      else if (st === "on_hold")          badgeStatus = "on_hold";
+      else if (st === "awaiting_feedback") badgeStatus = "awaiting_feedback";
+      else if (st === "in_review")        badgeStatus = "in_review";
+      else if (st === "active" || st === "in_progress") badgeStatus = "on_track";
+      else                                badgeStatus = "ongoing";
 
       return {
         id: Number(r.id),

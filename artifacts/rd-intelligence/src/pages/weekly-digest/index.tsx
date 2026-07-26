@@ -179,7 +179,8 @@ type BadgeStatus =
   | "positive" | "overdue" | "on_track"
   | "no_follow_up" | "follow_up_sent" | "completed" | "ongoing"
   | "needs_review" | "signal"
-  | "new_account" | "new_order";
+  | "new_account" | "new_order"
+  | "on_hold" | "approved" | "pushed_to_live" | "awaiting_feedback" | "in_review";
 
 const BADGE: Record<BadgeStatus, { label: string; dot: string; light: string; dark: string }> = {
   pending_approval: { label: "Pending approval", dot: "bg-amber-400 animate-pulse",  light: "bg-amber-50 text-amber-700 border-amber-200",         dark: "bg-amber-500/10 text-amber-300 border-amber-500/25"         },
@@ -194,8 +195,13 @@ const BADGE: Record<BadgeStatus, { label: string; dot: string; light: string; da
   ongoing:          { label: "Ongoing",           dot: "bg-blue-400",                 light: "bg-blue-50 text-blue-700 border-blue-200",             dark: "bg-blue-500/10 text-blue-300 border-blue-500/25"            },
   needs_review:     { label: "Needs review",      dot: "bg-amber-400 animate-pulse",  light: "bg-amber-50 text-amber-700 border-amber-200",         dark: "bg-amber-500/10 text-amber-300 border-amber-500/25"         },
   signal:           { label: "Signal",            dot: "bg-violet-400",               light: "bg-violet-50 text-violet-700 border-violet-100",       dark: "bg-violet-500/10 text-violet-300 border-violet-500/20"      },
-  new_account:      { label: "New account",       dot: "bg-sky-400",                  light: "bg-sky-50 text-sky-700 border-sky-200",                dark: "bg-sky-500/10 text-sky-300 border-sky-500/25"               },
-  new_order:        { label: "New order",         dot: "bg-indigo-400",               light: "bg-indigo-50 text-indigo-700 border-indigo-200",       dark: "bg-indigo-500/10 text-indigo-300 border-indigo-500/25"      },
+  new_account:       { label: "New account",       dot: "bg-sky-400",                  light: "bg-sky-50 text-sky-700 border-sky-200",                dark: "bg-sky-500/10 text-sky-300 border-sky-500/25"               },
+  new_order:         { label: "New order",         dot: "bg-indigo-400",               light: "bg-indigo-50 text-indigo-700 border-indigo-200",       dark: "bg-indigo-500/10 text-indigo-300 border-indigo-500/25"      },
+  on_hold:           { label: "On hold",           dot: "bg-amber-400 animate-pulse",  light: "bg-amber-50 text-amber-700 border-amber-200",          dark: "bg-amber-500/10 text-amber-300 border-amber-500/25"         },
+  approved:          { label: "Approved",          dot: "bg-emerald-400",              light: "bg-emerald-50 text-emerald-700 border-emerald-200",    dark: "bg-emerald-500/10 text-emerald-300 border-emerald-500/25"   },
+  pushed_to_live:    { label: "Pushed to live",    dot: "bg-teal-400",                 light: "bg-teal-50 text-teal-700 border-teal-200",             dark: "bg-teal-500/10 text-teal-300 border-teal-500/25"            },
+  awaiting_feedback: { label: "Awaiting feedback", dot: "bg-amber-400 animate-pulse",  light: "bg-amber-50 text-amber-700 border-amber-200",          dark: "bg-amber-500/10 text-amber-300 border-amber-500/25"         },
+  in_review:         { label: "In review",         dot: "bg-blue-400",                 light: "bg-blue-50 text-blue-700 border-blue-200",             dark: "bg-blue-500/10 text-blue-300 border-blue-500/25"            },
 };
 
 function StatusBadge({ status, isLight }: { status: BadgeStatus; isLight: boolean }) {
@@ -885,11 +891,17 @@ export default function WeeklyDigestPage() {
                 (s.projectPortfolio.items ?? []).map((item, i) => {
                   const secondaryParts: string[] = [];
                   if (item.isNew) {
+                    // New projects: show who it's assigned to, product type, and stage
                     if (item.leadName) secondaryParts.push(`Assigned to: ${item.leadName}`);
                     if (item.productType) secondaryParts.push(item.productType);
                     if (item.stage) secondaryParts.push(`Stage: ${item.stage}`);
+                  } else {
+                    // Existing projects: show task summary
+                    if (item.summary) secondaryParts.push(item.summary);
+                    if (item.productType) secondaryParts.push(item.productType);
                   }
-                  if (item.summary) secondaryParts.push(item.summary);
+                  const accentOk = ["completed", "approved", "pushed_to_live"].includes(item.badgeStatus);
+                  const accentFlag = ["on_hold", "awaiting_feedback"].includes(item.badgeStatus);
                   return (
                     <ItemRow
                       key={i}
@@ -897,7 +909,7 @@ export default function WeeklyDigestPage() {
                       secondary={secondaryParts.join(" · ") || undefined}
                       badge={item.badgeStatus as BadgeStatus}
                       progressPct={item.progressPct}
-                      accentStatus={item.badgeStatus === "completed" ? "ok" : "neutral"}
+                      accentStatus={accentOk ? "ok" : accentFlag ? "flag" : "neutral"}
                       isLight={isLight}
                       onClick={() => navigate(`/projects/${item.id}`)}
                     />
