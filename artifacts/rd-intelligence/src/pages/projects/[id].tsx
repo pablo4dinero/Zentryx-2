@@ -1120,11 +1120,22 @@ function CreateTaskModal({ projectId }: { projectId: number }) {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
   const createMutation = useCreateTask();
+  const { theme } = useTheme();
+  const isLight = theme === "light";
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<any>("medium");
   const [dueDate, setDueDate] = useState("");
-  const cls = "flex h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm focus:outline-none text-foreground placeholder:text-muted-foreground";
+
+  const inputCls = cn(
+    "flex h-10 w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50",
+    isLight
+      ? "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 [color-scheme:light]"
+      : "border-white/10 bg-black/20 text-foreground placeholder:text-muted-foreground"
+  );
+  const selectCls = cn(inputCls, "appearance-none pr-8 cursor-pointer");
+  const labelCls = cn("text-sm font-medium", isLight ? "text-gray-700" : "");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1141,27 +1152,55 @@ function CreateTaskModal({ projectId }: { projectId: number }) {
       <DialogTrigger asChild>
         <button className="p-1 hover:bg-white/10 rounded-md text-muted-foreground hover:text-foreground transition-colors" title="Add task"><Plus className="w-4 h-4" /></button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[440px] glass-panel border-white/10 bg-card/95">
-        <DialogHeader><DialogTitle className="font-display">Add Task</DialogTitle></DialogHeader>
+      <DialogContent className={cn(
+        "sm:max-w-[440px]",
+        isLight ? "bg-white border-gray-200" : "glass-panel border-white/10 bg-card/95"
+      )}>
+        <DialogHeader>
+          <DialogTitle className={cn("font-display", isLight ? "text-gray-900" : "")}>Add Task</DialogTitle>
+        </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-          <div className="space-y-1.5"><label className="text-sm font-medium">Title *</label>
-            <input required value={title} onChange={e => setTitle(e.target.value)} placeholder="Task title..." className={cls} autoFocus />
+          <div className="space-y-1.5">
+            <label className={labelCls}>Title *</label>
+            <input required value={title} onChange={e => setTitle(e.target.value)} placeholder="Task title..." className={inputCls} autoFocus />
           </div>
-          <div className="space-y-1.5"><label className="text-sm font-medium">Description</label>
-            <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Details..." className="flex min-h-[60px] w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm focus:outline-none text-foreground placeholder:text-muted-foreground resize-none" />
+          <div className="space-y-1.5">
+            <label className={labelCls}>Description</label>
+            <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Details..."
+              className={cn(
+                "flex min-h-[60px] w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none",
+                isLight
+                  ? "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 [color-scheme:light]"
+                  : "border-white/10 bg-black/20 text-foreground placeholder:text-muted-foreground"
+              )}
+            />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5"><label className="text-sm font-medium">Priority</label>
-              <select value={priority} onChange={e => setPriority(e.target.value)} className={cls}>
-                {["low", "medium", "high", "critical"].map(p => <option key={p} value={p} className="bg-white text-black capitalize">{p}</option>)}
-              </select>
+            <div className="space-y-1.5">
+              <label className={labelCls}>Priority</label>
+              <div className="relative">
+                <select value={priority} onChange={e => setPriority(e.target.value)} className={selectCls}>
+                  {["low", "medium", "high", "critical"].map(p => (
+                    <option key={p} value={p} className="bg-white text-black capitalize">{p}</option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              </div>
             </div>
-            <div className="space-y-1.5"><label className="text-sm font-medium">Due Date</label>
-              <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className={cls} />
+            <div className="space-y-1.5">
+              <label className={labelCls}>Due Date</label>
+              <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className={inputCls} />
             </div>
           </div>
           <div className="pt-1 flex justify-end gap-3">
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setOpen(false)}
+              className={isLight ? "text-red-600 hover:text-white hover:bg-red-600" : "text-red-400 hover:text-red-300 hover:bg-red-500/10"}
+            >
+              Cancel
+            </Button>
             <Button type="submit" disabled={createMutation.isPending}>Add Task</Button>
           </div>
         </form>
