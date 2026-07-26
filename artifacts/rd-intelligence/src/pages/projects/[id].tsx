@@ -1,7 +1,7 @@
 import { useRoute } from "wouter";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
-import { useGetProject, useListTasks, useCreateTask, useUpdateTask, useDeleteTask, useUpdateProject, useListUsers } from "@/api-client";
+import { useGetProject, useListTasks, useCreateTask, useUpdateTask, useDeleteTask, useUpdateProject, useListUsers, getListTasksQueryKey } from "@/api-client";
 import { PageLoader } from "@/components/ui/spinner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -449,26 +449,60 @@ export default function ProjectDetail() {
   };
 
   const handleStarClick = async () => {
+    const queryKey = getListTasksQueryKey({ projectId });
+
     if (starActive && templateTaskIds.length > 0) {
-      for (const id of templateTaskIds) {
-        try { await deleteTaskMut.mutateAsync({ id }); } catch {}
-      }
+      const idsToDelete = [...templateTaskIds];
+      // Optimistic: remove from cache and update UI immediately
+      queryClient.setQueryData(queryKey, (old: any) =>
+        Array.isArray(old) ? old.filter((t: any) => !idsToDelete.includes(t.id)) : old
+      );
       setTemplateTaskIds([]);
       setStarActive(false);
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
       toast({ title: "Template tasks removed" });
+      // Background: parallel deletes, then hard-sync cache
+      Promise.all(idsToDelete.map(id => deleteTaskMut.mutateAsync({ id }).catch(() => {}))).then(() => {
+        queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      });
     } else {
-      const createdIds: number[] = [];
-      for (const title of TEMPLATE_TASKS) {
-        try {
-          const task = await createTaskMut.mutateAsync({ data: { projectId, title, status: "todo", priority: "medium" } as any });
-          createdIds.push((task as any).id);
-        } catch {}
-      }
-      setTemplateTaskIds(createdIds);
+      // Optimistic: add placeholder tasks immediately so the list updates at once
+      const tempIds = TEMPLATE_TASKS.map((_, i) => -(Date.now() + i));
+      const placeholders = TEMPLATE_TASKS.map((title, i) => ({
+        id: tempIds[i], title, status: "todo", priority: "medium", projectId,
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      }));
+      queryClient.setQueryData(queryKey, (old: any) =>
+        Array.isArray(old) ? [...old, ...placeholders] : placeholders
+      );
+      setTemplateTaskIds(tempIds);
       setStarActive(true);
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
-      toast({ title: "Template tasks created", description: `${createdIds.length} tasks added.` });
+      toast({ title: "Template tasks created", description: `${TEMPLATE_TASKS.length} tasks added.` });
+      // Background: parallel creates
+      const results = await Promise.allSettled(
+        TEMPLATE_TASKS.map((title, i) =>
+          createTaskMut.mutateAsync({ data: { projectId, title, status: "todo", priority: "medium" } as any })
+            .then((task: any) => ({ tempId: tempIds[i], realTask: task }))
+        )
+      );
+      const fulfilled = results
+        .filter((r): r is PromiseFulfilledResult<{ tempId: number; realTask: any }> => r.status === "fulfilled")
+        .map(r => r.value);
+      const realByTempId = new Map(fulfilled.map(f => [f.tempId, f.realTask]));
+      // Replace placeholders with real server tasks in cache
+      queryClient.setQueryData(queryKey, (old: any) => {
+        if (!Array.isArray(old)) return old;
+        const out: any[] = [];
+        for (const t of old) {
+          if (tempIds.includes(t.id)) {
+            const real = realByTempId.get(t.id);
+            if (real) out.push(real); // swap placeholder → real task
+          } else {
+            out.push(t);
+          }
+        }
+        return out;
+      });
+      setTemplateTaskIds(fulfilled.map(f => f.realTask.id));
     }
   };
 

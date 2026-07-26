@@ -225,19 +225,59 @@ function KanbanBoard({ accountId, account }: { accountId: number; account: any }
   const someTemplatePresent = TEMPLATE_TASKS.some(t => taskArr.some(tk => tk.title === t));
 
   const addTemplateTasks = async () => {
+    const qKey = [`/api/accounts/${accountId}/tasks`];
+
     if (templateLoaded || someTemplatePresent) {
       const toDelete = taskArr.filter(tk => TEMPLATE_TASKS.includes(tk.title));
-      for (const tk of toDelete) {
-        await api(`api/accounts/${accountId}/tasks/${tk.id}`, { method: "DELETE" });
-      }
-      queryClient.invalidateQueries({ queryKey: [`/api/accounts/${accountId}/tasks`] });
+      const toDeleteIds = toDelete.map(tk => tk.id);
+      // Optimistic: remove from cache immediately
+      queryClient.setQueryData(qKey, (old: any) =>
+        Array.isArray(old) ? old.filter((t: any) => !toDeleteIds.includes(t.id)) : old
+      );
       toast({ title: "Template tasks removed" });
+      // Background: parallel deletes, then hard-sync
+      Promise.all(toDelete.map(tk =>
+        api(`api/accounts/${accountId}/tasks/${tk.id}`, { method: "DELETE" }).catch(() => {})
+      )).then(() => queryClient.invalidateQueries({ queryKey: qKey }));
     } else {
-      for (let i = 0; i < TEMPLATE_TASKS.length; i++) {
-        await api(`api/accounts/${accountId}/tasks`, { method: "POST", body: JSON.stringify({ title: TEMPLATE_TASKS[i], status: "todo", sortOrder: taskArr.length + i }) });
-      }
-      queryClient.invalidateQueries({ queryKey: [`/api/accounts/${accountId}/tasks`] });
+      // Optimistic: add placeholder tasks immediately
+      const tempIds = TEMPLATE_TASKS.map((_, i) => -(Date.now() + i));
+      const placeholders = TEMPLATE_TASKS.map((title, i) => ({
+        id: tempIds[i], title, status: "todo", sortOrder: taskArr.length + i, accountId,
+        createdAt: new Date().toISOString(),
+      }));
+      queryClient.setQueryData(qKey, (old: any) =>
+        Array.isArray(old) ? [...old, ...placeholders] : placeholders
+      );
       toast({ title: "Template tasks added" });
+      // Background: parallel creates
+      const results = await Promise.allSettled(
+        TEMPLATE_TASKS.map((title, i) =>
+          api(`api/accounts/${accountId}/tasks`, {
+            method: "POST",
+            body: JSON.stringify({ title, status: "todo", sortOrder: taskArr.length + i }),
+          }).then(r => r.ok ? r.json() : Promise.reject())
+            .then((real: any) => ({ tempId: tempIds[i], real }))
+        )
+      );
+      const fulfilled = results
+        .filter((r): r is PromiseFulfilledResult<{ tempId: number; real: any }> => r.status === "fulfilled")
+        .map(r => r.value);
+      const realByTempId = new Map(fulfilled.map(f => [f.tempId, f.real]));
+      // Replace placeholders with real server tasks
+      queryClient.setQueryData(qKey, (old: any) => {
+        if (!Array.isArray(old)) return old;
+        const out: any[] = [];
+        for (const t of old) {
+          if (tempIds.includes(t.id)) {
+            const real = realByTempId.get(t.id);
+            if (real) out.push(real);
+          } else {
+            out.push(t);
+          }
+        }
+        return out;
+      });
     }
   };
 
