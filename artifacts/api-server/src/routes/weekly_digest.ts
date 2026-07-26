@@ -486,11 +486,13 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
 
     // ── Section insights + agent calls in parallel ───────────────────────────
     const complianceCtx = JSON.stringify({
+      // Product types currently active in Zentryx's portfolio — drive regulatory focus
+      activeProductTypes: activeProductTypes,
+      // Internal operational risk flags
       urgentPending: urgentPendingRows.slice(0, 6).map((r: any) => ({ company: r.company, daysPending: r.days_pending, productType: r.product_type })),
       confidenceDrop: confidenceDropRows.slice(0, 6).map((r: any) => ({ company: r.company, confidence: r.confidence })),
       overdueFollowUps: overdueCallRows.slice(0, 4).map((r: any) => ({ company: r.company, daysSince: r.days_since, nextSteps: r.next_steps })),
       samplesWithoutFollowUp: followUpMissing,
-      totalDispatched: samplesDispatched,
     });
 
     // Trend Scout context: internal signals + Nigeria market trigger
@@ -508,7 +510,13 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
       callModel(HAIKU_MODEL, "You are Oracle. Write exactly one insight sentence about this business development data for a weekly digest. Be specific.", JSON.stringify(ctx.businessDev), 120),
       callModel(HAIKU_MODEL, "You are Oracle. Write exactly one insight sentence about this weekly activities data for a weekly digest. Be specific.", JSON.stringify(ctx.weeklyActivities), 120),
       callModel(HAIKU_MODEL, "You are Oracle. Write exactly one insight sentence about this project portfolio data for a weekly digest. Be specific.", JSON.stringify(ctx.projectPortfolio), 120),
-      callModel(HAIKU_MODEL, "You are Oracle's Compliance Agent for Zentryx, a food science R&D company. Review the data and identify 2–3 specific compliance or risk concerns: overdue approvals, confidence drops, overdue call follow-ups, samples sent without follow-up. Mention company names and product types directly. Keep under 90 words. Plain sentences, no bullets.", complianceCtx, 160),
+      callModel(SONNET_MODEL, `You are Oracle's Compliance Agent for Zentryx, a food science R&D company in Nigeria. Your job is to give actionable regulatory intelligence specific to the product types Zentryx is currently working on.
+
+Part 1 — Regulatory Updates (lead with this): For each product category listed in activeProductTypes, cite one specific, current NAFDAC regulation, SON standard, or Nigerian food safety requirement that Zentryx should be aware of — e.g. registration requirements, labeling rules, ingredient restrictions, or any recent regulatory changes for that category (bouillons, seasonings, dairy premixes, etc.).
+
+Part 2 — Internal Risk Flags (brief): Flag any urgent pending approvals or overdue client follow-ups from the data.
+
+Keep total response under 130 words. Plain paragraphs, no bullet points or headers.`, complianceCtx, 220),
       // Trend Scout uses Sonnet for quality Nigeria market knowledge
       callModel(SONNET_MODEL, `You are Oracle's Trend Scout Agent for Zentryx, a food science R&D company operating in Nigeria. The following product types were active in Zentryx's portfolio this week. For each product type present in the data, provide one specific signal about its current relevance or trend in the Nigerian food market, combining the internal business signals below with your knowledge of the Nigerian FMCG and food industry. Be specific — name the product category and the trend. Keep total response under 100 words. Plain sentences, no bullets.`, trendScoutCtx, 180),
     ]);
