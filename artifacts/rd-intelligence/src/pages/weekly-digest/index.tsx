@@ -180,7 +180,8 @@ type BadgeStatus =
   | "no_follow_up" | "follow_up_sent" | "completed" | "ongoing"
   | "needs_review" | "signal"
   | "new_account" | "new_order"
-  | "on_hold" | "approved" | "pushed_to_live" | "awaiting_feedback" | "in_review";
+  | "on_hold" | "approved" | "pushed_to_live" | "awaiting_feedback" | "in_review"
+  | "active" | "in_progress";
 
 const BADGE: Record<BadgeStatus, { label: string; dot: string; light: string; dark: string }> = {
   pending_approval: { label: "Pending approval", dot: "bg-amber-400 animate-pulse",  light: "bg-amber-50 text-amber-700 border-amber-200",         dark: "bg-amber-500/10 text-amber-300 border-amber-500/25"         },
@@ -202,6 +203,8 @@ const BADGE: Record<BadgeStatus, { label: string; dot: string; light: string; da
   pushed_to_live:    { label: "Pushed to live",    dot: "bg-teal-400",                 light: "bg-teal-50 text-teal-700 border-teal-200",             dark: "bg-teal-500/10 text-teal-300 border-teal-500/25"            },
   awaiting_feedback: { label: "Awaiting feedback", dot: "bg-amber-400 animate-pulse",  light: "bg-amber-50 text-amber-700 border-amber-200",          dark: "bg-amber-500/10 text-amber-300 border-amber-500/25"         },
   in_review:         { label: "In review",         dot: "bg-blue-400",                 light: "bg-blue-50 text-blue-700 border-blue-200",             dark: "bg-blue-500/10 text-blue-300 border-blue-500/25"            },
+  active:            { label: "Active",            dot: "bg-cyan-400",                 light: "bg-cyan-50 text-cyan-700 border-cyan-200",             dark: "bg-cyan-500/10 text-cyan-300 border-cyan-500/25"            },
+  in_progress:       { label: "In progress",       dot: "bg-violet-400",               light: "bg-violet-50 text-violet-700 border-violet-100",       dark: "bg-violet-500/10 text-violet-300 border-violet-500/20"      },
 };
 
 function StatusBadge({ status, isLight }: { status: BadgeStatus; isLight: boolean }) {
@@ -891,15 +894,15 @@ export default function WeeklyDigestPage() {
                 (s.projectPortfolio.items ?? []).map((item, i) => {
                   const secondaryParts: string[] = [];
                   if (item.isNew) {
-                    // New projects: show who it's assigned to, product type, and stage
                     if (item.leadName) secondaryParts.push(`Assigned to: ${item.leadName}`);
                     if (item.productType) secondaryParts.push(item.productType);
                     if (item.stage) secondaryParts.push(`Stage: ${item.stage}`);
                   } else {
-                    // Existing projects: show task summary
                     if (item.summary) secondaryParts.push(item.summary);
                     if (item.productType) secondaryParts.push(item.productType);
                   }
+                  // Always append the single most recent task done (if any)
+                  if (item.recentTaskTitles[0]) secondaryParts.push(item.recentTaskTitles[0]);
                   const accentOk = ["completed", "approved", "pushed_to_live"].includes(item.badgeStatus);
                   const accentFlag = ["on_hold", "awaiting_feedback"].includes(item.badgeStatus);
                   return (

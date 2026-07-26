@@ -233,7 +233,7 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
         WHERE p.updated_at >= '${weekStart.toISOString()}'
            OR p.created_at >= '${weekStart.toISOString()}'
         GROUP BY p.id, p.name, p.status, p.product_type, p.stage, u.name
-        ORDER BY tasks_done_week DESC, p.updated_at DESC
+        ORDER BY p.updated_at DESC
         LIMIT 12
       `)).catch(() => ({ rows: [] })),
 
@@ -454,27 +454,25 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
       const progressPct = totalTasks > 0 ? Math.round((totalDone / totalTasks) * 100) : 0;
 
       let summary: string;
-      if (tasksDone > 0 && doneTitles.length > 0) {
-        const taskList = doneTitles.slice(0, 2).join(", ");
-        summary = `${tasksDone} task${tasksDone > 1 ? "s" : ""} completed · ${taskList}`;
-      } else if (tasksDone > 0) {
-        summary = `${tasksDone} task${tasksDone > 1 ? "s" : ""} completed this week`;
+      if (tasksDone > 0) {
+        summary = `${tasksDone} task${tasksDone > 1 ? "s" : ""} done this week`;
       } else if (inProgress > 0) {
-        summary = `${inProgress} task${inProgress > 1 ? "s" : ""} in progress · no completions yet`;
+        summary = `${inProgress} in progress`;
       } else {
-        summary = "Project updated this week";
+        summary = "Updated this week";
       }
 
       const st = String(r.status || "").toLowerCase();
       let badgeStatus: string;
-      if (st === "completed")             badgeStatus = "completed";
-      else if (st === "pushed_to_live")   badgeStatus = "pushed_to_live";
-      else if (st === "approved")         badgeStatus = "approved";
-      else if (st === "on_hold")          badgeStatus = "on_hold";
+      if (st === "completed")              badgeStatus = "completed";
+      else if (st === "pushed_to_live")    badgeStatus = "pushed_to_live";
+      else if (st === "approved")          badgeStatus = "approved";
+      else if (st === "on_hold")           badgeStatus = "on_hold";
       else if (st === "awaiting_feedback") badgeStatus = "awaiting_feedback";
-      else if (st === "in_review")        badgeStatus = "in_review";
-      else if (st === "active" || st === "in_progress") badgeStatus = "on_track";
-      else                                badgeStatus = "ongoing";
+      else if (st === "in_review")         badgeStatus = "in_review";
+      else if (st === "active")            badgeStatus = "active";
+      else if (st === "in_progress")       badgeStatus = "in_progress";
+      else                                 badgeStatus = "ongoing";
 
       return {
         id: Number(r.id),
@@ -487,7 +485,7 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
         totalTasks,
         totalDone,
         tasksInProgress: inProgress,
-        recentTaskTitles: doneTitles.slice(0, 3),
+        recentTaskTitles: doneTitles.slice(0, 1),
         summary,
         badgeStatus,
         progressPct,
