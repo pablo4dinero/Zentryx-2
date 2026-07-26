@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useLocation } from "wouter";
 import { motion, AnimatePresence, useReducedMotion, useMotionValue, animate as fmAnimate } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -6,13 +7,32 @@ import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
 import {
   Sparkles, RefreshCw, TrendingUp, Phone, Briefcase, ClipboardList,
-  Brain, Send, ChevronDown, ChevronUp, Calendar, Loader2,
-  Package, CheckCircle, Clock, AlertCircle, FlaskConical,
+  Brain, Send, Calendar, Loader2,
+  FlaskConical, AlertCircle, ShieldCheck, Radar,
 } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+interface SalesForceItem {
+  company: string;
+  status: "pending_approval" | "confidence_drop" | "delivered";
+  detail?: string;
+}
+
+interface CallItem {
+  company: string;
+  contact?: string;
+  status: "positive" | "overdue" | "on_track";
+}
+
+interface WeeklyItem {
+  title: string;
+  type: "dispatch" | "activity";
+  status: "no_follow_up" | "follow_up_sent" | "completed" | "ongoing";
+  detail?: string;
+}
 
 interface DigestSections {
   salesForce: {
@@ -21,11 +41,15 @@ interface DigestSections {
     newOrders: number;
     deliveredOrders: number;
     totalVolumeKg: number;
+    urgentPendingCount?: number;
+    confidenceDropCount?: number;
+    items?: SalesForceItem[];
     insight: string;
   };
   callReports: {
     totalCalls: number;
     successfulCalls: number;
+    items?: CallItem[];
     insight: string;
   };
   businessDev: {
@@ -35,6 +59,9 @@ interface DigestSections {
   weeklyActivities: {
     completed: number;
     ongoing: number;
+    samplesDispatched?: number;
+    followUpMissing?: number;
+    items?: WeeklyItem[];
     insight: string;
   };
   projectPortfolio?: {
@@ -45,6 +72,10 @@ interface DigestSections {
     tasksCompleted: number;
     tasksInProgress: number;
     insight: string;
+  };
+  oracleAgentInsight?: {
+    compliance: string;
+    trendScout: string;
   };
 }
 
@@ -86,7 +117,6 @@ const cardVariants = {
   visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: i * 0.08, duration: 0.4, ease: "easeOut" } }),
 };
 
-// Variants propagated from the Refresh button to the icon child
 const refreshIconVariants = {
   hover: { rotate: 180 },
   rest:  { rotate: 0 },
@@ -107,10 +137,46 @@ const DOT: Record<Tone, string> = {
   good:    "bg-emerald-400",
   warn:    "bg-amber-400 animate-pulse",
   bad:     "bg-red-400 animate-pulse",
-  neutral: "opacity-0",   // placeholder so layout stays consistent
+  neutral: "opacity-0",
 };
 
-// ─── AnimatedNumber (count-up on mount, respects prefers-reduced-motion) ──────
+// ─── Status badge system ──────────────────────────────────────────────────────
+
+type BadgeStatus =
+  | "pending_approval" | "confidence_drop" | "delivered"
+  | "positive" | "overdue" | "on_track"
+  | "no_follow_up" | "follow_up_sent" | "completed" | "ongoing"
+  | "needs_review" | "signal";
+
+const BADGE: Record<BadgeStatus, { label: string; dot: string; light: string; dark: string }> = {
+  pending_approval: { label: "Pending approval", dot: "bg-amber-400 animate-pulse",  light: "bg-amber-50 text-amber-700 border-amber-200",         dark: "bg-amber-500/10 text-amber-300 border-amber-500/25"         },
+  confidence_drop:  { label: "Confidence drop",  dot: "bg-red-400 animate-pulse",    light: "bg-red-50 text-red-700 border-red-200",               dark: "bg-red-500/10 text-red-400 border-red-500/25"               },
+  delivered:        { label: "Delivered",         dot: "bg-emerald-400",              light: "bg-emerald-50 text-emerald-700 border-emerald-200",    dark: "bg-emerald-500/10 text-emerald-300 border-emerald-500/25"   },
+  positive:         { label: "Positive",          dot: "bg-emerald-400",              light: "bg-emerald-50 text-emerald-700 border-emerald-200",    dark: "bg-emerald-500/10 text-emerald-300 border-emerald-500/25"   },
+  overdue:          { label: "Overdue",           dot: "bg-red-400 animate-pulse",    light: "bg-red-50 text-red-700 border-red-200",               dark: "bg-red-500/10 text-red-400 border-red-500/25"               },
+  on_track:         { label: "On track",          dot: "bg-blue-400",                 light: "bg-blue-50 text-blue-700 border-blue-200",             dark: "bg-blue-500/10 text-blue-300 border-blue-500/25"            },
+  no_follow_up:     { label: "No follow-up",      dot: "bg-amber-400 animate-pulse",  light: "bg-amber-50 text-amber-700 border-amber-200",         dark: "bg-amber-500/10 text-amber-300 border-amber-500/25"         },
+  follow_up_sent:   { label: "Follow-up sent",    dot: "bg-emerald-400",              light: "bg-emerald-50 text-emerald-700 border-emerald-200",    dark: "bg-emerald-500/10 text-emerald-300 border-emerald-500/25"   },
+  completed:        { label: "Completed",         dot: "bg-emerald-400",              light: "bg-emerald-50 text-emerald-700 border-emerald-200",    dark: "bg-emerald-500/10 text-emerald-300 border-emerald-500/25"   },
+  ongoing:          { label: "Ongoing",           dot: "bg-blue-400",                 light: "bg-blue-50 text-blue-700 border-blue-200",             dark: "bg-blue-500/10 text-blue-300 border-blue-500/25"            },
+  needs_review:     { label: "Needs review",      dot: "bg-amber-400 animate-pulse",  light: "bg-amber-50 text-amber-700 border-amber-200",         dark: "bg-amber-500/10 text-amber-300 border-amber-500/25"         },
+  signal:           { label: "Signal",            dot: "bg-violet-400",               light: "bg-violet-50 text-violet-700 border-violet-100",       dark: "bg-violet-500/10 text-violet-300 border-violet-500/20"      },
+};
+
+function StatusBadge({ status, isLight }: { status: BadgeStatus; isLight: boolean }) {
+  const cfg = BADGE[status];
+  return (
+    <span className={cn(
+      "inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-medium whitespace-nowrap",
+      isLight ? cfg.light : cfg.dark,
+    )}>
+      <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", cfg.dot)} />
+      {cfg.label}
+    </span>
+  );
+}
+
+// ─── AnimatedNumber ───────────────────────────────────────────────────────────
 
 function AnimatedNumber({ target }: { target: number }) {
   const reducedMotion = useReducedMotion() ?? false;
@@ -123,18 +189,14 @@ function AnimatedNumber({ target }: { target: number }) {
     const unsub = mv.on("change", (v) => setDisplay(Math.round(v)));
     const controls = fmAnimate(mv, target, { duration: 0.85, ease: [0.25, 0.46, 0.45, 0.94] });
     return () => { controls.stop(); unsub(); };
-  }, [target]); // mv is stable ref; reducedMotion excluded intentionally
+  }, [target]);
 
   return <>{display}</>;
 }
 
 // ─── StatPill ─────────────────────────────────────────────────────────────────
 
-function StatPill({
-  label, value, tone, isLight,
-}: {
-  label: string; value: number | string; tone: Tone; isLight: boolean;
-}) {
+function StatPill({ label, value, tone, isLight }: { label: string; value: number | string; tone: Tone; isLight: boolean }) {
   const isNumeric = typeof value === "number";
   return (
     <div className={cn(
@@ -146,7 +208,6 @@ function StatPill({
         {isNumeric ? <AnimatedNumber target={value as number} /> : value}
       </span>
       <span className="text-[10px] uppercase tracking-wide mt-1 flex items-center gap-1 opacity-70">
-        {/* Status dot: pulsing for warn/bad, steady for good, invisible for neutral */}
         <span className={cn("w-1.5 h-1.5 rounded-full shrink-0 flex-none", DOT[tone])} />
         {label}
       </span>
@@ -154,38 +215,22 @@ function StatPill({
   );
 }
 
-// ─── InsightBadge ─────────────────────────────────────────────────────────────
+// ─── DigestCard ───────────────────────────────────────────────────────────────
 
-function InsightBadge({ text, isLight }: { text: string; isLight: boolean }) {
-  if (!text) return null;
-  return (
-    <div className={cn(
-      "flex items-start gap-2 mt-3 p-2.5 rounded-xl text-xs leading-snug",
-      isLight
-        ? "bg-violet-50 text-violet-700 border border-violet-100"
-        : "bg-violet-500/10 text-violet-300 border border-violet-500/20",
-    )}>
-      {/* Steady dot (neutral — informational, not urgent) */}
-      <span className="mt-1 w-1.5 h-1.5 rounded-full bg-violet-400/70 shrink-0 flex-none" />
-      <Brain className="w-3.5 h-3.5 mt-0.5 shrink-0 opacity-60" />
-      <div className={cn(
-        "[&_p]:m-0 [&_p]:inline [&_strong]:font-semibold [&_h1]:text-xs [&_h1]:font-semibold [&_h2]:text-xs [&_h2]:font-semibold",
-      )}>
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
-      </div>
-    </div>
-  );
-}
-
-// ─── SectionCard ──────────────────────────────────────────────────────────────
-
-function SectionCard({
-  icon: Icon, title, gradient, children, defaultOpen = true, index, isLight,
+function DigestCard({
+  icon: Icon, iconGradient, title, subtitle, navPath, statPills, children, index, isLight,
 }: {
-  icon: React.ElementType; title: string; gradient: string; children: React.ReactNode;
-  defaultOpen?: boolean; index: number; isLight: boolean;
+  icon: React.ElementType;
+  iconGradient: string;
+  title: string;
+  subtitle?: string;
+  navPath?: string;
+  statPills: React.ReactNode;
+  children?: React.ReactNode;
+  index: number;
+  isLight: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [, navigate] = useLocation();
   return (
     <motion.div
       custom={index}
@@ -197,36 +242,83 @@ function SectionCard({
         isLight ? "bg-white border-slate-200 shadow-sm" : "glass-panel border-white/10",
       )}
     >
-      <button
-        onClick={() => setOpen(o => !o)}
-        className={cn(
-          "w-full flex items-center gap-3 px-5 py-4 text-left transition-colors",
-          isLight ? "hover:bg-slate-50" : "hover:bg-white/5",
-        )}
-      >
-        <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-gradient-to-br", gradient)}>
+      {/* Header */}
+      <div className={cn(
+        "px-5 py-4 flex items-center gap-3 border-b",
+        isLight ? "border-slate-100" : "border-white/5",
+      )}>
+        <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-gradient-to-br", iconGradient)}>
           <Icon className="w-4.5 h-4.5 text-white" />
         </div>
-        <span className={cn("font-semibold text-sm flex-1", isLight ? "text-slate-900" : "text-foreground")}>
-          {title}
-        </span>
-        {open ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-      </button>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
+        <div className="flex-1 min-w-0">
+          <p className={cn("font-semibold text-sm", isLight ? "text-slate-900" : "text-foreground")}>{title}</p>
+          {subtitle && <p className={cn("text-[11px]", isLight ? "text-slate-500" : "text-muted-foreground")}>{subtitle}</p>}
+        </div>
+        {navPath && (
+          <button
+            onClick={() => navigate(navPath)}
+            className={cn(
+              "shrink-0 text-xs font-medium px-2.5 py-1 rounded-lg transition-colors",
+              isLight ? "text-slate-500 hover:bg-slate-100 hover:text-slate-700" : "text-muted-foreground hover:bg-white/10 hover:text-foreground",
+            )}
           >
-            <div className={cn("px-5 pb-5 border-t", isLight ? "border-slate-100" : "border-white/5")}>
-              {children}
-            </div>
-          </motion.div>
+            View all →
+          </button>
         )}
-      </AnimatePresence>
+      </div>
+
+      {/* Stat pills */}
+      <div className="px-5 py-3 flex flex-wrap gap-2">
+        {statPills}
+      </div>
+
+      {/* Item rows */}
+      {children && (
+        <>
+          <div className={cn("h-px mx-5", isLight ? "bg-slate-100" : "bg-white/5")} />
+          <div className="px-5 py-3 space-y-1.5">
+            {children}
+          </div>
+        </>
+      )}
     </motion.div>
+  );
+}
+
+// ─── ItemRow ──────────────────────────────────────────────────────────────────
+
+function ItemRow({
+  primary, secondary, badge, accentStatus, isLight,
+}: {
+  primary: string;
+  secondary?: string;
+  badge: BadgeStatus;
+  accentStatus?: "flag" | "ok" | "neutral";
+  isLight: boolean;
+}) {
+  const accentColor =
+    accentStatus === "flag" ? (isLight ? "border-l-amber-400" : "border-l-amber-400") :
+    accentStatus === "ok"   ? (isLight ? "border-l-emerald-400" : "border-l-emerald-400") :
+                              (isLight ? "border-l-slate-200" : "border-l-white/10");
+
+  return (
+    <div className={cn(
+      "flex items-center gap-3 px-3 py-2 rounded-xl border-l-2 transition-colors duration-100",
+      isLight ? "hover:bg-slate-50" : "hover:bg-white/[0.04]",
+      accentColor,
+    )}>
+      <div className="flex-1 min-w-0">
+        <p className={cn("text-xs font-medium truncate", isLight ? "text-slate-800" : "text-foreground/90")}>
+          {primary}
+        </p>
+        {secondary && (
+          <p className={cn("text-[10px] truncate mt-0.5", isLight ? "text-slate-500" : "text-muted-foreground")}>
+            {secondary}
+          </p>
+        )}
+      </div>
+      <StatusBadge status={badge} isLight={isLight} />
+    </div>
   );
 }
 
@@ -245,13 +337,14 @@ function AskOracle({ digest, isLight }: { digest: WeeklyDigest; isLight: boolean
     setLoading(true); setError(""); setAnswer("");
     try {
       const pp = digest.sections.projectPortfolio;
+      const s = digest.sections;
       const ctx = [
         `Week: ${digest.weekStartDate} to ${digest.weekEndDate}`,
         `Brief: ${digest.briefText}`,
-        `Sales Force: ${digest.sections.salesForce.newAccounts} new accounts, ${digest.sections.salesForce.newOrders} new orders, ${digest.sections.salesForce.totalVolumeKg.toFixed(1)} kg volume.`,
-        `Call Reports: ${digest.sections.callReports.totalCalls} calls, ${digest.sections.callReports.successfulCalls} successful.`,
-        `Business Dev: ${digest.sections.businessDev.newItems} new items this week.`,
-        `Weekly Activities: ${digest.sections.weeklyActivities.completed} completed, ${digest.sections.weeklyActivities.ongoing} ongoing.`,
+        `Sales Force: ${s.salesForce.newAccounts} new accounts, ${s.salesForce.newOrders} new orders, ${Number(s.salesForce.totalVolumeKg).toFixed(1)} kg volume. Urgent pending: ${s.salesForce.urgentPendingCount ?? 0}. Confidence drops: ${s.salesForce.confidenceDropCount ?? 0}.`,
+        `Call Reports: ${s.callReports.totalCalls} calls, ${s.callReports.successfulCalls} successful.`,
+        `Business Dev: ${s.businessDev.newItems} new items this week.`,
+        `Weekly Activities: ${s.weeklyActivities.completed} completed, ${s.weeklyActivities.ongoing} ongoing. Dispatched: ${s.weeklyActivities.samplesDispatched ?? 0}. Follow-up missing: ${s.weeklyActivities.followUpMissing ?? 0}.`,
         pp ? `Project Portfolio: ${pp.newProjects} new projects, ${pp.activeProjects} active, ${pp.newTasks} new tasks, ${pp.tasksCompleted} tasks completed this week.` : "",
       ].filter(Boolean).join("\n");
 
@@ -298,7 +391,6 @@ function AskOracle({ digest, isLight }: { digest: WeeklyDigest; isLight: boolean
       </div>
 
       <div className={cn("px-5 pb-5 border-t", isLight ? "border-slate-100" : "border-white/5")}>
-        {/* Focus-within glow: the container div gets the ring when textarea is focused */}
         <div className={cn(
           "mt-4 flex gap-2 rounded-xl transition-all duration-150",
           "focus-within:ring-2 focus-within:ring-primary/50 focus-within:shadow-[0_0_12px_rgba(124,77,255,0.12)]",
@@ -369,7 +461,6 @@ export default function WeeklyDigestPage() {
   const isLight = theme === "light";
   const reducedMotion = useReducedMotion() ?? false;
 
-  // ── Data-fetching state (untouched) ──────────────────────────────────────
   const [digest, setDigest] = useState<WeeklyDigest | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -409,7 +500,6 @@ export default function WeeklyDigestPage() {
       setGenerating(false);
     }
   };
-  // ─────────────────────────────────────────────────────────────────────────
 
   const s = digest?.sections;
 
@@ -421,7 +511,6 @@ export default function WeeklyDigestPage() {
     );
   }
 
-  // Derived thresholds for call success rate (computed once from sections data)
   const callSuccessRate = s && s.callReports.totalCalls > 0
     ? Math.round((s.callReports.successfulCalls / s.callReports.totalCalls) * 100)
     : null;
@@ -454,7 +543,6 @@ export default function WeeklyDigestPage() {
           </p>
         </div>
 
-        {/* Refresh button — icon rotates 180° on hover (distinct from spin-during-generation) */}
         <motion.button
           onClick={handleRefresh}
           disabled={generating}
@@ -496,7 +584,7 @@ export default function WeeklyDigestPage() {
         )}
       </AnimatePresence>
 
-      {/* ── Empty state (untouched) ── */}
+      {/* ── Empty state ── */}
       {!digest ? (
         <motion.div
           initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.4 }}
@@ -536,23 +624,16 @@ export default function WeeklyDigestPage() {
             variants={cardVariants}
             className="relative rounded-2xl p-[1px] overflow-hidden"
           >
-            {/* The spinning gradient sits in the 1px padding gap */}
             <motion.div
               className="absolute inset-0 rounded-2xl"
               style={{ background: "conic-gradient(from 0deg, rgba(139,92,246,0.15), rgba(167,139,250,0.7), rgba(217,70,239,0.45), rgba(139,92,246,0.15))" }}
               animate={reducedMotion ? {} : { rotate: 360 }}
               transition={{ duration: 7, repeat: Infinity, ease: "linear" }}
             />
-            {/* Content div — opaque background hides the gradient except for the 1px ring */}
-            <div className={cn(
-              "relative rounded-[14px] overflow-hidden",
-              isLight ? "bg-white" : "bg-background",
-            )}>
-              {/* Gradient tint overlay */}
+            <div className={cn("relative rounded-[14px] overflow-hidden", isLight ? "bg-white" : "bg-background")}>
               <div className="absolute inset-0 bg-gradient-to-br from-violet-600/8 via-purple-600/4 to-transparent pointer-events-none" />
               <div className="relative p-5">
                 <div className="flex items-center gap-2 mb-3">
-                  {/* Breathing pulse on the Oracle icon — scale + glow */}
                   <motion.div
                     animate={reducedMotion ? {} : {
                       scale: [1, 1.12, 1],
@@ -568,17 +649,13 @@ export default function WeeklyDigestPage() {
                   </motion.div>
                   <span className="text-xs font-semibold uppercase tracking-widest text-violet-400">Oracle Brief</span>
                 </div>
-
-                {/* Brief text rendered through react-markdown */}
                 <div className={cn(
                   "text-sm leading-relaxed [&_p]:mb-2 [&_p:last-child]:mb-0 [&_strong]:font-semibold",
-                  "[&_h1]:text-base [&_h1]:font-bold [&_h1]:mb-2",
-                  "[&_h2]:text-sm [&_h2]:font-semibold [&_h2]:mb-1",
+                  "[&_h1]:text-base [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-sm [&_h2]:font-semibold [&_h2]:mb-1",
                   isLight ? "text-slate-800" : "text-foreground/90",
                 )}>
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{digest.briefText}</ReactMarkdown>
                 </div>
-
                 <div className="flex items-center gap-1.5 mt-3">
                   <Calendar className="w-3 h-3 text-muted-foreground" />
                   <span className={cn("text-xs", isLight ? "text-slate-400" : "text-muted-foreground")}>
@@ -590,177 +667,239 @@ export default function WeeklyDigestPage() {
           </motion.div>
 
           {/* ── Sales Force ── */}
-          <SectionCard icon={TrendingUp} title="Sales Force" gradient="from-blue-500 to-cyan-500" index={1} isLight={isLight}>
-            {s && (
-              <div className="pt-4 space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  <StatPill label="Total Accounts" value={s.salesForce.totalAccounts} tone="neutral" isLight={isLight} />
-                  <StatPill label="New This Week"  value={s.salesForce.newAccounts}    tone="neutral" isLight={isLight} />
-                  <StatPill label="New Orders"     value={s.salesForce.newOrders}      tone="neutral" isLight={isLight} />
-                  <StatPill
-                    label="Delivered"
-                    value={s.salesForce.deliveredOrders}
-                    tone={s.salesForce.deliveredOrders === 0 ? "warn" : "good"}
+          {s && (
+            <DigestCard
+              icon={TrendingUp}
+              iconGradient="from-blue-500 to-cyan-500"
+              title="Sales Force"
+              subtitle={`${s.salesForce.totalVolumeKg ? `${Number(s.salesForce.totalVolumeKg).toLocaleString()} kg ordered` : "Production orders"} this week`}
+              navPath="/sales-force"
+              statPills={<>
+                <StatPill label="Total Accounts" value={s.salesForce.totalAccounts}  tone="neutral" isLight={isLight} />
+                <StatPill label="New This Week"  value={s.salesForce.newAccounts}    tone="neutral" isLight={isLight} />
+                <StatPill label="New Orders"     value={s.salesForce.newOrders}      tone="neutral" isLight={isLight} />
+                <StatPill label="Delivered"      value={s.salesForce.deliveredOrders} tone={s.salesForce.deliveredOrders === 0 ? "warn" : "good"} isLight={isLight} />
+                {(s.salesForce.urgentPendingCount ?? 0) > 0 && (
+                  <StatPill label="Urgent Pending" value={s.salesForce.urgentPendingCount!} tone="warn" isLight={isLight} />
+                )}
+              </>}
+              index={1}
+              isLight={isLight}
+            >
+              {(s.salesForce.items ?? []).length > 0 ? (
+                (s.salesForce.items ?? []).map((item, i) => (
+                  <ItemRow
+                    key={i}
+                    primary={item.company}
+                    secondary={item.detail}
+                    badge={item.status}
+                    accentStatus={item.status === "pending_approval" || item.status === "confidence_drop" ? "flag" : "ok"}
                     isLight={isLight}
                   />
-                </div>
-                <div className={cn("flex items-center gap-2 text-sm", isLight ? "text-slate-600" : "text-muted-foreground")}>
-                  <Package className="w-4 h-4 text-blue-400 shrink-0" />
-                  <span>
-                    <strong className={isLight ? "text-slate-800" : "text-foreground"}>
-                      {Number(s.salesForce.totalVolumeKg).toLocaleString()} kg
-                    </strong>{" "}total production volume ordered this week
-                  </span>
-                </div>
-                <InsightBadge text={s.salesForce.insight} isLight={isLight} />
-              </div>
-            )}
-          </SectionCard>
+                ))
+              ) : (
+                <p className={cn("text-xs py-2", isLight ? "text-slate-400" : "text-muted-foreground")}>
+                  No flagged account items this week.
+                </p>
+              )}
+            </DigestCard>
+          )}
 
           {/* ── Call Reports ── */}
-          <SectionCard icon={Phone} title="Call Reports" gradient="from-emerald-500 to-teal-500" index={2} isLight={isLight}>
-            {s && (
-              <div className="pt-4 space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  <StatPill label="Total Calls"  value={s.callReports.totalCalls}      tone="neutral" isLight={isLight} />
-                  <StatPill label="Successful" value={s.callReports.successfulCalls} tone="neutral" isLight={isLight} />
-                  {callSuccessRate !== null && (
-                    <StatPill
-                      label="Success Rate"
-                      value={`${callSuccessRate}%`}
-                      tone={callRateTone}
-                      isLight={isLight}
-                    />
-                  )}
-                </div>
-                <InsightBadge text={s.callReports.insight} isLight={isLight} />
-              </div>
-            )}
-          </SectionCard>
-
-          {/* ── Business Development ── */}
-          <SectionCard icon={Briefcase} title="Business Development" gradient="from-amber-500 to-orange-500" index={3} isLight={isLight}>
-            {s && (
-              <div className="pt-4 space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  <StatPill label="New Items" value={s.businessDev.newItems} tone="neutral" isLight={isLight} />
-                </div>
-                {s.businessDev.newItems === 0 && (
-                  <p className={cn("text-sm", isLight ? "text-slate-500" : "text-muted-foreground")}>
-                    No new business development items logged this week.
-                  </p>
+          {s && (
+            <DigestCard
+              icon={Phone}
+              iconGradient="from-emerald-500 to-teal-500"
+              title="Call Reports"
+              subtitle="Calls made this week"
+              navPath="/sales-force"
+              statPills={<>
+                <StatPill label="Total Calls"  value={s.callReports.totalCalls}      tone="neutral" isLight={isLight} />
+                <StatPill label="Successful"   value={s.callReports.successfulCalls} tone="neutral" isLight={isLight} />
+                {callSuccessRate !== null && (
+                  <StatPill label="Success Rate" value={`${callSuccessRate}%`} tone={callRateTone} isLight={isLight} />
                 )}
-                <InsightBadge text={s.businessDev.insight} isLight={isLight} />
-              </div>
-            )}
-          </SectionCard>
-
-          {/* ── Weekly Activities ── */}
-          <SectionCard icon={ClipboardList} title="Weekly Activities" gradient="from-rose-500 to-pink-500" index={4} isLight={isLight}>
-            {s && (
-              <div className="pt-4 space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  <StatPill
-                    label="Completed"
-                    value={s.weeklyActivities.completed}
-                    tone={s.weeklyActivities.completed > 0 ? "good" : "neutral"}
+              </>}
+              index={2}
+              isLight={isLight}
+            >
+              {(s.callReports.items ?? []).length > 0 ? (
+                (s.callReports.items ?? []).map((item, i) => (
+                  <ItemRow
+                    key={i}
+                    primary={item.company}
+                    secondary={item.contact ? `Contact: ${item.contact}` : undefined}
+                    badge={item.status}
+                    accentStatus={item.status === "overdue" ? "flag" : item.status === "positive" ? "ok" : "neutral"}
                     isLight={isLight}
                   />
-                  <StatPill label="Ongoing" value={s.weeklyActivities.ongoing} tone="neutral" isLight={isLight} />
+                ))
+              ) : (
+                <p className={cn("text-xs py-2", isLight ? "text-slate-400" : "text-muted-foreground")}>
+                  No call records found for this week.
+                </p>
+              )}
+            </DigestCard>
+          )}
+
+          {/* ── Weekly Activities & Dispatch ── */}
+          {s && (
+            <DigestCard
+              icon={ClipboardList}
+              iconGradient="from-rose-500 to-pink-500"
+              title="Weekly Activities & Dispatch"
+              subtitle="Submitted activities and sample dispatches"
+              navPath="/weekly-activities"
+              statPills={<>
+                <StatPill label="Completed" value={s.weeklyActivities.completed} tone={s.weeklyActivities.completed > 0 ? "good" : "neutral"} isLight={isLight} />
+                <StatPill label="Ongoing"   value={s.weeklyActivities.ongoing}   tone="neutral" isLight={isLight} />
+                {(s.weeklyActivities.samplesDispatched ?? 0) > 0 && (
+                  <StatPill label="Dispatched"      value={s.weeklyActivities.samplesDispatched!} tone="neutral" isLight={isLight} />
+                )}
+                {(s.weeklyActivities.followUpMissing ?? 0) > 0 && (
+                  <StatPill label="Follow-up Missing" value={s.weeklyActivities.followUpMissing!} tone="warn" isLight={isLight} />
+                )}
+              </>}
+              index={3}
+              isLight={isLight}
+            >
+              {(s.weeklyActivities.items ?? []).length > 0 ? (
+                (s.weeklyActivities.items ?? []).map((item, i) => (
+                  <ItemRow
+                    key={i}
+                    primary={item.title}
+                    secondary={item.detail ? item.detail : item.type === "dispatch" ? "Sample dispatch" : "Weekly activity"}
+                    badge={item.status as BadgeStatus}
+                    accentStatus={item.status === "no_follow_up" ? "flag" : item.status === "completed" || item.status === "follow_up_sent" ? "ok" : "neutral"}
+                    isLight={isLight}
+                  />
+                ))
+              ) : (
+                <p className={cn("text-xs py-2", isLight ? "text-slate-400" : "text-muted-foreground")}>
+                  No activities or dispatches recorded this week.
+                </p>
+              )}
+            </DigestCard>
+          )}
+
+          {/* ── Business Development ── */}
+          {s && (
+            <DigestCard
+              icon={Briefcase}
+              iconGradient="from-amber-500 to-orange-500"
+              title="Business Development"
+              subtitle="Pipeline items active this week"
+              navPath="/business-dev"
+              statPills={<>
+                <StatPill label="Active Items" value={s.businessDev.newItems} tone="neutral" isLight={isLight} />
+              </>}
+              index={4}
+              isLight={isLight}
+            >
+              {s.businessDev.newItems === 0 && (
+                <p className={cn("text-xs py-2", isLight ? "text-slate-400" : "text-muted-foreground")}>
+                  No business development items logged this week.
+                </p>
+              )}
+              {s.businessDev.insight && (
+                <div className={cn(
+                  "flex items-start gap-2 px-3 py-2 rounded-xl border-l-2 border-l-amber-400/50",
+                  isLight ? "bg-amber-50/60 text-amber-800" : "bg-amber-500/5 text-amber-300",
+                )}>
+                  <Brain className="w-3.5 h-3.5 mt-0.5 shrink-0 opacity-60" />
+                  <p className="text-xs leading-snug">{s.businessDev.insight}</p>
                 </div>
-                <div className={cn("flex flex-wrap gap-3 text-xs", isLight ? "text-slate-600" : "text-muted-foreground")}>
-                  <div className="flex items-center gap-1.5">
-                    <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
-                    Completed tasks this week
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-amber-400" />
-                    Tasks still in progress
-                  </div>
-                </div>
-                <InsightBadge text={s.weeklyActivities.insight} isLight={isLight} />
-              </div>
-            )}
-          </SectionCard>
+              )}
+            </DigestCard>
+          )}
 
           {/* ── Project Portfolio ── */}
           {s?.projectPortfolio && (
-            <SectionCard icon={FlaskConical} title="Project Portfolio" gradient="from-indigo-500 to-violet-500" index={5} isLight={isLight}>
-              <div className="pt-4 space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  <StatPill label="Active Projects"  value={s.projectPortfolio.activeProjects}   tone="neutral" isLight={isLight} />
-                  <StatPill label="New This Week"    value={s.projectPortfolio.newProjects}       tone="neutral" isLight={isLight} />
-                  <StatPill
-                    label="Completed"
-                    value={s.projectPortfolio.completedProjects}
-                    tone={s.projectPortfolio.completedProjects > 0 ? "good" : "neutral"}
-                    isLight={isLight}
-                  />
+            <DigestCard
+              icon={FlaskConical}
+              iconGradient="from-indigo-500 to-violet-500"
+              title="Project Portfolio"
+              subtitle="Projects and tasks this week"
+              navPath="/projects"
+              statPills={<>
+                <StatPill label="Active Projects" value={s.projectPortfolio.activeProjects}   tone="neutral" isLight={isLight} />
+                <StatPill label="New This Week"   value={s.projectPortfolio.newProjects}       tone="neutral" isLight={isLight} />
+                <StatPill label="Completed"       value={s.projectPortfolio.completedProjects} tone={s.projectPortfolio.completedProjects > 0 ? "good" : "neutral"} isLight={isLight} />
+                <StatPill label="Tasks Done"      value={s.projectPortfolio.tasksCompleted}    tone={s.projectPortfolio.tasksCompleted > 0 ? "good" : "warn"} isLight={isLight} />
+                <StatPill label="In Progress"     value={s.projectPortfolio.tasksInProgress}   tone="neutral" isLight={isLight} />
+              </>}
+              index={5}
+              isLight={isLight}
+            >
+              {s.projectPortfolio.insight && (
+                <div className={cn(
+                  "flex items-start gap-2 px-3 py-2 rounded-xl border-l-2 border-l-indigo-400/50",
+                  isLight ? "bg-indigo-50/60 text-indigo-800" : "bg-indigo-500/5 text-indigo-300",
+                )}>
+                  <Brain className="w-3.5 h-3.5 mt-0.5 shrink-0 opacity-60" />
+                  <p className="text-xs leading-snug">{s.projectPortfolio.insight}</p>
                 </div>
-                <div className={cn("h-px", isLight ? "bg-slate-100" : "bg-white/5")} />
-                <p className={cn("text-xs font-semibold uppercase tracking-wide", isLight ? "text-slate-400" : "text-muted-foreground")}>Tasks</p>
-                <div className="flex flex-wrap gap-2">
-                  <StatPill label="New This Week" value={s.projectPortfolio.newTasks}     tone="neutral" isLight={isLight} />
-                  <StatPill
-                    label="Completed"
-                    value={s.projectPortfolio.tasksCompleted}
-                    tone={s.projectPortfolio.tasksCompleted > 0 ? "good" : "warn"}
-                    isLight={isLight}
-                  />
-                  <StatPill label="In Progress"   value={s.projectPortfolio.tasksInProgress} tone="neutral" isLight={isLight} />
-                </div>
-                <InsightBadge text={s.projectPortfolio.insight} isLight={isLight} />
-              </div>
-            </SectionCard>
+              )}
+            </DigestCard>
           )}
 
-          {/* ── Oracle Insights summary ── */}
-          <motion.div
-            custom={7}
-            initial="hidden"
-            animate="visible"
-            variants={cardVariants}
-            className={cn(
-              "rounded-2xl border p-5",
-              isLight ? "bg-white border-slate-200 shadow-sm" : "glass-panel border-white/10",
-            )}
-          >
-            <div className="flex items-center gap-2 mb-4">
-              <Sparkles className="w-4 h-4 text-violet-400" />
-              <span className={cn("text-sm font-semibold", isLight ? "text-slate-900" : "text-foreground")}>
-                Oracle Insights
-              </span>
-            </div>
-            <div className="space-y-2">
-              {[
-                { label: "Sales",       icon: TrendingUp,   text: s?.salesForce.insight,          color: "text-blue-400"   },
-                { label: "Calls",       icon: Phone,         text: s?.callReports.insight,         color: "text-emerald-400"},
-                { label: "BD",          icon: Briefcase,     text: s?.businessDev.insight,         color: "text-amber-400"  },
-                { label: "Activities",  icon: ClipboardList, text: s?.weeklyActivities.insight,    color: "text-rose-400"   },
-                { label: "Projects",    icon: FlaskConical,  text: s?.projectPortfolio?.insight,   color: "text-indigo-400" },
-              ].filter(item => item.text).map((item, idx) => (
-                <div
-                  key={idx}
-                  className={cn(
-                    "flex items-start gap-2.5 p-2.5 rounded-xl border transition-all duration-150 cursor-default",
-                    isLight
-                      ? "bg-slate-50 border-slate-100 hover:bg-slate-100 hover:border-primary/20"
-                      : "bg-white/[0.03] border-white/5 hover:bg-white/[0.07] hover:border-primary/20",
-                  )}
-                >
-                  <item.icon className={cn("w-3.5 h-3.5 mt-0.5 shrink-0", item.color)} />
-                  <div>
-                    <span className={cn("text-[10px] font-semibold uppercase tracking-wide mr-1.5", item.color)}>
-                      {item.label}
-                    </span>
-                    <span className={cn("text-xs leading-snug", isLight ? "text-slate-600" : "text-muted-foreground")}>
-                      {item.text}
-                    </span>
-                  </div>
+          {/* ── Oracle Agent Insight ── */}
+          {s?.oracleAgentInsight && (s.oracleAgentInsight.compliance || s.oracleAgentInsight.trendScout) && (
+            <motion.div
+              custom={6}
+              initial="hidden"
+              animate="visible"
+              variants={cardVariants}
+              className={cn(
+                "rounded-2xl border overflow-hidden",
+                isLight ? "bg-white border-slate-200 shadow-sm" : "glass-panel border-white/10",
+              )}
+            >
+              {/* Header */}
+              <div className={cn("px-5 py-4 flex items-center gap-3 border-b", isLight ? "border-slate-100" : "border-white/5")}>
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-gradient-to-br from-violet-500 to-purple-600">
+                  <Brain className="w-4.5 h-4.5 text-white" />
                 </div>
-              ))}
-            </div>
-          </motion.div>
+                <div className="flex-1 min-w-0">
+                  <p className={cn("font-semibold text-sm", isLight ? "text-slate-900" : "text-foreground")}>Oracle Agent Insight</p>
+                  <p className={cn("text-[11px]", isLight ? "text-slate-500" : "text-muted-foreground")}>AI-generated findings based on this week's activity</p>
+                </div>
+              </div>
+
+              {/* Agent findings */}
+              <div className="px-5 py-4 space-y-3">
+                {s.oracleAgentInsight.compliance && (
+                  <div className={cn("rounded-xl border p-4", isLight ? "border-amber-200 bg-amber-50/60" : "border-amber-500/20 bg-amber-500/5")}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center", isLight ? "bg-amber-100" : "bg-amber-500/15")}>
+                        <ShieldCheck className="w-3.5 h-3.5 text-amber-500" />
+                      </div>
+                      <span className={cn("text-xs font-semibold", isLight ? "text-amber-700" : "text-amber-400")}>Compliance Agent</span>
+                      <StatusBadge status="needs_review" isLight={isLight} />
+                    </div>
+                    <p className={cn("text-xs leading-relaxed", isLight ? "text-amber-800" : "text-amber-300/90")}>
+                      {s.oracleAgentInsight.compliance}
+                    </p>
+                  </div>
+                )}
+
+                {s.oracleAgentInsight.trendScout && (
+                  <div className={cn("rounded-xl border p-4", isLight ? "border-violet-200 bg-violet-50/60" : "border-violet-500/20 bg-violet-500/5")}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center", isLight ? "bg-violet-100" : "bg-violet-500/15")}>
+                        <Radar className="w-3.5 h-3.5 text-violet-500" />
+                      </div>
+                      <span className={cn("text-xs font-semibold", isLight ? "text-violet-700" : "text-violet-400")}>Trend Scout Agent</span>
+                      <StatusBadge status="signal" isLight={isLight} />
+                    </div>
+                    <p className={cn("text-xs leading-relaxed", isLight ? "text-violet-800" : "text-violet-300/90")}>
+                      {s.oracleAgentInsight.trendScout}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
 
           {/* ── Ask Oracle ── */}
           <AskOracle digest={digest} isLight={isLight} />
