@@ -217,22 +217,33 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
         LIMIT 10
       `)).catch(() => ({ rows: [] })),
 
-      // Projects active this week with lead name + all-time task progress
+      // Projects active this week with lead name + all-time task progress.
+      // lead_id may be null on many projects; fall back to first entry in assignee_ids.
       db.execute(sql.raw(`
         SELECT
           p.id, p.name, p.status, p.product_type, p.stage,
-          u.name AS lead_name,
+          COALESCE(
+            lu.name,
+            au.name
+          ) AS lead_name,
           COUNT(t.id) AS total_tasks,
           COUNT(t.id) FILTER (WHERE t.status = 'done') AS total_done,
           COUNT(t.id) FILTER (WHERE t.status = 'done' AND t.updated_at >= '${weekStart.toISOString()}') AS tasks_done_week,
           COUNT(t.id) FILTER (WHERE t.status = 'in_progress') AS tasks_in_progress,
           CASE WHEN p.created_at >= '${weekStart.toISOString()}' THEN true ELSE false END AS is_new
         FROM projects p
-        LEFT JOIN users u ON p.lead_id = u.id
+        LEFT JOIN users lu ON lu.id = p.lead_id
+        LEFT JOIN LATERAL (
+          SELECT u2.name FROM users u2
+          WHERE p.lead_id IS NULL
+            AND p.assignee_ids IS NOT NULL
+            AND u2.id = (p.assignee_ids)[1]
+          LIMIT 1
+        ) au ON true
         LEFT JOIN tasks t ON t.project_id = p.id
         WHERE p.updated_at >= '${weekStart.toISOString()}'
            OR p.created_at >= '${weekStart.toISOString()}'
-        GROUP BY p.id, p.name, p.status, p.product_type, p.stage, u.name
+        GROUP BY p.id, p.name, p.status, p.product_type, p.stage, lu.name, au.name
         ORDER BY p.updated_at DESC
         LIMIT 12
       `)).catch(() => ({ rows: [] })),
