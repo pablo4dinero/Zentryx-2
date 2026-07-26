@@ -849,6 +849,30 @@ export default function WeeklyDigestPage() {
             />
             {/* Inner card — clean background, content sits on top */}
             <div className={cn("relative rounded-[14px] overflow-hidden", isLight ? "bg-white" : "bg-background")}>
+              {/* Rotating box 1 — large, slow, violet border */}
+              <motion.div
+                className="absolute pointer-events-none inset-0 m-auto"
+                style={{
+                  width: "82%", height: "82%",
+                  border: isLight ? "1px solid rgba(139,92,246,0.18)" : "1px solid rgba(139,92,246,0.30)",
+                  borderRadius: "14px",
+                  boxShadow: isLight ? "none" : "inset 0 0 24px rgba(139,92,246,0.06)",
+                }}
+                animate={reducedMotion ? {} : { rotate: [10, 370] }}
+                transition={{ duration: 22, repeat: Infinity, ease: "linear" }}
+              />
+              {/* Rotating box 2 — smaller, counter-rotates, cyan border */}
+              <motion.div
+                className="absolute pointer-events-none inset-0 m-auto"
+                style={{
+                  width: "54%", height: "54%",
+                  border: isLight ? "1px solid rgba(6,182,212,0.15)" : "1px solid rgba(6,182,212,0.28)",
+                  borderRadius: "10px",
+                  boxShadow: isLight ? "none" : "inset 0 0 14px rgba(6,182,212,0.05)",
+                }}
+                animate={reducedMotion ? {} : { rotate: [-8, -368] }}
+                transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
+              />
               <div className="relative p-5">
                 <div className="flex items-center gap-2 mb-3">
                   {/* 3. Breathing badge: scales 100→105→100% with expanding glow on 2.6s loop */}
