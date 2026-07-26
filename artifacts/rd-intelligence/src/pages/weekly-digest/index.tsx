@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion, useMotionValue, animate as fmAnimate } from "framer-motion";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
 import {
@@ -9,6 +11,8 @@ import {
 } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL;
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface DigestSections {
   salesForce: {
@@ -54,6 +58,8 @@ interface WeeklyDigest {
   createdAt: string;
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 function authHeaders() {
   return {
     "Content-Type": "application/json",
@@ -73,30 +79,105 @@ function timeAgo(iso: string) {
   return `${Math.floor(secs / 86400)}d ago`;
 }
 
+// ─── Animation helpers ────────────────────────────────────────────────────────
+
 const cardVariants = {
   hidden: { opacity: 0, y: 20 },
   visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: i * 0.08, duration: 0.4, ease: "easeOut" } }),
 };
 
-function StatPill({ label, value, color }: { label: string; value: number | string; color: string }) {
+// Variants propagated from the Refresh button to the icon child
+const refreshIconVariants = {
+  hover: { rotate: 180 },
+  rest:  { rotate: 0 },
+};
+
+// ─── Tone system for StatPill ─────────────────────────────────────────────────
+
+type Tone = "good" | "warn" | "bad" | "neutral";
+
+const TONE: Record<Tone, { light: string; dark: string }> = {
+  good:    { light: "bg-emerald-50 text-emerald-700 border-emerald-200",   dark: "bg-emerald-500/10 text-emerald-300 border-emerald-500/25"   },
+  warn:    { light: "bg-amber-50 text-amber-700 border-amber-200",         dark: "bg-amber-500/10 text-amber-300 border-amber-500/25"         },
+  bad:     { light: "bg-red-50 text-red-700 border-red-200",               dark: "bg-red-500/10 text-red-400 border-red-500/25"               },
+  neutral: { light: "bg-slate-50 text-slate-600 border-slate-200",         dark: "bg-white/[0.05] text-slate-300 border-white/10"             },
+};
+
+const DOT: Record<Tone, string> = {
+  good:    "bg-emerald-400",
+  warn:    "bg-amber-400 animate-pulse",
+  bad:     "bg-red-400 animate-pulse",
+  neutral: "opacity-0",   // placeholder so layout stays consistent
+};
+
+// ─── AnimatedNumber (count-up on mount, respects prefers-reduced-motion) ──────
+
+function AnimatedNumber({ target }: { target: number }) {
+  const reducedMotion = useReducedMotion() ?? false;
+  const mv = useMotionValue(reducedMotion ? target : 0);
+  const [display, setDisplay] = useState(reducedMotion ? target : 0);
+
+  useEffect(() => {
+    if (reducedMotion) { setDisplay(target); return; }
+    mv.set(0);
+    const unsub = mv.on("change", (v) => setDisplay(Math.round(v)));
+    const controls = fmAnimate(mv, target, { duration: 0.85, ease: [0.25, 0.46, 0.45, 0.94] });
+    return () => { controls.stop(); unsub(); };
+  }, [target]); // mv is stable ref; reducedMotion excluded intentionally
+
+  return <>{display}</>;
+}
+
+// ─── StatPill ─────────────────────────────────────────────────────────────────
+
+function StatPill({
+  label, value, tone, isLight,
+}: {
+  label: string; value: number | string; tone: Tone; isLight: boolean;
+}) {
+  const isNumeric = typeof value === "number";
   return (
-    <div className={cn("flex flex-col items-center px-4 py-2 rounded-xl border", color)}>
-      <span className="text-xl font-bold leading-none">{value}</span>
-      <span className="text-[10px] uppercase tracking-wide mt-1 opacity-70">{label}</span>
+    <div className={cn(
+      "relative flex flex-col items-center px-4 py-2 rounded-xl border transition-all duration-150",
+      "hover:-translate-y-0.5 hover:shadow-md cursor-default",
+      TONE[tone][isLight ? "light" : "dark"],
+    )}>
+      <span className="text-xl font-bold leading-none">
+        {isNumeric ? <AnimatedNumber target={value as number} /> : value}
+      </span>
+      <span className="text-[10px] uppercase tracking-wide mt-1 flex items-center gap-1 opacity-70">
+        {/* Status dot: pulsing for warn/bad, steady for good, invisible for neutral */}
+        <span className={cn("w-1.5 h-1.5 rounded-full shrink-0 flex-none", DOT[tone])} />
+        {label}
+      </span>
     </div>
   );
 }
 
+// ─── InsightBadge ─────────────────────────────────────────────────────────────
+
 function InsightBadge({ text, isLight }: { text: string; isLight: boolean }) {
   if (!text) return null;
   return (
-    <div className={cn("flex items-start gap-2 mt-3 p-2.5 rounded-xl text-xs leading-snug",
-      isLight ? "bg-violet-50 text-violet-700 border border-violet-100" : "bg-violet-500/10 text-violet-300 border border-violet-500/20")}>
-      <Brain className="w-3.5 h-3.5 mt-0.5 shrink-0 opacity-70" />
-      <span>{text}</span>
+    <div className={cn(
+      "flex items-start gap-2 mt-3 p-2.5 rounded-xl text-xs leading-snug",
+      isLight
+        ? "bg-violet-50 text-violet-700 border border-violet-100"
+        : "bg-violet-500/10 text-violet-300 border border-violet-500/20",
+    )}>
+      {/* Steady dot (neutral — informational, not urgent) */}
+      <span className="mt-1 w-1.5 h-1.5 rounded-full bg-violet-400/70 shrink-0 flex-none" />
+      <Brain className="w-3.5 h-3.5 mt-0.5 shrink-0 opacity-60" />
+      <div className={cn(
+        "[&_p]:m-0 [&_p]:inline [&_strong]:font-semibold [&_h1]:text-xs [&_h1]:font-semibold [&_h2]:text-xs [&_h2]:font-semibold",
+      )}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+      </div>
     </div>
   );
 }
+
+// ─── SectionCard ──────────────────────────────────────────────────────────────
 
 function SectionCard({
   icon: Icon, title, gradient, children, defaultOpen = true, index, isLight,
@@ -111,13 +192,17 @@ function SectionCard({
       initial="hidden"
       animate="visible"
       variants={cardVariants}
-      className={cn("rounded-2xl border overflow-hidden",
-        isLight ? "bg-white border-slate-200 shadow-sm" : "glass-panel border-white/10")}
+      className={cn(
+        "rounded-2xl border overflow-hidden transition-shadow duration-150 hover:shadow-md",
+        isLight ? "bg-white border-slate-200 shadow-sm" : "glass-panel border-white/10",
+      )}
     >
       <button
         onClick={() => setOpen(o => !o)}
-        className={cn("w-full flex items-center gap-3 px-5 py-4 text-left transition-colors",
-          isLight ? "hover:bg-slate-50" : "hover:bg-white/5")}
+        className={cn(
+          "w-full flex items-center gap-3 px-5 py-4 text-left transition-colors",
+          isLight ? "hover:bg-slate-50" : "hover:bg-white/5",
+        )}
       >
         <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-gradient-to-br", gradient)}>
           <Icon className="w-4.5 h-4.5 text-white" />
@@ -144,6 +229,8 @@ function SectionCard({
     </motion.div>
   );
 }
+
+// ─── AskOracle ────────────────────────────────────────────────────────────────
 
 function AskOracle({ digest, isLight }: { digest: WeeklyDigest; isLight: boolean }) {
   const [question, setQuestion] = useState("");
@@ -193,8 +280,10 @@ function AskOracle({ digest, isLight }: { digest: WeeklyDigest; isLight: boolean
       initial="hidden"
       animate="visible"
       variants={cardVariants}
-      className={cn("rounded-2xl border overflow-hidden",
-        isLight ? "bg-white border-slate-200 shadow-sm" : "glass-panel border-white/10")}
+      className={cn(
+        "rounded-2xl border overflow-hidden",
+        isLight ? "bg-white border-slate-200 shadow-sm" : "glass-panel border-white/10",
+      )}
     >
       <div className="px-5 py-4 flex items-center gap-3">
         <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-gradient-to-br from-violet-500 to-purple-600">
@@ -202,12 +291,18 @@ function AskOracle({ digest, isLight }: { digest: WeeklyDigest; isLight: boolean
         </div>
         <div>
           <p className={cn("font-semibold text-sm", isLight ? "text-slate-900" : "text-foreground")}>Ask Oracle</p>
-          <p className={cn("text-[11px]", isLight ? "text-slate-500" : "text-muted-foreground")}>Ask a question about this week's digest</p>
+          <p className={cn("text-[11px]", isLight ? "text-slate-500" : "text-muted-foreground")}>
+            Ask a question about this week's digest
+          </p>
         </div>
       </div>
 
       <div className={cn("px-5 pb-5 border-t", isLight ? "border-slate-100" : "border-white/5")}>
-        <div className="pt-4 flex gap-2">
+        {/* Focus-within glow: the container div gets the ring when textarea is focused */}
+        <div className={cn(
+          "mt-4 flex gap-2 rounded-xl transition-all duration-150",
+          "focus-within:ring-2 focus-within:ring-primary/50 focus-within:shadow-[0_0_12px_rgba(124,77,255,0.12)]",
+        )}>
           <textarea
             ref={inputRef}
             value={question}
@@ -216,7 +311,7 @@ function AskOracle({ digest, isLight }: { digest: WeeklyDigest; isLight: boolean
             placeholder="e.g. Which accounts showed the most activity this week?"
             rows={2}
             className={cn(
-              "flex-1 resize-none rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50",
+              "flex-1 resize-none rounded-xl border px-3 py-2 text-sm focus:outline-none transition-colors",
               isLight
                 ? "bg-white text-gray-900 placeholder:text-gray-400 border-gray-200 [color-scheme:light]"
                 : "bg-black/20 text-foreground placeholder:text-muted-foreground border-white/10",
@@ -236,19 +331,29 @@ function AskOracle({ digest, isLight }: { digest: WeeklyDigest; isLight: boolean
 
         <AnimatePresence>
           {error && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className={cn("mt-3 flex items-start gap-2 p-2.5 rounded-xl text-xs",
-                isLight ? "bg-red-50 text-red-600 border border-red-100" : "bg-red-500/10 text-red-400 border border-red-500/20")}>
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className={cn(
+                "mt-3 flex items-start gap-2 p-2.5 rounded-xl text-xs",
+                isLight ? "bg-red-50 text-red-600 border border-red-100" : "bg-red-500/10 text-red-400 border border-red-500/20",
+              )}
+            >
               <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
               {error}
             </motion.div>
           )}
           {answer && (
-            <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-              className={cn("mt-3 p-3 rounded-xl text-sm leading-relaxed",
-                isLight ? "bg-violet-50 text-violet-900 border border-violet-100" : "bg-violet-500/10 text-violet-200 border border-violet-500/20")}>
+            <motion.div
+              initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              className={cn(
+                "mt-3 p-3 rounded-xl text-sm leading-relaxed",
+                isLight ? "bg-violet-50 text-violet-900 border border-violet-100" : "bg-violet-500/10 text-violet-200 border border-violet-500/20",
+              )}
+            >
               <span className="font-semibold text-violet-500 text-xs uppercase tracking-wide block mb-1">Oracle</span>
-              {answer}
+              <div className="[&_p]:mb-1 last:[&_p]:mb-0 [&_strong]:font-semibold [&_h1]:text-sm [&_h1]:font-bold [&_h2]:text-sm [&_h2]:font-semibold">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{answer}</ReactMarkdown>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -257,9 +362,14 @@ function AskOracle({ digest, isLight }: { digest: WeeklyDigest; isLight: boolean
   );
 }
 
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default function WeeklyDigestPage() {
   const { theme } = useTheme();
   const isLight = theme === "light";
+  const reducedMotion = useReducedMotion() ?? false;
+
+  // ── Data-fetching state (untouched) ──────────────────────────────────────
   const [digest, setDigest] = useState<WeeklyDigest | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -299,6 +409,7 @@ export default function WeeklyDigestPage() {
       setGenerating(false);
     }
   };
+  // ─────────────────────────────────────────────────────────────────────────
 
   const s = digest?.sections;
 
@@ -310,11 +421,23 @@ export default function WeeklyDigestPage() {
     );
   }
 
+  // Derived thresholds for call success rate (computed once from sections data)
+  const callSuccessRate = s && s.callReports.totalCalls > 0
+    ? Math.round((s.callReports.successfulCalls / s.callReports.totalCalls) * 100)
+    : null;
+  const callRateTone: Tone = callSuccessRate === null ? "neutral"
+    : callSuccessRate >= 50 ? "good"
+    : callSuccessRate >= 25 ? "warn"
+    : "bad";
+
   return (
     <div className="px-4 md:px-6 lg:px-8 py-6 max-w-4xl mx-auto space-y-6">
-      {/* Header */}
-      <motion.div initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}
-        className="flex flex-col sm:flex-row sm:items-center gap-4">
+
+      {/* ── Header ── */}
+      <motion.div
+        initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}
+        className="flex flex-col sm:flex-row sm:items-center gap-4"
+      >
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2.5 mb-1">
             <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-gradient-to-br from-violet-500 to-purple-600 shadow-md">
@@ -331,41 +454,57 @@ export default function WeeklyDigestPage() {
           </p>
         </div>
 
-        <button
+        {/* Refresh button — icon rotates 180° on hover (distinct from spin-during-generation) */}
+        <motion.button
           onClick={handleRefresh}
           disabled={generating}
+          initial="rest"
+          whileHover={!generating ? "hover" : "rest"}
+          animate="rest"
           className={cn(
             "shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all",
-            generating
-              ? "opacity-60 cursor-not-allowed"
-              : "hover:shadow-md active:scale-95",
+            generating ? "opacity-60 cursor-not-allowed" : "hover:shadow-md active:scale-95",
             isLight
               ? "bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50"
               : "glass-panel border-white/10 text-foreground hover:border-white/20",
           )}
         >
-          <RefreshCw className={cn("w-4 h-4", generating && "animate-spin")} />
+          <motion.span
+            variants={refreshIconVariants}
+            transition={{ duration: 0.35, ease: "easeInOut" }}
+            className="inline-flex"
+          >
+            <RefreshCw className={cn("w-4 h-4", generating && "animate-spin")} />
+          </motion.span>
           {generating ? "Generating…" : digest ? "Refresh" : "Generate Digest"}
-        </button>
+        </motion.button>
       </motion.div>
 
-      {/* Error banner */}
+      {/* ── Error banner ── */}
       <AnimatePresence>
         {error && (
-          <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-            className={cn("flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm border",
-              isLight ? "bg-red-50 text-red-600 border-red-200" : "bg-red-500/10 text-red-400 border-red-500/20")}>
+          <motion.div
+            initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            className={cn(
+              "flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm border",
+              isLight ? "bg-red-50 text-red-600 border-red-200" : "bg-red-500/10 text-red-400 border-red-500/20",
+            )}
+          >
             <AlertCircle className="w-4 h-4 shrink-0" />
             {error}
           </motion.div>
         )}
       </AnimatePresence>
 
+      {/* ── Empty state (untouched) ── */}
       {!digest ? (
-        /* Empty state */
-        <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.4 }}
-          className={cn("rounded-2xl border py-20 flex flex-col items-center gap-5 text-center",
-            isLight ? "bg-white border-slate-200" : "glass-panel border-white/10")}>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.4 }}
+          className={cn(
+            "rounded-2xl border py-20 flex flex-col items-center gap-5 text-center",
+            isLight ? "bg-white border-slate-200" : "glass-panel border-white/10",
+          )}
+        >
           <div className="w-16 h-16 rounded-2xl flex items-center justify-center bg-gradient-to-br from-violet-500/20 to-purple-600/20 border border-violet-500/20">
             <Sparkles className="w-7 h-7 text-violet-400" />
           </div>
@@ -389,55 +528,88 @@ export default function WeeklyDigestPage() {
         </motion.div>
       ) : (
         <>
-          {/* Oracle brief card */}
+          {/* ── Oracle brief card — rotating conic-gradient border ── */}
           <motion.div
             custom={0}
             initial="hidden"
             animate="visible"
             variants={cardVariants}
-            className="relative rounded-2xl overflow-hidden border border-violet-500/30 bg-gradient-to-br from-violet-600/10 via-purple-600/5 to-transparent"
+            className="relative rounded-2xl p-[1px] overflow-hidden"
           >
-            <div className={cn("absolute inset-0", isLight ? "bg-white/70" : "bg-black/20")} />
-            <div className="relative p-5">
-              <div className="flex items-center gap-2 mb-3">
-                <Brain className="w-4 h-4 text-violet-400" />
-                <span className="text-xs font-semibold uppercase tracking-widest text-violet-400">Oracle Brief</span>
-              </div>
-              <p className={cn("text-sm leading-relaxed", isLight ? "text-slate-800" : "text-foreground/90")}>
-                {digest.briefText}
-              </p>
-              <div className="flex items-center gap-1.5 mt-3">
-                <Calendar className="w-3 h-3 text-muted-foreground" />
-                <span className={cn("text-xs", isLight ? "text-slate-400" : "text-muted-foreground")}>
-                  {formatDate(digest.weekStartDate)} – {formatDate(digest.weekEndDate)}
-                </span>
+            {/* The spinning gradient sits in the 1px padding gap */}
+            <motion.div
+              className="absolute inset-0 rounded-2xl"
+              style={{ background: "conic-gradient(from 0deg, rgba(139,92,246,0.15), rgba(167,139,250,0.7), rgba(217,70,239,0.45), rgba(139,92,246,0.15))" }}
+              animate={reducedMotion ? {} : { rotate: 360 }}
+              transition={{ duration: 7, repeat: Infinity, ease: "linear" }}
+            />
+            {/* Content div — opaque background hides the gradient except for the 1px ring */}
+            <div className={cn(
+              "relative rounded-[14px] overflow-hidden",
+              isLight ? "bg-white" : "bg-background",
+            )}>
+              {/* Gradient tint overlay */}
+              <div className="absolute inset-0 bg-gradient-to-br from-violet-600/8 via-purple-600/4 to-transparent pointer-events-none" />
+              <div className="relative p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  {/* Breathing pulse on the Oracle icon — scale + glow */}
+                  <motion.div
+                    animate={reducedMotion ? {} : {
+                      scale: [1, 1.12, 1],
+                      filter: [
+                        "drop-shadow(0 0 2px rgba(139,92,246,0.2))",
+                        "drop-shadow(0 0 8px rgba(167,139,250,0.75))",
+                        "drop-shadow(0 0 2px rgba(139,92,246,0.2))",
+                      ],
+                    }}
+                    transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
+                  >
+                    <Brain className="w-4 h-4 text-violet-400" />
+                  </motion.div>
+                  <span className="text-xs font-semibold uppercase tracking-widest text-violet-400">Oracle Brief</span>
+                </div>
+
+                {/* Brief text rendered through react-markdown */}
+                <div className={cn(
+                  "text-sm leading-relaxed [&_p]:mb-2 [&_p:last-child]:mb-0 [&_strong]:font-semibold",
+                  "[&_h1]:text-base [&_h1]:font-bold [&_h1]:mb-2",
+                  "[&_h2]:text-sm [&_h2]:font-semibold [&_h2]:mb-1",
+                  isLight ? "text-slate-800" : "text-foreground/90",
+                )}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{digest.briefText}</ReactMarkdown>
+                </div>
+
+                <div className="flex items-center gap-1.5 mt-3">
+                  <Calendar className="w-3 h-3 text-muted-foreground" />
+                  <span className={cn("text-xs", isLight ? "text-slate-400" : "text-muted-foreground")}>
+                    {formatDate(digest.weekStartDate)} – {formatDate(digest.weekEndDate)}
+                  </span>
+                </div>
               </div>
             </div>
           </motion.div>
 
-          {/* Sales Force */}
-          <SectionCard
-            icon={TrendingUp} title="Sales Force" gradient="from-blue-500 to-cyan-500"
-            index={1} isLight={isLight}
-          >
+          {/* ── Sales Force ── */}
+          <SectionCard icon={TrendingUp} title="Sales Force" gradient="from-blue-500 to-cyan-500" index={1} isLight={isLight}>
             {s && (
               <div className="pt-4 space-y-4">
                 <div className="flex flex-wrap gap-2">
-                  <StatPill label="Total Accounts" value={s.salesForce.totalAccounts}
-                    color={isLight ? "bg-blue-50 text-blue-700 border-blue-100" : "bg-blue-500/10 text-blue-300 border-blue-500/20"} />
-                  <StatPill label="New This Week" value={s.salesForce.newAccounts}
-                    color={isLight ? "bg-cyan-50 text-cyan-700 border-cyan-100" : "bg-cyan-500/10 text-cyan-300 border-cyan-500/20"} />
-                  <StatPill label="New Orders" value={s.salesForce.newOrders}
-                    color={isLight ? "bg-emerald-50 text-emerald-700 border-emerald-100" : "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"} />
-                  <StatPill label="Delivered" value={s.salesForce.deliveredOrders}
-                    color={isLight ? "bg-teal-50 text-teal-700 border-teal-100" : "bg-teal-500/10 text-teal-300 border-teal-500/20"} />
+                  <StatPill label="Total Accounts" value={s.salesForce.totalAccounts} tone="neutral" isLight={isLight} />
+                  <StatPill label="New This Week"  value={s.salesForce.newAccounts}    tone="neutral" isLight={isLight} />
+                  <StatPill label="New Orders"     value={s.salesForce.newOrders}      tone="neutral" isLight={isLight} />
+                  <StatPill
+                    label="Delivered"
+                    value={s.salesForce.deliveredOrders}
+                    tone={s.salesForce.deliveredOrders === 0 ? "warn" : "good"}
+                    isLight={isLight}
+                  />
                 </div>
                 <div className={cn("flex items-center gap-2 text-sm", isLight ? "text-slate-600" : "text-muted-foreground")}>
                   <Package className="w-4 h-4 text-blue-400 shrink-0" />
                   <span>
                     <strong className={isLight ? "text-slate-800" : "text-foreground"}>
                       {Number(s.salesForce.totalVolumeKg).toLocaleString()} kg
-                    </strong> total production volume ordered this week
+                    </strong>{" "}total production volume ordered this week
                   </span>
                 </div>
                 <InsightBadge text={s.salesForce.insight} isLight={isLight} />
@@ -445,23 +617,19 @@ export default function WeeklyDigestPage() {
             )}
           </SectionCard>
 
-          {/* Call Reports */}
-          <SectionCard
-            icon={Phone} title="Call Reports" gradient="from-emerald-500 to-teal-500"
-            index={2} isLight={isLight}
-          >
+          {/* ── Call Reports ── */}
+          <SectionCard icon={Phone} title="Call Reports" gradient="from-emerald-500 to-teal-500" index={2} isLight={isLight}>
             {s && (
               <div className="pt-4 space-y-4">
                 <div className="flex flex-wrap gap-2">
-                  <StatPill label="Total Calls" value={s.callReports.totalCalls}
-                    color={isLight ? "bg-emerald-50 text-emerald-700 border-emerald-100" : "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"} />
-                  <StatPill label="Successful" value={s.callReports.successfulCalls}
-                    color={isLight ? "bg-teal-50 text-teal-700 border-teal-100" : "bg-teal-500/10 text-teal-300 border-teal-500/20"} />
-                  {s.callReports.totalCalls > 0 && (
+                  <StatPill label="Total Calls"  value={s.callReports.totalCalls}      tone="neutral" isLight={isLight} />
+                  <StatPill label="Successful" value={s.callReports.successfulCalls} tone="neutral" isLight={isLight} />
+                  {callSuccessRate !== null && (
                     <StatPill
                       label="Success Rate"
-                      value={`${Math.round((s.callReports.successfulCalls / s.callReports.totalCalls) * 100)}%`}
-                      color={isLight ? "bg-green-50 text-green-700 border-green-100" : "bg-green-500/10 text-green-300 border-green-500/20"}
+                      value={`${callSuccessRate}%`}
+                      tone={callRateTone}
+                      isLight={isLight}
                     />
                   )}
                 </div>
@@ -470,16 +638,12 @@ export default function WeeklyDigestPage() {
             )}
           </SectionCard>
 
-          {/* Business Development */}
-          <SectionCard
-            icon={Briefcase} title="Business Development" gradient="from-amber-500 to-orange-500"
-            index={3} isLight={isLight}
-          >
+          {/* ── Business Development ── */}
+          <SectionCard icon={Briefcase} title="Business Development" gradient="from-amber-500 to-orange-500" index={3} isLight={isLight}>
             {s && (
               <div className="pt-4 space-y-4">
                 <div className="flex flex-wrap gap-2">
-                  <StatPill label="New Items" value={s.businessDev.newItems}
-                    color={isLight ? "bg-amber-50 text-amber-700 border-amber-100" : "bg-amber-500/10 text-amber-300 border-amber-500/20"} />
+                  <StatPill label="New Items" value={s.businessDev.newItems} tone="neutral" isLight={isLight} />
                 </div>
                 {s.businessDev.newItems === 0 && (
                   <p className={cn("text-sm", isLight ? "text-slate-500" : "text-muted-foreground")}>
@@ -491,18 +655,18 @@ export default function WeeklyDigestPage() {
             )}
           </SectionCard>
 
-          {/* Weekly Activities */}
-          <SectionCard
-            icon={ClipboardList} title="Weekly Activities" gradient="from-rose-500 to-pink-500"
-            index={4} isLight={isLight}
-          >
+          {/* ── Weekly Activities ── */}
+          <SectionCard icon={ClipboardList} title="Weekly Activities" gradient="from-rose-500 to-pink-500" index={4} isLight={isLight}>
             {s && (
               <div className="pt-4 space-y-4">
                 <div className="flex flex-wrap gap-2">
-                  <StatPill label="Completed" value={s.weeklyActivities.completed}
-                    color={isLight ? "bg-emerald-50 text-emerald-700 border-emerald-100" : "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"} />
-                  <StatPill label="Ongoing" value={s.weeklyActivities.ongoing}
-                    color={isLight ? "bg-amber-50 text-amber-700 border-amber-100" : "bg-amber-500/10 text-amber-300 border-amber-500/20"} />
+                  <StatPill
+                    label="Completed"
+                    value={s.weeklyActivities.completed}
+                    tone={s.weeklyActivities.completed > 0 ? "good" : "neutral"}
+                    isLight={isLight}
+                  />
+                  <StatPill label="Ongoing" value={s.weeklyActivities.ongoing} tone="neutral" isLight={isLight} />
                 </div>
                 <div className={cn("flex flex-wrap gap-3 text-xs", isLight ? "text-slate-600" : "text-muted-foreground")}>
                   <div className="flex items-center gap-1.5">
@@ -519,44 +683,47 @@ export default function WeeklyDigestPage() {
             )}
           </SectionCard>
 
-          {/* Project Portfolio */}
+          {/* ── Project Portfolio ── */}
           {s?.projectPortfolio && (
-            <SectionCard
-              icon={FlaskConical} title="Project Portfolio" gradient="from-indigo-500 to-violet-500"
-              index={5} isLight={isLight}
-            >
+            <SectionCard icon={FlaskConical} title="Project Portfolio" gradient="from-indigo-500 to-violet-500" index={5} isLight={isLight}>
               <div className="pt-4 space-y-4">
                 <div className="flex flex-wrap gap-2">
-                  <StatPill label="Active Projects" value={s.projectPortfolio.activeProjects}
-                    color={isLight ? "bg-indigo-50 text-indigo-700 border-indigo-100" : "bg-indigo-500/10 text-indigo-300 border-indigo-500/20"} />
-                  <StatPill label="New This Week" value={s.projectPortfolio.newProjects}
-                    color={isLight ? "bg-violet-50 text-violet-700 border-violet-100" : "bg-violet-500/10 text-violet-300 border-violet-500/20"} />
-                  <StatPill label="Completed" value={s.projectPortfolio.completedProjects}
-                    color={isLight ? "bg-emerald-50 text-emerald-700 border-emerald-100" : "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"} />
+                  <StatPill label="Active Projects"  value={s.projectPortfolio.activeProjects}   tone="neutral" isLight={isLight} />
+                  <StatPill label="New This Week"    value={s.projectPortfolio.newProjects}       tone="neutral" isLight={isLight} />
+                  <StatPill
+                    label="Completed"
+                    value={s.projectPortfolio.completedProjects}
+                    tone={s.projectPortfolio.completedProjects > 0 ? "good" : "neutral"}
+                    isLight={isLight}
+                  />
                 </div>
                 <div className={cn("h-px", isLight ? "bg-slate-100" : "bg-white/5")} />
                 <p className={cn("text-xs font-semibold uppercase tracking-wide", isLight ? "text-slate-400" : "text-muted-foreground")}>Tasks</p>
                 <div className="flex flex-wrap gap-2">
-                  <StatPill label="New This Week" value={s.projectPortfolio.newTasks}
-                    color={isLight ? "bg-blue-50 text-blue-700 border-blue-100" : "bg-blue-500/10 text-blue-300 border-blue-500/20"} />
-                  <StatPill label="Completed" value={s.projectPortfolio.tasksCompleted}
-                    color={isLight ? "bg-teal-50 text-teal-700 border-teal-100" : "bg-teal-500/10 text-teal-300 border-teal-500/20"} />
-                  <StatPill label="In Progress" value={s.projectPortfolio.tasksInProgress}
-                    color={isLight ? "bg-amber-50 text-amber-700 border-amber-100" : "bg-amber-500/10 text-amber-300 border-amber-500/20"} />
+                  <StatPill label="New This Week" value={s.projectPortfolio.newTasks}     tone="neutral" isLight={isLight} />
+                  <StatPill
+                    label="Completed"
+                    value={s.projectPortfolio.tasksCompleted}
+                    tone={s.projectPortfolio.tasksCompleted > 0 ? "good" : "warn"}
+                    isLight={isLight}
+                  />
+                  <StatPill label="In Progress"   value={s.projectPortfolio.tasksInProgress} tone="neutral" isLight={isLight} />
                 </div>
                 <InsightBadge text={s.projectPortfolio.insight} isLight={isLight} />
               </div>
             </SectionCard>
           )}
 
-          {/* Oracle Insights summary */}
+          {/* ── Oracle Insights summary ── */}
           <motion.div
             custom={7}
             initial="hidden"
             animate="visible"
             variants={cardVariants}
-            className={cn("rounded-2xl border p-5",
-              isLight ? "bg-white border-slate-200 shadow-sm" : "glass-panel border-white/10")}
+            className={cn(
+              "rounded-2xl border p-5",
+              isLight ? "bg-white border-slate-200 shadow-sm" : "glass-panel border-white/10",
+            )}
           >
             <div className="flex items-center gap-2 mb-4">
               <Sparkles className="w-4 h-4 text-violet-400" />
@@ -564,16 +731,23 @@ export default function WeeklyDigestPage() {
                 Oracle Insights
               </span>
             </div>
-            <div className="space-y-2.5">
+            <div className="space-y-2">
               {[
-                { label: "Sales", icon: TrendingUp, text: s?.salesForce.insight, color: "text-blue-400" },
-                { label: "Calls", icon: Phone, text: s?.callReports.insight, color: "text-emerald-400" },
-                { label: "BD", icon: Briefcase, text: s?.businessDev.insight, color: "text-amber-400" },
-                { label: "Activities", icon: ClipboardList, text: s?.weeklyActivities.insight, color: "text-rose-400" },
-                { label: "Projects", icon: FlaskConical, text: s?.projectPortfolio?.insight, color: "text-indigo-400" },
+                { label: "Sales",       icon: TrendingUp,   text: s?.salesForce.insight,          color: "text-blue-400"   },
+                { label: "Calls",       icon: Phone,         text: s?.callReports.insight,         color: "text-emerald-400"},
+                { label: "BD",          icon: Briefcase,     text: s?.businessDev.insight,         color: "text-amber-400"  },
+                { label: "Activities",  icon: ClipboardList, text: s?.weeklyActivities.insight,    color: "text-rose-400"   },
+                { label: "Projects",    icon: FlaskConical,  text: s?.projectPortfolio?.insight,   color: "text-indigo-400" },
               ].filter(item => item.text).map((item, idx) => (
-                <div key={idx} className={cn("flex items-start gap-2.5 p-2.5 rounded-xl",
-                  isLight ? "bg-slate-50 border border-slate-100" : "bg-white/[0.03] border border-white/5")}>
+                <div
+                  key={idx}
+                  className={cn(
+                    "flex items-start gap-2.5 p-2.5 rounded-xl border transition-all duration-150 cursor-default",
+                    isLight
+                      ? "bg-slate-50 border-slate-100 hover:bg-slate-100 hover:border-primary/20"
+                      : "bg-white/[0.03] border-white/5 hover:bg-white/[0.07] hover:border-primary/20",
+                  )}
+                >
                   <item.icon className={cn("w-3.5 h-3.5 mt-0.5 shrink-0", item.color)} />
                   <div>
                     <span className={cn("text-[10px] font-semibold uppercase tracking-wide mr-1.5", item.color)}>
@@ -588,7 +762,7 @@ export default function WeeklyDigestPage() {
             </div>
           </motion.div>
 
-          {/* Ask Oracle */}
+          {/* ── Ask Oracle ── */}
           <AskOracle digest={digest} isLight={isLight} />
         </>
       )}
