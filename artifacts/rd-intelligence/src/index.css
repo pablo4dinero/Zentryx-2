@@ -717,6 +717,11 @@
   100% { transform: translateX(-50%); }
 }
 
+/* Sidebar nav label marquee for truncated module names */
+.animate-nav-marquee {
+  animation: ticker 10s linear infinite;
+}
+
 @keyframes shimmer {
   0%   { background-position: -200% 0; }
   100% { background-position: 200% 0; }

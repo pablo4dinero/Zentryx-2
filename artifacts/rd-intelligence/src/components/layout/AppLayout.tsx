@@ -507,6 +507,40 @@ function getGreeting() {
   return "Good evening";
 }
 
+function NavLabel({ label }: { label: string }) {
+  const containerRef = useRef<HTMLSpanElement>(null);
+  const measureRef   = useRef<HTMLSpanElement>(null);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    const measure   = measureRef.current;
+    if (!container || !measure) return;
+    const check = () => setIsOverflowing(measure.offsetWidth > container.clientWidth);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [label]);
+
+  return (
+    <span ref={containerRef} className="flex-1 min-w-0 overflow-hidden relative block">
+      {/* Hidden span used to measure the text's natural width */}
+      <span ref={measureRef} className="absolute whitespace-nowrap invisible pointer-events-none" aria-hidden="true">
+        {label}
+      </span>
+      {isOverflowing ? (
+        <span className="inline-flex whitespace-nowrap animate-nav-marquee" aria-label={label}>
+          <span className="pr-16" aria-hidden="true">{label}</span>
+          <span className="pr-16" aria-hidden="true">{label}</span>
+        </span>
+      ) : (
+        <span className="truncate block">{label}</span>
+      )}
+    </span>
+  );
+}
+
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { logout } = useAuthStore();
@@ -953,7 +987,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   </div>
                   {!isCollapsed && (
                     <>
-                      <span className="truncate">{item.label}</span>
+                      <NavLabel label={item.label} />
                       {isChatWithUnread && (
                         <span className={cn(
                           "ml-auto min-w-[18px] h-[18px] px-1.5 text-[10px] font-bold text-white bg-red-500 rounded-full flex items-center justify-center leading-none",
