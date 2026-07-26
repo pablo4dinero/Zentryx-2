@@ -838,6 +838,50 @@ export default function WeeklyDigestPage() {
               transition={{ duration: 7, repeat: Infinity, ease: "linear" }}
             />
             <div className={cn("relative rounded-[14px] overflow-hidden", isLight ? "bg-white" : "bg-background")}>
+              {/* Dot grid */}
+              <div
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  backgroundImage: isLight
+                    ? "radial-gradient(circle, rgba(139,92,246,0.07) 1px, transparent 1px)"
+                    : "radial-gradient(circle, rgba(139,92,246,0.13) 1px, transparent 1px)",
+                  backgroundSize: "22px 22px",
+                }}
+              />
+              {/* Floating orbs */}
+              <motion.div
+                className="absolute pointer-events-none rounded-full"
+                style={{
+                  width: "62%", height: "62%", top: "-22%", left: "-8%",
+                  background: isLight
+                    ? "radial-gradient(circle, rgba(139,92,246,0.07) 0%, transparent 68%)"
+                    : "radial-gradient(circle, rgba(139,92,246,0.17) 0%, transparent 68%)",
+                }}
+                animate={reducedMotion ? {} : { x: [0, 22, -10, 6, 0], y: [0, 14, 22, -6, 0], scale: [1, 1.07, 0.94, 1.05, 1] }}
+                transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
+              />
+              <motion.div
+                className="absolute pointer-events-none rounded-full"
+                style={{
+                  width: "50%", height: "50%", bottom: "-14%", right: "-6%",
+                  background: isLight
+                    ? "radial-gradient(circle, rgba(217,70,239,0.05) 0%, transparent 68%)"
+                    : "radial-gradient(circle, rgba(217,70,239,0.13) 0%, transparent 68%)",
+                }}
+                animate={reducedMotion ? {} : { x: [0, -14, 10, -6, 0], y: [0, -18, 8, 6, 0], scale: [1, 0.93, 1.08, 0.97, 1] }}
+                transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
+              />
+              <motion.div
+                className="absolute pointer-events-none rounded-full"
+                style={{
+                  width: "38%", height: "38%", top: "38%", right: "22%",
+                  background: isLight
+                    ? "radial-gradient(circle, rgba(99,102,241,0.05) 0%, transparent 68%)"
+                    : "radial-gradient(circle, rgba(99,102,241,0.10) 0%, transparent 68%)",
+                }}
+                animate={reducedMotion ? {} : { x: [0, 12, -16, 4, 0], y: [0, -10, 14, -4, 0], scale: [1, 1.12, 0.90, 1.05, 1] }}
+                transition={{ duration: 26, repeat: Infinity, ease: "easeInOut" }}
+              />
               <div className="absolute inset-0 bg-gradient-to-br from-violet-600/8 via-purple-600/4 to-transparent pointer-events-none" />
               <div className="relative p-5">
                 <div className="flex items-center gap-2 mb-3">
