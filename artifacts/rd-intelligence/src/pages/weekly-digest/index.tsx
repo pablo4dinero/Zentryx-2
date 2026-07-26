@@ -24,7 +24,27 @@ interface SalesForceItem {
 interface CallItem {
   company: string;
   contact?: string;
+  outcome: string;
+  summary?: string;
+  nextSteps?: string;
+  daysAgo?: number;
+  daysLeft?: number;
+  commentCount?: number;
+  detail?: string;
   status: "positive" | "overdue" | "on_track";
+  isOverdue?: boolean;
+}
+
+interface ProjectItem {
+  id: number;
+  name: string;
+  status: string;
+  productType?: string;
+  tasksDone: number;
+  tasksInProgress: number;
+  recentTaskTitles: string[];
+  summary: string;
+  badgeStatus: string;
 }
 
 interface WeeklyItem {
@@ -49,6 +69,9 @@ interface DigestSections {
   callReports: {
     totalCalls: number;
     successfulCalls: number;
+    reportsLogged?: number;
+    followUpNeeded?: number;
+    nextActionsDue?: number;
     items?: CallItem[];
     insight: string;
   };
@@ -71,6 +94,7 @@ interface DigestSections {
     newTasks: number;
     tasksCompleted: number;
     tasksInProgress: number;
+    items?: ProjectItem[];
     insight: string;
   };
   oracleAgentInsight?: {
@@ -711,14 +735,12 @@ export default function WeeklyDigestPage() {
               icon={Phone}
               iconGradient="from-emerald-500 to-teal-500"
               title="Call Reports"
-              subtitle="Calls made this week"
+              subtitle="Visits and calls logged this week, and next actions coming due"
               navPath="/sales-force"
               statPills={<>
-                <StatPill label="Total Calls"  value={s.callReports.totalCalls}      tone="neutral" isLight={isLight} />
-                <StatPill label="Successful"   value={s.callReports.successfulCalls} tone="neutral" isLight={isLight} />
-                {callSuccessRate !== null && (
-                  <StatPill label="Success Rate" value={`${callSuccessRate}%`} tone={callRateTone} isLight={isLight} />
-                )}
+                <StatPill label="Reports Logged"        value={s.callReports.reportsLogged ?? s.callReports.totalCalls} tone="neutral" isLight={isLight} />
+                <StatPill label="Follow-up Needed"      value={s.callReports.followUpNeeded ?? 0}  tone={(s.callReports.followUpNeeded ?? 0) > 0 ? "warn" : "neutral"} isLight={isLight} />
+                <StatPill label={`Next Actions (3d)`}   value={s.callReports.nextActionsDue ?? 0}  tone={(s.callReports.nextActionsDue ?? 0) > 0 ? "warn" : "neutral"} isLight={isLight} />
               </>}
               index={2}
               isLight={isLight}
@@ -727,8 +749,8 @@ export default function WeeklyDigestPage() {
                 (s.callReports.items ?? []).map((item, i) => (
                   <ItemRow
                     key={i}
-                    primary={item.company}
-                    secondary={item.contact ? `Contact: ${item.contact}` : undefined}
+                    primary={item.contact ? `${item.company} — ${item.contact}` : item.company}
+                    secondary={item.detail}
                     badge={item.status}
                     accentStatus={item.status === "overdue" ? "flag" : item.status === "positive" ? "ok" : "neutral"}
                     isLight={isLight}
@@ -819,7 +841,7 @@ export default function WeeklyDigestPage() {
               icon={FlaskConical}
               iconGradient="from-indigo-500 to-violet-500"
               title="Project Portfolio"
-              subtitle="Projects and tasks this week"
+              subtitle="Projects with activity this week and task changes"
               navPath="/projects"
               statPills={<>
                 <StatPill label="Active Projects" value={s.projectPortfolio.activeProjects}   tone="neutral" isLight={isLight} />
@@ -831,7 +853,18 @@ export default function WeeklyDigestPage() {
               index={5}
               isLight={isLight}
             >
-              {s.projectPortfolio.insight && (
+              {(s.projectPortfolio.items ?? []).length > 0 ? (
+                (s.projectPortfolio.items ?? []).map((item, i) => (
+                  <ItemRow
+                    key={i}
+                    primary={item.name}
+                    secondary={item.summary + (item.productType ? ` · ${item.productType}` : "")}
+                    badge={item.badgeStatus as BadgeStatus}
+                    accentStatus={item.badgeStatus === "completed" ? "ok" : item.badgeStatus === "on_track" ? "neutral" : "neutral"}
+                    isLight={isLight}
+                  />
+                ))
+              ) : s.projectPortfolio.insight ? (
                 <div className={cn(
                   "flex items-start gap-2 px-3 py-2 rounded-xl border-l-2 border-l-indigo-400/50",
                   isLight ? "bg-indigo-50/60 text-indigo-800" : "bg-indigo-500/5 text-indigo-300",
@@ -839,7 +872,7 @@ export default function WeeklyDigestPage() {
                   <Brain className="w-3.5 h-3.5 mt-0.5 shrink-0 opacity-60" />
                   <p className="text-xs leading-snug">{s.projectPortfolio.insight}</p>
                 </div>
-              )}
+              ) : null}
             </DigestCard>
           )}
 

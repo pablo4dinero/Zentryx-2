@@ -38,7 +38,7 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
     const weekStartStr = weekStart.toISOString().split("T")[0];
     const weekEndStr = weekEnd.toISOString().split("T")[0];
 
-    // Parallel data queries — aggregate stats + item rows
+    // All queries in parallel — aggregate stats + full item rows
     const [
       newAccounts,
       accountTotalResult,
@@ -48,14 +48,21 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
       activitiesResult,
       projectsResult,
       tasksResult,
-      // Item-level queries for card rows
+      // Sales Force item rows
       urgentPendingResult,
       deliveredOrderItemsResult,
       confidenceDropResult,
+      // Call Reports: detailed per-call rows + overdue follow-ups
       callItemsResult,
+      overdueCallsResult,
+      // Weekly Activities & Dispatch
       dispatchItemsResult,
       activityItemsResult,
+      // Business dev
       bdItemsResult,
+      // Project Portfolio: specific projects + recent task completions
+      projectItemsResult,
+      recentTasksResult,
     ] = await Promise.all([
       db
         .select({ id: accountsTable.id, company: accountsTable.company, productType: (accountsTable as any).productType })
@@ -111,7 +118,7 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
         FROM tasks
       `)),
 
-      // Urgent pending accounts (Sales Force card rows)
+      // Urgent pending accounts
       db.execute(sql.raw(`
         SELECT a.id, a.company, a.contact_person, a.product_type,
           EXTRACT(DAY FROM NOW() - a.updated_at)::int AS days_pending
@@ -133,7 +140,7 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
         LIMIT 10
       `)).catch(() => ({ rows: [] })),
 
-      // Accounts with confidence drop (< 60)
+      // Confidence drop accounts
       db.execute(sql.raw(`
         SELECT af.id, a.company, af.confidence, af.status
         FROM account_forecasts af
@@ -143,16 +150,47 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
         LIMIT 10
       `)).catch(() => ({ rows: [] })),
 
-      // Individual call records this week with company + contact
+      // Full call detail rows for this week — includes summary, next_steps, comment count
       db.execute(sql.raw(`
-        SELECT cr.id, cr.call_type, cr.outcome, cr.next_steps, cr.called_at,
-          a.company, a.contact_person
+        SELECT
+          cr.id, cr.call_type, cr.outcome, cr.summary, cr.next_steps,
+          cr.called_at, cr.created_by_name,
+          a.company, a.contact_person,
+          EXTRACT(DAY FROM NOW() - cr.called_at)::int AS days_ago,
+          GREATEST(0, 7 - EXTRACT(DAY FROM NOW() - cr.called_at)::int) AS days_left,
+          COALESCE(cc.comment_count, 0) AS comment_count
         FROM call_reports cr
         JOIN accounts a ON cr.account_id = a.id
+        LEFT JOIN (
+          SELECT report_id, COUNT(*) AS comment_count
+          FROM call_report_comments
+          GROUP BY report_id
+        ) cc ON cc.report_id = cr.id
         WHERE cr.called_at >= '${weekStart.toISOString()}'
           AND cr.called_at <= '${weekEnd.toISOString()}'
         ORDER BY cr.called_at DESC
         LIMIT 15
+      `)).catch(() => ({ rows: [] })),
+
+      // Overdue follow-ups: accounts with next_steps on old call, no call in 14+ days
+      db.execute(sql.raw(`
+        SELECT DISTINCT ON (cr.account_id)
+          a.company, a.contact_person,
+          cr.outcome, cr.next_steps,
+          EXTRACT(DAY FROM NOW() - cr.called_at)::int AS days_since
+        FROM call_reports cr
+        JOIN accounts a ON cr.account_id = a.id
+        WHERE cr.next_steps IS NOT NULL
+          AND cr.next_steps != ''
+          AND cr.called_at < NOW() - INTERVAL '14 days'
+          AND NOT EXISTS (
+            SELECT 1 FROM call_reports cr2
+            WHERE cr2.account_id = cr.account_id
+              AND cr2.called_at > cr.called_at
+              AND cr2.called_at >= NOW() - INTERVAL '14 days'
+          )
+        ORDER BY cr.account_id, cr.called_at DESC
+        LIMIT 5
       `)).catch(() => ({ rows: [] })),
 
       // Dispatch records this week
@@ -176,7 +214,7 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
         LIMIT 15
       `)).catch(() => ({ rows: [] })),
 
-      // Business dev items active or updated this week
+      // Business dev items active this week
       db.execute(sql.raw(`
         SELECT bd.id, bd.name, bd.stage, bd.status, bd.customer_name
         FROM business_dev bd
@@ -184,6 +222,32 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
            OR bd.updated_at >= '${weekStart.toISOString()}'
         ORDER BY bd.updated_at DESC
         LIMIT 10
+      `)).catch(() => ({ rows: [] })),
+
+      // Specific projects created or updated this week with task counts
+      db.execute(sql.raw(`
+        SELECT
+          p.id, p.name, p.status, p.product_type,
+          COUNT(t.id) FILTER (WHERE t.status = 'done' AND t.updated_at >= '${weekStart.toISOString()}') AS tasks_done_week,
+          COUNT(t.id) FILTER (WHERE t.status = 'in_progress') AS tasks_in_progress,
+          COUNT(t.id) FILTER (WHERE t.updated_at >= '${weekStart.toISOString()}') AS tasks_updated_week
+        FROM projects p
+        LEFT JOIN tasks t ON t.project_id = p.id
+        WHERE p.updated_at >= '${weekStart.toISOString()}'
+           OR p.created_at >= '${weekStart.toISOString()}'
+        GROUP BY p.id, p.name, p.status, p.product_type
+        ORDER BY (COUNT(t.id) FILTER (WHERE t.status = 'done' AND t.updated_at >= '${weekStart.toISOString()}')) DESC, p.updated_at DESC
+        LIMIT 10
+      `)).catch(() => ({ rows: [] })),
+
+      // Tasks completed this week — to show per-project detail
+      db.execute(sql.raw(`
+        SELECT t.project_id, t.title
+        FROM tasks t
+        WHERE t.status = 'done'
+          AND t.updated_at >= '${weekStart.toISOString()}'
+        ORDER BY t.updated_at DESC
+        LIMIT 50
       `)).catch(() => ({ rows: [] })),
     ]);
 
@@ -227,7 +291,6 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
     const confidenceDropCount = confidenceDropRows.length;
 
     const deliveredOrderRows = (deliveredOrderItemsResult.rows as any[]);
-    const callItemRows = (callItemsResult.rows as any[]);
     const dispatchRows = (dispatchItemsResult.rows as any[]);
     const activityRows = (activityItemsResult.rows as any[]);
     const bdItemRows = (bdItemsResult.rows as any[]);
@@ -235,7 +298,7 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
     const samplesDispatched = dispatchRows.length;
     const followUpMissing = dispatchRows.filter((r: any) => !r.follow_up_mail_sent).length;
 
-    // Sales Force item rows: urgent pending + confidence drops + delivered orders
+    // Sales Force items
     const salesForceItems = [
       ...urgentPendingRows.map((r: any) => ({
         company: String(r.company || "Unknown"),
@@ -254,25 +317,79 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
       })),
     ].slice(0, 12);
 
-    // Call Reports item rows: per-call with outcome badge
-    const callItems = callItemRows.map((r: any) => {
-      const outcome = String(r.outcome || "").toLowerCase();
-      let status: string;
-      if (["success", "interested", "positive"].includes(outcome)) {
-        status = "positive";
-      } else if (!r.next_steps || !String(r.next_steps).trim()) {
-        status = "overdue";
-      } else {
-        status = "on_track";
-      }
-      return {
+    // Call Reports: detailed items
+    const callItemDetailRows = (callItemsResult.rows as any[]);
+    const overdueCallRows = (overdueCallsResult.rows as any[]);
+
+    const reportsLogged = callItemDetailRows.length;
+    const followUpNeeded = overdueCallRows.length;
+    // Next actions due within 3 days: this-week calls with next_steps where window is closing
+    const nextActionsDue = callItemDetailRows.filter((r: any) =>
+      r.next_steps && String(r.next_steps).trim() &&
+      Number(r.days_left) <= 3 && Number(r.days_left) >= 0
+    ).length;
+
+    const callItems = [
+      // This week's calls — rich detail
+      ...callItemDetailRows.map((r: any) => {
+        const outcome = String(r.outcome || "").toLowerCase();
+        const hasNextSteps = r.next_steps && String(r.next_steps).trim().length > 0;
+        const daysLeft = Number(r.days_left ?? 0);
+        const commentCount = Number(r.comment_count ?? 0);
+        const daysAgo = Number(r.days_ago ?? 0);
+
+        // Secondary detail line
+        let detail: string;
+        if (hasNextSteps) {
+          const actionLabel = String(r.next_steps).trim().slice(0, 60);
+          const commentNote = commentCount > 0 ? `, ${commentCount} comment${commentCount > 1 ? "s" : ""}` : ", no comments yet";
+          detail = `Outcome: ${r.outcome} · next action "${actionLabel}" due in ${daysLeft}d${commentNote}`;
+        } else {
+          const summaryLabel = r.summary ? String(r.summary).trim().slice(0, 80) : r.outcome;
+          detail = `Outcome: ${r.outcome} · ${summaryLabel}`;
+        }
+
+        // Badge
+        let status: string;
+        if (["success", "interested", "positive"].includes(outcome)) {
+          status = hasNextSteps ? "positive" : "on_track";
+        } else if (hasNextSteps) {
+          status = daysLeft <= 1 ? "overdue" : "on_track";
+        } else {
+          status = "on_track";
+        }
+
+        return {
+          company: String(r.company || "Unknown"),
+          contact: r.contact_person ? String(r.contact_person) : undefined,
+          outcome: String(r.outcome || ""),
+          summary: r.summary ? String(r.summary).slice(0, 100) : undefined,
+          nextSteps: r.next_steps ? String(r.next_steps).slice(0, 100) : undefined,
+          daysAgo,
+          daysLeft,
+          commentCount,
+          detail,
+          status,
+          isOverdue: false,
+        };
+      }),
+      // Overdue follow-up accounts (not called recently)
+      ...overdueCallRows.map((r: any) => ({
         company: String(r.company || "Unknown"),
         contact: r.contact_person ? String(r.contact_person) : undefined,
-        status,
-      };
-    });
+        outcome: "follow-up needed",
+        summary: undefined,
+        nextSteps: r.next_steps ? String(r.next_steps).slice(0, 100) : undefined,
+        daysAgo: Number(r.days_since ?? 0),
+        daysLeft: 0,
+        commentCount: 0,
+        detail: `Outcome: follow-up needed · no call logged in ${r.days_since} days`,
+        status: "overdue",
+        isOverdue: true,
+      })),
+    ];
 
-    // Weekly Activities & Dispatch item rows
+    // Weekly Activities & Dispatch items
     const weeklyItems = [
       ...dispatchRows.map((r: any) => ({
         title: String(r.sample_code || "Sample"),
@@ -288,7 +405,68 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
       })),
     ].slice(0, 12);
 
-    // ── Oracle narrative brief (Sonnet for quality) ──────────────────────────
+    // Project Portfolio items — build task map then attach to projects
+    const projectItemRows = (projectItemsResult.rows as any[]);
+    const recentTaskRows = (recentTasksResult.rows as any[]);
+
+    // Map project_id → completed task titles this week
+    const tasksByProject = new Map<number, string[]>();
+    for (const t of recentTaskRows) {
+      const pid = Number(t.project_id);
+      if (!tasksByProject.has(pid)) tasksByProject.set(pid, []);
+      tasksByProject.get(pid)!.push(String(t.title || "Task"));
+    }
+
+    const projectItems = projectItemRows.map((r: any) => {
+      const tasksDone = Number(r.tasks_done_week ?? 0);
+      const inProgress = Number(r.tasks_in_progress ?? 0);
+      const tasksUpdated = Number(r.tasks_updated_week ?? 0);
+      const doneTitles = tasksByProject.get(Number(r.id)) ?? [];
+
+      // Build secondary summary
+      let summary: string;
+      if (tasksDone > 0 && doneTitles.length > 0) {
+        const taskList = doneTitles.slice(0, 2).join(", ");
+        summary = `${tasksDone} task${tasksDone > 1 ? "s" : ""} completed · ${taskList}`;
+      } else if (tasksDone > 0) {
+        summary = `${tasksDone} task${tasksDone > 1 ? "s" : ""} completed this week`;
+      } else if (inProgress > 0) {
+        summary = `${inProgress} task${inProgress > 1 ? "s" : ""} in progress · no completions yet`;
+      } else if (tasksUpdated > 0) {
+        summary = `${tasksUpdated} task${tasksUpdated > 1 ? "s" : ""} updated`;
+      } else {
+        summary = "Project updated this week";
+      }
+
+      // Badge based on project status
+      const st = String(r.status || "").toLowerCase();
+      let badgeStatus: string;
+      if (st === "completed" || st === "pushed_to_live") badgeStatus = "completed";
+      else if (st === "on_hold" || st === "awaiting_feedback") badgeStatus = "on_track";
+      else badgeStatus = "ongoing";
+
+      return {
+        id: Number(r.id),
+        name: String(r.name || "Unnamed Project"),
+        status: String(r.status || ""),
+        productType: r.product_type ? String(r.product_type) : undefined,
+        tasksDone,
+        tasksInProgress: inProgress,
+        recentTaskTitles: doneTitles.slice(0, 3),
+        summary,
+        badgeStatus,
+      };
+    });
+
+    // ── Collect unique product types for Oracle Trend Scout ──────────────────
+    const productTypeSet = new Set<string>();
+    newAccounts.forEach(a => { if ((a as any).productType) productTypeSet.add(String((a as any).productType)); });
+    activityRows.forEach((r: any) => { if (r.product_type) productTypeSet.add(String(r.product_type)); });
+    projectItemRows.forEach((r: any) => { if (r.product_type) productTypeSet.add(String(r.product_type)); });
+    dispatchRows.forEach((r: any) => { if (r.product_type) productTypeSet.add(String(r.product_type)); });
+    const activeProductTypes = [...productTypeSet].filter(Boolean).slice(0, 10);
+
+    // ── Oracle narrative brief (Sonnet) ──────────────────────────────────────
     const ctx = {
       weekRange: `${weekStartStr} to ${weekEndStr}`,
       accounts: { total: totalAccounts, newThisWeek: newAccountCount },
@@ -306,16 +484,19 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
       400,
     ).catch(() => "Oracle brief unavailable — regenerate to try again.");
 
-    // ── Section insights + agent calls in parallel (Haiku for speed/cost) ───
+    // ── Section insights + agent calls in parallel ───────────────────────────
     const complianceCtx = JSON.stringify({
-      urgentPending: urgentPendingRows.slice(0, 6).map((r: any) => ({ company: r.company, daysPending: r.days_pending })),
+      urgentPending: urgentPendingRows.slice(0, 6).map((r: any) => ({ company: r.company, daysPending: r.days_pending, productType: r.product_type })),
       confidenceDrop: confidenceDropRows.slice(0, 6).map((r: any) => ({ company: r.company, confidence: r.confidence })),
+      overdueFollowUps: overdueCallRows.slice(0, 4).map((r: any) => ({ company: r.company, daysSince: r.days_since, nextSteps: r.next_steps })),
       samplesWithoutFollowUp: followUpMissing,
       totalDispatched: samplesDispatched,
     });
 
+    // Trend Scout context: internal signals + Nigeria market trigger
     const trendScoutCtx = JSON.stringify({
-      newAccounts: newAccounts.slice(0, 5).map(a => ({ company: a.company, productType: a.productType })),
+      activeProductTypesThisWeek: activeProductTypes,
+      newAccounts: newAccounts.slice(0, 6).map(a => ({ company: a.company, productType: a.productType })),
       bdPipeline: bdItemRows.slice(0, 5).map((r: any) => ({ name: r.name, stage: r.stage, customer: r.customer_name })),
       weeklyActivities: activityRows.slice(0, 5).map((r: any) => ({ title: r.project_title, product: r.product_type })),
       weekRange: `${weekStartStr} to ${weekEndStr}`,
@@ -323,12 +504,13 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
 
     const [salesInsight, callInsight, bdInsight, activitiesInsight, projectInsight, complianceInsight, trendScoutInsight] = await Promise.allSettled([
       callModel(HAIKU_MODEL, "You are Oracle. Write exactly one insight sentence about this sales and production data for a weekly digest. Be specific.", JSON.stringify({ accounts: ctx.accounts, productionOrders: ctx.productionOrders }), 120),
-      callModel(HAIKU_MODEL, "You are Oracle. Write exactly one insight sentence about this call reports data for a weekly digest. Be specific.", JSON.stringify(ctx.callReports), 120),
+      callModel(HAIKU_MODEL, "You are Oracle. Write exactly one insight sentence about this call reports data for a weekly digest. Be specific.", JSON.stringify({ totalCalls, successfulCalls, overdueFollowUps: followUpNeeded, nextActionsDue }), 120),
       callModel(HAIKU_MODEL, "You are Oracle. Write exactly one insight sentence about this business development data for a weekly digest. Be specific.", JSON.stringify(ctx.businessDev), 120),
       callModel(HAIKU_MODEL, "You are Oracle. Write exactly one insight sentence about this weekly activities data for a weekly digest. Be specific.", JSON.stringify(ctx.weeklyActivities), 120),
       callModel(HAIKU_MODEL, "You are Oracle. Write exactly one insight sentence about this project portfolio data for a weekly digest. Be specific.", JSON.stringify(ctx.projectPortfolio), 120),
-      callModel(HAIKU_MODEL, "You are Oracle's Compliance Agent for Zentryx, a food science R&D company. Review the data and identify 2–3 specific compliance or risk concerns: overdue approvals, confidence drops, samples sent without follow-up. Mention company names directly where available. Keep total response under 80 words. Write in plain sentences, no bullets.", complianceCtx, 150),
-      callModel(HAIKU_MODEL, "You are Oracle's Trend Scout Agent for Zentryx, a food science R&D company. Identify 2–3 specific business signals or emerging trends: new account patterns, BD pipeline momentum, product demand signals. Mention company names or products directly where available. Keep total response under 80 words. Write in plain sentences, no bullets.", trendScoutCtx, 150),
+      callModel(HAIKU_MODEL, "You are Oracle's Compliance Agent for Zentryx, a food science R&D company. Review the data and identify 2–3 specific compliance or risk concerns: overdue approvals, confidence drops, overdue call follow-ups, samples sent without follow-up. Mention company names and product types directly. Keep under 90 words. Plain sentences, no bullets.", complianceCtx, 160),
+      // Trend Scout uses Sonnet for quality Nigeria market knowledge
+      callModel(SONNET_MODEL, `You are Oracle's Trend Scout Agent for Zentryx, a food science R&D company operating in Nigeria. The following product types were active in Zentryx's portfolio this week. For each product type present in the data, provide one specific signal about its current relevance or trend in the Nigerian food market, combining the internal business signals below with your knowledge of the Nigerian FMCG and food industry. Be specific — name the product category and the trend. Keep total response under 100 words. Plain sentences, no bullets.`, trendScoutCtx, 180),
     ]);
 
     const getText = (r: PromiseSettledResult<string>) => r.status === "fulfilled" ? r.value : "";
@@ -348,6 +530,9 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
       callReports: {
         totalCalls,
         successfulCalls,
+        reportsLogged,
+        followUpNeeded,
+        nextActionsDue,
         items: callItems,
         insight: getText(callInsight),
       },
@@ -370,6 +555,7 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
         newTasks: newTasksThisWeek,
         tasksCompleted: tasksCompletedThisWeek,
         tasksInProgress,
+        items: projectItems,
         insight: getText(projectInsight),
       },
       oracleAgentInsight: {
