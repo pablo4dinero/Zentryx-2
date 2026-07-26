@@ -38,7 +38,6 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
     const weekStartStr = weekStart.toISOString().split("T")[0];
     const weekEndStr = weekEnd.toISOString().split("T")[0];
 
-    // All queries in parallel — aggregate stats + full item rows
     const [
       newAccounts,
       accountTotalResult,
@@ -48,11 +47,10 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
       activitiesResult,
       projectsResult,
       tasksResult,
-      // Sales Force item rows
+      // Sales Force items
       urgentPendingResult,
-      deliveredOrderItemsResult,
-      confidenceDropResult,
-      // Call Reports: detailed per-call rows + overdue follow-ups
+      productionOrderItemsResult,  // All new orders this week (full details)
+      // Call Reports: detailed per-call + overdue follow-ups
       callItemsResult,
       overdueCallsResult,
       // Weekly Activities & Dispatch
@@ -60,12 +58,18 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
       activityItemsResult,
       // Business dev
       bdItemsResult,
-      // Project Portfolio: specific projects + recent task completions
+      // Project Portfolio: specific projects with lead + total task counts
       projectItemsResult,
       recentTasksResult,
     ] = await Promise.all([
+      // New accounts this week — include id, company, productType, productName
       db
-        .select({ id: accountsTable.id, company: accountsTable.company, productType: (accountsTable as any).productType })
+        .select({
+          id: accountsTable.id,
+          company: accountsTable.company,
+          productType: (accountsTable as any).productType,
+          productName: (accountsTable as any).productName,
+        })
         .from(accountsTable)
         .where(gte(accountsTable.createdAt, weekStart)),
 
@@ -118,7 +122,7 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
         FROM tasks
       `)),
 
-      // Urgent pending accounts
+      // Urgent pending accounts (approval pending)
       db.execute(sql.raw(`
         SELECT a.id, a.company, a.contact_person, a.product_type,
           EXTRACT(DAY FROM NOW() - a.updated_at)::int AS days_pending
@@ -128,29 +132,18 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
         LIMIT 10
       `)).catch(() => ({ rows: [] })),
 
-      // Delivered orders this week with company name
+      // All new production orders this week — full detail (account name, product, volume, dates)
       db.execute(sql.raw(`
-        SELECT apo.id, a.company, apo.volume, apo.date_delivered
+        SELECT apo.id, a.id AS account_id, a.company, a.product_name,
+          apo.volume, apo.date_ordered, apo.expected_delivery_date, apo.date_delivered
         FROM account_production_orders apo
         JOIN accounts a ON apo.account_id = a.id
-        WHERE apo.date_delivered IS NOT NULL
-          AND apo.date_delivered != ''
-          AND apo.created_at >= '${weekStart.toISOString()}'
-        ORDER BY apo.date_delivered DESC
-        LIMIT 10
+        WHERE apo.created_at >= '${weekStart.toISOString()}'
+        ORDER BY apo.created_at DESC
+        LIMIT 12
       `)).catch(() => ({ rows: [] })),
 
-      // Confidence drop accounts
-      db.execute(sql.raw(`
-        SELECT af.id, a.company, af.confidence, af.status
-        FROM account_forecasts af
-        JOIN accounts a ON af.account_id = a.id
-        WHERE af.confidence < 60
-        ORDER BY af.confidence ASC
-        LIMIT 10
-      `)).catch(() => ({ rows: [] })),
-
-      // Full call detail rows for this week — includes summary, next_steps, comment count
+      // Full call detail rows — includes call_type, summary, next_steps, logged-by, comment count
       db.execute(sql.raw(`
         SELECT
           cr.id, cr.call_type, cr.outcome, cr.summary, cr.next_steps,
@@ -172,11 +165,11 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
         LIMIT 15
       `)).catch(() => ({ rows: [] })),
 
-      // Overdue follow-ups: accounts with next_steps on old call, no call in 14+ days
+      // Overdue follow-ups: accounts with next_steps on an old call, no call in 14+ days
       db.execute(sql.raw(`
         SELECT DISTINCT ON (cr.account_id)
           a.company, a.contact_person,
-          cr.outcome, cr.next_steps,
+          cr.outcome, cr.next_steps, cr.call_type,
           EXTRACT(DAY FROM NOW() - cr.called_at)::int AS days_since
         FROM call_reports cr
         JOIN accounts a ON cr.account_id = a.id
@@ -224,30 +217,34 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
         LIMIT 10
       `)).catch(() => ({ rows: [] })),
 
-      // Specific projects created or updated this week with task counts
+      // Projects active this week with lead name + all-time task progress
       db.execute(sql.raw(`
         SELECT
-          p.id, p.name, p.status, p.product_type,
+          p.id, p.name, p.status, p.product_type, p.stage,
+          u.name AS lead_name,
+          COUNT(t.id) AS total_tasks,
+          COUNT(t.id) FILTER (WHERE t.status = 'done') AS total_done,
           COUNT(t.id) FILTER (WHERE t.status = 'done' AND t.updated_at >= '${weekStart.toISOString()}') AS tasks_done_week,
           COUNT(t.id) FILTER (WHERE t.status = 'in_progress') AS tasks_in_progress,
-          COUNT(t.id) FILTER (WHERE t.updated_at >= '${weekStart.toISOString()}') AS tasks_updated_week
+          CASE WHEN p.created_at >= '${weekStart.toISOString()}' THEN true ELSE false END AS is_new
         FROM projects p
+        LEFT JOIN users u ON p.lead_id = u.id
         LEFT JOIN tasks t ON t.project_id = p.id
         WHERE p.updated_at >= '${weekStart.toISOString()}'
            OR p.created_at >= '${weekStart.toISOString()}'
-        GROUP BY p.id, p.name, p.status, p.product_type
-        ORDER BY (COUNT(t.id) FILTER (WHERE t.status = 'done' AND t.updated_at >= '${weekStart.toISOString()}')) DESC, p.updated_at DESC
-        LIMIT 10
+        GROUP BY p.id, p.name, p.status, p.product_type, p.stage, u.name
+        ORDER BY tasks_done_week DESC, p.updated_at DESC
+        LIMIT 12
       `)).catch(() => ({ rows: [] })),
 
-      // Tasks completed this week — to show per-project detail
+      // Tasks completed this week — for per-project detail titles
       db.execute(sql.raw(`
         SELECT t.project_id, t.title
         FROM tasks t
         WHERE t.status = 'done'
           AND t.updated_at >= '${weekStart.toISOString()}'
         ORDER BY t.updated_at DESC
-        LIMIT 50
+        LIMIT 60
       `)).catch(() => ({ rows: [] })),
     ]);
 
@@ -287,10 +284,7 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
     const urgentPendingRows = (urgentPendingResult.rows as any[]);
     const urgentPendingCount = urgentPendingRows.length;
 
-    const confidenceDropRows = (confidenceDropResult.rows as any[]);
-    const confidenceDropCount = confidenceDropRows.length;
-
-    const deliveredOrderRows = (deliveredOrderItemsResult.rows as any[]);
+    const productionOrderRows = (productionOrderItemsResult.rows as any[]);
     const dispatchRows = (dispatchItemsResult.rows as any[]);
     const activityRows = (activityItemsResult.rows as any[]);
     const bdItemRows = (bdItemsResult.rows as any[]);
@@ -298,61 +292,88 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
     const samplesDispatched = dispatchRows.length;
     const followUpMissing = dispatchRows.filter((r: any) => !r.follow_up_mail_sent).length;
 
-    // Sales Force items
+    // Sales Force items: urgent pending + new accounts + new production orders
     const salesForceItems = [
+      // Urgent pending approvals
       ...urgentPendingRows.map((r: any) => ({
         company: String(r.company || "Unknown"),
         status: "pending_approval",
         detail: r.days_pending != null ? `${r.days_pending}d pending` : undefined,
+        accountId: Number(r.id),
       })),
-      ...confidenceDropRows.map((r: any) => ({
+      // Newly added accounts this week (clickable → account page)
+      ...newAccounts.map(a => ({
+        company: String(a.company || "Unknown"),
+        status: "new_account",
+        detail: [a.productName, a.productType].filter(Boolean).join(" · ") || undefined,
+        accountId: Number(a.id),
+      })),
+      // New production orders this week with full detail
+      ...productionOrderRows.map((r: any) => ({
         company: String(r.company || "Unknown"),
-        status: "confidence_drop",
-        detail: `Confidence: ${r.confidence}%`,
+        status: r.date_delivered ? "delivered" : "new_order",
+        detail: [
+          r.product_name ? String(r.product_name) : null,
+          r.volume ? `${Number(r.volume).toLocaleString()} kg` : null,
+          r.date_ordered ? `Ordered: ${r.date_ordered}` : null,
+          r.expected_delivery_date ? `Expected: ${r.expected_delivery_date}` : null,
+        ].filter(Boolean).join(" · ") || undefined,
+        accountId: Number(r.account_id),
       })),
-      ...deliveredOrderRows.map((r: any) => ({
-        company: String(r.company || "Unknown"),
-        status: "delivered",
-        detail: r.volume ? `${Number(r.volume).toLocaleString()} kg` : undefined,
-      })),
-    ].slice(0, 12);
+    ].slice(0, 15);
 
-    // Call Reports: detailed items
+    // Call Reports: detailed items — humanise call_type, show logged-by
     const callItemDetailRows = (callItemsResult.rows as any[]);
     const overdueCallRows = (overdueCallsResult.rows as any[]);
 
     const reportsLogged = callItemDetailRows.length;
-    const followUpNeeded = overdueCallRows.length;
-    // Next actions due within 3 days: this-week calls with next_steps where window is closing
+
+    // Follow-up needed: overdue accounts + this-week calls that explicitly need follow-up
+    const followUpThisWeek = callItemDetailRows.filter((r: any) => {
+      const outcome = String(r.outcome || "").toLowerCase();
+      return outcome.includes("follow") || outcome === "follow_up_needed";
+    }).length;
+    const followUpNeeded = overdueCallRows.length + followUpThisWeek;
+
+    // Next actions due within 3 days: calls this week with next_steps, window closing
     const nextActionsDue = callItemDetailRows.filter((r: any) =>
       r.next_steps && String(r.next_steps).trim() &&
       Number(r.days_left) <= 3 && Number(r.days_left) >= 0
     ).length;
 
+    function humaniseCallType(raw: string): string {
+      if (!raw) return "Call";
+      return raw.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+    }
+
     const callItems = [
-      // This week's calls — rich detail
       ...callItemDetailRows.map((r: any) => {
         const outcome = String(r.outcome || "").toLowerCase();
         const hasNextSteps = r.next_steps && String(r.next_steps).trim().length > 0;
         const daysLeft = Number(r.days_left ?? 0);
         const commentCount = Number(r.comment_count ?? 0);
         const daysAgo = Number(r.days_ago ?? 0);
+        const callTypeLabel = humaniseCallType(String(r.call_type || ""));
+        const loggedBy = r.created_by_name ? String(r.created_by_name) : undefined;
 
-        // Secondary detail line
+        // Build secondary detail line
         let detail: string;
         if (hasNextSteps) {
           const actionLabel = String(r.next_steps).trim().slice(0, 60);
           const commentNote = commentCount > 0 ? `, ${commentCount} comment${commentCount > 1 ? "s" : ""}` : ", no comments yet";
-          detail = `Outcome: ${r.outcome} · next action "${actionLabel}" due in ${daysLeft}d${commentNote}`;
+          const loggedNote = loggedBy ? ` · Logged by ${loggedBy}` : "";
+          detail = `[${callTypeLabel}] Outcome: ${r.outcome} · next action "${actionLabel}" due in ${daysLeft}d${commentNote}${loggedNote}`;
         } else {
-          const summaryLabel = r.summary ? String(r.summary).trim().slice(0, 80) : r.outcome;
-          detail = `Outcome: ${r.outcome} · ${summaryLabel}`;
+          const summaryLabel = r.summary ? String(r.summary).trim().slice(0, 80) : String(r.outcome || "");
+          const loggedNote = loggedBy ? ` · Logged by ${loggedBy}` : "";
+          detail = `[${callTypeLabel}] Outcome: ${r.outcome} · ${summaryLabel}${loggedNote}`;
         }
 
-        // Badge
         let status: string;
         if (["success", "interested", "positive"].includes(outcome)) {
           status = hasNextSteps ? "positive" : "on_track";
+        } else if (outcome.includes("follow")) {
+          status = "on_track";
         } else if (hasNextSteps) {
           status = daysLeft <= 1 ? "overdue" : "on_track";
         } else {
@@ -363,7 +384,8 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
           company: String(r.company || "Unknown"),
           contact: r.contact_person ? String(r.contact_person) : undefined,
           outcome: String(r.outcome || ""),
-          summary: r.summary ? String(r.summary).slice(0, 100) : undefined,
+          callType: callTypeLabel,
+          loggedBy,
           nextSteps: r.next_steps ? String(r.next_steps).slice(0, 100) : undefined,
           daysAgo,
           daysLeft,
@@ -374,19 +396,24 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
         };
       }),
       // Overdue follow-up accounts (not called recently)
-      ...overdueCallRows.map((r: any) => ({
-        company: String(r.company || "Unknown"),
-        contact: r.contact_person ? String(r.contact_person) : undefined,
-        outcome: "follow-up needed",
-        summary: undefined,
-        nextSteps: r.next_steps ? String(r.next_steps).slice(0, 100) : undefined,
-        daysAgo: Number(r.days_since ?? 0),
-        daysLeft: 0,
-        commentCount: 0,
-        detail: `Outcome: follow-up needed · no call logged in ${r.days_since} days`,
-        status: "overdue",
-        isOverdue: true,
-      })),
+      ...overdueCallRows.map((r: any) => {
+        const callTypeLabel = humaniseCallType(String(r.call_type || ""));
+        const loggedNote = ""; // no created_by available for overdue query
+        return {
+          company: String(r.company || "Unknown"),
+          contact: r.contact_person ? String(r.contact_person) : undefined,
+          outcome: "follow-up needed",
+          callType: callTypeLabel,
+          loggedBy: undefined,
+          nextSteps: r.next_steps ? String(r.next_steps).slice(0, 100) : undefined,
+          daysAgo: Number(r.days_since ?? 0),
+          daysLeft: 0,
+          commentCount: 0,
+          detail: `[${callTypeLabel}] Outcome: follow-up needed · no call logged in ${r.days_since} days`,
+          status: "overdue",
+          isOverdue: true,
+        };
+      }),
     ];
 
     // Weekly Activities & Dispatch items
@@ -405,11 +432,10 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
       })),
     ].slice(0, 12);
 
-    // Project Portfolio items — build task map then attach to projects
+    // Project Portfolio items — with progress percentage and lead name
     const projectItemRows = (projectItemsResult.rows as any[]);
     const recentTaskRows = (recentTasksResult.rows as any[]);
 
-    // Map project_id → completed task titles this week
     const tasksByProject = new Map<number, string[]>();
     for (const t of recentTaskRows) {
       const pid = Number(t.project_id);
@@ -419,11 +445,14 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
 
     const projectItems = projectItemRows.map((r: any) => {
       const tasksDone = Number(r.tasks_done_week ?? 0);
+      const totalDone = Number(r.total_done ?? 0);
+      const totalTasks = Number(r.total_tasks ?? 0);
       const inProgress = Number(r.tasks_in_progress ?? 0);
-      const tasksUpdated = Number(r.tasks_updated_week ?? 0);
+      const isNew = r.is_new === true || r.is_new === "true";
       const doneTitles = tasksByProject.get(Number(r.id)) ?? [];
 
-      // Build secondary summary
+      const progressPct = totalTasks > 0 ? Math.round((totalDone / totalTasks) * 100) : 0;
+
       let summary: string;
       if (tasksDone > 0 && doneTitles.length > 0) {
         const taskList = doneTitles.slice(0, 2).join(", ");
@@ -432,16 +461,13 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
         summary = `${tasksDone} task${tasksDone > 1 ? "s" : ""} completed this week`;
       } else if (inProgress > 0) {
         summary = `${inProgress} task${inProgress > 1 ? "s" : ""} in progress · no completions yet`;
-      } else if (tasksUpdated > 0) {
-        summary = `${tasksUpdated} task${tasksUpdated > 1 ? "s" : ""} updated`;
       } else {
         summary = "Project updated this week";
       }
 
-      // Badge based on project status
       const st = String(r.status || "").toLowerCase();
       let badgeStatus: string;
-      if (st === "completed" || st === "pushed_to_live") badgeStatus = "completed";
+      if (st === "completed" || st === "pushed_to_live" || st === "approved") badgeStatus = "completed";
       else if (st === "on_hold" || st === "awaiting_feedback") badgeStatus = "on_track";
       else badgeStatus = "ongoing";
 
@@ -450,15 +476,21 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
         name: String(r.name || "Unnamed Project"),
         status: String(r.status || ""),
         productType: r.product_type ? String(r.product_type) : undefined,
+        stage: r.stage ? String(r.stage) : undefined,
+        leadName: r.lead_name ? String(r.lead_name) : undefined,
         tasksDone,
+        totalTasks,
+        totalDone,
         tasksInProgress: inProgress,
         recentTaskTitles: doneTitles.slice(0, 3),
         summary,
         badgeStatus,
+        progressPct,
+        isNew,
       };
     });
 
-    // ── Collect unique product types for Oracle Trend Scout ──────────────────
+    // ── Product types for Oracle agents ─────────────────────────────────────
     const productTypeSet = new Set<string>();
     newAccounts.forEach(a => { if ((a as any).productType) productTypeSet.add(String((a as any).productType)); });
     activityRows.forEach((r: any) => { if (r.product_type) productTypeSet.add(String(r.product_type)); });
@@ -486,16 +518,12 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
 
     // ── Section insights + agent calls in parallel ───────────────────────────
     const complianceCtx = JSON.stringify({
-      // Product types currently active in Zentryx's portfolio — drive regulatory focus
-      activeProductTypes: activeProductTypes,
-      // Internal operational risk flags
+      activeProductTypes,
       urgentPending: urgentPendingRows.slice(0, 6).map((r: any) => ({ company: r.company, daysPending: r.days_pending, productType: r.product_type })),
-      confidenceDrop: confidenceDropRows.slice(0, 6).map((r: any) => ({ company: r.company, confidence: r.confidence })),
       overdueFollowUps: overdueCallRows.slice(0, 4).map((r: any) => ({ company: r.company, daysSince: r.days_since, nextSteps: r.next_steps })),
       samplesWithoutFollowUp: followUpMissing,
     });
 
-    // Trend Scout context: internal signals + Nigeria market trigger
     const trendScoutCtx = JSON.stringify({
       activeProductTypesThisWeek: activeProductTypes,
       newAccounts: newAccounts.slice(0, 6).map(a => ({ company: a.company, productType: a.productType })),
@@ -517,7 +545,6 @@ Part 1 — Regulatory Updates (lead with this): For each product category listed
 Part 2 — Internal Risk Flags (brief): Flag any urgent pending approvals or overdue client follow-ups from the data.
 
 Keep total response under 130 words. Plain paragraphs, no bullet points or headers.`, complianceCtx, 220),
-      // Trend Scout uses Sonnet for quality Nigeria market knowledge
       callModel(SONNET_MODEL, `You are Oracle's Trend Scout Agent for Zentryx, a food science R&D company operating in Nigeria. The following product types were active in Zentryx's portfolio this week. For each product type present in the data, provide one specific signal about its current relevance or trend in the Nigerian food market, combining the internal business signals below with your knowledge of the Nigerian FMCG and food industry. Be specific — name the product category and the trend. Keep total response under 100 words. Plain sentences, no bullets.`, trendScoutCtx, 180),
     ]);
 
@@ -531,7 +558,6 @@ Keep total response under 130 words. Plain paragraphs, no bullet points or heade
         deliveredOrders,
         totalVolumeKg,
         urgentPendingCount,
-        confidenceDropCount,
         items: salesForceItems,
         insight: getText(salesInsight),
       },

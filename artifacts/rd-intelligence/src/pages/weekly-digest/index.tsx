@@ -17,14 +17,17 @@ const BASE = import.meta.env.BASE_URL;
 
 interface SalesForceItem {
   company: string;
-  status: "pending_approval" | "confidence_drop" | "delivered";
+  status: "pending_approval" | "confidence_drop" | "delivered" | "new_account" | "new_order";
   detail?: string;
+  accountId?: number;
 }
 
 interface CallItem {
   company: string;
   contact?: string;
   outcome: string;
+  callType?: string;
+  loggedBy?: string;
   summary?: string;
   nextSteps?: string;
   daysAgo?: number;
@@ -40,11 +43,16 @@ interface ProjectItem {
   name: string;
   status: string;
   productType?: string;
+  stage?: string;
+  leadName?: string;
   tasksDone: number;
+  totalTasks: number;
   tasksInProgress: number;
   recentTaskTitles: string[];
   summary: string;
   badgeStatus: string;
+  progressPct: number;
+  isNew: boolean;
 }
 
 interface WeeklyItem {
@@ -170,7 +178,8 @@ type BadgeStatus =
   | "pending_approval" | "confidence_drop" | "delivered"
   | "positive" | "overdue" | "on_track"
   | "no_follow_up" | "follow_up_sent" | "completed" | "ongoing"
-  | "needs_review" | "signal";
+  | "needs_review" | "signal"
+  | "new_account" | "new_order";
 
 const BADGE: Record<BadgeStatus, { label: string; dot: string; light: string; dark: string }> = {
   pending_approval: { label: "Pending approval", dot: "bg-amber-400 animate-pulse",  light: "bg-amber-50 text-amber-700 border-amber-200",         dark: "bg-amber-500/10 text-amber-300 border-amber-500/25"         },
@@ -185,6 +194,8 @@ const BADGE: Record<BadgeStatus, { label: string; dot: string; light: string; da
   ongoing:          { label: "Ongoing",           dot: "bg-blue-400",                 light: "bg-blue-50 text-blue-700 border-blue-200",             dark: "bg-blue-500/10 text-blue-300 border-blue-500/25"            },
   needs_review:     { label: "Needs review",      dot: "bg-amber-400 animate-pulse",  light: "bg-amber-50 text-amber-700 border-amber-200",         dark: "bg-amber-500/10 text-amber-300 border-amber-500/25"         },
   signal:           { label: "Signal",            dot: "bg-violet-400",               light: "bg-violet-50 text-violet-700 border-violet-100",       dark: "bg-violet-500/10 text-violet-300 border-violet-500/20"      },
+  new_account:      { label: "New account",       dot: "bg-sky-400",                  light: "bg-sky-50 text-sky-700 border-sky-200",                dark: "bg-sky-500/10 text-sky-300 border-sky-500/25"               },
+  new_order:        { label: "New order",         dot: "bg-indigo-400",               light: "bg-indigo-50 text-indigo-700 border-indigo-200",       dark: "bg-indigo-500/10 text-indigo-300 border-indigo-500/25"      },
 };
 
 function StatusBadge({ status, isLight }: { status: BadgeStatus; isLight: boolean }) {
@@ -312,25 +323,31 @@ function DigestCard({
 // ─── ItemRow ──────────────────────────────────────────────────────────────────
 
 function ItemRow({
-  primary, secondary, badge, accentStatus, isLight,
+  primary, secondary, badge, accentStatus, isLight, onClick, progressPct,
 }: {
   primary: string;
   secondary?: string;
   badge: BadgeStatus;
   accentStatus?: "flag" | "ok" | "neutral";
   isLight: boolean;
+  onClick?: () => void;
+  progressPct?: number;
 }) {
   const accentColor =
-    accentStatus === "flag" ? (isLight ? "border-l-amber-400" : "border-l-amber-400") :
-    accentStatus === "ok"   ? (isLight ? "border-l-emerald-400" : "border-l-emerald-400") :
+    accentStatus === "flag" ? "border-l-amber-400" :
+    accentStatus === "ok"   ? "border-l-emerald-400" :
                               (isLight ? "border-l-slate-200" : "border-l-white/10");
 
   return (
-    <div className={cn(
-      "flex items-center gap-3 px-3 py-2 rounded-xl border-l-2 transition-colors duration-100",
-      isLight ? "hover:bg-slate-50" : "hover:bg-white/[0.04]",
-      accentColor,
-    )}>
+    <div
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-3 px-3 py-2 rounded-xl border-l-2 transition-colors duration-100",
+        isLight ? "hover:bg-slate-50" : "hover:bg-white/[0.04]",
+        onClick && "cursor-pointer",
+        accentColor,
+      )}
+    >
       <div className="flex-1 min-w-0">
         <p className={cn("text-xs font-medium truncate", isLight ? "text-slate-800" : "text-foreground/90")}>
           {primary}
@@ -341,7 +358,14 @@ function ItemRow({
           </p>
         )}
       </div>
-      <StatusBadge status={badge} isLight={isLight} />
+      <div className="flex items-center gap-1.5 shrink-0">
+        {progressPct !== undefined && (
+          <span className={cn("text-[10px] font-semibold tabular-nums", isLight ? "text-slate-500" : "text-muted-foreground")}>
+            {progressPct}%
+          </span>
+        )}
+        <StatusBadge status={badge} isLight={isLight} />
+      </div>
     </div>
   );
 }
@@ -484,6 +508,7 @@ export default function WeeklyDigestPage() {
   const { theme } = useTheme();
   const isLight = theme === "light";
   const reducedMotion = useReducedMotion() ?? false;
+  const [, navigate] = useLocation();
 
   const [digest, setDigest] = useState<WeeklyDigest | null>(null);
   const [loading, setLoading] = useState(true);
@@ -710,20 +735,23 @@ export default function WeeklyDigestPage() {
               index={1}
               isLight={isLight}
             >
-              {(s.salesForce.items ?? []).length > 0 ? (
-                (s.salesForce.items ?? []).map((item, i) => (
-                  <ItemRow
-                    key={i}
-                    primary={item.company}
-                    secondary={item.detail}
-                    badge={item.status}
-                    accentStatus={item.status === "pending_approval" || item.status === "confidence_drop" ? "flag" : "ok"}
-                    isLight={isLight}
-                  />
-                ))
+              {(s.salesForce.items ?? []).filter(item => item.status !== "confidence_drop").length > 0 ? (
+                (s.salesForce.items ?? [])
+                  .filter(item => item.status !== "confidence_drop")
+                  .map((item, i) => (
+                    <ItemRow
+                      key={i}
+                      primary={item.company}
+                      secondary={item.detail}
+                      badge={item.status as BadgeStatus}
+                      accentStatus={item.status === "pending_approval" ? "flag" : item.status === "new_account" || item.status === "delivered" ? "ok" : "neutral"}
+                      isLight={isLight}
+                      onClick={item.accountId ? () => navigate(`/sales-force/${item.accountId}`) : undefined}
+                    />
+                  ))
               ) : (
                 <p className={cn("text-xs py-2", isLight ? "text-slate-400" : "text-muted-foreground")}>
-                  No flagged account items this week.
+                  No account items this week.
                 </p>
               )}
             </DigestCard>
@@ -735,7 +763,7 @@ export default function WeeklyDigestPage() {
               icon={Phone}
               iconGradient="from-emerald-500 to-teal-500"
               title="Call Reports"
-              subtitle="Visits and calls logged this week, and next actions coming due"
+              subtitle="Site visits, calls, emails, invites and more logged this week"
               navPath="/sales-force"
               statPills={<>
                 <StatPill label="Reports Logged"        value={s.callReports.reportsLogged ?? s.callReports.totalCalls} tone="neutral" isLight={isLight} />
@@ -854,16 +882,27 @@ export default function WeeklyDigestPage() {
               isLight={isLight}
             >
               {(s.projectPortfolio.items ?? []).length > 0 ? (
-                (s.projectPortfolio.items ?? []).map((item, i) => (
-                  <ItemRow
-                    key={i}
-                    primary={item.name}
-                    secondary={item.summary + (item.productType ? ` · ${item.productType}` : "")}
-                    badge={item.badgeStatus as BadgeStatus}
-                    accentStatus={item.badgeStatus === "completed" ? "ok" : item.badgeStatus === "on_track" ? "neutral" : "neutral"}
-                    isLight={isLight}
-                  />
-                ))
+                (s.projectPortfolio.items ?? []).map((item, i) => {
+                  const secondaryParts: string[] = [];
+                  if (item.isNew) {
+                    if (item.leadName) secondaryParts.push(`Assigned to: ${item.leadName}`);
+                    if (item.productType) secondaryParts.push(item.productType);
+                    if (item.stage) secondaryParts.push(`Stage: ${item.stage}`);
+                  }
+                  if (item.summary) secondaryParts.push(item.summary);
+                  return (
+                    <ItemRow
+                      key={i}
+                      primary={item.name}
+                      secondary={secondaryParts.join(" · ") || undefined}
+                      badge={item.badgeStatus as BadgeStatus}
+                      progressPct={item.progressPct}
+                      accentStatus={item.badgeStatus === "completed" ? "ok" : "neutral"}
+                      isLight={isLight}
+                      onClick={() => navigate(`/projects/${item.id}`)}
+                    />
+                  );
+                })
               ) : s.projectPortfolio.insight ? (
                 <div className={cn(
                   "flex items-start gap-2 px-3 py-2 rounded-xl border-l-2 border-l-indigo-400/50",
