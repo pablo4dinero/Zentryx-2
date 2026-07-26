@@ -632,7 +632,17 @@ export default function ProjectDetail() {
           <div className="overflow-x-auto pb-4 custom-scrollbar">
             <div className="flex gap-5 min-w-max">
               {TASK_STATUSES.map(status => {
-                const columnTasks = (tasks || []).filter(t => t.status === status);
+                const raw = (tasks || []).filter(t => t.status === status);
+                const columnTasks = status === 'todo'
+                  ? [...raw].sort((a, b) => {
+                      const ai = TEMPLATE_TASKS.indexOf(a.title);
+                      const bi = TEMPLATE_TASKS.indexOf(b.title);
+                      const ap = ai === -1 ? Infinity : ai;
+                      const bp = bi === -1 ? Infinity : bi;
+                      if (ap !== bp) return ap - bp;
+                      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+                    })
+                  : raw;
                 const isOver = dragOverCol === status;
                 return (
                   <div key={status}
