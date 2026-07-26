@@ -20,7 +20,7 @@ import { useNotificationSound } from "@/hooks/useNotificationSound";
 import { ensureNotifyPermission, showChatNotification, setChatTabTitle } from "@/lib/chat-notify";
 import { BASE } from "./lib/constants";
 import { useApi, usePinnedRooms, usePinnedMessages } from "./lib/hooks";
-import { NeuralBackground } from "./components/NeuralBackground";
+import { NeuralBackground, RotatingBoxBackground, ChatWaveOverlay, ChatBgPicker, useChatBg } from "./components/NeuralBackground";
 import { RoomContextMenu } from "./components/RoomContextMenu";
 import { MessageContextMenu } from "./components/MessageContextMenu";
 import { MsgContent } from "./components/MsgContent";
@@ -34,6 +34,7 @@ export default function ChatRoom() {
   const { playMessage } = useNotificationSound();
   const { theme } = useTheme();
   const isLight = theme === "light";
+  const { bgPrefs, setBgStyle, setBgColor } = useChatBg();
   const [rooms, setRooms] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   // The superadmin is unlisted (never in /chat/users) but still reachable
@@ -1091,45 +1092,14 @@ export default function ChatRoom() {
         className="flex-1 min-w-0 relative flex-col"
         style={{ display: showChatPanel ? "flex" : "none" }}
       >
-        {/* Background — modern neural network animation with animated nodes
-            and connecting lines, responsive to light/dark theme for a
-            contemporary, professional appearance. */}
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <NeuralBackground isLight={isLight} />
-          <svg
-            aria-hidden
-            className="absolute inset-x-0 bottom-0 w-full h-48 opacity-30"
-            viewBox="0 0 1440 240"
-            preserveAspectRatio="none"
-          >
-            <defs>
-              <linearGradient id="chatWaveA" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%"   stopColor={isLight ? "#a78bfa" : "#7c4dff"} stopOpacity="0.18" />
-                <stop offset="100%" stopColor={isLight ? "#22d3ee" : "#38bdf8"} stopOpacity="0.18" />
-              </linearGradient>
-              <linearGradient id="chatWaveB" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%"   stopColor={isLight ? "#f0abfc" : "#ec4899"} stopOpacity="0.14" />
-                <stop offset="100%" stopColor={isLight ? "#818cf8" : "#7c4dff"} stopOpacity="0.14" />
-              </linearGradient>
-            </defs>
-            <path
-              className="chat-wave chat-wave-a"
-              fill="url(#chatWaveA)"
-              d="M0,160 C240,200 480,80 720,128 C960,176 1200,80 1440,128 L1440,240 L0,240 Z"
-            />
-            <path
-              className="chat-wave chat-wave-b"
-              fill="url(#chatWaveB)"
-              d="M0,180 C240,140 480,220 720,168 C960,120 1200,200 1440,160 L1440,240 L0,240 Z"
-            />
-          </svg>
-          <div
-            aria-hidden
-            className={cn(
-              "absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t",
-              isLight ? "from-white/80 to-transparent" : "from-background/70 to-transparent",
-            )}
-          />
+        {/* Background — swappable: neural network / rotating box / plain colour */}
+        <div
+          className="pointer-events-none absolute inset-0 overflow-hidden"
+          style={bgPrefs.style === "plain" ? { backgroundColor: bgPrefs.color } : undefined}
+        >
+          {bgPrefs.style === "neural"       && <NeuralBackground isLight={isLight} />}
+          {bgPrefs.style === "rotating-box" && <RotatingBoxBackground isLight={isLight} />}
+          {bgPrefs.style !== "plain"        && <ChatWaveOverlay isLight={isLight} />}
         </div>
         <div className="relative flex-1 flex flex-col min-h-0">
         {activeRoom ? (
@@ -1223,6 +1193,7 @@ export default function ChatRoom() {
                 )}
               </div>
               <div className="flex items-center gap-2">
+                <ChatBgPicker prefs={bgPrefs} setBgStyle={setBgStyle} setBgColor={setBgColor} isLight={isLight} />
                 {pinnedMessages.length > 0 && (
                   <button
                     onClick={() => setShowPinnedMsgs(v => !v)}
