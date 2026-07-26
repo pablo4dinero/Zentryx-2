@@ -5,7 +5,7 @@ import { useGetProject, useListTasks, useCreateTask, useUpdateTask, useDeleteTas
 import { PageLoader } from "@/components/ui/spinner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Plus, Clock, MessageSquare, Send, Edit3, Check, X, Calendar, User, Phone, Mail, DollarSign, Package, Trash2, GripVertical, AtSign, Star, TrendingUp, Zap } from "lucide-react";
+import { ArrowLeft, Plus, Clock, MessageSquare, Send, Edit3, Check, X, Calendar, User, Phone, Mail, DollarSign, Package, Trash2, GripVertical, AtSign, Star, TrendingUp, Zap, ChevronDown } from "lucide-react";
 import { Link } from "wouter";
 import { format } from "date-fns";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -802,9 +802,10 @@ function EditTaskModal({ task, onClose, onSave }: { task: any; onClose: () => vo
   const inputCls = cn(
     "flex h-10 w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50",
     isLight
-      ? "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400"
+      ? "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 [color-scheme:light]"
       : "border-white/10 bg-black/20 text-foreground placeholder:text-muted-foreground"
   );
+  const selectCls = cn(inputCls, "appearance-none pr-8 cursor-pointer");
   const labelCls = cn("text-sm font-medium", isLight ? "text-gray-700" : "");
 
   return (
@@ -827,7 +828,7 @@ function EditTaskModal({ task, onClose, onSave }: { task: any; onClose: () => vo
               className={cn(
                 "flex min-h-[80px] w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none",
                 isLight
-                  ? "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400"
+                  ? "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 [color-scheme:light]"
                   : "border-white/10 bg-black/20 text-foreground placeholder:text-muted-foreground"
               )}
               placeholder="Task details..." />
@@ -835,19 +836,25 @@ function EditTaskModal({ task, onClose, onSave }: { task: any; onClose: () => vo
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className={labelCls}>Priority</label>
-              <select value={form.priority} onChange={e => setF("priority", e.target.value)} className={inputCls}>
-                {["low", "medium", "high", "critical"].map(p => (
-                  <option key={p} value={p} className="bg-white text-black capitalize">{p}</option>
-                ))}
-              </select>
+              <div className="relative">
+                <select value={form.priority} onChange={e => setF("priority", e.target.value)} className={selectCls}>
+                  {["low", "medium", "high", "critical"].map(p => (
+                    <option key={p} value={p} className="bg-white text-black capitalize">{p}</option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              </div>
             </div>
             <div className="space-y-1.5">
               <label className={labelCls}>Status</label>
-              <select value={form.status} onChange={e => setF("status", e.target.value)} className={inputCls}>
-                {TASK_STATUSES.map(s => (
-                  <option key={s} value={s} className="bg-white text-black capitalize">{s.replace(/_/g, " ")}</option>
-                ))}
-              </select>
+              <div className="relative">
+                <select value={form.status} onChange={e => setF("status", e.target.value)} className={selectCls}>
+                  {TASK_STATUSES.map(s => (
+                    <option key={s} value={s} className="bg-white text-black capitalize">{s.replace(/_/g, " ")}</option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              </div>
             </div>
             <div className="space-y-1.5 col-span-2">
               <label className={labelCls}>Due Date</label>
