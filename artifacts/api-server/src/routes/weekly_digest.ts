@@ -539,10 +539,7 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
     });
 
     const trendScoutCtx = JSON.stringify({
-      activeProductTypesThisWeek: activeProductTypes,
-      newAccounts: newAccounts.slice(0, 6).map(a => ({ company: a.company, productType: a.productType })),
-      bdPipeline: bdItemRows.slice(0, 5).map((r: any) => ({ name: r.name, stage: r.stage, customer: r.customer_name })),
-      weeklyActivities: activityRows.slice(0, 5).map((r: any) => ({ title: r.project_title, product: r.product_type })),
+      productTypesInPortfolio: activeProductTypes,
       weekRange: `${weekStartStr} to ${weekEndStr}`,
     });
 
@@ -559,7 +556,15 @@ Part 1 — Regulatory Updates (lead with this): For each product category listed
 Part 2 — Internal Risk Flags (brief): Flag any urgent pending approvals or overdue client follow-ups from the data.
 
 Keep total response under 130 words. Plain paragraphs, no bullet points or headers.`, complianceCtx, 220),
-      callModel(SONNET_MODEL, `You are Oracle's Trend Scout Agent for Zentryx, a food science R&D company operating in Nigeria. The following product types were active in Zentryx's portfolio this week. For each product type present in the data, provide one specific signal about its current relevance or trend in the Nigerian food market, combining the internal business signals below with your knowledge of the Nigerian FMCG and food industry. Be specific — name the product category and the trend. Keep total response under 100 words. Plain sentences, no bullets.`, trendScoutCtx, 180),
+      callModel(SONNET_MODEL, `You are Oracle's Trend Scout Agent for Zentryx, a food science R&D company in Nigeria that develops product types such as bouillons, seasonings, dairy premixes, concentrates, savoury flavours, instant drink powders, and similar food ingredients.
+
+Your task has two parts. Write in flowing paragraphs — no bullet points, no headers.
+
+Part 1 — Nigeria Market Trends (lead with this): For each product type listed in productTypesInPortfolio, give one sharp, current trend signal relevant to the Nigerian food market as of 2025–2026. Draw on your knowledge of Nigerian FMCG dynamics, QSR growth, consumer behaviour, and ingredient demand — do not reference specific account names from the data. Keep signals grounded: reference actual market shifts, consumer habits, or industry movements.
+
+Part 2 — Business Leads & Opportunities: Based on your knowledge of the Nigerian food industry, name 2–3 specific company types or named Nigerian companies (e.g. Chicken Republic, Domino's Nigeria, Sweet Sensation, Tolaram/Indomie, Dangote Foods, Chi Limited, Dufil, UAC Foods, Eat'N'Go group, bakery chains) and describe exactly which Zentryx product type each would most likely need right now and why — framed as a concrete sales lead or product pitch opportunity Zentryx should pursue.
+
+Keep total response under 180 words. Plain paragraphs only.`, trendScoutCtx, 320),
     ]);
 
     const getText = (r: PromiseSettledResult<string>) => r.status === "fulfilled" ? r.value : "";
