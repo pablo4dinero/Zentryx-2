@@ -23,3 +23,4 @@ export * from "./admin_messages";
 export * from "./custom_roles";
 export * from "./otp_codes";
 export * from "./feature_flags";
+export * from "./weekly_digests";

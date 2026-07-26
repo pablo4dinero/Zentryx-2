@@ -563,6 +563,25 @@ async function createTablesIfNotExist() {
         );
     `));
 
+    // Weekly Digest — on-demand AI-generated weekly summaries
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS weekly_digests (
+        id SERIAL PRIMARY KEY,
+        week_start_date TEXT NOT NULL,
+        week_end_date TEXT NOT NULL,
+        brief_text TEXT NOT NULL,
+        sections JSONB NOT NULL DEFAULT '{}'::jsonb,
+        generated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `));
+    // Seed the weekly_digest feature flag
+    await db.execute(sql.raw(`
+      INSERT INTO feature_flags (feature_name, display_name, description, enabled, category)
+      VALUES ('weekly_digest', 'Weekly Digest', 'Enable the Weekly Digest module — AI-generated weekly summary of business performance', true, 'analytics')
+      ON CONFLICT (feature_name) DO NOTHING;
+    `));
+
     // Production order events log
     await db.execute(sql.raw(`
       ALTER TABLE account_production_orders

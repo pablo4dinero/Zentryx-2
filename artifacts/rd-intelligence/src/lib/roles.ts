@@ -35,6 +35,7 @@ export const ZENTRYX_ROLES: RoleDef[] = [
 export const ZENTRYX_MODULES: { path: string; label: string }[] = [
   { path: "/", label: "Dashboard" },
   { path: "/news-feed", label: "News Feed" },
+  { path: "/weekly-digest", label: "Weekly Digest" },
   { path: "/projects", label: "Project Portfolio" },
   { path: "/analytics", label: "Analytics" },
   { path: "/oracle", label: "Oracle" },

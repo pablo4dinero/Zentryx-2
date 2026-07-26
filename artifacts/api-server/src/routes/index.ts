@@ -33,6 +33,7 @@ import mfaRouter from "./mfa";
 import customRolesRouter from "./custom_roles";
 import featureFlagsRouter from "./feature_flags";
 import exchangeRateRouter from "./exchange_rate";
+import weeklyDigestRouter from "./weekly_digest";
 
 const router: IRouter = Router();
 
@@ -70,5 +71,6 @@ router.use("/mfa", mfaRouter);
 router.use("/custom-roles", customRolesRouter);
 router.use("/feature-flags", featureFlagsRouter);
 router.use("/exchange-rate", exchangeRateRouter);
+router.use("/weekly-digest", weeklyDigestRouter);
 
 export default router;

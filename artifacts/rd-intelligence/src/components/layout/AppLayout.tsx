@@ -6,7 +6,7 @@ import {
   ChevronDown, User, FlaskConical as Flask, CheckSquare, Building2,
   ArrowRight, Loader2, CalendarDays, UserCircle, TrendingUp, ClipboardList,
   PanelLeftClose, PanelLeftOpen, Lock, Unlock, ShoppingCart, Package,
-  ShieldCheck, ShieldX, Mail, Rss, Brain, CheckCheck, Check, Download, Volume2, VolumeX, Megaphone, BarChart2
+  ShieldCheck, ShieldX, Mail, Rss, Brain, CheckCheck, Check, Download, Volume2, VolumeX, Megaphone, BarChart2, Sparkles
 } from "lucide-react";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { useNotificationSound } from "@/hooks/useNotificationSound";
@@ -26,6 +26,7 @@ const SIDEBAR_COLLAPSED_KEY = "zentryx_sidebar_collapsed";
 
 const ALL_NAV_ITEMS = [
   { href: "/news-feed", label: "News Feed", icon: Rss },
+  { href: "/weekly-digest", label: "Weekly Digest", icon: Sparkles },
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/projects", label: "Project Portfolio", icon: FlaskConical },
   { href: "/analytics", label: "Analytics", icon: LineChart },
@@ -718,10 +719,30 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [user?.role, (user as any)?.jobPosition, customRolesVersion],
   );
+
+  // Feature flags — controls which nav items are visible (e.g. Weekly Digest
+  // can be restricted to specific roles by admin via the feature flags panel).
+  const [featureFlags, setFeatureFlags] = useState<Record<string, { enabled: boolean; allowedRoles: string[] | null }>>({});
+  useEffect(() => {
+    fetch(`${BASE}api/feature-flags`)
+      .then(r => r.ok ? r.json() : {})
+      .then(setFeatureFlags)
+      .catch(() => {});
+  }, []);
+
   const isAdminUser = (user?.role || "").toLowerCase() === "admin";
   const navItems = ALL_NAV_ITEMS.filter(item => {
     if ((item as any).adminOnly && !isAdminUser) return false;
-    return !blockedPaths.includes(item.href);
+    if (blockedPaths.includes(item.href)) return false;
+    // Feature-flag visibility gate (currently only weekly-digest uses this)
+    if (item.href === "/weekly-digest" && !isAdminUser) {
+      const flag = featureFlags["weekly_digest"];
+      if (flag !== undefined) {
+        if (!flag.enabled) return false;
+        if (flag.allowedRoles && !flag.allowedRoles.includes(user?.role || "")) return false;
+      }
+    }
+    return true;
   });
 
   // Redirect away if the user landed on a module their role isn't allowed

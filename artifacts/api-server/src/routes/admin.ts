@@ -574,6 +574,13 @@ router.post("/feature-flags/init", async (req: AuthRequest, res) => {
         enabled: true,
         category: "sales",
       },
+      {
+        featureName: "weekly_digest",
+        displayName: "Weekly Digest",
+        description: "Enable the Weekly Digest module — AI-generated weekly summary of business performance. Admin can restrict by role via allowedRoles.",
+        enabled: true,
+        category: "analytics",
+      },
     ];
 
     for (const flag of defaults) {
