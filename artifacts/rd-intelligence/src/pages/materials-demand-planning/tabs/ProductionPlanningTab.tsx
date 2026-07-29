@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient, type UseQueryResult } from "@tan
 import { motion, AnimatePresence } from "framer-motion";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
-import { AlertTriangle, ChevronDown, Edit3, FileText, Loader2, Maximize2, Moon, Trash2, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, Edit3, FileText, Loader2, Maximize2, Moon, Search, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -1120,6 +1120,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
   const [producingIds, setProducingIds] = React.useState<Set<number>>(new Set());
   const [openNoteId, setOpenNoteId] = React.useState<number | null>(null);
   const [noteEditText, setNoteEditText] = React.useState("");
+  const [plannedOrderSearch, setPlannedOrderSearch] = React.useState("");
 
   const handleProduce = async (assignmentId: number, orderId: number, floorId?: number) => {
     const row = (allAssignmentsQuery.data ?? []).find(r => r.assignment.id === assignmentId);
@@ -1393,6 +1394,18 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       })),
     [plannedOrders, remainingVolumeByOrderId]
   );
+
+  const filteredRightOrders = React.useMemo(() => {
+    if (!plannedOrderSearch.trim()) return assignedRightOrders;
+    const q = plannedOrderSearch.trim().toLowerCase();
+    return assignedRightOrders.filter(({ order }) => {
+      const acc = planningAccountMap[order.accountId ?? 0];
+      const company = (order.accountName ?? order.accountCompany ?? acc?.company ?? "").toLowerCase();
+      const productName = (order.productName ?? acc?.productName ?? "").toLowerCase();
+      const productType = (order.productType ?? acc?.productType ?? "").toLowerCase();
+      return company.includes(q) || productName.includes(q) || productType.includes(q);
+    });
+  }, [assignedRightOrders, plannedOrderSearch, planningAccountMap]);
 
   const mdpOrderByMdpId = React.useMemo(() => {
     const map = new Map<number, ProductionOrder>();
@@ -2442,6 +2455,28 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
               </div>
             </div>
 
+            <div className={cn("relative shrink-0")}>
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+              <input
+                type="text"
+                value={plannedOrderSearch}
+                onChange={e => setPlannedOrderSearch(e.target.value)}
+                placeholder="Search orders…"
+                className={cn(
+                  "w-full h-8 rounded-xl border pl-8 pr-3 text-xs focus:outline-none focus:ring-1 focus:ring-primary/40 transition-colors",
+                  isLight ? "border-slate-200 bg-white text-foreground placeholder:text-slate-400" : "border-white/10 bg-black/20 text-foreground placeholder:text-muted-foreground",
+                )}
+              />
+              {plannedOrderSearch && (
+                <button
+                  onClick={() => setPlannedOrderSearch("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
             <div className={cn("rounded-2xl border p-4 flex-1 overflow-y-auto", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5")}>
               <div
                 data-drop-unassign="true"
@@ -2458,13 +2493,13 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                   }
                 }}
               >
-                {assignedRightOrders.length === 0 ? (
+                {filteredRightOrders.length === 0 ? (
                   <div className="flex h-full min-h-[220px] items-center justify-center text-sm text-muted-foreground/60">
-                    No planned orders available.
+                    {plannedOrderSearch.trim() ? "No orders match your search." : "No planned orders available."}
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {assignedRightOrders.map(({ order, remainingVolume }) => {
+                    {filteredRightOrders.map(({ order, remainingVolume }) => {
                       const acc = planningAccountMap[order.accountId ?? 0];
                       // Use order data directly first (has merged account info from API), then fallback to accountMap
                       const company = order.accountName ?? order.accountCompany ?? acc?.company ?? "Unknown account";
