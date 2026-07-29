@@ -167,17 +167,20 @@ router.put("/production-orders/:id", requireAuth, async (req: AuthRequest, res) 
   try {
     const id = Number(req.params.id);
     const body = req.body as any;
-    const [updated] = await db.update(mdpProductionOrdersTable).set({
-      rawMaterialStatus: body.rawMaterialStatus,
-      microbialAnalysis: body.microbialAnalysis,
-      blendSpeedId: body.blendSpeedId,
-      remarks: body.remarks,
-      orderStatus: body.orderStatus,
-      isPlanned: body.isPlanned,
-      isProduced: body.isProduced,
-      isDelivered: body.isDelivered,
-      updatedAt: new Date(),
-    }).where(eq(mdpProductionOrdersTable.id, id)).returning();
+    // Only update fields that are explicitly provided — undefined fields must
+    // be omitted so that a partial update (e.g. only microbialAnalysis) never
+    // overwrites isPlanned, isProduced, etc. with NULL.
+    const updates: Record<string, any> = { updatedAt: new Date() };
+    if (body.rawMaterialStatus !== undefined) updates.rawMaterialStatus = body.rawMaterialStatus;
+    if (body.microbialAnalysis  !== undefined) updates.microbialAnalysis  = body.microbialAnalysis;
+    if (body.blendSpeedId       !== undefined) updates.blendSpeedId       = body.blendSpeedId;
+    if (body.remarks            !== undefined) updates.remarks            = body.remarks;
+    if (body.orderStatus        !== undefined) updates.orderStatus        = body.orderStatus;
+    if (body.isPlanned          !== undefined) updates.isPlanned          = body.isPlanned;
+    if (body.isProduced         !== undefined) updates.isProduced         = body.isProduced;
+    if (body.isDelivered        !== undefined) updates.isDelivered        = body.isDelivered;
+    const [updated] = await db.update(mdpProductionOrdersTable).set(updates)
+      .where(eq(mdpProductionOrdersTable.id, id)).returning();
 
     if (!updated) {
       res.status(404).json({ error: "NotFound" });
