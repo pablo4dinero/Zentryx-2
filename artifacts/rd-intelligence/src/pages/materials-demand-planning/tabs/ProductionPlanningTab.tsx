@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient, type UseQueryResult } from "@tan
 import { motion, AnimatePresence } from "framer-motion";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
-import { AlertTriangle, ChevronDown, Edit3, Loader2, Maximize2, Moon, Trash2, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, Edit3, FileText, Loader2, Maximize2, Moon, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -145,7 +145,15 @@ export function ProductionPlanningTab() {
   const { theme } = useTheme();
   const isLight = theme === "light";
   const [selectedWeekLabel, setSelectedWeekLabel] = React.useState("");
-  const [splitPercent, setSplitPercent] = React.useState(55);
+  const [splitPercent, setSplitPercent] = React.useState(() => {
+    try {
+      const saved = localStorage.getItem("zentryx_planning_split_v1");
+      if (saved) { const v = Number(saved); if (!isNaN(v) && v >= 28 && v <= 72) return v; }
+    } catch { /* ignore */ }
+    return 55;
+  });
+  const splitPercentRef = React.useRef(splitPercent);
+  React.useEffect(() => { splitPercentRef.current = splitPercent; }, [splitPercent]);
   const [isDividerDragging, setIsDividerDragging] = React.useState(false);
   // Tracks whether the viewport is above the md breakpoint (768px). Lets us
   // disable the split-pane inline width on mobile so the two panes stack
@@ -960,7 +968,10 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
   React.useEffect(() => {
     if (!isDividerDragging) return;
     window.addEventListener("mousemove", handleDividerMouseMove);
-    window.addEventListener("mouseup", () => setIsDividerDragging(false), { once: true });
+    window.addEventListener("mouseup", () => {
+      setIsDividerDragging(false);
+      try { localStorage.setItem("zentryx_planning_split_v1", String(splitPercentRef.current)); } catch { /* ignore */ }
+    }, { once: true });
     return () => {
       window.removeEventListener("mousemove", handleDividerMouseMove);
     };
@@ -1107,6 +1118,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
   // accidental double-clicks from creating duplicate history rows even though
   // the backend is now idempotent.
   const [producingIds, setProducingIds] = React.useState<Set<number>>(new Set());
+  const [openNoteId, setOpenNoteId] = React.useState<number | null>(null);
+  const [noteEditText, setNoteEditText] = React.useState("");
 
   const handleProduce = async (assignmentId: number, orderId: number, floorId?: number) => {
     const row = (allAssignmentsQuery.data ?? []).find(r => r.assignment.id === assignmentId);
@@ -1156,6 +1169,22 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       toast({ title: "Couldn't save new order", description: "Please try again.", variant: "destructive" });
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments"] });
     },
+  });
+
+  const saveNoteMutation = useMutation({
+    mutationFn: async ({ assignmentId, note }: { assignmentId: number; note: string }) => {
+      const res = await fetch(`${BASE}api/mdp/floor-assignments/${assignmentId}`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ productionNote: note }),
+      });
+      if (!res.ok) { const error = await res.json().catch(() => ({})); throw new Error(error.error || "Failed to save note"); }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments"] });
+    },
+    onError: (error: any) => toast({ title: "Could not save note", description: error?.message, variant: "destructive" }),
   });
 
   const handleReorder = (floorId: number, draggedAssignmentId: number, targetAssignmentId: number) => {
@@ -1925,6 +1954,73 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                         </button>
                       );
                     })()}
+                    {/* Note icon */}
+                    <div className="relative shrink-0">
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          setOpenNoteId(row.assignment.id);
+                          setNoteEditText(row.assignment.productionNote ?? "");
+                        }}
+                        title={row.assignment.productionNote ? "View/edit production note" : "Add production note"}
+                        className={cn(
+                          "relative w-7 h-7 rounded-lg flex items-center justify-center border transition-colors",
+                          row.assignment.productionNote
+                            ? isLight ? "bg-amber-50 border-amber-300/70 text-amber-600" : "bg-amber-500/15 border-amber-500/40 text-amber-400"
+                            : isLight ? "border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5",
+                        )}
+                      >
+                        <FileText className="w-3 h-3" />
+                        {row.assignment.productionNote && (
+                          <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber-400 border border-background" />
+                        )}
+                      </button>
+                      {openNoteId === row.assignment.id && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setOpenNoteId(null)} />
+                          <div className={cn(
+                            "absolute right-0 bottom-full mb-1.5 z-50 w-56 rounded-xl border shadow-xl p-3",
+                            isLight ? "bg-white border-slate-200" : "bg-zinc-900 border-white/10",
+                          )}>
+                            <p className={cn("text-[9px] font-semibold uppercase tracking-widest mb-2",
+                              isLight ? "text-slate-400" : "text-muted-foreground"
+                            )}>Production Note</p>
+                            <textarea
+                              autoFocus
+                              rows={4}
+                              value={noteEditText}
+                              onChange={e => setNoteEditText(e.target.value)}
+                              placeholder="Add a production note…"
+                              className={cn(
+                                "w-full rounded-lg border px-2 py-1.5 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-primary/40",
+                                isLight
+                                  ? "border-slate-200 bg-slate-50 text-slate-700 placeholder:text-slate-400"
+                                  : "border-white/10 bg-black/30 text-foreground placeholder:text-muted-foreground",
+                              )}
+                            />
+                            <div className="flex gap-1.5 mt-2">
+                              <button
+                                onClick={() => {
+                                  saveNoteMutation.mutate({ assignmentId: row.assignment.id, note: noteEditText });
+                                  setOpenNoteId(null);
+                                }}
+                                className={cn(
+                                  "flex-1 py-1 text-[10px] font-semibold rounded-lg border transition-colors",
+                                  isLight ? "bg-primary/10 border-primary/20 text-primary hover:bg-primary/20" : "bg-primary/10 border-primary/20 text-primary hover:bg-primary/20",
+                                )}
+                              >Save</button>
+                              <button
+                                onClick={() => setOpenNoteId(null)}
+                                className={cn(
+                                  "px-2 py-1 text-[10px] rounded-lg border transition-colors",
+                                  isLight ? "border-slate-200 text-slate-500 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5",
+                                )}
+                              >Cancel</button>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
               );

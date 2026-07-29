@@ -125,6 +125,8 @@ export type FloorAssignmentRow = {
     assignedDay: string;
     planStatus: string;
     assignedVolume?: string | null;
+    productionNote?: string | null;
+    shiftType?: string | null;
     assignedAt?: string | null;
   };
   floor: ProductionFloor;

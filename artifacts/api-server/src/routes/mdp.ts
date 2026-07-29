@@ -675,10 +675,13 @@ router.post("/floor-assignments", requireAuth, async (req: AuthRequest, res) => 
 router.patch("/floor-assignments/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
     const id = Number(req.params.id);
-    const body = req.body as { assignedVolume?: number };
-    if (body.assignedVolume == null) { res.status(400).json({ error: "assignedVolume required" }); return; }
+    const body = req.body as { assignedVolume?: number; productionNote?: string | null };
+    const updates: Record<string, any> = {};
+    if (body.assignedVolume != null) updates.assignedVolume = String(body.assignedVolume);
+    if ("productionNote" in body) updates.productionNote = body.productionNote ?? null;
+    if (Object.keys(updates).length === 0) { res.status(400).json({ error: "nothing to update" }); return; }
     const [updated] = await db.update(mdpFloorAssignmentsTable)
-      .set({ assignedVolume: String(body.assignedVolume) })
+      .set(updates)
       .where(eq(mdpFloorAssignmentsTable.id, id))
       .returning();
     if (!updated) { res.status(404).json({ error: "NotFound" }); return; }
