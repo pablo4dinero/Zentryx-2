@@ -85,8 +85,6 @@
   },
   "devDependencies": {
     "@csstools/postcss-oklab-function": "^5.0.7",
-    "@vitejs/plugin-legacy": "^7.0.0",
-    "postcss": "^8.5.25",
-    "terser": "^5.49.0"
+    "postcss": "^8.5.25"
   }
 }
