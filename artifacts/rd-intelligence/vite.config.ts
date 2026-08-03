@@ -2,12 +2,21 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
+import legacy from "@vitejs/plugin-legacy";
+import oklabFunction from "@csstools/postcss-oklab-function";
 import path from "path";
 
 export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    // Transpiles the JS bundle for older browsers (Chrome 80+, Firefox 78+,
+    // Safari 14+). Creates a separate legacy bundle served via <script nomodule>
+    // so modern browsers continue loading the optimised ES-module build unchanged.
+    legacy({
+      targets: ["chrome >= 80", "firefox >= 78", "safari >= 14", "edge >= 80"],
+      modernPolyfills: true,
+    }),
     VitePWA({
       registerType: "prompt",
       includeAssets: ["favicon.png", "favicon.svg", "zentryx-icon.svg", "zentryx-icon-maskable.svg"],
@@ -57,9 +66,23 @@ export default defineConfig({
     dedupe: ["react", "react-dom"],
   },
   root: path.resolve(import.meta.dirname),
+  css: {
+    postcss: {
+      plugins: [
+        // Adds rgb() fallbacks before every oklch() value in the output CSS.
+        // Tailwind v4 uses oklch exclusively; browsers older than Chrome 111 /
+        // Firefox 113 / Safari 15.4 do not support it and would render
+        // colourless (invisible) elements without these fallbacks.
+        oklabFunction({ subFeatures: { displayP3: false } }),
+      ],
+    },
+  },
   build: {
     outDir: path.resolve(import.meta.dirname, "dist"),
     emptyOutDir: true,
+    // Raise the inline-asset threshold so small images aren't inlined as
+    // base64 data URIs in the legacy bundle (they can exceed the 4 kB default).
+    assetsInlineLimit: 4096,
   },
   server: {
     port: 5173,
