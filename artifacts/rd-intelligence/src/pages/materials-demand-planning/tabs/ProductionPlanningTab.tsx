@@ -2100,7 +2100,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                           </div>
                           <div className="flex items-center gap-1.5">
                             <div className="text-right text-xs text-muted-foreground mr-1">
-                              <div className="font-medium">{(weekTotalCapacity - totalKg).toLocaleString()} KG remaining</div>
+                              <div className="font-medium">{weekTotalCapacity >= totalKg ? `${(weekTotalCapacity - totalKg).toLocaleString()} KG remaining` : `+${(totalKg - weekTotalCapacity).toLocaleString()} KG added`}</div>
                               <div className={cn("mt-1 h-1.5 w-24 overflow-hidden rounded-full", isLight ? "bg-slate-200" : "bg-white/10")}>
                                 <div className={`${barClass} h-full transition-all`} style={{ width: `${progress}%` }} />
                               </div>
@@ -2331,7 +2331,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                   <div className={cn("flex-1 h-1 rounded-full overflow-hidden", isLight ? "bg-slate-200" : "bg-white/10")}>
                                     <div className={`${utilBar} h-full transition-all`} style={{ width: `${dayUtil}%` }} />
                                   </div>
-                                  <span className="text-[9px] text-muted-foreground shrink-0">{(floor.maxCapacityKg - dayKg).toLocaleString()} KG remaining · {dayUtil}%</span>
+                                  <span className="text-[9px] text-muted-foreground shrink-0">{floor.maxCapacityKg >= dayKg ? `${(floor.maxCapacityKg - dayKg).toLocaleString()} KG remaining` : `+${(dayKg - floor.maxCapacityKg).toLocaleString()} KG added`} · {dayUtil}%</span>
                                 </div>
                               </div>
 
@@ -2393,7 +2393,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                       <div className={cn("flex-1 h-1 rounded-full overflow-hidden", isLight ? "bg-indigo-100" : "bg-indigo-500/15")}>
                                         <div className={`${nightUtilBar} h-full transition-all`} style={{ width: `${nightUtil}%` }} />
                                       </div>
-                                      <span className="text-[9px] text-muted-foreground shrink-0">{(floor.maxCapacityKg - nightKg).toLocaleString()} KG remaining · {nightUtil}%</span>
+                                      <span className="text-[9px] text-muted-foreground shrink-0">{floor.maxCapacityKg >= nightKg ? `${(floor.maxCapacityKg - nightKg).toLocaleString()} KG remaining` : `+${(nightKg - floor.maxCapacityKg).toLocaleString()} KG added`} · {nightUtil}%</span>
                                     </div>
                                   </div>
                                   <div className={cn("flex-1 p-2 space-y-1.5 min-h-[90px] rounded-b-2xl", isNightTarget ? "bg-indigo-500/5" : "")}>
@@ -3125,7 +3125,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                     <div className={cn("h-1.5 flex-1 rounded-full overflow-hidden", isLight ? "bg-slate-200" : "bg-white/10")}>
                                       <div className={`${dayBar} h-full transition-all`} style={{ width: `${dayUtil}%` }} />
                                     </div>
-                                    <span className="text-xs text-muted-foreground">{(floor.maxCapacityKg - dayKg).toLocaleString()} KG remaining · {dayUtil}%</span>
+                                    <span className="text-xs text-muted-foreground">{floor.maxCapacityKg >= dayKg ? `${(floor.maxCapacityKg - dayKg).toLocaleString()} KG remaining` : `+${(dayKg - floor.maxCapacityKg).toLocaleString()} KG added`} · {dayUtil}%</span>
                                   </div>
                                 </div>
                                 <div className="flex-1 p-3 space-y-2 overflow-y-auto">
@@ -3198,7 +3198,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                       <div className={cn("h-1.5 flex-1 rounded-full overflow-hidden", isLight ? "bg-indigo-100" : "bg-indigo-500/15")}>
                                         <div className={`${nightBar} h-full transition-all`} style={{ width: `${nightUtil}%` }} />
                                       </div>
-                                      <span className="text-xs text-muted-foreground">{(floor.maxCapacityKg - nightKg).toLocaleString()} KG remaining · {nightUtil}%</span>
+                                      <span className="text-xs text-muted-foreground">{floor.maxCapacityKg >= nightKg ? `${(floor.maxCapacityKg - nightKg).toLocaleString()} KG remaining` : `+${(nightKg - floor.maxCapacityKg).toLocaleString()} KG added`} · {nightUtil}%</span>
                                     </div>
                                   </div>
                                   <div className="flex-1 p-3 space-y-2 overflow-y-auto">
