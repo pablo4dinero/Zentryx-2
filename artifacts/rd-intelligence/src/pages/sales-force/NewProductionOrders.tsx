@@ -122,11 +122,20 @@ function todayDMY() {
 
 function parseDMY(date: string | null | undefined): Date | null {
   if (!date || typeof date !== "string") return null;
+  // DD/MM/YYYY
   const parts = date.split("/");
-  if (parts.length !== 3) return null;
-  const [d, m, y] = parts;
-  const parsed = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
-  return isNaN(parsed.getTime()) ? null : parsed;
+  if (parts.length === 3) {
+    const [d, m, y] = parts;
+    const parsed = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
+    if (!isNaN(parsed.getTime())) return parsed;
+  }
+  // ISO YYYY-MM-DD fallback
+  const iso = date.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) {
+    const parsed = new Date(parseInt(iso[1], 10), parseInt(iso[2], 10) - 1, parseInt(iso[3], 10));
+    if (!isNaN(parsed.getTime())) return parsed;
+  }
+  return null;
 }
 
 // Convert between the existing dd/mm/yyyy storage format and the ISO
