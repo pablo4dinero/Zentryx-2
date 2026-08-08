@@ -6,6 +6,7 @@ import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recha
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
 import { useExchangeRate } from "@/hooks/useExchangeRate";
+import { useGetCurrentUser } from "@/api-client";
 import * as XLSX from "xlsx";
 
 const BASE = import.meta.env.BASE_URL;
@@ -414,9 +415,11 @@ const CHART_PERIOD_LABELS: Record<ChartPeriod, string> = {
 function LeadingProductTypeChart({
   allOrders,
   accountTypeMap,
+  canViewIncome = false,
 }: {
   allOrders: TodayOrder[];
   accountTypeMap: Record<number, string | null>;
+  canViewIncome?: boolean;
 }) {
   const [chartPeriod, setChartPeriod] = useState<ChartPeriod>("all");
   const [selectedChartYear, setSelectedChartYear] = useState<number>(new Date().getFullYear());
@@ -501,13 +504,15 @@ function LeadingProductTypeChart({
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-2 mb-4">
-        <div className="glass-card rounded-xl p-3 border border-white/5">
-          <p className="text-[10px] uppercase tracking-widest text-muted-foreground leading-tight">Total Income</p>
-          <p className="mt-1 text-sm font-bold text-foreground truncate">
-            ₦{totalIncome.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-          </p>
-        </div>
+      <div className={cn("grid gap-2 mb-4", canViewIncome ? "grid-cols-3" : "grid-cols-2")}>
+        {canViewIncome && (
+          <div className="glass-card rounded-xl p-3 border border-white/5">
+            <p className="text-[10px] uppercase tracking-widest text-muted-foreground leading-tight">Total Income</p>
+            <p className="mt-1 text-sm font-bold text-foreground truncate">
+              ₦{totalIncome.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+            </p>
+          </div>
+        )}
         <div className="glass-card rounded-xl p-3 border border-white/5">
           <p className="text-[10px] uppercase tracking-widest text-muted-foreground leading-tight">Product Types</p>
           <p className="mt-1 text-sm font-bold text-foreground">{productTypesCount}</p>
@@ -594,6 +599,7 @@ export default function NewProductionOrdersPage() {
   const { theme } = useTheme();
   const isLight = theme === "light";
   const exchange = useExchangeRate();
+  const { data: currentUser } = useGetCurrentUser();
   const [viewMode, setViewMode] = useState<ViewMode>("weekly");
   const [search, setSearch] = useState("");
   const [selectedMonth, setSelectedMonth] = useState<string>(""); // For month filtering
@@ -990,21 +996,33 @@ export default function NewProductionOrdersPage() {
     [filteredOrders],
   );
 
+  const totalVolumeOrdered = useMemo(
+    () => filteredOrders.reduce((sum, order) => sum + Number(order.volume || 0), 0),
+    [filteredOrders],
+  );
+
+  const canViewIncome = ["admin", "executive", "manager"].includes((currentUser?.role ?? "").toLowerCase());
+
   const viewModeLabel = viewMode === "daily" ? "Daily"
     : viewMode === "weekly"  ? "Weekly"
     : viewMode === "monthly" ? "Monthly"
     : viewMode === "yearly"  ? "Yearly"
     : "All Time";
   const exportFileName = `production_orders_${viewMode}_${new Date().toISOString().slice(0, 10)}.xlsx`;
-  const periodDescription = viewMode === "daily"
-    ? "Showing production orders placed today."
-    : viewMode === "weekly"
-      ? "Showing production orders placed during the current week (Mon – Sun)."
-      : viewMode === "monthly"
-        ? "Showing production orders placed during the current calendar month."
-        : viewMode === "yearly"
-          ? "Showing production orders placed during the current calendar year."
-          : "Showing all production orders across all time.";
+  const periodDescription = (() => {
+    if (viewMode === "daily") return "Showing production orders placed today.";
+    if (viewMode === "weekly") return "Showing production orders placed during the current week (Mon – Sun).";
+    if (viewMode === "monthly") {
+      if (selectedMonth) {
+        const [yr, mo] = selectedMonth.split("-").map(Number);
+        const label = new Date(yr, mo - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+        return `Showing production orders placed in ${label}.`;
+      }
+      return "Showing production orders placed during the current calendar month.";
+    }
+    if (viewMode === "yearly") return `Showing production orders placed in ${new Date().getFullYear()}.`;
+    return "Showing all production orders across all time.";
+  })();
 
   const addOrder = async () => {
     if (!form.accountId || !form.price || !form.volume) return;
@@ -1157,12 +1175,12 @@ export default function NewProductionOrdersPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className={cn("grid grid-cols-1 gap-4", canViewIncome ? "sm:grid-cols-3" : "sm:grid-cols-2")}>
             <div className="glass-card rounded-2xl p-4 border border-white/5">
               <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Orders</p>
               <p className="mt-2 text-2xl font-bold text-foreground">{filteredOrders.length}</p>
             </div>
-            <div className="glass-card rounded-2xl p-4 border border-white/5 relative">
+            {canViewIncome && <div className="glass-card rounded-2xl p-4 border border-white/5 relative">
               <div className="flex items-center justify-between">
                 <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Total Income</p>
                 <button
@@ -1261,10 +1279,10 @@ export default function NewProductionOrdersPage() {
                   </div>
                 </div>
               )}
-            </div>
+            </div>}
             <div className="glass-card rounded-2xl p-4 border border-white/5">
-              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Date</p>
-              <p className="mt-2 text-2xl font-bold text-foreground">{todayDMY()}</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Total Volume Ordered</p>
+              <p className="mt-2 text-2xl font-bold text-foreground">{totalVolumeOrdered.toLocaleString()} KG</p>
             </div>
           </div>
         </div>
@@ -1390,7 +1408,7 @@ export default function NewProductionOrdersPage() {
 
           {/* Leading Product Type Chart - flex-1 to fill remaining space */}
           <div className="flex-1 min-h-0">
-            <LeadingProductTypeChart allOrders={allOrders} accountTypeMap={accountTypeMap} />
+            <LeadingProductTypeChart allOrders={allOrders} accountTypeMap={accountTypeMap} canViewIncome={canViewIncome} />
           </div>
         </div>
       </div>
@@ -1472,9 +1490,7 @@ export default function NewProductionOrdersPage() {
         <div className="flex items-center justify-between px-5 py-4 bg-white/5 border-b border-white/5">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{viewModeLabel} Production Orders</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Showing orders from the {viewMode === "daily" ? "current day" : viewMode === "weekly" ? "last 7 days" : "last 30 days"} across accounts.
-            </p>
+            <p className="text-sm text-muted-foreground mt-1">{periodDescription}</p>
           </div>
           <div className="flex items-center gap-3">
             {/* Column visibility + order toggle */}
