@@ -158,11 +158,25 @@ export function ProductionHistoryTab() {
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || "Failed to update dispatch"); }
       return res.json();
     },
-    onSuccess: () => {
+    onMutate: async ({ id, dispatched }) => {
+      // Cancel any in-flight refetches so they don't overwrite the optimistic update
+      await queryClient.cancelQueries({ queryKey: ["/api/mdp/produced-orders", view] });
+      const previous = queryClient.getQueryData<ProducedOrder[]>(["/api/mdp/produced-orders", view]);
+      // Immediately flip the deliveryStatus in the cache
+      queryClient.setQueryData<ProducedOrder[]>(["/api/mdp/produced-orders", view], old =>
+        old?.map(o => o.id === id ? { ...o, deliveryStatus: dispatched ? "Dispatched" : "Pending" } : o)
+      );
+      return { previous };
+    },
+    onError: (error: any, _vars, ctx) => {
+      // Roll back on failure
+      if (ctx?.previous) queryClient.setQueryData(["/api/mdp/produced-orders", view], ctx.previous);
+      toast({ title: "Could not update dispatch", description: (error as any)?.message || "Try again.", variant: "destructive" });
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/produced-orders", view] });
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/monthly-orders/all"] });
     },
-    onError: (error: any) => toast({ title: "Could not update dispatch", description: error?.message || "Try again.", variant: "destructive" }),
   });
 
   const returnToPlanningMutation = useMutation({
@@ -465,7 +479,6 @@ export function ProductionHistoryTab() {
                       <td className="px-3 py-3 text-center">
                         <button
                           onClick={() => dispatchMutation.mutate({ id: order.id, dispatched: order.deliveryStatus !== "Dispatched" })}
-                          disabled={dispatchMutation.isPending}
                           title={order.deliveryStatus === "Dispatched" ? "Mark as not dispatched" : "Mark as dispatched"}
                           className={cn(
                             "inline-flex items-center justify-center w-5 h-5 rounded border-2 transition-all",
