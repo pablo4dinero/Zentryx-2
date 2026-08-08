@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   BarChart2, Table2, RefreshCw,
   ChevronLeft, ChevronRight, Trash2, AlertTriangle,
+  Play, Pause, Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
@@ -23,6 +24,16 @@ const SERIES = [
 type Period = "daily" | "weekly" | "monthly" | "yearly";
 
 type ChartRow = { label: string; assigned: number; unassigned: number; volumeAdjusted: number };
+
+type TrackingStatus = {
+  status: "stopped" | "active" | "paused";
+  startedAt: string | null;
+  pausedAt: string | null;
+  baselineCount: number;
+  totalEvents: number;
+  changedOrders: number;
+  changeRate: number;
+};
 
 type LogEntry = {
   id: number;
@@ -209,6 +220,40 @@ export function ProductionAnalyticsTab({ isLight }: { isLight: boolean }) {
     },
   });
 
+  // ── Tracking ──
+  const trackingQuery = useQuery({
+    queryKey: ["/api/mdp/plan-activity/tracking"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}api/mdp/plan-activity/tracking`, { headers: authHeaders() });
+      if (!res.ok) throw new Error("Failed");
+      return res.json() as Promise<TrackingStatus>;
+    },
+    staleTime: 10_000,
+    refetchInterval: 15_000,
+  });
+
+  const startTracking = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`${BASE}api/mdp/plan-activity/tracking/start`, {
+        method: "POST", headers: { ...authHeaders(), "Content-Type": "application/json" },
+      });
+      if (!res.ok) throw new Error("Failed");
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/mdp/plan-activity/tracking"] }),
+  });
+
+  const pauseTracking = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`${BASE}api/mdp/plan-activity/tracking/pause`, {
+        method: "POST", headers: { ...authHeaders(), "Content-Type": "application/json" },
+      });
+      if (!res.ok) throw new Error("Failed");
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/mdp/plan-activity/tracking"] }),
+  });
+
+  const tracking = trackingQuery.data;
+
   const nav = (dir: 1 | -1) => {
     const next = navigate(period, date, year, month, dir);
     setDate(next.date); setYear(next.year); setMonth(next.month);
@@ -280,6 +325,136 @@ export function ProductionAnalyticsTab({ isLight }: { isLight: boolean }) {
           </button>
         </div>
       </div>
+
+      {/* ── Tracking banner + summary cards ── */}
+      {(() => {
+        const isActive  = tracking?.status === "active";
+        const isPaused  = tracking?.status === "paused";
+        const isStopped = !tracking || tracking.status === "stopped";
+        const actionPending = startTracking.isPending || pauseTracking.isPending;
+
+        const bannerBg = isActive
+          ? isLight ? "border-emerald-200 bg-emerald-50" : "border-emerald-500/20 bg-emerald-500/10"
+          : isPaused
+          ? isLight ? "border-amber-200 bg-amber-50"     : "border-amber-500/20 bg-amber-500/10"
+          : isLight ? "border-slate-200 bg-slate-50"     : "border-white/10 bg-white/5";
+
+        const dotColor  = isActive ? "#10b981" : isPaused ? "#f59e0b" : (isLight ? "#94a3b8" : "#64748b");
+        const statusLabel = isActive ? "Tracking Active" : isPaused ? "Tracking Paused" : "Not Tracking";
+
+        return (
+          <div className="space-y-3">
+            {/* Banner row */}
+            <div className={cn("flex items-center justify-between gap-4 rounded-xl border px-4 py-3", bannerBg)}>
+              <div className="flex items-center gap-2.5">
+                <span className="relative flex w-2.5 h-2.5">
+                  {isActive && <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: dotColor }} />}
+                  <span className="relative inline-flex rounded-full w-2.5 h-2.5" style={{ background: dotColor }} />
+                </span>
+                <span className={cn("text-sm font-semibold",
+                  isActive ? (isLight ? "text-emerald-800" : "text-emerald-400") :
+                  isPaused ? (isLight ? "text-amber-800"   : "text-amber-400")   :
+                  "text-muted-foreground"
+                )}>
+                  {statusLabel}
+                </span>
+                {tracking?.startedAt && (
+                  <span className="text-xs text-muted-foreground">
+                    · since {new Date(tracking.startedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {isActive ? (
+                  <button
+                    onClick={() => pauseTracking.mutate()}
+                    disabled={actionPending}
+                    className={cn(
+                      "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors",
+                      isLight ? "bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300"
+                               : "bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/30",
+                    )}
+                  >
+                    <Pause className="w-3 h-3" />
+                    {pauseTracking.isPending ? "Pausing…" : "Pause Tracking"}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => startTracking.mutate()}
+                    disabled={actionPending}
+                    className={cn(
+                      "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors",
+                      isLight ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                               : "bg-emerald-600 hover:bg-emerald-700 text-white",
+                    )}
+                  >
+                    <Play className="w-3 h-3" />
+                    {startTracking.isPending ? "Starting…" : isPaused ? "Resume Tracking" : "Start Tracking"}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Summary cards (only when tracking has been started at least once) */}
+            {tracking?.startedAt && (
+              <div className="grid grid-cols-3 gap-3">
+                {/* Change Rate */}
+                <div className={cn(card, "relative overflow-hidden")}>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                    Change Rate
+                  </p>
+                  <p className={cn("text-3xl font-bold tabular-nums",
+                    (tracking.changeRate ?? 0) > 30
+                      ? (isLight ? "text-red-600" : "text-red-400")
+                      : (isLight ? "text-slate-900" : "text-foreground"),
+                  )}>
+                    {trackingQuery.isLoading ? "—" : `${tracking.changeRate}%`}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    of {tracking.baselineCount} assigned orders
+                  </p>
+                  <Activity className="absolute right-4 bottom-3 w-8 h-8 opacity-5" />
+                </div>
+
+                {/* Events since start */}
+                <div className={cn(card, "relative overflow-hidden")}>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                    Events Since Start
+                  </p>
+                  <p className={cn("text-3xl font-bold tabular-nums", isLight ? "text-slate-900" : "text-foreground")}>
+                    {trackingQuery.isLoading ? "—" : tracking.totalEvents.toLocaleString()}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    changes logged
+                  </p>
+                  <Activity className="absolute right-4 bottom-3 w-8 h-8 opacity-5" />
+                </div>
+
+                {/* Orders changed */}
+                <div className={cn(card, "relative overflow-hidden")}>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                    Orders Changed
+                  </p>
+                  <p className={cn("text-3xl font-bold tabular-nums", isLight ? "text-slate-900" : "text-foreground")}>
+                    {trackingQuery.isLoading ? "—" : tracking.changedOrders.toLocaleString()}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    distinct orders affected
+                  </p>
+                  <Activity className="absolute right-4 bottom-3 w-8 h-8 opacity-5" />
+                </div>
+              </div>
+            )}
+
+            {/* First-time hint */}
+            {isStopped && !tracking?.startedAt && (
+              <p className="text-xs text-muted-foreground text-center py-1">
+                Complete your floor planning, then click <strong>Start Tracking</strong> to begin recording post-planning changes.
+              </p>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── Period selector + Date navigator ── */}
       <div className="flex items-center gap-3 flex-wrap">

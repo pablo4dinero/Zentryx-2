@@ -10,6 +10,7 @@ import {
   mdpProductSwitchDowntimesTable,
   mdpMonthlyOrdersTable,
   mdpPlanActivityLogTable,
+  mdpPlanTrackingTable,
   accountProductionOrdersTable,
   accountsTable,
   notificationsTable,
@@ -24,6 +25,22 @@ import { broadcastDataChange } from "../lib/realtime";
 import { sanitize } from "../lib/sanitize";
 
 const router = Router();
+
+// ── Plan-tracking in-memory cache ────────────────────────────────────────────
+// Avoids a DB roundtrip on every floor-assignment action. Initialised lazily on
+// first use; explicitly updated by the start/pause endpoints.
+let _trackingStatus: string | null = null;
+
+async function isTrackingActive(): Promise<boolean> {
+  if (_trackingStatus === null) {
+    try {
+      const r = await db.execute(sql`SELECT status FROM mdp_plan_tracking LIMIT 1`);
+      _trackingStatus = (r as any).rows?.[0]?.status ?? "stopped";
+    } catch { _trackingStatus = "stopped"; }
+  }
+  return _trackingStatus === "active";
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 const FLOOR_STATUSES = ["Running", "Under Maintenance", "On Hold"] as const;
 type FloorStatus = (typeof FLOOR_STATUSES)[number];
@@ -667,14 +684,16 @@ router.post("/floor-assignments", requireAuth, async (req: AuthRequest, res) => 
       }
     }
 
-    // Log the planning activity for analytics
-    await db.insert(mdpPlanActivityLogTable).values({
-      productionOrderId,
-      floorId,
-      weekLabel,
-      changeType: "assigned",
-      changedByUserId: req.user?.userId ?? null,
-    });
+    // Log only when tracking is active (not during initial planning)
+    if (await isTrackingActive()) {
+      await db.insert(mdpPlanActivityLogTable).values({
+        productionOrderId,
+        floorId,
+        weekLabel,
+        changeType: "assigned",
+        changedByUserId: req.user?.userId ?? null,
+      });
+    }
 
     // Push cache-invalidation to all other connected users immediately
     broadcastDataChange("floor-assignments", { weekLabel }, req.user?.userId);
@@ -699,7 +718,7 @@ router.patch("/floor-assignments/:id", requireAuth, async (req: AuthRequest, res
       .returning();
     if (!updated) { res.status(404).json({ error: "NotFound" }); return; }
     // Only log as a plan change when volume is adjusted (not note edits)
-    if (body.assignedVolume != null) {
+    if (body.assignedVolume != null && await isTrackingActive()) {
       await db.insert(mdpPlanActivityLogTable).values({
         productionOrderId: updated.productionOrderId,
         floorId: updated.floorId,
@@ -721,7 +740,7 @@ router.delete("/floor-assignments/:id", requireAuth, async (req: AuthRequest, re
     const [row] = await db.select().from(mdpFloorAssignmentsTable).where(eq(mdpFloorAssignmentsTable.id, id)).limit(1);
     await db.delete(mdpProductSwitchDowntimesTable).where(eq(mdpProductSwitchDowntimesTable.afterAssignmentId, id));
     await db.delete(mdpFloorAssignmentsTable).where(eq(mdpFloorAssignmentsTable.id, id));
-    if (row) {
+    if (row && await isTrackingActive()) {
       await db.insert(mdpPlanActivityLogTable).values({
         productionOrderId: row.productionOrderId,
         floorId: row.floorId,
@@ -730,6 +749,88 @@ router.delete("/floor-assignments/:id", requireAuth, async (req: AuthRequest, re
         changedByUserId: req.user?.userId ?? null,
       });
     }
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+// ── Plan Tracking endpoints ──────────────────────────────────────────────────
+
+// Returns tracking state + live stats (events / orders changed / change rate).
+router.get("/plan-activity/tracking", requireAuth, async (_req: AuthRequest, res) => {
+  try {
+    const result = await db.execute(sql`
+      SELECT
+        t.status,
+        t.started_at,
+        t.paused_at,
+        t.baseline_count,
+        COALESCE((
+          SELECT CAST(COUNT(*) AS INT)
+          FROM mdp_plan_activity_log
+          WHERE t.started_at IS NOT NULL AND changed_at >= t.started_at
+        ), 0) AS total_events,
+        COALESCE((
+          SELECT CAST(COUNT(DISTINCT production_order_id) AS INT)
+          FROM mdp_plan_activity_log
+          WHERE t.started_at IS NOT NULL AND changed_at >= t.started_at
+        ), 0) AS changed_orders
+      FROM mdp_plan_tracking t
+      LIMIT 1
+    `);
+    const row = (result as any).rows?.[0];
+    if (!row) { res.json({ status: "stopped", baselineCount: 0, totalEvents: 0, changedOrders: 0, changeRate: 0 }); return; }
+    const changeRate = row.baseline_count > 0
+      ? Math.round((row.changed_orders / row.baseline_count) * 100)
+      : 0;
+    res.json({
+      status: row.status,
+      startedAt: row.started_at,
+      pausedAt: row.paused_at,
+      baselineCount: row.baseline_count,
+      totalEvents: row.total_events,
+      changedOrders: row.changed_orders,
+      changeRate,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+// Start tracking: snapshots current floor-assignment count as baseline.
+router.post("/plan-activity/tracking/start", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const countResult = await db.execute(sql`SELECT CAST(COUNT(*) AS INT) AS count FROM mdp_floor_assignments`);
+    const baseline = Number((countResult as any).rows?.[0]?.count ?? 0);
+    const userId = req.user?.userId ?? null;
+    await db.execute(sql`
+      UPDATE mdp_plan_tracking
+      SET status = 'active',
+          started_at = NOW(),
+          paused_at = NULL,
+          baseline_count = ${baseline},
+          started_by_user_id = ${userId},
+          updated_at = NOW()
+    `);
+    _trackingStatus = "active";
+    res.json({ success: true, baselineCount: baseline });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+// Pause tracking.
+router.post("/plan-activity/tracking/pause", requireAuth, async (_req: AuthRequest, res) => {
+  try {
+    await db.execute(sql`
+      UPDATE mdp_plan_tracking
+      SET status = 'paused', paused_at = NOW(), updated_at = NOW()
+    `);
+    _trackingStatus = "paused";
     res.json({ success: true });
   } catch (err) {
     console.error(err);

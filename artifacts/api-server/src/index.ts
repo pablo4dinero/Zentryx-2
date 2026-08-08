@@ -151,6 +151,21 @@ async function createTablesIfNotExist() {
     `));
     await db.execute(sql.raw(`ALTER TABLE mdp_plan_activity_log ADD COLUMN IF NOT EXISTS changed_by_user_id INTEGER;`));
     await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS mdp_plan_tracking (
+        id SERIAL PRIMARY KEY,
+        status TEXT NOT NULL DEFAULT 'stopped',
+        started_at TIMESTAMP,
+        paused_at TIMESTAMP,
+        baseline_count INTEGER NOT NULL DEFAULT 0,
+        started_by_user_id INTEGER,
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `));
+    await db.execute(sql.raw(`
+      INSERT INTO mdp_plan_tracking (status)
+      SELECT 'stopped' WHERE NOT EXISTS (SELECT 1 FROM mdp_plan_tracking LIMIT 1);
+    `));
+    await db.execute(sql.raw(`
       CREATE TABLE IF NOT EXISTS product_types (
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL UNIQUE,

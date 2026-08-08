@@ -172,6 +172,23 @@ export const mdpPlanActivityLogTable = pgTable("mdp_plan_activity_log", {
   changedAt: timestamp("changed_at").notNull().defaultNow(),
 });
 
+/**
+ * MDP Plan Tracking
+ * Single-row global switch: stopped → active → paused.
+ * Controls whether floor-assignment changes are recorded in the activity log.
+ */
+export const mdpPlanTrackingTable = pgTable("mdp_plan_tracking", {
+  id: serial("id").primaryKey(),
+  // 'stopped' | 'active' | 'paused'
+  status: text("status").notNull().default("stopped"),
+  startedAt: timestamp("started_at"),
+  pausedAt: timestamp("paused_at"),
+  // Snapshot of total floor assignments at the moment tracking was started
+  baselineCount: integer("baseline_count").notNull().default(0),
+  startedByUserId: integer("started_by_user_id"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 export type MdpCustomerProduct = typeof mdpCustomerProductsTable.$inferSelect;
 export type MdpProductionOrder = typeof mdpProductionOrdersTable.$inferSelect;
 export type MdpProductionFloor = typeof mdpProductionFloorsTable.$inferSelect;
@@ -181,3 +198,4 @@ export type MdpFloorDayStatus = typeof mdpFloorDayStatusesTable.$inferSelect;
 export type MdpProductSwitchDowntime = typeof mdpProductSwitchDowntimesTable.$inferSelect;
 export type MdpMonthlyOrder = typeof mdpMonthlyOrdersTable.$inferSelect;
 export type MdpPlanActivityLog = typeof mdpPlanActivityLogTable.$inferSelect;
+export type MdpPlanTracking = typeof mdpPlanTrackingTable.$inferSelect;
