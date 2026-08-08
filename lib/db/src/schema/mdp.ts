@@ -156,6 +156,21 @@ export const mdpMonthlyOrdersTable = pgTable("mdp_monthly_orders", {
 // Exported Types (Drizzle $inferSelect)
 // ──────────────────────────────────────────────────────
 
+/**
+ * MDP Plan Activity Log
+ * Audit trail of every assignment change: created, removed, or volume-adjusted.
+ * Used to power the "plan change frequency" analytics chart.
+ */
+export const mdpPlanActivityLogTable = pgTable("mdp_plan_activity_log", {
+  id: serial("id").primaryKey(),
+  productionOrderId: integer("production_order_id"),
+  floorId: integer("floor_id"),
+  weekLabel: text("week_label"),
+  // 'assigned' | 'unassigned' | 'volume_adjusted'
+  changeType: text("change_type").notNull(),
+  changedAt: timestamp("changed_at").notNull().defaultNow(),
+});
+
 export type MdpCustomerProduct = typeof mdpCustomerProductsTable.$inferSelect;
 export type MdpProductionOrder = typeof mdpProductionOrdersTable.$inferSelect;
 export type MdpProductionFloor = typeof mdpProductionFloorsTable.$inferSelect;
@@ -164,3 +179,4 @@ export type MdpProducedOrder = typeof mdpProducedOrdersTable.$inferSelect;
 export type MdpFloorDayStatus = typeof mdpFloorDayStatusesTable.$inferSelect;
 export type MdpProductSwitchDowntime = typeof mdpProductSwitchDowntimesTable.$inferSelect;
 export type MdpMonthlyOrder = typeof mdpMonthlyOrdersTable.$inferSelect;
+export type MdpPlanActivityLog = typeof mdpPlanActivityLogTable.$inferSelect;

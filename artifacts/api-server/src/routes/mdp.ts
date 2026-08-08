@@ -9,6 +9,7 @@ import {
   mdpFloorDayStatusesTable,
   mdpProductSwitchDowntimesTable,
   mdpMonthlyOrdersTable,
+  mdpPlanActivityLogTable,
   accountProductionOrdersTable,
   accountsTable,
   notificationsTable,
@@ -666,6 +667,14 @@ router.post("/floor-assignments", requireAuth, async (req: AuthRequest, res) => 
       }
     }
 
+    // Log the planning activity for analytics
+    await db.insert(mdpPlanActivityLogTable).values({
+      productionOrderId,
+      floorId,
+      weekLabel,
+      changeType: "assigned",
+    });
+
     // Push cache-invalidation to all other connected users immediately
     broadcastDataChange("floor-assignments", { weekLabel }, req.user?.userId);
     res.status(201).json(created);
@@ -688,6 +697,15 @@ router.patch("/floor-assignments/:id", requireAuth, async (req: AuthRequest, res
       .where(eq(mdpFloorAssignmentsTable.id, id))
       .returning();
     if (!updated) { res.status(404).json({ error: "NotFound" }); return; }
+    // Only log as a plan change when volume is adjusted (not note edits)
+    if (body.assignedVolume != null) {
+      await db.insert(mdpPlanActivityLogTable).values({
+        productionOrderId: updated.productionOrderId,
+        floorId: updated.floorId,
+        weekLabel: updated.weekLabel,
+        changeType: "volume_adjusted",
+      });
+    }
     res.json(updated);
   } catch (err) {
     console.error(err);
@@ -698,9 +716,49 @@ router.patch("/floor-assignments/:id", requireAuth, async (req: AuthRequest, res
 router.delete("/floor-assignments/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
     const id = Number(req.params.id);
+    const [row] = await db.select().from(mdpFloorAssignmentsTable).where(eq(mdpFloorAssignmentsTable.id, id)).limit(1);
     await db.delete(mdpProductSwitchDowntimesTable).where(eq(mdpProductSwitchDowntimesTable.afterAssignmentId, id));
     await db.delete(mdpFloorAssignmentsTable).where(eq(mdpFloorAssignmentsTable.id, id));
+    if (row) {
+      await db.insert(mdpPlanActivityLogTable).values({
+        productionOrderId: row.productionOrderId,
+        floorId: row.floorId,
+        weekLabel: row.weekLabel,
+        changeType: "unassigned",
+      });
+    }
     res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+// Returns plan-change counts grouped by weekLabel + changeType for the last N weeks.
+// Shape: [{ weekLabel, assigned, unassigned, volumeAdjusted }]
+router.get("/plan-activity", requireAuth, async (_req: AuthRequest, res) => {
+  try {
+    const rows = await db
+      .select({
+        weekLabel: mdpPlanActivityLogTable.weekLabel,
+        changeType: mdpPlanActivityLogTable.changeType,
+        count: sql<number>`cast(count(*) as int)`,
+      })
+      .from(mdpPlanActivityLogTable)
+      .groupBy(mdpPlanActivityLogTable.weekLabel, mdpPlanActivityLogTable.changeType)
+      .orderBy(asc(mdpPlanActivityLogTable.weekLabel));
+
+    // Pivot into one object per week
+    const byWeek: Record<string, { weekLabel: string; assigned: number; unassigned: number; volumeAdjusted: number }> = {};
+    for (const row of rows) {
+      const wl = row.weekLabel ?? "Unknown";
+      if (!byWeek[wl]) byWeek[wl] = { weekLabel: wl, assigned: 0, unassigned: 0, volumeAdjusted: 0 };
+      if (row.changeType === "assigned")        byWeek[wl].assigned        += row.count;
+      if (row.changeType === "unassigned")      byWeek[wl].unassigned      += row.count;
+      if (row.changeType === "volume_adjusted") byWeek[wl].volumeAdjusted  += row.count;
+    }
+
+    res.json(Object.values(byWeek));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "InternalServerError" });

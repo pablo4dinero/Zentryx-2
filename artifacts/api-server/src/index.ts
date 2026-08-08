@@ -140,6 +140,16 @@ async function createTablesIfNotExist() {
     `));
     await db.execute(sql.raw(`ALTER TABLE mdp_monthly_orders ADD COLUMN IF NOT EXISTS production_order_id INTEGER;`));
     await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS mdp_plan_activity_log (
+        id SERIAL PRIMARY KEY,
+        production_order_id INTEGER,
+        floor_id INTEGER,
+        week_label TEXT,
+        change_type TEXT NOT NULL,
+        changed_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `));
+    await db.execute(sql.raw(`
       CREATE TABLE IF NOT EXISTS product_types (
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL UNIQUE,
