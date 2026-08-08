@@ -102,7 +102,7 @@ type Account = {
   productType: string | null;
 };
 
-type ViewMode = "daily" | "weekly" | "monthly";
+type ViewMode = "daily" | "weekly" | "monthly" | "yearly" | "all";
 type ChartPeriod = "daily" | "weekly" | "monthly" | "yearly" | "all";
 
 function authHeaders() {
@@ -156,11 +156,31 @@ function isTodayDate(date: string | null | undefined): boolean {
     && parsed.getDate() === now.getDate();
 }
 
-function isWithinLastDays(date: string | null | undefined, days: number): boolean {
+function isCurrentWeek(date: string | null | undefined): boolean {
   const parsed = parseDMY(date);
   if (!parsed) return false;
-  const diff = Math.floor((Date.now() - parsed.getTime()) / 86400000);
-  return diff >= 0 && diff < days;
+  const now = new Date();
+  const day = now.getDay();
+  // ISO Mon=start: if today is Sunday (0), Monday was -6 days ago
+  const diff = day === 0 ? -6 : 1 - day;
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
+  const sunday = new Date(monday.getTime() + 6 * 86_400_000);
+  monday.setHours(0, 0, 0, 0);
+  sunday.setHours(23, 59, 59, 999);
+  return parsed >= monday && parsed <= sunday;
+}
+
+function isCurrentMonth(date: string | null | undefined): boolean {
+  const parsed = parseDMY(date);
+  if (!parsed) return false;
+  const now = new Date();
+  return parsed.getFullYear() === now.getFullYear() && parsed.getMonth() === now.getMonth();
+}
+
+function isCurrentYear(date: string | null | undefined): boolean {
+  const parsed = parseDMY(date);
+  if (!parsed) return false;
+  return parsed.getFullYear() === new Date().getFullYear();
 }
 
 function isInMonth(date: string | null | undefined, monthStr: string): boolean {
@@ -173,32 +193,38 @@ function isInMonth(date: string | null | undefined, monthStr: string): boolean {
 function isInWeek(date: string | null | undefined, weekStr: string): boolean {
   const parsed = parseDMY(date);
   if (!parsed || !weekStr) return false;
-  const [yearWeekStr] = weekStr.split("W");
-  const [year, week] = [parseInt(yearWeekStr), parseInt(weekStr.split("W")[1])];
+  const [yearPart, weekPart] = weekStr.split("W");
+  const year = parseInt(yearPart);
+  const week = parseInt(weekPart);
 
+  // ISO 8601: week 1 contains January 4th; Monday is week-start
   const jan4 = new Date(year, 0, 4);
+  const jan4Dow = jan4.getDay(); // 0=Sun
   const weekStart = new Date(jan4);
-  weekStart.setDate(jan4.getDate() - jan4.getDay() + 1);
+  // Snap jan4 back to its Monday
+  weekStart.setDate(jan4.getDate() - (jan4Dow === 0 ? 6 : jan4Dow - 1));
+  // Advance to the target week
   weekStart.setDate(weekStart.getDate() + (week - 1) * 7);
 
   const weekEnd = new Date(weekStart);
   weekEnd.setDate(weekStart.getDate() + 6);
+  weekEnd.setHours(23, 59, 59, 999);
 
   return parsed >= weekStart && parsed <= weekEnd;
 }
 
 function filterByPeriod(orders: TodayOrder[], period: string, selectedMonth?: string, selectedWeek?: string): TodayOrder[] {
   if (period === "all") return orders;
-  if (period === "yearly") return orders.filter(o => isWithinLastDays(o.dateOrdered, 365));
+  if (period === "yearly") return orders.filter(o => isCurrentYear(o.dateOrdered));
   if (period === "monthly") {
     if (selectedMonth) return orders.filter(o => isInMonth(o.dateOrdered, selectedMonth));
-    return orders.filter(o => isWithinLastDays(o.dateOrdered, 30));
+    return orders.filter(o => isCurrentMonth(o.dateOrdered));
   }
   if (period === "weekly") {
     if (selectedWeek) return orders.filter(o => isInWeek(o.dateOrdered, selectedWeek));
-    return orders.filter(o => isWithinLastDays(o.dateOrdered, 7));
+    return orders.filter(o => isCurrentWeek(o.dateOrdered));
   }
-  return orders.filter(o => isTodayDate(o.dateOrdered));
+  return orders.filter(o => isTodayDate(o.dateOrdered)); // "daily"
 }
 
 const inputClass = "sf-field w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground";
@@ -847,13 +873,21 @@ export default function NewProductionOrdersPage() {
     [filteredOrders],
   );
 
-  const viewModeLabel = viewMode === "daily" ? "Daily" : viewMode === "weekly" ? "Weekly" : "Monthly";
+  const viewModeLabel = viewMode === "daily" ? "Daily"
+    : viewMode === "weekly"  ? "Weekly"
+    : viewMode === "monthly" ? "Monthly"
+    : viewMode === "yearly"  ? "Yearly"
+    : "All Time";
   const exportFileName = `production_orders_${viewMode}_${new Date().toISOString().slice(0, 10)}.xlsx`;
   const periodDescription = viewMode === "daily"
-    ? "Track new production orders placed today across accounts."
+    ? "Showing production orders placed today."
     : viewMode === "weekly"
-      ? "Track new production orders placed during the last 7 days across accounts."
-      : "Track new production orders placed during the last 30 days across accounts.";
+      ? "Showing production orders placed during the current week (Mon – Sun)."
+      : viewMode === "monthly"
+        ? "Showing production orders placed during the current calendar month."
+        : viewMode === "yearly"
+          ? "Showing production orders placed during the current calendar year."
+          : "Showing all production orders across all time.";
 
   const addOrder = async () => {
     if (!form.accountId || !form.price || !form.volume) return;
@@ -912,7 +946,7 @@ export default function NewProductionOrdersPage() {
           </div>
 
           <div className="flex flex-wrap gap-2 mb-4">
-            {(["daily", "weekly", "monthly"] as ViewMode[]).map(mode => (
+            {(["daily", "weekly", "monthly", "yearly", "all"] as ViewMode[]).map(mode => (
               <button
                 key={mode}
                 onClick={() => setViewMode(mode)}
@@ -923,7 +957,11 @@ export default function NewProductionOrdersPage() {
                     : "bg-white/5 text-muted-foreground hover:bg-white/10",
                 )}
               >
-                {mode === "daily" ? "Daily" : mode === "weekly" ? "Weekly" : "Monthly"}
+                {mode === "daily" ? "Daily"
+                  : mode === "weekly"  ? "Weekly"
+                  : mode === "monthly" ? "Monthly"
+                  : mode === "yearly"  ? "Yearly"
+                  : "All Time"}
               </button>
             ))}
           </div>
