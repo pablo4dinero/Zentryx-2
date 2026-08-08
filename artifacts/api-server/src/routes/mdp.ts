@@ -673,6 +673,7 @@ router.post("/floor-assignments", requireAuth, async (req: AuthRequest, res) => 
       floorId,
       weekLabel,
       changeType: "assigned",
+      changedByUserId: req.user?.userId ?? null,
     });
 
     // Push cache-invalidation to all other connected users immediately
@@ -704,6 +705,7 @@ router.patch("/floor-assignments/:id", requireAuth, async (req: AuthRequest, res
         floorId: updated.floorId,
         weekLabel: updated.weekLabel,
         changeType: "volume_adjusted",
+        changedByUserId: req.user?.userId ?? null,
       });
     }
     res.json(updated);
@@ -725,6 +727,7 @@ router.delete("/floor-assignments/:id", requireAuth, async (req: AuthRequest, re
         floorId: row.floorId,
         weekLabel: row.weekLabel,
         changeType: "unassigned",
+        changedByUserId: req.user?.userId ?? null,
       });
     }
     res.json({ success: true });
@@ -734,31 +737,143 @@ router.delete("/floor-assignments/:id", requireAuth, async (req: AuthRequest, re
   }
 });
 
-// Returns plan-change counts grouped by weekLabel + changeType for the last N weeks.
-// Shape: [{ weekLabel, assigned, unassigned, volumeAdjusted }]
-router.get("/plan-activity", requireAuth, async (_req: AuthRequest, res) => {
-  try {
-    const rows = await db
-      .select({
-        weekLabel: mdpPlanActivityLogTable.weekLabel,
-        changeType: mdpPlanActivityLogTable.changeType,
-        count: sql<number>`cast(count(*) as int)`,
-      })
-      .from(mdpPlanActivityLogTable)
-      .groupBy(mdpPlanActivityLogTable.weekLabel, mdpPlanActivityLogTable.changeType)
-      .orderBy(asc(mdpPlanActivityLogTable.weekLabel));
+// ── Plan Activity helpers ────────────────────────────────────────────────────
 
-    // Pivot into one object per week
-    const byWeek: Record<string, { weekLabel: string; assigned: number; unassigned: number; volumeAdjusted: number }> = {};
-    for (const row of rows) {
-      const wl = row.weekLabel ?? "Unknown";
-      if (!byWeek[wl]) byWeek[wl] = { weekLabel: wl, assigned: 0, unassigned: 0, volumeAdjusted: 0 };
-      if (row.changeType === "assigned")        byWeek[wl].assigned        += row.count;
-      if (row.changeType === "unassigned")      byWeek[wl].unassigned      += row.count;
-      if (row.changeType === "volume_adjusted") byWeek[wl].volumeAdjusted  += row.count;
+function getPlanActivityRange(query: Record<string, unknown>): { start: Date; end: Date; period: string } {
+  const period = (query.period as string) || "weekly";
+  const now = new Date();
+
+  if (period === "daily") {
+    let d = now;
+    if (query.date) {
+      const parts = (query.date as string).split("-").map(Number);
+      if (parts.length === 3 && parts.every(n => !isNaN(n))) d = new Date(parts[0], parts[1] - 1, parts[2]);
+    }
+    const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+    return { start, end: new Date(start.getTime() + 86_400_000), period };
+  }
+
+  if (period === "weekly") {
+    let base = now;
+    if (query.weekStart) {
+      const parts = (query.weekStart as string).split("-").map(Number);
+      if (parts.length === 3 && parts.every(n => !isNaN(n))) base = new Date(parts[0], parts[1] - 1, parts[2]);
+    }
+    const day = base.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    const monday = new Date(base.getFullYear(), base.getMonth(), base.getDate() + diff, 0, 0, 0, 0);
+    return { start: monday, end: new Date(monday.getTime() + 7 * 86_400_000), period };
+  }
+
+  if (period === "monthly") {
+    const year = parseInt(query.year as string) || now.getFullYear();
+    const month = parseInt(query.month as string) || now.getMonth() + 1;
+    return { start: new Date(year, month - 1, 1), end: new Date(year, month, 1), period };
+  }
+
+  // yearly
+  const year = parseInt(query.year as string) || now.getFullYear();
+  return { start: new Date(year, 0, 1), end: new Date(year + 1, 0, 1), period };
+}
+
+// Returns plan-change counts aggregated by the selected period.
+// period=daily  → grouped by hour (0-23)
+// period=weekly → grouped by day of week (Sun=0…Sat=6)
+// period=monthly→ grouped by week-of-month (1-5)
+// period=yearly → grouped by month (1-12)
+// Shape: [{ label, assigned, unassigned, volumeAdjusted }]
+router.get("/plan-activity", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { start, end, period } = getPlanActivityRange(req.query as Record<string, unknown>);
+    const startIso = start.toISOString();
+    const endIso = end.toISOString();
+
+    let groupExpr: string;
+    if (period === "daily")   groupExpr = "EXTRACT(HOUR FROM changed_at)::int";
+    else if (period === "weekly") groupExpr = "EXTRACT(DOW FROM changed_at)::int";
+    else if (period === "monthly") groupExpr = "CEIL(EXTRACT(DAY FROM changed_at) / 7.0)::int";
+    else groupExpr = "EXTRACT(MONTH FROM changed_at)::int";
+
+    const result = await db.execute(
+      sql`SELECT ${sql.raw(groupExpr)} AS bucket, change_type, CAST(COUNT(*) AS INT) AS count
+          FROM mdp_plan_activity_log
+          WHERE changed_at >= ${startIso}::timestamptz AND changed_at < ${endIso}::timestamptz
+          GROUP BY bucket, change_type ORDER BY bucket`
+    );
+    const rows = (result as any).rows as { bucket: number; change_type: string; count: number }[];
+
+    const DAY_LABELS: Record<number, string> = { 0:"Sun",1:"Mon",2:"Tue",3:"Wed",4:"Thu",5:"Fri",6:"Sat" };
+    const MON_LABELS: Record<number, string> = { 1:"Jan",2:"Feb",3:"Mar",4:"Apr",5:"May",6:"Jun",7:"Jul",8:"Aug",9:"Sep",10:"Oct",11:"Nov",12:"Dec" };
+
+    function bucketLabel(b: number): string {
+      if (period === "daily") {
+        if (b === 0) return "12am"; if (b < 12) return `${b}am`; if (b === 12) return "12pm"; return `${b - 12}pm`;
+      }
+      if (period === "weekly")  return DAY_LABELS[b] ?? String(b);
+      if (period === "monthly") return `Wk ${b}`;
+      return MON_LABELS[b] ?? String(b);
     }
 
-    res.json(Object.values(byWeek));
+    const allBuckets = period === "daily"   ? Array.from({ length: 24 }, (_, i) => i)
+      : period === "weekly"  ? [0,1,2,3,4,5,6]
+      : period === "monthly" ? [1,2,3,4,5]
+      : [1,2,3,4,5,6,7,8,9,10,11,12];
+
+    const byBucket: Record<number, { label: string; assigned: number; unassigned: number; volumeAdjusted: number }> = {};
+    for (const row of rows) {
+      const b = Number(row.bucket);
+      if (!byBucket[b]) byBucket[b] = { label: bucketLabel(b), assigned: 0, unassigned: 0, volumeAdjusted: 0 };
+      if (row.change_type === "assigned")        byBucket[b].assigned        += Number(row.count);
+      if (row.change_type === "unassigned")      byBucket[b].unassigned      += Number(row.count);
+      if (row.change_type === "volume_adjusted") byBucket[b].volumeAdjusted  += Number(row.count);
+    }
+
+    res.json(allBuckets.map(b => byBucket[b] ?? { label: bucketLabel(b), assigned: 0, unassigned: 0, volumeAdjusted: 0 }));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+// Detailed change log for the selected period (joins floors + accounts + users).
+router.get("/plan-activity/log", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { start, end } = getPlanActivityRange(req.query as Record<string, unknown>);
+    const result = await db.execute(sql`
+      SELECT
+        al.id,
+        al.change_type,
+        al.changed_at,
+        al.week_label,
+        al.production_order_id,
+        al.floor_id,
+        f.floor_name,
+        a.company,
+        a.product_name,
+        u.name  AS changed_by_name,
+        u.email AS changed_by_email
+      FROM mdp_plan_activity_log al
+      LEFT JOIN mdp_production_floors f  ON f.id  = al.floor_id
+      LEFT JOIN mdp_production_orders po ON po.id = al.production_order_id
+      LEFT JOIN accounts               a  ON a.id  = po.account_id
+      LEFT JOIN users                  u  ON u.id  = al.changed_by_user_id
+      WHERE al.changed_at >= ${start.toISOString()}::timestamptz
+        AND al.changed_at <  ${end.toISOString()}::timestamptz
+      ORDER BY al.changed_at DESC
+      LIMIT 200
+    `);
+    res.json((result as any).rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+// Clear all plan activity log entries.
+router.delete("/plan-activity", requireAuth, async (_req: AuthRequest, res) => {
+  try {
+    await db.execute(sql`DELETE FROM mdp_plan_activity_log`);
+    res.json({ success: true });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "InternalServerError" });

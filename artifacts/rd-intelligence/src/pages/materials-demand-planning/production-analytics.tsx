@@ -1,54 +1,122 @@
-import React from "react";
+import React, { useState, useMemo } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip as RechartsTooltip, ResponsiveContainer,
 } from "recharts";
-import { useQuery } from "@tanstack/react-query";
-import { BarChart2, Table2, RefreshCw } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  BarChart2, Table2, RefreshCw,
+  ChevronLeft, ChevronRight, Trash2, AlertTriangle,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
 import { authHeaders } from "./lib/helpers";
 import { BASE } from "./lib/constants";
 
 // ── Validated categorical palette (dataviz skill, slots 3→2→1) ─────────────
-// Light surface: #fcfcfb  Dark surface: #1a1a19
-// Adjacent-pair CVD ΔE ≥ 9.2, normal-vision ΔE ≥ 26.5 in both modes.
-// Aqua (#1baf7a light) is below 3:1 on light surface — relief: tooltip + table.
 const SERIES = [
-  {
-    key: "assigned",
-    label: "Assigned",
-    colorLight: "#1baf7a",
-    colorDark: "#199e70",
-  },
-  {
-    key: "unassigned",
-    label: "Unassigned",
-    colorLight: "#eb6834",
-    colorDark: "#d95926",
-  },
-  {
-    key: "volumeAdjusted",
-    label: "Volume Adjusted",
-    colorLight: "#2a78d6",
-    colorDark: "#3987e5",
-  },
+  { key: "assigned",       label: "Assigned",        colorLight: "#1baf7a", colorDark: "#199e70" },
+  { key: "unassigned",     label: "Unassigned",       colorLight: "#eb6834", colorDark: "#d95926" },
+  { key: "volumeAdjusted", label: "Volume Adjusted",  colorLight: "#2a78d6", colorDark: "#3987e5" },
 ] as const;
 
-type ActivityRow = {
-  weekLabel: string;
-  assigned: number;
-  unassigned: number;
-  volumeAdjusted: number;
+type Period = "daily" | "weekly" | "monthly" | "yearly";
+
+type ChartRow = { label: string; assigned: number; unassigned: number; volumeAdjusted: number };
+
+type LogEntry = {
+  id: number;
+  change_type: string;
+  changed_at: string;
+  week_label: string | null;
+  production_order_id: number | null;
+  floor_id: number | null;
+  floor_name: string | null;
+  company: string | null;
+  product_name: string | null;
+  changed_by_name: string | null;
+  changed_by_email: string | null;
 };
 
-// Shorten "Week 3: Jan 13 – Jan 17" → "Wk 3"
-function shortWeek(label: string): string {
-  const m = label.match(/Week (\d+)/i);
-  return m ? `Wk ${m[1]}` : label.slice(0, 8);
+// ── Date helpers ─────────────────────────────────────────────────────────────
+
+function getMonday(d: Date): Date {
+  const date = new Date(d);
+  const day = date.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + diff);
+  date.setHours(0, 0, 0, 0);
+  return date;
 }
 
-// Custom tooltip rendered by Recharts
+function toISODate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+const MONTH_LONG = ["January","February","March","April","May","June",
+                    "July","August","September","October","November","December"];
+
+function buildQueryString(period: Period, date: Date, year: number, month: number): string {
+  const p = new URLSearchParams({ period });
+  if (period === "daily")        p.set("date", toISODate(date));
+  else if (period === "weekly")  p.set("weekStart", toISODate(getMonday(date)));
+  else if (period === "monthly") { p.set("year", String(year)); p.set("month", String(month)); }
+  else                            p.set("year", String(year));
+  return p.toString();
+}
+
+function formatPeriodLabel(period: Period, date: Date, year: number, month: number): string {
+  if (period === "daily") {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const d = new Date(date); d.setHours(0, 0, 0, 0);
+    const diff = Math.round((d.getTime() - today.getTime()) / 86_400_000);
+    if (diff === 0) return "Today";
+    if (diff === -1) return "Yesterday";
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  }
+  if (period === "weekly") {
+    const mon = getMonday(date);
+    const sun = new Date(mon.getTime() + 6 * 86_400_000);
+    const sameYear = mon.getFullYear() === sun.getFullYear();
+    const monStr = mon.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const sunStr = sun.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }) });
+    return `${monStr} – ${sunStr}, ${sun.getFullYear()}`;
+  }
+  if (period === "monthly") return `${MONTH_LONG[month - 1]} ${year}`;
+  return String(year);
+}
+
+function navigate(period: Period, date: Date, year: number, month: number, dir: 1 | -1) {
+  if (period === "daily")   return { date: new Date(date.getTime() + dir * 86_400_000), year, month };
+  if (period === "weekly")  return { date: new Date(date.getTime() + dir * 7 * 86_400_000), year, month };
+  if (period === "monthly") {
+    let m = month + dir, y = year;
+    if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; }
+    return { date, year: y, month: m };
+  }
+  return { date, year: year + dir, month };
+}
+
+function formatRelativeTime(isoStr: string): string {
+  const diff = Date.now() - new Date(isoStr).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(isoStr).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+const CHANGE_LABELS: Record<string, string> = {
+  assigned: "Assigned",
+  unassigned: "Unassigned",
+  volume_adjusted: "Vol. Adjusted",
+};
+
+// ── Tooltip ──────────────────────────────────────────────────────────────────
+
 function CustomTooltip({ active, payload, label }: any) {
   const { theme } = useTheme();
   const isLight = theme === "light";
@@ -70,7 +138,7 @@ function CustomTooltip({ active, payload, label }: any) {
         </div>
       ))}
       <div className={cn("flex items-center justify-between pt-1.5 mt-1 border-t font-semibold",
-        isLight ? "border-slate-100" : "border-white/10"
+        isLight ? "border-slate-100" : "border-white/10",
       )}>
         <span>Total</span>
         <span className="tabular-nums">{total}</span>
@@ -79,8 +147,7 @@ function CustomTooltip({ active, payload, label }: any) {
   );
 }
 
-// Custom legend
-function CustomLegend({ isLight, colors }: { isLight: boolean; colors: Record<string, string> }) {
+function CustomLegend({ colors }: { colors: Record<string, string> }) {
   return (
     <div className="flex flex-wrap items-center justify-center gap-4 mt-2">
       {SERIES.map(s => (
@@ -93,53 +160,91 @@ function CustomLegend({ isLight, colors }: { isLight: boolean; colors: Record<st
   );
 }
 
-interface AnalyticsProps {
-  isLight: boolean;
-}
+// ── Main component ────────────────────────────────────────────────────────────
 
-export function ProductionAnalyticsTab({ isLight }: AnalyticsProps) {
-  const { theme } = useTheme();
-  const [showTable, setShowTable] = React.useState(false);
+export function ProductionAnalyticsTab({ isLight }: { isLight: boolean }) {
+  const queryClient = useQueryClient();
 
-  const colors = React.useMemo(() =>
-    Object.fromEntries(SERIES.map(s => [s.key, isLight ? s.colorLight : s.colorDark])),
-    [isLight]
-  );
+  const [period, setPeriod]   = useState<Period>("weekly");
+  const [date, setDate]       = useState(() => new Date());
+  const [year, setYear]       = useState(() => new Date().getFullYear());
+  const [month, setMonth]     = useState(() => new Date().getMonth() + 1);
+  const [showTable, setShowTable]     = useState(false);
+  const [clearConfirm, setClearConfirm] = useState(false);
 
-  const activityQuery = useQuery({
-    queryKey: ["/api/mdp/plan-activity"],
+  const qs = useMemo(() => buildQueryString(period, date, year, month), [period, date, year, month]);
+  const periodLabel = useMemo(() => formatPeriodLabel(period, date, year, month), [period, date, year, month]);
+
+  const chartQuery = useQuery({
+    queryKey: ["/api/mdp/plan-activity", qs],
     queryFn: async () => {
-      const res = await fetch(`${BASE}api/mdp/plan-activity`, { headers: authHeaders() });
-      if (!res.ok) throw new Error("Failed to load plan activity");
-      return res.json() as Promise<ActivityRow[]>;
+      const res = await fetch(`${BASE}api/mdp/plan-activity?${qs}`, { headers: authHeaders() });
+      if (!res.ok) throw new Error("Failed");
+      return res.json() as Promise<ChartRow[]>;
     },
-    staleTime: 1000 * 60 * 2,
-    refetchInterval: 1000 * 60 * 5,
+    staleTime: 60_000,
   });
 
-  const data = activityQuery.data ?? [];
+  const logQuery = useQuery({
+    queryKey: ["/api/mdp/plan-activity/log", qs],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}api/mdp/plan-activity/log?${qs}`, { headers: authHeaders() });
+      if (!res.ok) throw new Error("Failed");
+      return res.json() as Promise<LogEntry[]>;
+    },
+    staleTime: 60_000,
+  });
 
-  // Totals across all logged weeks
-  const totals = React.useMemo(() => ({
-    assigned: data.reduce((s, r) => s + r.assigned, 0),
-    unassigned: data.reduce((s, r) => s + r.unassigned, 0),
-    volumeAdjusted: data.reduce((s, r) => s + r.volumeAdjusted, 0),
-  }), [data]);
+  const clearMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`${BASE}api/mdp/plan-activity`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error("Failed to clear log");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/plan-activity"] });
+      setClearConfirm(false);
+    },
+  });
 
-  // X-axis tick: full week label → short form
-  const chartData = React.useMemo(() =>
-    data.map(r => ({ ...r, shortLabel: shortWeek(r.weekLabel) })),
-    [data]
+  const nav = (dir: 1 | -1) => {
+    const next = navigate(period, date, year, month, dir);
+    setDate(next.date); setYear(next.year); setMonth(next.month);
+  };
+
+  const chartData = chartQuery.data ?? [];
+  const totals = useMemo(() => ({
+    assigned:        chartData.reduce((s, r) => s + r.assigned, 0),
+    unassigned:      chartData.reduce((s, r) => s + r.unassigned, 0),
+    volumeAdjusted:  chartData.reduce((s, r) => s + r.volumeAdjusted, 0),
+  }), [chartData]);
+
+  const colors = useMemo(
+    () => Object.fromEntries(SERIES.map(s => [s.key, isLight ? s.colorLight : s.colorDark])),
+    [isLight],
   );
 
-  const cardBase = cn(
+  const card = cn(
     "rounded-2xl border p-5",
     isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5",
   );
 
+  const totalEvents = totals.assigned + totals.unassigned + totals.volumeAdjusted;
+  const hasData = totalEvents > 0;
+
+  // For daily mode skip hours that have no activity to avoid 24 bars all at zero
+  const displayChart = period === "daily"
+    ? chartData.filter(r => r.assigned + r.unassigned + r.volumeAdjusted > 0)
+    : chartData;
+
+  // ── Render ──────────────────────────────────────────────────────────────────
+
   return (
     <div className="space-y-6">
-      {/* Header */}
+
+      {/* ── Header ── */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h2 className={cn("text-xl font-semibold mb-1", isLight ? "text-slate-900" : "text-foreground")}>
@@ -151,15 +256,15 @@ export function ProductionAnalyticsTab({ isLight }: AnalyticsProps) {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => activityQuery.refetch()}
-            disabled={activityQuery.isFetching}
+            onClick={() => { chartQuery.refetch(); logQuery.refetch(); }}
+            disabled={chartQuery.isFetching}
             className={cn(
-              "p-2 rounded-lg border text-xs transition-colors",
+              "p-2 rounded-lg border transition-colors",
               isLight ? "border-slate-200 hover:bg-slate-100 text-slate-500" : "border-white/10 hover:bg-white/5 text-muted-foreground",
             )}
             title="Refresh"
           >
-            <RefreshCw className={cn("w-3.5 h-3.5", activityQuery.isFetching && "animate-spin")} />
+            <RefreshCw className={cn("w-3.5 h-3.5", chartQuery.isFetching && "animate-spin")} />
           </button>
           <button
             onClick={() => setShowTable(v => !v)}
@@ -176,10 +281,62 @@ export function ProductionAnalyticsTab({ isLight }: AnalyticsProps) {
         </div>
       </div>
 
-      {/* Summary stat tiles */}
+      {/* ── Period selector + Date navigator ── */}
+      <div className="flex items-center gap-3 flex-wrap">
+        {/* Period tabs */}
+        <div className={cn(
+          "flex rounded-lg border overflow-hidden divide-x text-xs font-medium",
+          isLight ? "border-slate-200 divide-slate-200" : "border-white/10 divide-white/10",
+        )}>
+          {(["daily","weekly","monthly","yearly"] as Period[]).map(p => (
+            <button
+              key={p}
+              onClick={() => setPeriod(p)}
+              className={cn(
+                "px-3.5 py-1.5 capitalize transition-colors",
+                period === p
+                  ? isLight ? "bg-indigo-600 text-white" : "bg-indigo-500 text-white"
+                  : isLight ? "bg-white text-slate-600 hover:bg-slate-50" : "bg-transparent text-muted-foreground hover:bg-white/5",
+              )}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+
+        {/* Date navigator */}
+        <div className="flex items-center gap-0.5 ml-auto">
+          <button
+            onClick={() => nav(-1)}
+            className={cn(
+              "p-1.5 rounded-lg transition-colors",
+              isLight ? "hover:bg-slate-100 text-slate-500" : "hover:bg-white/5 text-muted-foreground",
+            )}
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <span className={cn(
+            "min-w-[190px] text-center text-sm font-medium px-1",
+            isLight ? "text-slate-800" : "text-foreground",
+          )}>
+            {periodLabel}
+          </span>
+          <button
+            onClick={() => nav(1)}
+            className={cn(
+              "p-1.5 rounded-lg transition-colors",
+              isLight ? "hover:bg-slate-100 text-slate-500" : "hover:bg-white/5 text-muted-foreground",
+            )}
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* ── Summary stat tiles ── */}
       <div className="grid grid-cols-3 gap-3">
         {SERIES.map(s => (
-          <div key={s.key} className={cardBase}>
+          <div key={s.key} className={card}>
             <div className="flex items-center gap-2 mb-1">
               <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: isLight ? s.colorLight : s.colorDark }} />
               <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground truncate">
@@ -187,41 +344,40 @@ export function ProductionAnalyticsTab({ isLight }: AnalyticsProps) {
               </p>
             </div>
             <p className={cn("text-2xl font-bold mt-0.5", isLight ? "text-slate-900" : "text-foreground")}>
-              {activityQuery.isLoading ? "—" : totals[s.key as keyof typeof totals].toLocaleString()}
+              {chartQuery.isLoading ? "—" : totals[s.key as keyof typeof totals].toLocaleString()}
             </p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">events logged</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">events this {period === "daily" ? "day" : period === "weekly" ? "week" : period === "monthly" ? "month" : "year"}</p>
           </div>
         ))}
       </div>
 
-      {/* Chart / Table area */}
-      <div className={cardBase}>
+      {/* ── Chart / Table card ── */}
+      <div className={card}>
         <p className={cn("text-sm font-semibold mb-4", isLight ? "text-slate-800" : "text-foreground")}>
           Plan Change Frequency
           <span className={cn("ml-2 text-xs font-normal", isLight ? "text-slate-500" : "text-muted-foreground")}>
-            by week
+            {period === "daily" ? "by hour" : period === "weekly" ? "by day" : period === "monthly" ? "by week" : "by month"}
           </span>
         </p>
 
-        {activityQuery.isLoading ? (
+        {chartQuery.isLoading ? (
           <div className="h-56 flex items-center justify-center text-sm text-muted-foreground">
-            <RefreshCw className="w-4 h-4 animate-spin mr-2" /> Loading…
+            <RefreshCw className="w-4 h-4 animate-spin mr-2" />Loading…
           </div>
-        ) : data.length === 0 ? (
+        ) : !hasData ? (
           <div className="h-56 flex flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
             <BarChart2 className="w-8 h-8 opacity-30" />
-            <p className="font-medium">No activity logged yet</p>
+            <p className="font-medium">No activity for this period</p>
             <p className="text-xs text-center max-w-xs">
-              Changes to floor assignments — assigning, unassigning, or adjusting volumes — will appear here as they happen.
+              Changes to floor assignments will appear here as they happen.
             </p>
           </div>
         ) : showTable ? (
-          // Table view (relief for aqua contrast WARN)
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
                 <tr className={cn("border-b text-left", isLight ? "border-slate-200" : "border-white/10")}>
-                  <th className="py-2 pr-4 font-semibold text-muted-foreground">Week</th>
+                  <th className="py-2 pr-4 font-semibold text-muted-foreground">Period</th>
                   {SERIES.map(s => (
                     <th key={s.key} className="py-2 px-3 font-semibold text-right text-muted-foreground">
                       <div className="flex items-center justify-end gap-1.5">
@@ -234,20 +390,17 @@ export function ProductionAnalyticsTab({ isLight }: AnalyticsProps) {
                 </tr>
               </thead>
               <tbody>
-                {data.map(row => {
-                  const total = row.assigned + row.unassigned + row.volumeAdjusted;
-                  return (
-                    <tr key={row.weekLabel} className={cn("border-b last:border-0 hover:bg-black/5",
-                      isLight ? "border-slate-100" : "border-white/5"
-                    )}>
-                      <td className="py-2 pr-4 text-foreground font-medium">{row.weekLabel}</td>
-                      <td className="py-2 px-3 text-right tabular-nums">{row.assigned}</td>
-                      <td className="py-2 px-3 text-right tabular-nums">{row.unassigned}</td>
-                      <td className="py-2 px-3 text-right tabular-nums">{row.volumeAdjusted}</td>
-                      <td className="py-2 pl-3 text-right tabular-nums font-semibold text-foreground">{total}</td>
-                    </tr>
-                  );
-                })}
+                {chartData.filter(r => r.assigned + r.unassigned + r.volumeAdjusted > 0).map(row => (
+                  <tr key={row.label} className={cn("border-b last:border-0", isLight ? "border-slate-100" : "border-white/5")}>
+                    <td className="py-2 pr-4 text-foreground font-medium">{row.label}</td>
+                    <td className="py-2 px-3 text-right tabular-nums">{row.assigned}</td>
+                    <td className="py-2 px-3 text-right tabular-nums">{row.unassigned}</td>
+                    <td className="py-2 px-3 text-right tabular-nums">{row.volumeAdjusted}</td>
+                    <td className="py-2 pl-3 text-right tabular-nums font-semibold text-foreground">
+                      {row.assigned + row.unassigned + row.volumeAdjusted}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -255,24 +408,21 @@ export function ProductionAnalyticsTab({ isLight }: AnalyticsProps) {
           <>
             <ResponsiveContainer width="100%" height={280}>
               <BarChart
-                data={chartData}
+                data={displayChart}
                 margin={{ top: 4, right: 8, left: -16, bottom: 0 }}
-                barCategoryGap="32%"
+                barCategoryGap={period === "daily" ? "20%" : "32%"}
               >
-                <CartesianGrid
-                  vertical={false}
-                  stroke={isLight ? "#e1e0d9" : "#2c2c2a"}
-                  strokeWidth={1}
-                />
+                <CartesianGrid vertical={false} stroke={isLight ? "#e1e0d9" : "#2c2c2a"} strokeWidth={1} />
                 <XAxis
-                  dataKey="shortLabel"
-                  tick={{ fontSize: 11, fill: isLight ? "#898781" : "#898781" }}
+                  dataKey="label"
+                  tick={{ fontSize: 11, fill: "#898781" }}
                   axisLine={{ stroke: isLight ? "#c3c2b7" : "#383835" }}
                   tickLine={false}
+                  interval={period === "daily" ? "preserveStartEnd" : 0}
                 />
                 <YAxis
                   allowDecimals={false}
-                  tick={{ fontSize: 11, fill: isLight ? "#898781" : "#898781" }}
+                  tick={{ fontSize: 11, fill: "#898781" }}
                   axisLine={false}
                   tickLine={false}
                 />
@@ -280,26 +430,141 @@ export function ProductionAnalyticsTab({ isLight }: AnalyticsProps) {
                   content={<CustomTooltip />}
                   cursor={{ fill: isLight ? "rgba(0,0,0,0.04)" : "rgba(255,255,255,0.04)" }}
                 />
-                {/* Stack: Assigned (base) → Unassigned → Volume Adjusted (top)
-                    Adjacent palette pairs: aqua↔orange and orange↔blue — both pass CVD gates. */}
                 <Bar dataKey="assigned"       name="Assigned"        stackId="a"
                   fill={colors.assigned}       stroke={isLight ? "#fcfcfb" : "#1a1a19"} strokeWidth={1.5}
-                  radius={[0, 0, 0, 0]}
+                  radius={[0,0,0,0]}
                 />
                 <Bar dataKey="unassigned"     name="Unassigned"      stackId="a"
                   fill={colors.unassigned}     stroke={isLight ? "#fcfcfb" : "#1a1a19"} strokeWidth={1.5}
-                  radius={[0, 0, 0, 0]}
+                  radius={[0,0,0,0]}
                 />
                 <Bar dataKey="volumeAdjusted" name="Volume Adjusted" stackId="a"
                   fill={colors.volumeAdjusted} stroke={isLight ? "#fcfcfb" : "#1a1a19"} strokeWidth={1.5}
-                  radius={[4, 4, 0, 0]}
+                  radius={[4,4,0,0]}
                 />
               </BarChart>
             </ResponsiveContainer>
-            <CustomLegend isLight={isLight} colors={colors} />
+            <CustomLegend colors={colors} />
           </>
         )}
       </div>
+
+      {/* ── Changes log ── */}
+      <div className={card}>
+        <div className="flex items-center justify-between mb-4">
+          <p className={cn("text-sm font-semibold", isLight ? "text-slate-800" : "text-foreground")}>
+            Changes Log
+            <span className={cn("ml-2 text-xs font-normal", isLight ? "text-slate-500" : "text-muted-foreground")}>
+              {logQuery.isLoading ? "loading…" : `${logQuery.data?.length ?? 0} entries`}
+            </span>
+          </p>
+        </div>
+
+        {logQuery.isLoading ? (
+          <div className="h-24 flex items-center justify-center text-sm text-muted-foreground">
+            <RefreshCw className="w-4 h-4 animate-spin mr-2" />Loading…
+          </div>
+        ) : !logQuery.data?.length ? (
+          <p className="text-sm text-muted-foreground text-center py-6">No changes recorded for this period.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className={cn("border-b text-left", isLight ? "border-slate-200" : "border-white/10")}>
+                  <th className="py-2 pr-4 font-semibold text-muted-foreground whitespace-nowrap">Time</th>
+                  <th className="py-2 px-3 font-semibold text-muted-foreground whitespace-nowrap">Type</th>
+                  <th className="py-2 px-3 font-semibold text-muted-foreground whitespace-nowrap">Order / Account</th>
+                  <th className="py-2 px-3 font-semibold text-muted-foreground whitespace-nowrap">Floor</th>
+                  <th className="py-2 px-3 font-semibold text-muted-foreground whitespace-nowrap">Week</th>
+                  <th className="py-2 pl-3 font-semibold text-muted-foreground whitespace-nowrap">Changed By</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logQuery.data.map(entry => {
+                  const ctColor = entry.change_type === "assigned"
+                    ? (isLight ? "#1baf7a" : "#199e70")
+                    : entry.change_type === "unassigned"
+                    ? (isLight ? "#eb6834" : "#d95926")
+                    : (isLight ? "#2a78d6" : "#3987e5");
+                  const orderLabel = entry.company
+                    ? entry.product_name ? `${entry.company} — ${entry.product_name}` : entry.company
+                    : entry.production_order_id ? `Order #${entry.production_order_id}` : "—";
+                  const floorLabel = entry.floor_name ?? (entry.floor_id ? `Floor ${entry.floor_id}` : "—");
+                  const byLabel = entry.changed_by_name ?? entry.changed_by_email ?? "—";
+                  return (
+                    <tr key={entry.id} className={cn("border-b last:border-0", isLight ? "border-slate-100" : "border-white/5")}>
+                      <td className="py-2 pr-4 text-muted-foreground whitespace-nowrap">
+                        {formatRelativeTime(entry.changed_at)}
+                      </td>
+                      <td className="py-2 px-3 whitespace-nowrap">
+                        <span
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                          style={{ background: ctColor + "22", color: ctColor }}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full" style={{ background: ctColor }} />
+                          {CHANGE_LABELS[entry.change_type] ?? entry.change_type}
+                        </span>
+                      </td>
+                      <td className="py-2 px-3 max-w-[180px] truncate text-foreground">{orderLabel}</td>
+                      <td className="py-2 px-3 text-muted-foreground whitespace-nowrap">{floorLabel}</td>
+                      <td className="py-2 px-3 text-muted-foreground whitespace-nowrap">{entry.week_label ?? "—"}</td>
+                      <td className="py-2 pl-3 text-muted-foreground whitespace-nowrap">{byLabel}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── Clear log ── */}
+      <div className="flex justify-end">
+        {clearConfirm ? (
+          <div className={cn(
+            "flex items-center gap-3 px-4 py-3 rounded-xl border text-sm",
+            isLight ? "border-red-200 bg-red-50 text-red-800" : "border-red-500/30 bg-red-500/10 text-red-400",
+          )}>
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>This will permanently delete <strong>all</strong> logged events. Continue?</span>
+            <div className="flex gap-2 ml-2">
+              <button
+                onClick={() => clearMutation.mutate()}
+                disabled={clearMutation.isPending}
+                className={cn(
+                  "px-3 py-1 rounded-lg text-xs font-semibold transition-colors",
+                  isLight ? "bg-red-600 hover:bg-red-700 text-white" : "bg-red-500 hover:bg-red-600 text-white",
+                )}
+              >
+                {clearMutation.isPending ? "Clearing…" : "Yes, clear all"}
+              </button>
+              <button
+                onClick={() => setClearConfirm(false)}
+                className={cn(
+                  "px-3 py-1 rounded-lg text-xs font-medium transition-colors",
+                  isLight ? "hover:bg-red-100 text-red-700" : "hover:bg-red-500/10 text-red-400",
+                )}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setClearConfirm(true)}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors",
+              isLight
+                ? "border-slate-200 hover:border-red-200 hover:text-red-600 hover:bg-red-50 text-slate-500"
+                : "border-white/10 hover:border-red-500/30 hover:text-red-400 hover:bg-red-500/10 text-muted-foreground",
+            )}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            Clear All Log
+          </button>
+        )}
+      </div>
+
     </div>
   );
 }

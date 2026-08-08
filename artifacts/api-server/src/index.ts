@@ -149,6 +149,7 @@ async function createTablesIfNotExist() {
         changed_at TIMESTAMP NOT NULL DEFAULT NOW()
       );
     `));
+    await db.execute(sql.raw(`ALTER TABLE mdp_plan_activity_log ADD COLUMN IF NOT EXISTS changed_by_user_id INTEGER;`));
     await db.execute(sql.raw(`
       CREATE TABLE IF NOT EXISTS product_types (
         id SERIAL PRIMARY KEY,

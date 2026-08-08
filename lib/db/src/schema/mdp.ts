@@ -168,6 +168,7 @@ export const mdpPlanActivityLogTable = pgTable("mdp_plan_activity_log", {
   weekLabel: text("week_label"),
   // 'assigned' | 'unassigned' | 'volume_adjusted'
   changeType: text("change_type").notNull(),
+  changedByUserId: integer("changed_by_user_id"),
   changedAt: timestamp("changed_at").notNull().defaultNow(),
 });
 
