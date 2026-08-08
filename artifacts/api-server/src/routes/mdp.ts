@@ -1403,6 +1403,40 @@ router.put("/produced-orders/:id/production-status", requireAuth, async (req: Au
   }
 });
 
+// Toggle dispatched state: updates produced order delivery_status and propagates
+// to mdp_monthly_orders.delivery_status ("Yes"/"No") via the production order chain.
+router.put("/produced-orders/:id/dispatch", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const id = Number(req.params.id);
+    const dispatched: boolean = Boolean((req.body as any)?.dispatched);
+
+    const [produced] = await db.select().from(mdpProducedOrdersTable)
+      .where(eq(mdpProducedOrdersTable.id, id)).limit(1);
+    if (!produced) { res.status(404).json({ error: "NotFound" }); return; }
+
+    await db.update(mdpProducedOrdersTable)
+      .set({ deliveryStatus: dispatched ? "Dispatched" : "Pending" })
+      .where(eq(mdpProducedOrdersTable.id, id));
+
+    if (produced.productionOrderId) {
+      const [mdpOrder] = await db.select()
+        .from(mdpProductionOrdersTable)
+        .where(eq(mdpProductionOrdersTable.id, produced.productionOrderId))
+        .limit(1);
+      if (mdpOrder?.salesOrderId) {
+        await db.update(mdpMonthlyOrdersTable)
+          .set({ deliveryStatus: dispatched ? "Yes" : "No", updatedAt: new Date() })
+          .where(eq(mdpMonthlyOrdersTable.productionOrderId, mdpOrder.salesOrderId));
+      }
+    }
+
+    res.json({ success: true, dispatched });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
 router.delete("/produced-orders", requireAuth, async (_req: AuthRequest, res) => {
   try {
     await db.delete(mdpProducedOrdersTable);
