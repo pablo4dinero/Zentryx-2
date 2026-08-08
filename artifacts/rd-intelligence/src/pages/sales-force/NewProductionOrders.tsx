@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Search, Download, Trash2, Maximize2, Minimize2, Edit3, X, Calendar, ChevronDown, Pencil, RefreshCw, History, ChevronRight, SlidersHorizontal, Check } from "lucide-react";
+import { Plus, Search, Download, Trash2, Maximize2, Minimize2, Edit3, X, Calendar, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Pencil, RefreshCw, History, SlidersHorizontal, Check } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
@@ -222,9 +222,17 @@ function isInWeek(date: string | null | undefined, weekStr: string): boolean {
   return parsed >= weekStart && parsed <= weekEnd;
 }
 
-function filterByPeriod(orders: TodayOrder[], period: string, selectedMonth?: string, selectedWeek?: string): TodayOrder[] {
+function filterByPeriod(orders: TodayOrder[], period: string, selectedMonth?: string, selectedWeek?: string, selectedYear?: number): TodayOrder[] {
   if (period === "all") return orders;
-  if (period === "yearly") return orders.filter(o => isCurrentYear(o.dateOrdered));
+  if (period === "yearly") {
+    if (selectedYear) {
+      return orders.filter(o => {
+        const parsed = parseDMY(o.dateOrdered);
+        return parsed ? parsed.getFullYear() === selectedYear : false;
+      });
+    }
+    return orders.filter(o => isCurrentYear(o.dateOrdered));
+  }
   if (period === "monthly") {
     if (selectedMonth) return orders.filter(o => isInMonth(o.dateOrdered, selectedMonth));
     return orders.filter(o => isCurrentMonth(o.dateOrdered));
@@ -237,6 +245,25 @@ function filterByPeriod(orders: TodayOrder[], period: string, selectedMonth?: st
 }
 
 const inputClass = "sf-field w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground";
+
+// ─── Analytics panel size (persisted to localStorage) ────────────────────────
+const ANALYTICS_LS_KEY = "sf_analytics_size";
+const ANALYTICS_H_MIN = 360; const ANALYTICS_H_MAX = 900; const ANALYTICS_H_STEP = 60;
+const ANALYTICS_W_MIN = 320; const ANALYTICS_W_MAX = 700; const ANALYTICS_W_STEP = 40;
+const ANALYTICS_H_DEFAULT = 540; const ANALYTICS_W_DEFAULT = 430;
+
+function loadAnalyticsSize(): { h: number; w: number } {
+  try {
+    const raw = localStorage.getItem(ANALYTICS_LS_KEY);
+    if (!raw) return { h: ANALYTICS_H_DEFAULT, w: ANALYTICS_W_DEFAULT };
+    const s = JSON.parse(raw);
+    return {
+      h: typeof s.h === "number" ? Math.max(ANALYTICS_H_MIN, Math.min(ANALYTICS_H_MAX, s.h)) : ANALYTICS_H_DEFAULT,
+      w: typeof s.w === "number" ? Math.max(ANALYTICS_W_MIN, Math.min(ANALYTICS_W_MAX, s.w)) : ANALYTICS_W_DEFAULT,
+    };
+  } catch { return { h: ANALYTICS_H_DEFAULT, w: ANALYTICS_W_DEFAULT }; }
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Searchable account dropdown. Uses the same input styling as the rest of the
 // form, plus a panel that filters accounts by company OR product name.
@@ -387,18 +414,27 @@ const CHART_PERIOD_LABELS: Record<ChartPeriod, string> = {
 function LeadingProductTypeChart({
   allOrders,
   accountTypeMap,
+  analyticsH,
+  analyticsW,
+  onHeightChange,
+  onWidthChange,
 }: {
   allOrders: TodayOrder[];
   accountTypeMap: Record<number, string | null>;
+  analyticsH: number;
+  analyticsW: number;
+  onHeightChange: (delta: number) => void;
+  onWidthChange: (delta: number) => void;
 }) {
   const [chartPeriod, setChartPeriod] = useState<ChartPeriod>("all");
+  const [selectedChartYear, setSelectedChartYear] = useState<number>(new Date().getFullYear());
   const [fullscreen, setFullscreen] = useState(false);
   const { theme: _chartTheme } = useTheme();
   const isChartLight = _chartTheme === "light";
 
   const chartOrders = useMemo(
-    () => filterByPeriod(allOrders, chartPeriod),
-    [allOrders, chartPeriod],
+    () => filterByPeriod(allOrders, chartPeriod, undefined, undefined, selectedChartYear),
+    [allOrders, chartPeriod, selectedChartYear],
   );
 
   const { chartData, totalIncome, productTypesCount, leadingType } = useMemo(() => {
@@ -430,15 +466,44 @@ function LeadingProductTypeChart({
           <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Analytics</p>
           <h2 className="text-base font-bold text-foreground mt-0.5">Leading Product Type</h2>
         </div>
-        <button
-          onClick={() => setFullscreen(f => !f)}
-          className="p-1.5 rounded-lg hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-        >
-          {fullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-        </button>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {/* Resize controls */}
+          <div className="flex items-center border border-white/10 rounded-lg overflow-hidden mr-1">
+            <button
+              onClick={() => onHeightChange(-ANALYTICS_H_STEP)}
+              disabled={analyticsH <= ANALYTICS_H_MIN}
+              className="p-1 text-muted-foreground hover:text-foreground hover:bg-white/10 disabled:opacity-30 transition-colors"
+              title="Shorter"
+            ><ChevronUp className="w-3 h-3" /></button>
+            <button
+              onClick={() => onHeightChange(ANALYTICS_H_STEP)}
+              disabled={analyticsH >= ANALYTICS_H_MAX}
+              className="p-1 text-muted-foreground hover:text-foreground hover:bg-white/10 disabled:opacity-30 transition-colors border-l border-white/10"
+              title="Taller"
+            ><ChevronDown className="w-3 h-3" /></button>
+            <button
+              onClick={() => onWidthChange(-ANALYTICS_W_STEP)}
+              disabled={analyticsW <= ANALYTICS_W_MIN}
+              className="p-1 text-muted-foreground hover:text-foreground hover:bg-white/10 disabled:opacity-30 transition-colors border-l border-white/10"
+              title="Narrower"
+            ><ChevronLeft className="w-3 h-3" /></button>
+            <button
+              onClick={() => onWidthChange(ANALYTICS_W_STEP)}
+              disabled={analyticsW >= ANALYTICS_W_MAX}
+              className="p-1 text-muted-foreground hover:text-foreground hover:bg-white/10 disabled:opacity-30 transition-colors border-l border-white/10"
+              title="Wider"
+            ><ChevronRight className="w-3 h-3" /></button>
+          </div>
+          <button
+            onClick={() => setFullscreen(f => !f)}
+            className="p-1.5 rounded-lg hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {fullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          </button>
+        </div>
       </div>
 
-      <div className="flex flex-wrap gap-1 mb-4">
+      <div className="flex flex-wrap gap-1 mb-2">
         {(["daily", "weekly", "monthly", "yearly", "all"] as ChartPeriod[]).map(p => (
           <button
             key={p}
@@ -454,6 +519,24 @@ function LeadingProductTypeChart({
           </button>
         ))}
       </div>
+
+      {chartPeriod === "yearly" && (
+        <div className="flex items-center gap-2 mb-3">
+          <label className="text-xs text-muted-foreground whitespace-nowrap">Year:</label>
+          <select
+            value={selectedChartYear}
+            onChange={e => setSelectedChartYear(Number(e.target.value))}
+            className={cn(
+              "h-7 rounded-lg border px-2 text-xs focus:outline-none cursor-pointer",
+              isChartLight ? "border-slate-200 bg-white text-slate-900" : "border-white/10 bg-black/20 text-foreground",
+            )}
+          >
+            {Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - i).map(y => (
+              <option key={y} value={y} className="bg-card">{y}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className="grid grid-cols-3 gap-2 mb-4">
         <div className="glass-card rounded-xl p-3 border border-white/5">
@@ -537,7 +620,7 @@ function LeadingProductTypeChart({
   }
 
   return (
-    <div className="glass-card rounded-2xl p-4 sm:p-6 border border-white/5 flex flex-col h-[480px] sm:h-[540px]">
+    <div className="glass-card rounded-2xl p-4 sm:p-6 border border-white/5 flex flex-col h-full">
       {inner}
     </div>
   );
@@ -571,6 +654,28 @@ export default function NewProductionOrdersPage() {
   const [manualConvRate, setManualConvRate] = useState<string>("");
   const [showManualConv, setShowManualConv] = useState(false);
   const [ratesRefreshing, setRatesRefreshing] = useState(false);
+
+  // Analytics panel sizing (persisted)
+  const [analyticsSize, setAnalyticsSize] = useState<{ h: number; w: number }>(loadAnalyticsSize);
+  const [isXL, setIsXL] = useState(() => typeof window !== "undefined" && window.innerWidth >= 1280);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1280px)");
+    const handler = (e: MediaQueryListEvent) => setIsXL(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+  const updateAnalyticsSize = useCallback((field: "h" | "w", delta: number) => {
+    setAnalyticsSize(prev => {
+      const next = {
+        ...prev,
+        [field]: field === "h"
+          ? Math.max(ANALYTICS_H_MIN, Math.min(ANALYTICS_H_MAX, prev.h + delta))
+          : Math.max(ANALYTICS_W_MIN, Math.min(ANALYTICS_W_MAX, prev.w + delta)),
+      };
+      localStorage.setItem(ANALYTICS_LS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   // Currency converter constants and helpers
   const SUPPORTED_CURRENCIES = ["NGN", "USD", "EUR", "GBP", "ZAR", "CNY", "KES", "GHS", "ZMW"] as const;
@@ -933,7 +1038,10 @@ export default function NewProductionOrdersPage() {
   return (
     <div className="space-y-6">
       {/* Top row: header + chart */}
-      <div className="grid grid-cols-1 xl:grid-cols-[1.6fr_1fr] gap-6 items-start">
+      <div
+        className="grid grid-cols-1 gap-6 items-start"
+        style={isXL ? { gridTemplateColumns: `1fr ${analyticsSize.w}px` } : undefined}
+      >
         <div className="glass-card rounded-2xl p-6 border border-white/5">
           <div className="flex items-start justify-between gap-4 mb-5">
             <div>
@@ -1159,7 +1267,7 @@ export default function NewProductionOrdersPage() {
         </div>
 
         {/* Right side: Currency Converter + Leading Product Type Chart - fit within form height */}
-        <div className="flex flex-col gap-2 h-[480px] sm:h-[540px]">
+        <div className="flex flex-col gap-2" style={{ height: analyticsSize.h }}>
           {/* Currency Converter */}
           <div className={cn(
             "rounded-2xl border p-4 flex flex-col gap-3 overflow-hidden",
@@ -1253,7 +1361,14 @@ export default function NewProductionOrdersPage() {
 
           {/* Leading Product Type Chart - flex-1 to fill remaining space */}
           <div className="flex-1 min-h-0">
-            <LeadingProductTypeChart allOrders={allOrders} accountTypeMap={accountTypeMap} />
+            <LeadingProductTypeChart
+              allOrders={allOrders}
+              accountTypeMap={accountTypeMap}
+              analyticsH={analyticsSize.h}
+              analyticsW={analyticsSize.w}
+              onHeightChange={delta => updateAnalyticsSize("h", delta)}
+              onWidthChange={delta => updateAnalyticsSize("w", delta)}
+            />
           </div>
         </div>
       </div>
@@ -1310,8 +1425,8 @@ export default function NewProductionOrdersPage() {
           </div>
         )}
 
-        <div className="flex items-center gap-3">
-          <div className="sf-field flex-1 flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="sf-field flex-1 min-w-[180px] flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
             <Search className="w-4 h-4 text-muted-foreground flex-shrink-0" />
             <input
               value={search}
@@ -1322,7 +1437,7 @@ export default function NewProductionOrdersPage() {
           </div>
           <button
             onClick={exportTable}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-white/10 text-sm text-muted-foreground hover:text-foreground hover:border-white/20 transition-colors whitespace-nowrap"
+            className="inline-flex flex-shrink-0 items-center gap-2 px-4 py-2 rounded-xl border border-white/10 text-sm text-muted-foreground hover:text-foreground hover:border-white/20 transition-colors whitespace-nowrap"
           >
             <Download className="w-4 h-4" />
             Export {viewModeLabel} Orders
