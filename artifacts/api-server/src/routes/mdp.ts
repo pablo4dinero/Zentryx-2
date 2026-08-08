@@ -1245,6 +1245,46 @@ router.get("/produced-orders", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+// Returns produced + dispatched volume per sales order ID, so MonthlyOrders can
+// show accurate batch-level totals instead of the full order volume.
+router.get("/produced-orders/summary", requireAuth, async (_req: AuthRequest, res) => {
+  try {
+    const allProduced = await db.select({
+      productionOrderId: mdpProducedOrdersTable.productionOrderId,
+      volume: mdpProducedOrdersTable.volume,
+      deliveryStatus: mdpProducedOrdersTable.deliveryStatus,
+    }).from(mdpProducedOrdersTable);
+
+    const mdpOrderIds = [...new Set(
+      allProduced.map(o => o.productionOrderId).filter((id): id is number => id != null)
+    )];
+    const mdpOrders = mdpOrderIds.length
+      ? await db.select({ id: mdpProductionOrdersTable.id, salesOrderId: mdpProductionOrdersTable.salesOrderId })
+          .from(mdpProductionOrdersTable).where(inArray(mdpProductionOrdersTable.id, mdpOrderIds))
+      : [];
+
+    const mdpIdToSalesId = new Map<number, number>(
+      mdpOrders.map(o => [o.id, o.salesOrderId as number])
+    );
+
+    const summary: Record<number, { producedVolume: number; dispatchedVolume: number }> = {};
+    for (const o of allProduced) {
+      if (o.productionOrderId == null) continue;
+      const salesId = mdpIdToSalesId.get(o.productionOrderId);
+      if (salesId == null) continue;
+      const vol = Number(o.volume) || 0;
+      if (!summary[salesId]) summary[salesId] = { producedVolume: 0, dispatchedVolume: 0 };
+      summary[salesId].producedVolume += vol;
+      if (o.deliveryStatus === "Dispatched") summary[salesId].dispatchedVolume += vol;
+    }
+
+    res.json(summary);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
 router.post("/produced-orders", requireAuth, async (req: AuthRequest, res) => {
   try {
     const body = req.body as any;

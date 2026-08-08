@@ -176,6 +176,7 @@ export function ProductionHistoryTab() {
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/produced-orders", view] });
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/monthly-orders/all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/produced-orders/summary"] });
     },
   });
 

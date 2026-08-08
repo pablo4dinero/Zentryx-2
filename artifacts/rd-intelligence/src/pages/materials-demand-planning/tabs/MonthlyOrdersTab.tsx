@@ -255,6 +255,19 @@ export function MonthlyOrdersTab() {
     staleTime: 1000 * 60,
   });
 
+  // Actual produced/dispatched batch volumes per sales order ID.
+  // Using this instead of the monthly order's total volume avoids counting the
+  // whole order the moment any single batch is produced or dispatched.
+  const { data: producedSummary = {} } = useQuery<Record<number, { producedVolume: number; dispatchedVolume: number }>>({
+    queryKey: ["/api/mdp/produced-orders/summary"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}api/mdp/produced-orders/summary`, { headers: authHeaders() });
+      if (!res.ok) throw new Error("Failed to fetch produced summary");
+      return res.json();
+    },
+    staleTime: 1000 * 30,
+  });
+
   // ── Mutations ────────────────────────────────────────────────────────────
 
   const updateStatus = useMutation({
@@ -469,15 +482,13 @@ export function MonthlyOrdersTab() {
       customerGroups.flatMap(g => g.productGroups.map(pg => pg.productName))
     ).size;
     const totalVolume = allOrders.reduce((sum, o) => sum + (Number(o.volume) || 0), 0);
-    const totalVolumeProduced = allOrders
-      .filter(o => o.productionStatus === "Produced")
-      .reduce((sum, o) => sum + (Number(o.volume) || 0), 0);
-    const totalVolumeDispatched = allOrders
-      .filter(o => o.deliveryStatus === "Yes")
-      .reduce((sum, o) => sum + (Number(o.volume) || 0), 0);
+    // Sum actual produced/dispatched batch volumes rather than the full order
+    // volume, so partial batches are counted correctly.
+    const totalVolumeProduced = allOrders.reduce((sum, o) => sum + (producedSummary[o.id]?.producedVolume ?? 0), 0);
+    const totalVolumeDispatched = allOrders.reduce((sum, o) => sum + (producedSummary[o.id]?.dispatchedVolume ?? 0), 0);
     const uniqueCustomers = new Set(customerGroups.map(g => g.customerName)).size;
     return { customers: uniqueCustomers, products: uniqueProducts, totalVolume, totalVolumeProduced, totalVolumeDispatched };
-  }, [customerGroups]);
+  }, [customerGroups, producedSummary]);
 
   // ── Pagination ───────────────────────────────────────────────────────────
 
