@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Search, Download, Trash2, Maximize2, Minimize2, Edit3, X, Calendar, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Pencil, RefreshCw, History, SlidersHorizontal, Check } from "lucide-react";
+import { Plus, Search, Download, Trash2, Maximize2, Minimize2, Edit3, X, Calendar, ChevronDown, Pencil, RefreshCw, History, SlidersHorizontal, Check } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
@@ -414,17 +414,9 @@ const CHART_PERIOD_LABELS: Record<ChartPeriod, string> = {
 function LeadingProductTypeChart({
   allOrders,
   accountTypeMap,
-  analyticsH,
-  analyticsW,
-  onHeightChange,
-  onWidthChange,
 }: {
   allOrders: TodayOrder[];
   accountTypeMap: Record<number, string | null>;
-  analyticsH: number;
-  analyticsW: number;
-  onHeightChange: (delta: number) => void;
-  onWidthChange: (delta: number) => void;
 }) {
   const [chartPeriod, setChartPeriod] = useState<ChartPeriod>("all");
   const [selectedChartYear, setSelectedChartYear] = useState<number>(new Date().getFullYear());
@@ -466,41 +458,12 @@ function LeadingProductTypeChart({
           <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Analytics</p>
           <h2 className="text-base font-bold text-foreground mt-0.5">Leading Product Type</h2>
         </div>
-        <div className="flex items-center gap-1 flex-shrink-0">
-          {/* Resize controls */}
-          <div className="flex items-center border border-white/10 rounded-lg overflow-hidden mr-1">
-            <button
-              onClick={() => onHeightChange(-ANALYTICS_H_STEP)}
-              disabled={analyticsH <= ANALYTICS_H_MIN}
-              className="p-1 text-muted-foreground hover:text-foreground hover:bg-white/10 disabled:opacity-30 transition-colors"
-              title="Shorter"
-            ><ChevronUp className="w-3 h-3" /></button>
-            <button
-              onClick={() => onHeightChange(ANALYTICS_H_STEP)}
-              disabled={analyticsH >= ANALYTICS_H_MAX}
-              className="p-1 text-muted-foreground hover:text-foreground hover:bg-white/10 disabled:opacity-30 transition-colors border-l border-white/10"
-              title="Taller"
-            ><ChevronDown className="w-3 h-3" /></button>
-            <button
-              onClick={() => onWidthChange(-ANALYTICS_W_STEP)}
-              disabled={analyticsW <= ANALYTICS_W_MIN}
-              className="p-1 text-muted-foreground hover:text-foreground hover:bg-white/10 disabled:opacity-30 transition-colors border-l border-white/10"
-              title="Narrower"
-            ><ChevronLeft className="w-3 h-3" /></button>
-            <button
-              onClick={() => onWidthChange(ANALYTICS_W_STEP)}
-              disabled={analyticsW >= ANALYTICS_W_MAX}
-              className="p-1 text-muted-foreground hover:text-foreground hover:bg-white/10 disabled:opacity-30 transition-colors border-l border-white/10"
-              title="Wider"
-            ><ChevronRight className="w-3 h-3" /></button>
-          </div>
-          <button
-            onClick={() => setFullscreen(f => !f)}
-            className="p-1.5 rounded-lg hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
-          >
-            {fullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-          </button>
-        </div>
+        <button
+          onClick={() => setFullscreen(f => !f)}
+          className="p-1.5 rounded-lg hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+        >
+          {fullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+        </button>
       </div>
 
       <div className="flex flex-wrap gap-1 mb-2">
@@ -657,6 +620,8 @@ export default function NewProductionOrdersPage() {
 
   // Analytics panel sizing (persisted)
   const [analyticsSize, setAnalyticsSize] = useState<{ h: number; w: number }>(loadAnalyticsSize);
+  const [isDraggingW, setIsDraggingW] = useState(false);
+  const [isDraggingH, setIsDraggingH] = useState(false);
   const [isXL, setIsXL] = useState(() => typeof window !== "undefined" && window.innerWidth >= 1280);
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 1280px)");
@@ -664,18 +629,56 @@ export default function NewProductionOrdersPage() {
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
   }, []);
-  const updateAnalyticsSize = useCallback((field: "h" | "w", delta: number) => {
-    setAnalyticsSize(prev => {
-      const next = {
-        ...prev,
-        [field]: field === "h"
-          ? Math.max(ANALYTICS_H_MIN, Math.min(ANALYTICS_H_MAX, prev.h + delta))
-          : Math.max(ANALYTICS_W_MIN, Math.min(ANALYTICS_W_MAX, prev.w + delta)),
-      };
-      localStorage.setItem(ANALYTICS_LS_KEY, JSON.stringify(next));
-      return next;
-    });
-  }, []);
+
+  const startWidthDrag = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = analyticsSize.w;
+    setIsDraggingW(true);
+    let lastW = startW;
+    const onMove = (ev: MouseEvent) => {
+      // dragging left → panel grows wider
+      lastW = Math.max(ANALYTICS_W_MIN, Math.min(ANALYTICS_W_MAX, startW + (startX - ev.clientX)));
+      setAnalyticsSize(prev => ({ ...prev, w: lastW }));
+    };
+    const onUp = () => {
+      setIsDraggingW(false);
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      setAnalyticsSize(prev => {
+        const next = { ...prev, w: lastW };
+        localStorage.setItem(ANALYTICS_LS_KEY, JSON.stringify(next));
+        return next;
+      });
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }, [analyticsSize.w]);
+
+  const startHeightDrag = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = analyticsSize.h;
+    setIsDraggingH(true);
+    let lastH = startH;
+    const onMove = (ev: MouseEvent) => {
+      // dragging down → panel grows taller
+      lastH = Math.max(ANALYTICS_H_MIN, Math.min(ANALYTICS_H_MAX, startH + (ev.clientY - startY)));
+      setAnalyticsSize(prev => ({ ...prev, h: lastH }));
+    };
+    const onUp = () => {
+      setIsDraggingH(false);
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      setAnalyticsSize(prev => {
+        const next = { ...prev, h: lastH };
+        localStorage.setItem(ANALYTICS_LS_KEY, JSON.stringify(next));
+        return next;
+      });
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }, [analyticsSize.h]);
 
   // Currency converter constants and helpers
   const SUPPORTED_CURRENCIES = ["NGN", "USD", "EUR", "GBP", "ZAR", "CNY", "KES", "GHS", "ZMW"] as const;
@@ -1266,8 +1269,34 @@ export default function NewProductionOrdersPage() {
           </div>
         </div>
 
-        {/* Right side: Currency Converter + Leading Product Type Chart - fit within form height */}
-        <div className="flex flex-col gap-2" style={{ height: analyticsSize.h }}>
+        {/* Right side: Currency Converter + Leading Product Type Chart */}
+        <div className="relative flex flex-col gap-2" style={{ height: analyticsSize.h }}>
+          {/* Drag-to-resize: left edge → width (only on xl where columns are side-by-side) */}
+          <div
+            className="hidden xl:block absolute -left-3 top-4 bottom-4 w-6 z-20 cursor-col-resize group"
+            onMouseDown={startWidthDrag}
+            title="Drag to resize width"
+          >
+            <div className={cn(
+              "absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 w-[3px] rounded-full transition-all duration-150",
+              isDraggingW ? "h-20 bg-primary" : "h-12 bg-border/50 group-hover:h-20 group-hover:bg-primary/60",
+            )} />
+          </div>
+          {/* Drag-to-resize: bottom edge → height */}
+          <div
+            className="absolute -bottom-2 left-6 right-6 h-4 z-20 cursor-row-resize flex items-center justify-center group"
+            onMouseDown={startHeightDrag}
+            title="Drag to resize height"
+          >
+            <div className={cn(
+              "h-[3px] rounded-full transition-all duration-150",
+              isDraggingH ? "w-24 bg-primary" : "w-12 bg-border/50 group-hover:w-24 group-hover:bg-primary/60",
+            )} />
+          </div>
+          {/* Full-viewport overlay during drag — keeps cursor + prevents other elements stealing events */}
+          {(isDraggingW || isDraggingH) && (
+            <div className="fixed inset-0 z-50" style={{ cursor: isDraggingW ? "col-resize" : "row-resize" }} />
+          )}
           {/* Currency Converter */}
           <div className={cn(
             "rounded-2xl border p-4 flex flex-col gap-3 overflow-hidden",
@@ -1361,14 +1390,7 @@ export default function NewProductionOrdersPage() {
 
           {/* Leading Product Type Chart - flex-1 to fill remaining space */}
           <div className="flex-1 min-h-0">
-            <LeadingProductTypeChart
-              allOrders={allOrders}
-              accountTypeMap={accountTypeMap}
-              analyticsH={analyticsSize.h}
-              analyticsW={analyticsSize.w}
-              onHeightChange={delta => updateAnalyticsSize("h", delta)}
-              onWidthChange={delta => updateAnalyticsSize("w", delta)}
-            />
+            <LeadingProductTypeChart allOrders={allOrders} accountTypeMap={accountTypeMap} />
           </div>
         </div>
       </div>
