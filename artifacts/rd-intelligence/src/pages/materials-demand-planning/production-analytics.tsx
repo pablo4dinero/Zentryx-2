@@ -222,9 +222,9 @@ export function ProductionAnalyticsTab({ isLight }: { isLight: boolean }) {
 
   // ── Tracking ──
   const trackingQuery = useQuery({
-    queryKey: ["/api/mdp/plan-activity/tracking"],
+    queryKey: ["/api/mdp/plan-activity/tracking", qs],
     queryFn: async () => {
-      const res = await fetch(`${BASE}api/mdp/plan-activity/tracking`, { headers: authHeaders() });
+      const res = await fetch(`${BASE}api/mdp/plan-activity/tracking?${qs}`, { headers: authHeaders() });
       if (!res.ok) throw new Error("Failed");
       return res.json() as Promise<TrackingStatus>;
     },
@@ -411,7 +411,7 @@ export function ProductionAnalyticsTab({ isLight }: { isLight: boolean }) {
                     {trackingQuery.isLoading ? "—" : `${tracking.changeRate}%`}
                   </p>
                   <p className="text-[11px] text-muted-foreground mt-0.5">
-                    of {tracking.baselineCount} assigned orders
+                    of {tracking.baselineCount} order{tracking.baselineCount !== 1 ? "s" : ""} this {period === "daily" ? "day" : period === "weekly" ? "week" : period === "monthly" ? "month" : "year"}
                   </p>
                   <Activity className="absolute right-4 bottom-3 w-8 h-8 opacity-5" />
                 </div>

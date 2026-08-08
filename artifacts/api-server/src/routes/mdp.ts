@@ -758,65 +758,75 @@ router.delete("/floor-assignments/:id", requireAuth, async (req: AuthRequest, re
 
 // ── Plan Tracking endpoints ──────────────────────────────────────────────────
 
-// Returns tracking state + live stats (events / orders changed / change rate).
-router.get("/plan-activity/tracking", requireAuth, async (_req: AuthRequest, res) => {
+// Returns tracking state + period-filtered live stats.
+// Baseline = floor assignments whose assigned_at falls in the selected period.
+// Events / changed orders = log entries in the same period AND after started_at.
+// Accepts the same period query params as GET /plan-activity.
+router.get("/plan-activity/tracking", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const result = await db.execute(sql`
-      SELECT
-        t.status,
-        t.started_at,
-        t.paused_at,
-        t.baseline_count,
-        COALESCE((
-          SELECT CAST(COUNT(*) AS INT)
-          FROM mdp_plan_activity_log
-          WHERE t.started_at IS NOT NULL AND changed_at >= t.started_at
-        ), 0) AS total_events,
-        COALESCE((
-          SELECT CAST(COUNT(DISTINCT production_order_id) AS INT)
-          FROM mdp_plan_activity_log
-          WHERE t.started_at IS NOT NULL AND changed_at >= t.started_at
-        ), 0) AS changed_orders
-      FROM mdp_plan_tracking t
-      LIMIT 1
+    const statusResult = await db.execute(sql`
+      SELECT status, started_at, paused_at FROM mdp_plan_tracking LIMIT 1
     `);
-    const row = (result as any).rows?.[0];
-    if (!row) { res.json({ status: "stopped", baselineCount: 0, totalEvents: 0, changedOrders: 0, changeRate: 0 }); return; }
-    const changeRate = row.baseline_count > 0
-      ? Math.round((row.changed_orders / row.baseline_count) * 100)
+    const trackRow = (statusResult as any).rows?.[0];
+    const status = trackRow?.status ?? "stopped";
+    const startedAt: string | null = trackRow?.started_at ?? null;
+    const pausedAt:  string | null = trackRow?.paused_at  ?? null;
+
+    // Period range (reuses same helper as the chart endpoint)
+    const { start, end } = getPlanActivityRange(req.query as Record<string, unknown>);
+    const periodStart = start.toISOString();
+    const periodEnd   = end.toISOString();
+
+    // Baseline: assignments created (assigned_at) within this period
+    const baseResult = await db.execute(sql`
+      SELECT CAST(COUNT(*) AS INT) AS count
+      FROM mdp_floor_assignments
+      WHERE assigned_at >= ${periodStart}::timestamptz
+        AND assigned_at <  ${periodEnd}::timestamptz
+    `);
+    const baselineCount = Number((baseResult as any).rows?.[0]?.count ?? 0);
+
+    // Events and changed orders: only meaningful when tracking has been started
+    let totalEvents = 0;
+    let changedOrders = 0;
+    if (startedAt) {
+      const logResult = await db.execute(sql`
+        SELECT CAST(COUNT(*) AS INT) AS total_events,
+               CAST(COUNT(DISTINCT production_order_id) AS INT) AS changed_orders
+        FROM mdp_plan_activity_log
+        WHERE changed_at >= GREATEST(${startedAt}::timestamptz, ${periodStart}::timestamptz)
+          AND changed_at <  ${periodEnd}::timestamptz
+      `);
+      const lr = (logResult as any).rows?.[0];
+      totalEvents   = Number(lr?.total_events   ?? 0);
+      changedOrders = Number(lr?.changed_orders ?? 0);
+    }
+
+    const changeRate = baselineCount > 0
+      ? Math.round((changedOrders / baselineCount) * 100)
       : 0;
-    res.json({
-      status: row.status,
-      startedAt: row.started_at,
-      pausedAt: row.paused_at,
-      baselineCount: row.baseline_count,
-      totalEvents: row.total_events,
-      changedOrders: row.changed_orders,
-      changeRate,
-    });
+
+    res.json({ status, startedAt, pausedAt, baselineCount, totalEvents, changedOrders, changeRate });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "InternalServerError" });
   }
 });
 
-// Start tracking: snapshots current floor-assignment count as baseline.
+// Start tracking. No longer snapshots a baseline — computed live per period.
 router.post("/plan-activity/tracking/start", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const countResult = await db.execute(sql`SELECT CAST(COUNT(*) AS INT) AS count FROM mdp_floor_assignments`);
-    const baseline = Number((countResult as any).rows?.[0]?.count ?? 0);
-    const userId = req.user?.userId ?? null;
     await db.execute(sql`
       UPDATE mdp_plan_tracking
       SET status = 'active',
           started_at = NOW(),
           paused_at = NULL,
-          baseline_count = ${baseline},
-          started_by_user_id = ${userId},
+          baseline_count = 0,
+          started_by_user_id = ${req.user?.userId ?? null},
           updated_at = NOW()
     `);
     _trackingStatus = "active";
-    res.json({ success: true, baselineCount: baseline });
+    res.json({ success: true });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "InternalServerError" });
