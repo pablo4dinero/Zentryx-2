@@ -385,7 +385,7 @@ function AccountSearchSelect({
   );
 }
 
-function ChartTooltip({ active, payload, isLight }: any) {
+function ChartTooltip({ active, payload, isLight, canViewIncome }: any) {
   if (!active || !payload?.length) return null;
   const item = payload[0];
   return (
@@ -396,9 +396,11 @@ function ChartTooltip({ active, payload, isLight }: any) {
         : "bg-black/80 border-white/20 text-slate-200",
     )}>
       <p className="font-semibold mb-1">{item.name}</p>
-      <p className="text-emerald-400">
-        Income: ₦{Number(item.value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-      </p>
+      {canViewIncome && (
+        <p className="text-emerald-400">
+          Income: ₦{Number(item.value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </p>
+      )}
       <p className={isLight ? "text-gray-500" : "text-slate-400"}>{item.payload.percentage?.toFixed(1)}% of total</p>
     </div>
   );
@@ -432,14 +434,16 @@ function LeadingProductTypeChart({
     [allOrders, chartPeriod, selectedChartYear],
   );
 
-  const { chartData, totalIncome, productTypesCount, leadingType } = useMemo(() => {
+  const { chartData, totalIncome, totalVolume, productTypesCount, leadingType } = useMemo(() => {
     const grouped: Record<string, number> = {};
     let total = 0;
+    let vol = 0;
     for (const order of chartOrders) {
       const pt = accountTypeMap[order.accountId] ?? "other";
       const income = Number(order.price || 0) * Number(order.volume || 0);
       grouped[pt] = (grouped[pt] ?? 0) + income;
       total += income;
+      vol += Number(order.volume || 0);
     }
     const entries = Object.entries(grouped).sort((a, b) => b[1] - a[1]);
     const data = entries.map(([key, value]) => ({
@@ -451,7 +455,7 @@ function LeadingProductTypeChart({
     const leading = entries[0]
       ? (PRODUCT_TYPE_LABELS[entries[0][0]] ?? entries[0][0])
       : "—";
-    return { chartData: data, totalIncome: total, productTypesCount: entries.length, leadingType: leading };
+    return { chartData: data, totalIncome: total, totalVolume: vol, productTypesCount: entries.length, leadingType: leading };
   }, [chartOrders, accountTypeMap]);
 
   const inner = (
@@ -504,7 +508,7 @@ function LeadingProductTypeChart({
         </div>
       )}
 
-      <div className={cn("grid gap-2 mb-4", canViewIncome ? "grid-cols-3" : "grid-cols-2")}>
+      <div className={cn("grid gap-2 mb-4", canViewIncome ? "grid-cols-4" : "grid-cols-3")}>
         {canViewIncome && (
           <div className="glass-card rounded-xl p-3 border border-white/5">
             <p className="text-[10px] uppercase tracking-widest text-muted-foreground leading-tight">Total Income</p>
@@ -513,6 +517,10 @@ function LeadingProductTypeChart({
             </p>
           </div>
         )}
+        <div className="glass-card rounded-xl p-3 border border-white/5">
+          <p className="text-[10px] uppercase tracking-widest text-muted-foreground leading-tight">Total Volume</p>
+          <p className="mt-1 text-sm font-bold text-foreground truncate">{totalVolume.toLocaleString()} KG</p>
+        </div>
         <div className="glass-card rounded-xl p-3 border border-white/5">
           <p className="text-[10px] uppercase tracking-widest text-muted-foreground leading-tight">Product Types</p>
           <p className="mt-1 text-sm font-bold text-foreground">{productTypesCount}</p>
@@ -544,7 +552,7 @@ function LeadingProductTypeChart({
                   <Cell key={entry.key} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
                 ))}
               </Pie>
-              <Tooltip content={<ChartTooltip isLight={isChartLight} />} />
+              <Tooltip content={(props) => <ChartTooltip {...props} isLight={isChartLight} canViewIncome={canViewIncome} />} />
               <Legend
                 formatter={(value) => (
                   <span className="text-xs text-muted-foreground">{value}</span>
