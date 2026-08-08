@@ -7,7 +7,7 @@ import {
 import {
   TrendingUp, DollarSign, Package, Download, Bell, ChevronLeft, ChevronRight,
   Filter, Star, AlertTriangle, CheckCircle, Clock, X, Search, Send, Mail,
-  BarChart2, PieChartIcon, Donut, Maximize2,
+  BarChart2, PieChartIcon, Donut, Maximize2, ArrowUpDown, ArrowUp, ArrowDown,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { useExchangeRate } from "@/hooks/useExchangeRate";
@@ -17,6 +17,19 @@ import { format, addDays, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay
 const BASE = import.meta.env.BASE_URL;
 
 type ForecastStatus = "pending" | "confirmed" | "probable";
+type SortKey = "company" | "productName" | "lastOrderDate" | "lastOrderVolume" | "forecastDate" | "forecastVolume" | "confidence" | "status";
+type SortDir = "asc" | "desc";
+
+const TABLE_COLS: { label: string; key: SortKey }[] = [
+  { label: "Company",             key: "company" },
+  { label: "Product Name",        key: "productName" },
+  { label: "Last Order Date",     key: "lastOrderDate" },
+  { label: "Last Order Vol (KG)", key: "lastOrderVolume" },
+  { label: "Forecast Date",       key: "forecastDate" },
+  { label: "Forecast Vol (KG)",   key: "forecastVolume" },
+  { label: "Confidence",          key: "confidence" },
+  { label: "Status",              key: "status" },
+];
 
 interface Forecast {
   id: number;
@@ -772,6 +785,8 @@ export default function SalesForecastPage() {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [expandedChart, setExpandedChart] = useState<string | null>(null);
   const [seeding, setSeeding] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
   const seededRef = useRef(false);
   const exportMenuRef = useRef<HTMLDivElement>(null);
 
@@ -860,6 +875,33 @@ export default function SalesForecastPage() {
       return true;
     });
   }, [rawForecasts, companyFilter, productFilter, productTypeFilter, customerTypeFilter, confidenceFilter, timeRange, strategicOnly]);
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir("asc"); }
+  };
+
+  const sortedForecasts = useMemo(() => {
+    if (!sortKey) return filteredForecasts;
+    return [...filteredForecasts].sort((a, b) => {
+      let va: string | number;
+      let vb: string | number;
+      switch (sortKey) {
+        case "company":         va = a.company;                           vb = b.company;                           break;
+        case "productName":     va = a.productName;                       vb = b.productName;                       break;
+        case "lastOrderDate":   va = a.lastOrderDate ?? "";               vb = b.lastOrderDate ?? "";               break;
+        case "lastOrderVolume": va = parseFloat(a.lastOrderVolume ?? "0"); vb = parseFloat(b.lastOrderVolume ?? "0"); break;
+        case "forecastDate":    va = a.forecastDate;                      vb = b.forecastDate;                      break;
+        case "forecastVolume":  va = parseFloat(a.forecastVolume ?? "0"); vb = parseFloat(b.forecastVolume ?? "0"); break;
+        case "confidence":      va = a.confidence;                        vb = b.confidence;                        break;
+        case "status":          va = a.status;                            vb = b.status;                            break;
+        default:                return 0;
+      }
+      if (va < vb) return sortDir === "asc" ? -1 : 1;
+      if (va > vb) return sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+  }, [filteredForecasts, sortKey, sortDir]);
 
   const uniqueCompanies = useMemo(() => [...new Set(rawForecasts.map(f => f.company))].sort(), [rawForecasts]);
   const uniqueProducts = useMemo(() => [...new Set(rawForecasts.map(f => f.productName))].sort(), [rawForecasts]);
@@ -1042,13 +1084,26 @@ export default function SalesForecastPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-white/5">
-                  {["Company", "Product Name", "Last Order Date", "Last Order Vol (KG)", "Forecast Date", "Forecast Vol (KG)", "Confidence", "Status"].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">{h}</th>
-                  ))}
+                  {TABLE_COLS.map(col => {
+                    const active = sortKey === col.key;
+                    const Icon = active ? (sortDir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+                    return (
+                      <th
+                        key={col.key}
+                        onClick={() => handleSort(col.key)}
+                        className="px-4 py-3 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap cursor-pointer select-none group hover:text-foreground transition-colors"
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          {col.label}
+                          <Icon className={`w-3 h-3 transition-opacity ${active ? "opacity-100 text-primary" : "opacity-30 group-hover:opacity-60"}`} />
+                        </span>
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/4">
-                {filteredForecasts.map(f => (
+                {sortedForecasts.map(f => (
                   <tr key={f.id} className={`border-l-2 transition-colors hover:bg-white/3 ${getRowColor(f.confidence)}`}>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
