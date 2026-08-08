@@ -23,6 +23,17 @@ const VOLUME_BANDS = [
   { key: "low", label: "Low (<500)", color: "#06b6d4", test: (v: number) => v < 500 },
 ];
 
+function YAxisTick({ x, y, payload, fill, maxChars }: any) {
+  const text: string = String(payload?.value ?? "");
+  const display = text.length > maxChars ? text.slice(0, maxChars - 1) + "…" : text;
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <title>{text}</title>
+      <text x={0} y={0} dy={4} textAnchor="end" fill={fill} fontSize={11}>{display}</text>
+    </g>
+  );
+}
+
 function FullScreenBtn({ full, setFull }: { full: boolean; setFull: (v: boolean) => void }) {
   return (
     <button onClick={() => setFull(!full)}
@@ -94,14 +105,15 @@ function FlexChart({ data, nameKey, valueKey, label, onBarClick }: { data: any[]
     }
   };
 
-  const renderContent = (h: number) => (
+  const renderContent = (h: number, full = false) => (
     view === "bar" ? (
       <ResponsiveContainer width="100%" height={h}>
         <BarChart data={data} layout="vertical" margin={{ left: 12, right: 24, top: 4, bottom: 4 }}
           onClick={onBarClick ? handleChartClick : undefined}>
           <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
           <XAxis type="number" tick={{ fill: axisColor, fontSize: 11 }} />
-          <YAxis type="category" dataKey={nameKey} tick={{ fill: axisColor, fontSize: 11 }} width={140} />
+          <YAxis type="category" dataKey={nameKey} width={full ? 240 : 160}
+            tick={<YAxisTick fill={axisColor} maxChars={full ? 50 : 22} />} />
           <Tooltip contentStyle={tipStyle} cursor={onBarClick ? { fill: isL ? "rgba(79,70,229,0.05)" : "rgba(139,92,246,0.1)" } : undefined} />
           <Bar dataKey={valueKey} fill="#8b5cf6" radius={[0, 6, 6, 0]} cursor={onBarClick ? "pointer" : undefined} />
         </BarChart>
@@ -147,7 +159,7 @@ function FlexChart({ data, nameKey, valueKey, label, onBarClick }: { data: any[]
             <FullScreenBtn full={full} setFull={setFull} />
           </div>
         </div>
-        <div style={{ height: 280 }}>{renderContent(280)}</div>
+        <div style={{ height: 280 }}>{renderContent(280, false)}</div>
       </div>
       <AnimatePresence>
         {full && (
@@ -157,7 +169,7 @@ function FlexChart({ data, nameKey, valueKey, label, onBarClick }: { data: any[]
               <button onClick={() => setFull(false)} className="p-2 hover:bg-white/10 rounded-xl text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
             </div>
             <div className="flex gap-2 mb-4"><ChartViewToggle view={view} setView={setView} /></div>
-            <div className="flex-1">{renderContent(600)}</div>
+            <div className="flex-1">{renderContent(600, true)}</div>
           </div>
         )}
       </AnimatePresence>
@@ -233,7 +245,8 @@ export default function SalesChartsPage() {
                   onClick={(d: any) => { if (d?.activePayload?.[0]?.payload?.company) setCompanyExpand(d.activePayload[0].payload.company); }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={gridStrokeC} />
                   <XAxis type="number" tick={{ fill: axisColor, fontSize: 11 }} allowDecimals={false} />
-                  <YAxis type="category" dataKey="company" tick={{ fill: axisColor, fontSize: 11 }} width={120} />
+                  <YAxis type="category" dataKey="company" width={full ? 240 : 160}
+                    tick={<YAxisTick fill={axisColor} maxChars={full ? 50 : 22} />} />
                   <Tooltip contentStyle={tipStyleC} cursor={{ fill: isLC ? "rgba(79,70,229,0.05)" : "rgba(139,92,246,0.1)" }} />
                   <Bar dataKey="count" name="Accounts" fill="#8b5cf6" radius={[0, 6, 6, 0]} cursor="pointer">
                     {companyData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
