@@ -24,6 +24,11 @@ export function ProductionHistoryTab() {
   const isAdmin = isMdpPrivileged(currentUser?.role);
   const [view, setView] = React.useState<ProductionHistoryView>("weekly");
   const [selectedWeek, setSelectedWeek] = React.useState<string>(getCurrentWeekLabel());
+  const now = new Date();
+  const [selectedMonth, setSelectedMonth] = React.useState<string>(
+    `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+  );
+  const [selectedYear, setSelectedYear] = React.useState<string>(String(now.getFullYear()));
   const [pendingSearch, setPendingSearch] = React.useState("");
   const [historySearch, setHistorySearch] = React.useState("");
   const [splitPct, setSplitPct] = React.useState(38);
@@ -63,10 +68,12 @@ export function ProductionHistoryTab() {
   }, [allOrdersQuery.data]);
 
   const producedHistoryQuery = useQuery({
-    queryKey: ["/api/mdp/produced-orders", view, selectedWeek],
+    queryKey: ["/api/mdp/produced-orders", view, selectedWeek, selectedMonth, selectedYear],
     queryFn: async () => {
       const params = new URLSearchParams({ view });
       if (view === "weekly") params.set("week", selectedWeek);
+      if (view === "monthly") params.set("month", selectedMonth);
+      if (view === "yearly") params.set("year", selectedYear);
       const res = await fetch(`${BASE}api/mdp/produced-orders?${params}`, {
         headers: authHeaders(),
       });
@@ -159,22 +166,25 @@ export function ProductionHistoryTab() {
       return res.json();
     },
     onMutate: async ({ id, dispatched }) => {
-      // Cancel any in-flight refetches so they don't overwrite the optimistic update
-      await queryClient.cancelQueries({ queryKey: ["/api/mdp/produced-orders", view] });
-      const previous = queryClient.getQueryData<ProducedOrder[]>(["/api/mdp/produced-orders", view]);
-      // Immediately flip the deliveryStatus in the cache
-      queryClient.setQueryData<ProducedOrder[]>(["/api/mdp/produced-orders", view], old =>
+      const qKey = ["/api/mdp/produced-orders", view, selectedWeek, selectedMonth, selectedYear];
+      await queryClient.cancelQueries({ queryKey: qKey });
+      const previous = queryClient.getQueryData<ProducedOrder[]>(qKey);
+      queryClient.setQueryData<ProducedOrder[]>(qKey, old =>
         old?.map(o => o.id === id ? { ...o, deliveryStatus: dispatched ? "Dispatched" : "Pending" } : o)
       );
       return { previous };
     },
     onError: (error: any, _vars, ctx) => {
-      // Roll back on failure
-      if (ctx?.previous) queryClient.setQueryData(["/api/mdp/produced-orders", view], ctx.previous);
+      if (ctx?.previous) {
+        queryClient.setQueryData(
+          ["/api/mdp/produced-orders", view, selectedWeek, selectedMonth, selectedYear],
+          ctx.previous
+        );
+      }
       toast({ title: "Could not update dispatch", description: (error as any)?.message || "Try again.", variant: "destructive" });
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/mdp/produced-orders", view] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/produced-orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/monthly-orders/all"] });
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/produced-orders/summary"] });
     },
@@ -229,8 +239,14 @@ export function ProductionHistoryTab() {
       const end = new Date(start); end.setDate(start.getDate() + 6);
       return `${start.toLocaleDateString(undefined, { month: "short", day: "numeric" })} – ${end.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
     }
+    if (view === "monthly") {
+      const [yr, mo] = selectedMonth.split("-").map(Number);
+      return new Date(yr, mo - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    }
+    if (view === "yearly") return selectedYear;
+    if (view === "all") return "All Time";
     return getHistoryRangeLabel(view);
-  }, [view, selectedWeek]);
+  }, [view, selectedWeek, selectedMonth, selectedYear]);
 
   const startDrag = React.useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -387,12 +403,18 @@ export function ProductionHistoryTab() {
               </div>
               <div className="flex items-center gap-2 flex-wrap justify-end">
                 <div className={cn("flex gap-0.5 p-0.5 rounded-xl border", isLight ? "bg-slate-100 border-slate-200" : "bg-white/5 border-white/10")}>
-                  {(["daily", "weekly", "monthly", "yearly"] as ProductionHistoryView[]).map((option) => (
+                  {([
+                    { value: "daily",   label: "Daily" },
+                    { value: "weekly",  label: "Weekly" },
+                    { value: "monthly", label: "Monthly" },
+                    { value: "yearly",  label: "Yearly" },
+                    { value: "all",     label: "All Time" },
+                  ] as { value: ProductionHistoryView; label: string }[]).map(({ value: option, label }) => (
                     <button key={option} type="button" onClick={() => setView(option)}
                       className={cn("rounded-lg px-2.5 py-1 text-[10px] font-semibold transition-all",
                         view === option ? "bg-primary text-white shadow-sm" : isLight ? "text-slate-600 hover:text-slate-900" : "text-muted-foreground hover:text-foreground"
                       )}>
-                      {option.charAt(0).toUpperCase() + option.slice(1)}
+                      {label}
                     </button>
                   ))}
                 </div>
@@ -415,12 +437,36 @@ export function ProductionHistoryTab() {
                 )}
               </div>
             </div>
-            {view === "weekly" && (
+            {(view === "weekly" || view === "monthly" || view === "yearly") && (
               <div className="flex items-center gap-2 mb-2">
-                <label className="text-[10px] text-muted-foreground font-medium whitespace-nowrap">Week:</label>
-                <input type="week" value={selectedWeek} onChange={e => setSelectedWeek(e.target.value)}
-                  className={cn("h-7 px-2 rounded-lg border text-xs focus:outline-none focus:ring-2 focus:ring-primary/50",
-                    isLight ? "bg-white border-slate-200 text-slate-800" : "bg-black/20 border-white/10 text-foreground [color-scheme:dark]")} />
+                {view === "weekly" && (
+                  <>
+                    <label className="text-[10px] text-muted-foreground font-medium whitespace-nowrap">Week:</label>
+                    <input type="week" value={selectedWeek} onChange={e => setSelectedWeek(e.target.value)}
+                      className={cn("h-7 px-2 rounded-lg border text-xs focus:outline-none focus:ring-2 focus:ring-primary/50",
+                        isLight ? "bg-white border-slate-200 text-slate-800" : "bg-black/20 border-white/10 text-foreground [color-scheme:dark]")} />
+                  </>
+                )}
+                {view === "monthly" && (
+                  <>
+                    <label className="text-[10px] text-muted-foreground font-medium whitespace-nowrap">Month:</label>
+                    <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}
+                      className={cn("h-7 px-2 rounded-lg border text-xs focus:outline-none focus:ring-2 focus:ring-primary/50",
+                        isLight ? "bg-white border-slate-200 text-slate-800" : "bg-black/20 border-white/10 text-foreground [color-scheme:dark]")} />
+                  </>
+                )}
+                {view === "yearly" && (
+                  <>
+                    <label className="text-[10px] text-muted-foreground font-medium whitespace-nowrap">Year:</label>
+                    <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)}
+                      className={cn("h-7 px-2 rounded-lg border text-xs focus:outline-none focus:ring-2 focus:ring-primary/50",
+                        isLight ? "bg-white border-slate-200 text-slate-800" : "bg-black/20 border-white/10 text-foreground [color-scheme:dark]")}>
+                      {Array.from({ length: 6 }, (_, i) => now.getFullYear() - i).map(yr => (
+                        <option key={yr} value={String(yr)}>{yr}</option>
+                      ))}
+                    </select>
+                  </>
+                )}
               </div>
             )}
             <div className="relative">

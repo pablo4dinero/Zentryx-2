@@ -1179,12 +1179,16 @@ router.put("/floor-assignments/:id/produce", requireAuth, async (req: AuthReques
 router.get("/produced-orders", requireAuth, async (req: AuthRequest, res) => {
   try {
     const view = String(req.query.view || "daily");
-    const weekParam = req.query.week ? String(req.query.week) : null;
+    const weekParam  = req.query.week  ? String(req.query.week)  : null;
+    const monthParam = req.query.month ? String(req.query.month) : null; // YYYY-MM
+    const yearParam  = req.query.year  ? String(req.query.year)  : null; // YYYY
     const now = new Date();
     let cutoff = new Date(now);
     let upperBound: Date | null = null;
 
-    if (view === "weekly" && weekParam) {
+    if (view === "all") {
+      // No time filter — return everything
+    } else if (view === "weekly" && weekParam) {
       const [yr, wk] = weekParam.split("-W").map(Number);
       if (!isNaN(yr) && !isNaN(wk)) {
         const jan1 = new Date(yr, 0, 1);
@@ -1193,28 +1197,44 @@ router.get("/produced-orders", requireAuth, async (req: AuthRequest, res) => {
         upperBound = new Date(cutoff);
         upperBound.setDate(cutoff.getDate() + 7);
       }
+    } else if (view === "monthly" && monthParam) {
+      const [yr, mo] = monthParam.split("-").map(Number);
+      if (!isNaN(yr) && !isNaN(mo)) {
+        cutoff = new Date(yr, mo - 1, 1);
+        upperBound = new Date(yr, mo, 1); // start of next month
+      }
+    } else if (view === "yearly" && yearParam) {
+      const yr = Number(yearParam);
+      if (!isNaN(yr)) {
+        cutoff = new Date(yr, 0, 1);
+        upperBound = new Date(yr + 1, 0, 1);
+      }
     } else {
       switch (view) {
         case "weekly":
           cutoff.setDate(now.getDate() - 7);
           break;
         case "monthly":
-          cutoff.setMonth(now.getMonth() - 1);
+          cutoff = new Date(now.getFullYear(), now.getMonth(), 1);
           break;
         case "yearly":
-          cutoff.setFullYear(now.getFullYear() - 1);
+          cutoff = new Date(now.getFullYear(), 0, 1);
           break;
-        default:
+        default: // daily
           cutoff.setDate(now.getDate() - 1);
           break;
       }
     }
 
-    const condition = upperBound
-      ? and(gte(mdpProducedOrdersTable.producedAt, cutoff), lte(mdpProducedOrdersTable.producedAt, upperBound))
-      : gte(mdpProducedOrdersTable.producedAt, cutoff);
+    const condition = view === "all"
+      ? undefined
+      : upperBound
+        ? and(gte(mdpProducedOrdersTable.producedAt, cutoff), lte(mdpProducedOrdersTable.producedAt, upperBound))
+        : gte(mdpProducedOrdersTable.producedAt, cutoff);
 
-    const producedOrders = await db.select().from(mdpProducedOrdersTable).where(condition);
+    const producedOrders = condition
+      ? await db.select().from(mdpProducedOrdersTable).where(condition)
+      : await db.select().from(mdpProducedOrdersTable);
 
     // Enrich each produced order with productionStatus from mdpMonthlyOrders.
     // Chain: produced.productionOrderId (= mdpProductionOrders.id) → .salesOrderId → mdpMonthlyOrders.productionOrderId

@@ -78,7 +78,7 @@ export type MergedOrder = ProductionOrder & {
   createdAt: string;
 };
 
-export type ProductionHistoryView = "daily" | "weekly" | "monthly" | "yearly";
+export type ProductionHistoryView = "daily" | "weekly" | "monthly" | "yearly" | "all";
 
 export type ProducedOrder = {
   id: number;
