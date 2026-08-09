@@ -22,7 +22,7 @@ export function ProductionOrdersTab() {
   const isLight = theme === "light";
   const { addPlannedOrder, removePlannedOrder, isPlanningOrder } = usePlannedOrders();
   const [searchOrders, setSearchOrders] = React.useState("");
-  const [ordersViewMode, setOrdersViewMode] = React.useState<"daily" | "weekly" | "monthly" | "yearly" | "all">("weekly");
+  const [ordersViewMode, setOrdersViewMode] = React.useState<"daily" | "weekly" | "monthly" | "yearly" | "all">("monthly");
   const _now = new Date();
   const _todayStr = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, "0")}-${String(_now.getDate()).padStart(2, "0")}`;
   const [selectedDay, setSelectedDay] = React.useState(_todayStr);
