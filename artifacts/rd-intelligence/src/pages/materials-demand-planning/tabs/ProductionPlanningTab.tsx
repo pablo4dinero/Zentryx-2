@@ -928,13 +928,20 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       // entire order is done — every assignment is produced AND no volume is
       // left unassigned. Otherwise it would disappear from the planning list
       // while partial volume is still pending.
+      //
+      // Guards against stale-closure false-positives:
+      //  - currentInData: if the current assignment isn't in the cache, the
+      //    data is stale/not-loaded; skip to avoid promoting the order too early.
+      //  - ?? Infinity: if the order isn't in remainingVolumeByOrderId (not yet
+      //    computed), don't treat remaining=0 as "all done".
       const allAssignments = allAssignmentsQuery.data ?? [];
       const siblings = allAssignments.filter(r => r.assignment.productionOrderId === orderId);
+      const currentInData = siblings.some(r => r.assignment.id === assignmentId);
       const unproducedRemaining = siblings.filter(r =>
         r.assignment.id !== assignmentId && r.assignment.planStatus !== "Produced"
       ).length;
-      const remainingVol = remainingVolumeByOrderId[orderId] ?? 0;
-      if (unproducedRemaining === 0 && remainingVol <= 0) {
+      const remainingVol = remainingVolumeByOrderId[orderId] ?? Infinity;
+      if (currentInData && unproducedRemaining === 0 && remainingVol <= 0) {
         await fetch(`${BASE}api/mdp/production-orders/${orderId}`, {
           method: "PUT",
           headers: authHeaders(),
