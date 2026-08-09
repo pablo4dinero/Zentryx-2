@@ -3217,35 +3217,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                   {dayRows.length === 0 ? (
                                     <div className="flex h-full min-h-[80px] items-center justify-center text-sm text-muted-foreground/40">No orders</div>
                                   ) : (
-                                    interleaveDowntimes(dayRows, row => {
-                                      const fullOrder = mdpOrderByMdpId.get(row.order.id);
-                                      const acc = planningAccountMap[fullOrder?.accountId ?? 0];
-                                      const company = acc?.company ?? fullOrder?.accountCompany ?? fullOrder?.accountName ?? "Unknown";
-                                      const productName = acc?.productName ?? fullOrder?.productName ?? null;
-                                      const totalVol = Number(fullOrder?.volume ?? row.order.volume ?? 0);
-                                      const assignedVol = row.assignment.assignedVolume != null ? Number(row.assignment.assignedVolume) : totalVol;
-                                      const runningBefore = assignmentRemainingMap[row.assignment.id]?.remainingBefore ?? totalVol;
-                                      return (
-                                        <div className={cn("rounded-xl border p-3", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-white/5")}>
-                                          <div className="flex items-start justify-between gap-2 mb-2">
-                                            <div className="min-w-0">
-                                              <p className="font-bold text-foreground text-sm truncate">{company}</p>
-                                              {productName && <p className="text-xs text-muted-foreground truncate">{productName}</p>}
-                                            </div>
-                                            <div className="text-right shrink-0">
-                                              <span className="text-sm font-bold text-foreground">{assignedVol.toLocaleString()} KG</span>
-                                              {runningBefore > 0 && runningBefore !== assignedVol && (
-                                                <div className="text-[10px] text-muted-foreground/70 mt-0.5">of {runningBefore.toLocaleString()} to assign</div>
-                                              )}
-                                            </div>
-                                          </div>
-                                          <div className="flex items-center gap-2">
-                                            <span className={cn("h-2 w-2 rounded-full shrink-0", getMicrobialColor(row.order.microbialAnalysis ?? "Normal"))} />
-                                            <span className="text-xs text-muted-foreground">{row.order.microbialAnalysis ?? "Normal"}</span>
-                                          </div>
-                                        </div>
-                                      );
-                                    })
+                                    interleaveDowntimes(dayRows, makeOrderCard(floor.id))
                                   )}
                                 </div>
                               </div>
@@ -3290,35 +3262,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                     {nightRows.length === 0 ? (
                                       <div className="flex h-full min-h-[80px] items-center justify-center text-sm text-muted-foreground/40">No night shift orders</div>
                                     ) : (
-                                      interleaveDowntimes(nightRows, row => {
-                                        const fullOrder = mdpOrderByMdpId.get(row.order.id);
-                                        const acc = planningAccountMap[fullOrder?.accountId ?? 0];
-                                        const company = acc?.company ?? fullOrder?.accountCompany ?? fullOrder?.accountName ?? "Unknown";
-                                        const productName = acc?.productName ?? fullOrder?.productName ?? null;
-                                        const totalVol = Number(fullOrder?.volume ?? row.order.volume ?? 0);
-                                        const assignedVol = row.assignment.assignedVolume != null ? Number(row.assignment.assignedVolume) : totalVol;
-                                        const runningBefore = assignmentRemainingMap[row.assignment.id]?.remainingBefore ?? totalVol;
-                                        return (
-                                          <div className={cn("rounded-xl border p-3", isLight ? "border-indigo-100 bg-white" : "border-indigo-500/20 bg-indigo-500/5")}>
-                                            <div className="flex items-start justify-between gap-2 mb-2">
-                                              <div className="min-w-0">
-                                                <p className="font-bold text-foreground text-sm truncate">{company}</p>
-                                                {productName && <p className="text-xs text-muted-foreground truncate">{productName}</p>}
-                                              </div>
-                                              <div className="text-right shrink-0">
-                                                <span className="text-sm font-bold text-foreground">{assignedVol.toLocaleString()} KG</span>
-                                                {runningBefore > 0 && runningBefore !== assignedVol && (
-                                                  <div className="text-[10px] text-muted-foreground/70 mt-0.5">of {runningBefore.toLocaleString()} to assign</div>
-                                                )}
-                                              </div>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                              <span className={cn("h-2 w-2 rounded-full shrink-0", getMicrobialColor(row.order.microbialAnalysis ?? "Normal"))} />
-                                              <span className="text-xs text-muted-foreground">{row.order.microbialAnalysis ?? "Normal"}</span>
-                                            </div>
-                                          </div>
-                                        );
-                                      })
+                                      interleaveDowntimes(nightRows, makeOrderCard(floor.id))
                                     )}
                                   </div>
                                 </div>

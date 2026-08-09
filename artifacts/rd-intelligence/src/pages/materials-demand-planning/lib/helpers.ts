@@ -186,13 +186,13 @@ export function getWorkingWeeksForMonth(year: number, month: number): WorkingWee
   let currentStart = new Date(firstMonday);
 
   while (currentStart.getMonth() === month) {
-    const days = Array.from({ length: 5 }, (_, index) => {
+    const days = Array.from({ length: 6 }, (_, index) => {
       const day = new Date(currentStart);
       day.setDate(day.getDate() + index);
       return day;
     });
     const endDate = new Date(currentStart);
-    endDate.setDate(endDate.getDate() + 4);
+    endDate.setDate(endDate.getDate() + 5);
     const formattedStart = currentStart.toLocaleDateString(undefined, {
       weekday: "short",
       month: "long",
