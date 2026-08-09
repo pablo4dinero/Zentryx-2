@@ -42,9 +42,63 @@ function isWithinLastDays(date: string | null | undefined, days: number): boolea
   return dayDiff >= 0 && dayDiff < days;
 }
 
+// Returns Mon 00:00 and Sat 23:59 of the given ISO week string ("2026-W32").
+// Saturday is included as a working day.
+function getWeekRange(isoWeek: string): { start: Date; end: Date } | null {
+  const match = isoWeek.match(/^(\d{4})-W(\d{1,2})$/);
+  if (!match) return null;
+  const yr = parseInt(match[1]);
+  const wk = parseInt(match[2]);
+  // ISO 8601: week 1 is the week containing January 4th.
+  const jan4 = new Date(yr, 0, 4);
+  const dow = jan4.getDay() || 7; // 1=Mon … 7=Sun
+  const monday = new Date(jan4);
+  monday.setDate(jan4.getDate() - dow + 1 + (wk - 1) * 7);
+  monday.setHours(0, 0, 0, 0);
+  const saturday = new Date(monday);
+  saturday.setDate(monday.getDate() + 5); // Mon+5 = Sat
+  saturday.setHours(23, 59, 59, 999);
+  return { start: monday, end: saturday };
+}
+
+function isInDay(date: string | null | undefined, day: string): boolean {
+  const parsed = parseDMY(date);
+  if (!parsed) return false;
+  const target = new Date(day);
+  return parsed.getFullYear() === target.getFullYear()
+    && parsed.getMonth() === target.getMonth()
+    && parsed.getDate() === target.getDate();
+}
+
+function isInWeek(date: string | null | undefined, week: string): boolean {
+  const parsed = parseDMY(date);
+  if (!parsed) return false;
+  const range = getWeekRange(week);
+  if (!range) return false;
+  return parsed >= range.start && parsed <= range.end;
+}
+
+function isInMonth(date: string | null | undefined, month: string): boolean {
+  // month format: "2026-08"
+  const parsed = parseDMY(date);
+  if (!parsed) return false;
+  const [yr, mo] = month.split("-").map(Number);
+  return parsed.getFullYear() === yr && parsed.getMonth() === mo - 1;
+}
+
+function isInYear(date: string | null | undefined, year: string): boolean {
+  const parsed = parseDMY(date);
+  if (!parsed) return false;
+  return parsed.getFullYear() === parseInt(year);
+}
+
 router.get("/", requireAuth, async (req: AuthRequest, res) => {
   try {
     const period = String(req.query.period || "daily");
+    const day   = req.query.day   as string | undefined;
+    const week  = req.query.week  as string | undefined;
+    const month = req.query.month as string | undefined;
+    const year  = req.query.year  as string | undefined;
     const orders = await db.select({
       id: accountProductionOrdersTable.id,
       productionOrderId: accountProductionOrdersTable.id,
@@ -66,9 +120,10 @@ router.get("/", requireAuth, async (req: AuthRequest, res) => {
 
     const filtered = orders.filter(order => {
       if (period === "all") return true;
-      if (period === "yearly") return isWithinLastDays(order.dateOrdered, 365);
-      if (period === "weekly") return isWithinLastDays(order.dateOrdered, 7);
-      if (period === "monthly") return isWithinLastDays(order.dateOrdered, 30);
+      if (period === "daily")   return day   ? isInDay(order.dateOrdered, day)     : isTodayDate(order.dateOrdered);
+      if (period === "weekly")  return week  ? isInWeek(order.dateOrdered, week)   : isWithinLastDays(order.dateOrdered, 7);
+      if (period === "monthly") return month ? isInMonth(order.dateOrdered, month) : isWithinLastDays(order.dateOrdered, 30);
+      if (period === "yearly")  return year  ? isInYear(order.dateOrdered, year)   : isWithinLastDays(order.dateOrdered, 365);
       return isTodayDate(order.dateOrdered);
     });
 

@@ -11,7 +11,7 @@ import { useTheme } from "@/lib/theme";
 import { usePlannedOrders } from "../planned-orders-context";
 import type { Account, BlendSpeed, MergedOrder, ProductionOrder, SFOrder } from "../lib/types";
 import { BASE, DEFAULT_BLEND_SPEEDS, LS_BLEND_SPEEDS, LS_ORDER_BLENDSPEED, MICROBIAL_OPTIONS } from "../lib/constants";
-import { authHeaders, blendSpeedColor, calcPriorityScore, getMicrobialColor, parseBlendSpeedsFromStorage, priorityScoreStyle } from "../lib/helpers";
+import { authHeaders, blendSpeedColor, calcPriorityScore, getCurrentWeekLabel, getMicrobialColor, parseBlendSpeedsFromStorage, priorityScoreStyle } from "../lib/helpers";
 import { downloadProductionOrdersCsv, downloadProductionOrdersXlsx } from "../lib/exports";
 import { ConfigurationDialog } from "../components/ConfigurationDialog";
 
@@ -22,7 +22,13 @@ export function ProductionOrdersTab() {
   const isLight = theme === "light";
   const { addPlannedOrder, removePlannedOrder, isPlanningOrder } = usePlannedOrders();
   const [searchOrders, setSearchOrders] = React.useState("");
-  const [ordersViewMode, setOrdersViewMode] = React.useState<"daily" | "weekly" | "monthly">("weekly");
+  const [ordersViewMode, setOrdersViewMode] = React.useState<"daily" | "weekly" | "monthly" | "yearly" | "all">("weekly");
+  const _now = new Date();
+  const _todayStr = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, "0")}-${String(_now.getDate()).padStart(2, "0")}`;
+  const [selectedDay, setSelectedDay] = React.useState(_todayStr);
+  const [selectedWeek, setSelectedWeek] = React.useState(getCurrentWeekLabel());
+  const [selectedMonth, setSelectedMonth] = React.useState(`${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, "0")}`);
+  const [selectedYear, setSelectedYear] = React.useState(String(_now.getFullYear()));
   const [microbialById, setMicrobialById] = React.useState<Record<number, string>>({});
   const [rawMaterialById, setRawMaterialById] = React.useState<Record<number, string>>({});
   const [blendSpeeds, setBlendSpeeds] = React.useState<BlendSpeed[]>(() => {
@@ -84,9 +90,14 @@ export function ProductionOrdersTab() {
   }, [mdpOrdersQuery.data]);
 
   const sfOrdersQuery = useQuery({
-    queryKey: ["/api/production-orders", ordersViewMode],
+    queryKey: ["/api/production-orders", ordersViewMode, selectedDay, selectedWeek, selectedMonth, selectedYear],
     queryFn: async () => {
-      const res = await fetch(`${BASE}api/production-orders?period=${ordersViewMode}`, { headers: authHeaders() });
+      const params = new URLSearchParams({ period: ordersViewMode });
+      if (ordersViewMode === "daily")   params.set("day",   selectedDay);
+      if (ordersViewMode === "weekly")  params.set("week",  selectedWeek);
+      if (ordersViewMode === "monthly") params.set("month", selectedMonth);
+      if (ordersViewMode === "yearly")  params.set("year",  selectedYear);
+      const res = await fetch(`${BASE}api/production-orders?${params}`, { headers: authHeaders() });
       if (!res.ok) {
         const error = await res.json().catch(() => ({}));
         throw new Error(error.error || "Failed to load orders");
@@ -298,14 +309,55 @@ export function ProductionOrdersTab() {
           <h2 className="text-lg font-semibold text-foreground">New Production Orders</h2>
           <p className="text-sm text-muted-foreground">Manage production orders, raw material availability and microbial analysis.</p>
           <div className="flex flex-wrap gap-2 mt-3">
-            {(["daily", "weekly", "monthly"] as const).map(mode => (
+            {(["daily", "weekly", "monthly", "yearly", "all"] as const).map(mode => (
               <button key={mode} onClick={() => setOrdersViewMode(mode)}
                 className={cn("rounded-full px-4 py-1.5 text-xs font-semibold transition duration-150",
                   ordersViewMode === mode ? "bg-primary text-white" : isLight ? "bg-slate-100 text-slate-600 hover:bg-slate-200" : "bg-white/5 text-muted-foreground hover:bg-white/10")}>
-                {mode === "daily" ? "Daily" : mode === "weekly" ? "Weekly" : "Monthly"}
+                {mode === "daily" ? "Daily" : mode === "weekly" ? "Weekly" : mode === "monthly" ? "Monthly" : mode === "yearly" ? "Yearly" : "All Time"}
               </button>
             ))}
           </div>
+          {ordersViewMode !== "all" && (
+            <div className="flex items-center gap-2 mt-2">
+              {ordersViewMode === "daily" && (
+                <>
+                  <label className="text-[10px] text-muted-foreground font-medium whitespace-nowrap">Date:</label>
+                  <input type="date" value={selectedDay} onChange={e => setSelectedDay(e.target.value)}
+                    className={cn("h-7 px-2 rounded-lg border text-xs focus:outline-none focus:ring-2 focus:ring-primary/50",
+                      isLight ? "bg-white border-slate-200 text-slate-800" : "bg-black/20 border-white/10 text-foreground [color-scheme:dark]")} />
+                </>
+              )}
+              {ordersViewMode === "weekly" && (
+                <>
+                  <label className="text-[10px] text-muted-foreground font-medium whitespace-nowrap">Week:</label>
+                  <input type="week" value={selectedWeek} onChange={e => setSelectedWeek(e.target.value)}
+                    className={cn("h-7 px-2 rounded-lg border text-xs focus:outline-none focus:ring-2 focus:ring-primary/50",
+                      isLight ? "bg-white border-slate-200 text-slate-800" : "bg-black/20 border-white/10 text-foreground [color-scheme:dark]")} />
+                  <span className="text-[10px] text-muted-foreground">(Mon – Sat)</span>
+                </>
+              )}
+              {ordersViewMode === "monthly" && (
+                <>
+                  <label className="text-[10px] text-muted-foreground font-medium whitespace-nowrap">Month:</label>
+                  <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}
+                    className={cn("h-7 px-2 rounded-lg border text-xs focus:outline-none focus:ring-2 focus:ring-primary/50",
+                      isLight ? "bg-white border-slate-200 text-slate-800" : "bg-black/20 border-white/10 text-foreground [color-scheme:dark]")} />
+                </>
+              )}
+              {ordersViewMode === "yearly" && (
+                <>
+                  <label className="text-[10px] text-muted-foreground font-medium whitespace-nowrap">Year:</label>
+                  <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)}
+                    className={cn("h-7 px-2 rounded-lg border text-xs focus:outline-none focus:ring-2 focus:ring-primary/50 cursor-pointer",
+                      isLight ? "bg-white border-slate-200 text-slate-800" : "bg-black/20 border-white/10 text-foreground [color-scheme:dark]")}>
+                    {Array.from({ length: 6 }, (_, i) => _now.getFullYear() - i).map(yr => (
+                      <option key={yr} value={String(yr)}>{yr}</option>
+                    ))}
+                  </select>
+                </>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={() => setIsConfigOpen(true)} className={cn("flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-medium border transition-all", isLight ? "border-slate-200 text-slate-700 hover:bg-slate-50" : "border-white/10 text-foreground hover:border-white/20 hover:bg-white/5")}>
