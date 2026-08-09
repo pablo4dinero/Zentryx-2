@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient, type UseQueryResult } from "@tan
 import { motion, AnimatePresence } from "framer-motion";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
-import { AlertTriangle, CheckCircle2, ChevronDown, Edit3, FileText, Loader2, Maximize2, Moon, Search, Trash2, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, Edit3, FileText, Loader2, Lock, Maximize2, Moon, Search, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -1942,7 +1942,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
               const assignedVol = row.assignment.assignedVolume != null ? Number(row.assignment.assignedVolume) : totalVol;
               const runningBefore = assignmentRemainingMap[row.assignment.id]?.remainingBefore ?? totalVol;
               const expected = fullOrder?.expectedDeliveryDateDate ?? null;
-              const isEditingThis = editingVolumeId === row.assignment.id;
+              const alreadyProduced = row.assignment.planStatus === "Produced";
+              const isEditingThis = editingVolumeId === row.assignment.id && !alreadyProduced;
               return (
                 <div
                   key={row.assignment.id}
@@ -1986,6 +1987,14 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                             isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/30")}
                           onClick={e => e.stopPropagation()}
                         />
+                      ) : alreadyProduced ? (
+                        <div
+                          title="Volume locked — assignment has been produced"
+                          className="flex items-center gap-0.5 text-xs font-bold text-muted-foreground cursor-default"
+                        >
+                          {assignedVol.toLocaleString()} KG
+                          <Lock className="w-2.5 h-2.5 ml-0.5 opacity-50" />
+                        </div>
                       ) : (
                         <button
                           onClick={e => { e.stopPropagation(); setEditingVolumeId(row.assignment.id); setEditingVolumeStr(String(assignedVol)); }}
@@ -2004,7 +2013,6 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                   <div className="flex gap-1.5">
                     <button onClick={() => handleUnassign(row.assignment.id)} className={cn("flex-1 py-1 rounded-lg text-[10px] font-semibold border transition-colors", isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}>Unassign</button>
                     {(() => {
-                      const alreadyProduced = row.assignment.planStatus === "Produced";
                       const isPending = producingIds.has(row.assignment.id);
                       const disabled = alreadyProduced || isPending;
                       return (
