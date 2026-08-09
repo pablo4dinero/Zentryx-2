@@ -12,6 +12,7 @@ import {
 import * as XLSX from "xlsx";
 import { useExchangeRate } from "@/hooks/useExchangeRate";
 import { useTheme } from "@/lib/theme";
+import { useGetCurrentUser } from "@/api-client";
 import { format, addDays, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, parseISO, isWithinInterval } from "date-fns";
 
 const BASE = import.meta.env.BASE_URL;
@@ -773,6 +774,9 @@ function ExpandedChartModal({
 export default function SalesForecastPage() {
   const { ngnRate } = useExchangeRate();
   const qc = useQueryClient();
+  const { data: currentUser } = useGetCurrentUser();
+  const userRole = (currentUser as any)?.role;
+  const canSeeRevenue = ["admin", "executive", "manager"].includes(userRole);
 
   const [companyFilter, setCompanyFilter] = useState("all");
   const [productFilter, setProductFilter] = useState("all");
@@ -983,9 +987,11 @@ export default function SalesForecastPage() {
   return (
     <div className="space-y-6">
       {/* ── Row 1: Existing KPI Cards ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className={`grid grid-cols-1 gap-4 ${canSeeRevenue ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
         <StatCard icon={TrendingUp} label="Active Accounts" value={activeAcc.length.toString()} sub="generating revenue" color="bg-primary" />
-        <StatCard icon={DollarSign} label="Monthly Revenue (₦)" value={`₦${(totalMonthlyRevenue / 1000).toFixed(1)}k`} sub={ngnRate ? `≈ $${(totalMonthlyRevenue / ngnRate).toLocaleString(undefined, { maximumFractionDigits: 0 })} USD` : ""} color="bg-emerald-600" />
+        {canSeeRevenue && (
+          <StatCard icon={DollarSign} label="Monthly Revenue (₦)" value={`₦${(totalMonthlyRevenue / 1000).toFixed(1)}k`} sub={ngnRate ? `≈ $${(totalMonthlyRevenue / ngnRate).toLocaleString(undefined, { maximumFractionDigits: 0 })} USD` : ""} color="bg-emerald-600" />
+        )}
         <StatCard icon={Package} label="Total Volume" value={`${(totalVolume / 1000).toFixed(1)}t`} sub="kg/month across accounts" color="bg-blue-600" />
       </div>
 
