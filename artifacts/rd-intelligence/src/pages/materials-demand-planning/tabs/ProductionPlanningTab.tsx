@@ -1665,6 +1665,178 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     return { onTouchStart, onTouchEnd, onTouchCancel };
   };
 
+  const makeOrderCard = (floorId: number) => (row: FloorAssignmentRow) => {
+    const fullOrder = mdpOrderByMdpId.get(row.order.id);
+    const acc = planningAccountMap[fullOrder?.accountId ?? 0];
+    const company = fullOrder?.accountName ?? fullOrder?.accountCompany ?? acc?.company ?? row.order.accountName ?? "Unknown";
+    const productName = fullOrder?.productName ?? acc?.productName ?? row.order.productName ?? null;
+    const productTypeLabel = fullOrder?.productType ?? acc?.productType ?? row.order.productType ?? "—";
+    const totalVol = Number(fullOrder?.volume ?? row.order.volume ?? 0);
+    const assignedVol = row.assignment.assignedVolume != null ? Number(row.assignment.assignedVolume) : totalVol;
+    const runningBefore = assignmentRemainingMap[row.assignment.id]?.remainingBefore ?? totalVol;
+    const expected = fullOrder?.expectedDeliveryDateDate ?? null;
+    const alreadyProduced = row.assignment.planStatus === "Produced";
+    const isEditingThis = editingVolumeId === row.assignment.id && !alreadyProduced;
+    return (
+      <div
+        key={row.assignment.id}
+        draggable
+        data-reorder-assignment-id={row.assignment.id}
+        data-reorder-floor-id={floorId}
+        onDragStart={e => { e.dataTransfer.effectAllowed = "move"; setDragged({ type: "assigned", productionOrderId: row.order.id, assignmentId: row.assignment.id, floorId }); }}
+        onDragOver={e => e.preventDefault()}
+        onDrop={e => { e.preventDefault(); if (dragged?.type === "assigned" && dragged.assignmentId && dragged.floorId === floorId) handleReorder(floorId, dragged.assignmentId, row.assignment.id); }}
+        {...makeTD("assigned", row.order.id, row.assignment.id, floorId)}
+        className={cn("rounded-xl border p-2.5 cursor-grab active:cursor-grabbing",
+          isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5"
+        )}
+      >
+        <div className="flex items-start justify-between gap-2 mb-1.5">
+          <div className="min-w-0 flex-1">
+            <div className="font-bold text-foreground text-xs truncate">{company}</div>
+            {productName && <div className="text-[10px] text-muted-foreground truncate">{productName}</div>}
+            <div className="text-[10px] text-muted-foreground">{productTypeLabel}</div>
+            {expected && <div className="text-[10px] text-muted-foreground">Due: {expected}</div>}
+          </div>
+          <div className="shrink-0 text-right">
+            {isEditingThis ? (
+              <input
+                autoFocus
+                type="number" min="0.1" step="0.1"
+                value={editingVolumeStr}
+                onChange={e => setEditingVolumeStr(e.target.value)}
+                onBlur={async () => {
+                  const v = Number(editingVolumeStr);
+                  if (!isNaN(v) && v > 0) {
+                    await updateAssignedVolumeMutation.mutateAsync({ assignmentId: row.assignment.id, assignedVolume: v });
+                  }
+                  setEditingVolumeId(null);
+                }}
+                onKeyDown={async e => {
+                  if (e.key === "Enter") { (e.target as HTMLInputElement).blur(); }
+                  if (e.key === "Escape") setEditingVolumeId(null);
+                }}
+                className={cn("w-20 h-6 rounded-md border px-1.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-primary/50",
+                  isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/30")}
+                onClick={e => e.stopPropagation()}
+              />
+            ) : alreadyProduced ? (
+              <div
+                title="Volume locked — assignment has been produced"
+                className="flex items-center gap-0.5 text-xs font-bold text-muted-foreground cursor-default"
+              >
+                {assignedVol.toLocaleString()} KG
+                <Lock className="w-2.5 h-2.5 ml-0.5 opacity-50" />
+              </div>
+            ) : (
+              <button
+                onClick={e => { e.stopPropagation(); setEditingVolumeId(row.assignment.id); setEditingVolumeStr(String(assignedVol)); }}
+                title="Edit assigned volume"
+                className="flex items-center gap-0.5 text-xs font-bold text-foreground hover:text-primary transition-colors group"
+              >
+                {assignedVol.toLocaleString()} KG
+                <Edit3 className="w-2.5 h-2.5 opacity-0 group-hover:opacity-60 ml-0.5" />
+              </button>
+            )}
+            {runningBefore > 0 && runningBefore !== assignedVol && (
+              <div className="text-[9px] text-muted-foreground/60 mt-0.5">of {runningBefore.toLocaleString()} to assign</div>
+            )}
+          </div>
+        </div>
+        <div className="flex gap-1.5">
+          <button onClick={() => handleUnassign(row.assignment.id)} className={cn("flex-1 py-1 rounded-lg text-[10px] font-semibold border transition-colors", isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}>Unassign</button>
+          {(() => {
+            const isPending = producingIds.has(row.assignment.id);
+            const disabled = alreadyProduced || isPending;
+            return (
+              <button
+                onClick={() => handleProduce(row.assignment.id, row.order.id, floorId)}
+                disabled={disabled}
+                title={alreadyProduced ? "Already produced — use Production History to revert" : undefined}
+                className={cn(
+                  "flex-1 py-1 rounded-lg text-[10px] font-semibold border transition-colors",
+                  alreadyProduced
+                    ? "bg-emerald-500 border-emerald-500 text-white cursor-default"
+                    : isPending
+                      ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400/60 cursor-wait"
+                      : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20",
+                )}
+              >
+                {alreadyProduced ? "✓ Produced" : isPending ? "Producing…" : "Produced"}
+              </button>
+            );
+          })()}
+          <div className="relative shrink-0">
+            <button
+              onClick={e => {
+                e.stopPropagation();
+                setOpenNoteId(row.assignment.id);
+                setNoteEditText(row.assignment.productionNote ?? "");
+              }}
+              title={row.assignment.productionNote ? "View/edit production note" : "Add production note"}
+              className={cn(
+                "relative w-7 h-7 rounded-lg flex items-center justify-center border transition-colors",
+                row.assignment.productionNote
+                  ? isLight ? "bg-amber-50 border-amber-300/70 text-amber-600" : "bg-amber-500/15 border-amber-500/40 text-amber-400"
+                  : isLight ? "border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5",
+              )}
+            >
+              <FileText className="w-3 h-3" />
+              {row.assignment.productionNote && (
+                <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber-400 border border-background" />
+              )}
+            </button>
+            {openNoteId === row.assignment.id && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setOpenNoteId(null)} />
+                <div className={cn(
+                  "absolute right-0 bottom-full mb-1.5 z-50 w-56 rounded-xl border shadow-xl p-3",
+                  isLight ? "bg-white border-slate-200" : "bg-zinc-900 border-white/10",
+                )}>
+                  <p className={cn("text-[9px] font-semibold uppercase tracking-widest mb-2",
+                    isLight ? "text-slate-400" : "text-muted-foreground"
+                  )}>Production Note</p>
+                  <textarea
+                    autoFocus
+                    rows={4}
+                    value={noteEditText}
+                    onChange={e => setNoteEditText(e.target.value)}
+                    placeholder="Add a production note…"
+                    className={cn(
+                      "w-full rounded-lg border px-2 py-1.5 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-primary/40",
+                      isLight
+                        ? "border-slate-200 bg-slate-50 text-slate-700 placeholder:text-slate-400"
+                        : "border-white/10 bg-black/30 text-foreground placeholder:text-muted-foreground",
+                    )}
+                  />
+                  <div className="flex gap-1.5 mt-2">
+                    <button
+                      onClick={() => {
+                        saveNoteMutation.mutate({ assignmentId: row.assignment.id, note: noteEditText });
+                        setOpenNoteId(null);
+                      }}
+                      className={cn(
+                        "flex-1 py-1 text-[10px] font-semibold rounded-lg border transition-colors",
+                        isLight ? "bg-primary/10 border-primary/20 text-primary hover:bg-primary/20" : "bg-primary/10 border-primary/20 text-primary hover:bg-primary/20",
+                      )}
+                    >Save</button>
+                    <button
+                      onClick={() => setOpenNoteId(null)}
+                      className={cn(
+                        "px-2 py-1 text-[10px] rounded-lg border transition-colors",
+                        isLight ? "border-slate-200 text-slate-500 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5",
+                      )}
+                    >Cancel</button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-5">
       <style>{printStyles}</style>
@@ -1930,180 +2102,6 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
           {/* ── Shared order card renderer ── */}
           {(() => {
             const weekDays = ["Mon", "Tue", "Wed", "Thu", "Fri", ...(includeSaturday ? ["Sat"] : [])];
-
-            const makeOrderCard = (floorId: number) => (row: FloorAssignmentRow) => {
-              const fullOrder = mdpOrderByMdpId.get(row.order.id);
-              const acc = planningAccountMap[fullOrder?.accountId ?? 0];
-              // Use fullOrder data first (has merged account info from production orders API), then fallback to accountMap, then row data
-              const company = fullOrder?.accountName ?? fullOrder?.accountCompany ?? acc?.company ?? row.order.accountName ?? "Unknown";
-              const productName = fullOrder?.productName ?? acc?.productName ?? row.order.productName ?? null;
-              const productTypeLabel = fullOrder?.productType ?? acc?.productType ?? row.order.productType ?? "—";
-              const totalVol = Number(fullOrder?.volume ?? row.order.volume ?? 0);
-              const assignedVol = row.assignment.assignedVolume != null ? Number(row.assignment.assignedVolume) : totalVol;
-              const runningBefore = assignmentRemainingMap[row.assignment.id]?.remainingBefore ?? totalVol;
-              const expected = fullOrder?.expectedDeliveryDateDate ?? null;
-              const alreadyProduced = row.assignment.planStatus === "Produced";
-              const isEditingThis = editingVolumeId === row.assignment.id && !alreadyProduced;
-              return (
-                <div
-                  key={row.assignment.id}
-                  draggable
-                  data-reorder-assignment-id={row.assignment.id}
-                  data-reorder-floor-id={floorId}
-                  onDragStart={e => { e.dataTransfer.effectAllowed = "move"; setDragged({ type: "assigned", productionOrderId: row.order.id, assignmentId: row.assignment.id, floorId }); }}
-                  onDragOver={e => e.preventDefault()}
-                  onDrop={e => { e.preventDefault(); if (dragged?.type === "assigned" && dragged.assignmentId && dragged.floorId === floorId) handleReorder(floorId, dragged.assignmentId, row.assignment.id); }}
-                  {...makeTD("assigned", row.order.id, row.assignment.id, floorId)}
-                  className={cn("rounded-xl border p-2.5 cursor-grab active:cursor-grabbing",
-                    isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5"
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-2 mb-1.5">
-                    <div className="min-w-0 flex-1">
-                      <div className="font-bold text-foreground text-xs truncate">{company}</div>
-                      {productName && <div className="text-[10px] text-muted-foreground truncate">{productName}</div>}
-                      <div className="text-[10px] text-muted-foreground">{productTypeLabel}</div>
-                      {expected && <div className="text-[10px] text-muted-foreground">Due: {expected}</div>}
-                    </div>
-                    <div className="shrink-0 text-right">
-                      {isEditingThis ? (
-                        <input
-                          autoFocus
-                          type="number" min="0.1" step="0.1"
-                          value={editingVolumeStr}
-                          onChange={e => setEditingVolumeStr(e.target.value)}
-                          onBlur={async () => {
-                            const v = Number(editingVolumeStr);
-                            if (!isNaN(v) && v > 0) {
-                              await updateAssignedVolumeMutation.mutateAsync({ assignmentId: row.assignment.id, assignedVolume: v });
-                            }
-                            setEditingVolumeId(null);
-                          }}
-                          onKeyDown={async e => {
-                            if (e.key === "Enter") { (e.target as HTMLInputElement).blur(); }
-                            if (e.key === "Escape") setEditingVolumeId(null);
-                          }}
-                          className={cn("w-20 h-6 rounded-md border px-1.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-primary/50",
-                            isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/30")}
-                          onClick={e => e.stopPropagation()}
-                        />
-                      ) : alreadyProduced ? (
-                        <div
-                          title="Volume locked — assignment has been produced"
-                          className="flex items-center gap-0.5 text-xs font-bold text-muted-foreground cursor-default"
-                        >
-                          {assignedVol.toLocaleString()} KG
-                          <Lock className="w-2.5 h-2.5 ml-0.5 opacity-50" />
-                        </div>
-                      ) : (
-                        <button
-                          onClick={e => { e.stopPropagation(); setEditingVolumeId(row.assignment.id); setEditingVolumeStr(String(assignedVol)); }}
-                          title="Edit assigned volume"
-                          className="flex items-center gap-0.5 text-xs font-bold text-foreground hover:text-primary transition-colors group"
-                        >
-                          {assignedVol.toLocaleString()} KG
-                          <Edit3 className="w-2.5 h-2.5 opacity-0 group-hover:opacity-60 ml-0.5" />
-                        </button>
-                      )}
-                      {runningBefore > 0 && runningBefore !== assignedVol && (
-                        <div className="text-[9px] text-muted-foreground/60 mt-0.5">of {runningBefore.toLocaleString()} to assign</div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex gap-1.5">
-                    <button onClick={() => handleUnassign(row.assignment.id)} className={cn("flex-1 py-1 rounded-lg text-[10px] font-semibold border transition-colors", isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5")}>Unassign</button>
-                    {(() => {
-                      const isPending = producingIds.has(row.assignment.id);
-                      const disabled = alreadyProduced || isPending;
-                      return (
-                        <button
-                          onClick={() => handleProduce(row.assignment.id, row.order.id, floorId)}
-                          disabled={disabled}
-                          title={alreadyProduced ? "Already produced — use Production History to revert" : undefined}
-                          className={cn(
-                            "flex-1 py-1 rounded-lg text-[10px] font-semibold border transition-colors",
-                            alreadyProduced
-                              ? "bg-emerald-500 border-emerald-500 text-white cursor-default"
-                              : isPending
-                                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400/60 cursor-wait"
-                                : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20",
-                          )}
-                        >
-                          {alreadyProduced ? "✓ Produced" : isPending ? "Producing…" : "Produced"}
-                        </button>
-                      );
-                    })()}
-                    {/* Note icon */}
-                    <div className="relative shrink-0">
-                      <button
-                        onClick={e => {
-                          e.stopPropagation();
-                          setOpenNoteId(row.assignment.id);
-                          setNoteEditText(row.assignment.productionNote ?? "");
-                        }}
-                        title={row.assignment.productionNote ? "View/edit production note" : "Add production note"}
-                        className={cn(
-                          "relative w-7 h-7 rounded-lg flex items-center justify-center border transition-colors",
-                          row.assignment.productionNote
-                            ? isLight ? "bg-amber-50 border-amber-300/70 text-amber-600" : "bg-amber-500/15 border-amber-500/40 text-amber-400"
-                            : isLight ? "border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5",
-                        )}
-                      >
-                        <FileText className="w-3 h-3" />
-                        {row.assignment.productionNote && (
-                          <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber-400 border border-background" />
-                        )}
-                      </button>
-                      {openNoteId === row.assignment.id && (
-                        <>
-                          <div className="fixed inset-0 z-40" onClick={() => setOpenNoteId(null)} />
-                          <div className={cn(
-                            "absolute right-0 bottom-full mb-1.5 z-50 w-56 rounded-xl border shadow-xl p-3",
-                            isLight ? "bg-white border-slate-200" : "bg-zinc-900 border-white/10",
-                          )}>
-                            <p className={cn("text-[9px] font-semibold uppercase tracking-widest mb-2",
-                              isLight ? "text-slate-400" : "text-muted-foreground"
-                            )}>Production Note</p>
-                            <textarea
-                              autoFocus
-                              rows={4}
-                              value={noteEditText}
-                              onChange={e => setNoteEditText(e.target.value)}
-                              placeholder="Add a production note…"
-                              className={cn(
-                                "w-full rounded-lg border px-2 py-1.5 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-primary/40",
-                                isLight
-                                  ? "border-slate-200 bg-slate-50 text-slate-700 placeholder:text-slate-400"
-                                  : "border-white/10 bg-black/30 text-foreground placeholder:text-muted-foreground",
-                              )}
-                            />
-                            <div className="flex gap-1.5 mt-2">
-                              <button
-                                onClick={() => {
-                                  saveNoteMutation.mutate({ assignmentId: row.assignment.id, note: noteEditText });
-                                  setOpenNoteId(null);
-                                }}
-                                className={cn(
-                                  "flex-1 py-1 text-[10px] font-semibold rounded-lg border transition-colors",
-                                  isLight ? "bg-primary/10 border-primary/20 text-primary hover:bg-primary/20" : "bg-primary/10 border-primary/20 text-primary hover:bg-primary/20",
-                                )}
-                              >Save</button>
-                              <button
-                                onClick={() => setOpenNoteId(null)}
-                                className={cn(
-                                  "px-2 py-1 text-[10px] rounded-lg border transition-colors",
-                                  isLight ? "border-slate-200 text-slate-500 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5",
-                                )}
-                              >Cancel</button>
-                            </div>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            };
 
             const floorActionButtons = (floor: ProductionFloor, day?: string) => (
               <div className="flex items-center gap-1 shrink-0">
