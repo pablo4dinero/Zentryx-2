@@ -608,7 +608,7 @@ export default function NewProductionOrdersPage() {
   const isLight = theme === "light";
   const exchange = useExchangeRate();
   const { data: currentUser } = useGetCurrentUser();
-  const [viewMode, setViewMode] = useState<ViewMode>("weekly");
+  const [viewMode, setViewMode] = useState<ViewMode>("monthly");
   const [search, setSearch] = useState("");
   const [selectedMonth, setSelectedMonth] = useState<string>(""); // For month filtering
   const [selectedWeek, setSelectedWeek] = useState<string>(""); // For week filtering
