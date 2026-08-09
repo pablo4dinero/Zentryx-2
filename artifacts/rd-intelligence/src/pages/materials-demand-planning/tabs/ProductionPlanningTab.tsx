@@ -946,10 +946,11 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
-      // produced-orders was missing here, so a fresh Produced click after a
-      // Return-to-Floor-Planning never refreshed the Production History view
-      // until a manual reload.
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/produced-orders"] });
+      // Refresh the summary-by-mdp-order so the Wrap button appears immediately
+      // on any order that has just become partially produced.
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/produced-orders/summary-by-mdp-order"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/produced-orders/summary"] });
     },
   });
 
