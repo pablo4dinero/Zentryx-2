@@ -159,7 +159,15 @@ function FlexChart({ data, nameKey, valueKey, label, onBarClick, minRowHeight = 
             <FullScreenBtn full={full} setFull={setFull} />
           </div>
         </div>
-        {(() => { const h = minRowHeight > 0 ? Math.max(280, data.length * minRowHeight) : 280; return <div style={{ height: h }}>{renderContent(h, false)}</div>; })()}
+        {(() => {
+          const innerH = minRowHeight > 0 ? Math.max(280, data.length * minRowHeight) : 280;
+          const needsScroll = innerH > 280;
+          return (
+            <div style={{ height: 280, overflowY: needsScroll ? "auto" : "visible" }} className="custom-scrollbar">
+              <div style={{ height: innerH }}>{renderContent(innerH, false)}</div>
+            </div>
+          );
+        })()}
       </div>
       <AnimatePresence>
         {full && (
@@ -310,7 +318,7 @@ export default function SalesChartsPage() {
           )}
         </div>
 
-        <FlexChart data={productTypeData} nameKey="type" valueKey="count" label="Accounts by Product Category" minRowHeight={42} />
+        <FlexChart data={productTypeData} nameKey="type" valueKey="count" label="Accounts by Product Category" minRowHeight={32} />
 
         <div>
           <div className="glass-card rounded-2xl p-5 border border-white/5">
