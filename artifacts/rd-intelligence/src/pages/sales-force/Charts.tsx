@@ -90,7 +90,7 @@ function ChartViewToggle({ view, setView }: { view: ChartView; setView: (v: Char
   );
 }
 
-function FlexChart({ data, nameKey, valueKey, label, onBarClick }: { data: any[]; nameKey: string; valueKey: string; label: string; onBarClick?: (name: string) => void }) {
+function FlexChart({ data, nameKey, valueKey, label, onBarClick, minRowHeight = 0 }: { data: any[]; nameKey: string; valueKey: string; label: string; onBarClick?: (name: string) => void; minRowHeight?: number }) {
   const [view, setView] = useState<ChartView>("bar");
   const [full, setFull] = useState(false);
   const { theme } = useTheme();
@@ -159,7 +159,7 @@ function FlexChart({ data, nameKey, valueKey, label, onBarClick }: { data: any[]
             <FullScreenBtn full={full} setFull={setFull} />
           </div>
         </div>
-        <div style={{ height: 280 }}>{renderContent(280, false)}</div>
+        {(() => { const h = minRowHeight > 0 ? Math.max(280, data.length * minRowHeight) : 280; return <div style={{ height: h }}>{renderContent(h, false)}</div>; })()}
       </div>
       <AnimatePresence>
         {full && (
@@ -210,8 +210,14 @@ export default function SalesChartsPage() {
   ).map(([manager, count]) => ({ manager, count })).sort((a: any, b: any) => (b.count as number) - (a.count as number));
 
   const productTypeData = Object.entries(
-    acc.reduce((m: any, a: any) => { m[a.productType] = (m[a.productType] || 0) + 1; return m; }, {})
-  ).map(([type, count]) => ({ type: PRODUCT_TYPE_LABELS[type] || type, count }));
+    acc.reduce((m: any, a: any) => {
+      if (!a.productType || a.productType === "null" || a.productType === "undefined") return m;
+      m[a.productType] = (m[a.productType] || 0) + 1;
+      return m;
+    }, {})
+  )
+    .map(([type, count]) => ({ type: PRODUCT_TYPE_LABELS[type] || type, count }))
+    .sort((a: any, b: any) => (b.count as number) - (a.count as number));
 
   const volumeBandData = VOLUME_BANDS.map(b => ({
     band: b.label,
@@ -304,7 +310,7 @@ export default function SalesChartsPage() {
           )}
         </div>
 
-        <FlexChart data={productTypeData} nameKey="type" valueKey="count" label="Accounts by Product Category" />
+        <FlexChart data={productTypeData} nameKey="type" valueKey="count" label="Accounts by Product Category" minRowHeight={42} />
 
         <div>
           <div className="glass-card rounded-2xl p-5 border border-white/5">
