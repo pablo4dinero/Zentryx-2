@@ -1134,19 +1134,42 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     staleTime: 1000 * 30,
   });
 
-  const handleWrap = async (orderId: number) => {
-    setWrappingIds(prev => new Set(prev).add(orderId));
+  const handleWrap = async (order: ProductionOrder, producedKg: number) => {
+    const totalVol = Number(order.volume ?? 0);
+    const deficitKg = Math.max(0, totalVol - producedKg);
+    const acc = planningAccountMap[order.accountId ?? 0];
+    const accountName = order.accountName ?? order.accountCompany ?? acc?.company ?? "Unknown";
+    const productName = order.productName ?? acc?.productName ?? "Unknown";
+    const productType = order.productType ?? acc?.productType ?? "Unknown";
+
+    setWrappingIds(prev => new Set(prev).add(order.id));
     try {
-      await fetch(`${BASE}api/mdp/production-orders/${orderId}`, {
+      await fetch(`${BASE}api/mdp/production-orders/${order.id}`, {
         method: "PUT",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({ isProduced: true, isPlanned: false, orderStatus: "Produced" }),
       });
+      if (deficitKg > 0) {
+        await fetch(`${BASE}api/mdp/produced-orders`, {
+          method: "POST",
+          headers: { ...authHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({
+            productionOrderId: order.id,
+            accountName,
+            productName,
+            productType,
+            volume: deficitKg,
+            producedAt: new Date().toISOString(),
+            deliveryStatus: "Wrapped",
+          }),
+        });
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/produced-orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/produced-orders/summary-by-mdp-order"] });
       queryClient.invalidateQueries({ queryKey: ["/api/mdp/produced-orders/summary"] });
     } finally {
-      setWrappingIds(prev => { const s = new Set(prev); s.delete(orderId); return s; });
+      setWrappingIds(prev => { const s = new Set(prev); s.delete(order.id); return s; });
     }
   };
 
@@ -2579,7 +2602,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                             )}>
                               <span className="text-[10px] text-muted-foreground">{producedKg.toLocaleString()} KG produced</span>
                               <button
-                                onClick={e => { e.stopPropagation(); handleWrap(order.id); }}
+                                onClick={e => { e.stopPropagation(); handleWrap(order, producedKg); }}
                                 disabled={wrappingIds.has(order.id)}
                                 className="flex items-center gap-1 px-2 py-1 rounded-lg bg-orange-500/10 border border-orange-500/30 text-orange-400 hover:bg-orange-500/20 text-[10px] font-semibold transition-colors disabled:opacity-50 shrink-0"
                               >

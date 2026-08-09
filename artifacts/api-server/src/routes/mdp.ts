@@ -1303,7 +1303,8 @@ router.get("/produced-orders/summary", requireAuth, async (_req: AuthRequest, re
       const vol = Number(o.volume) || 0;
       const isProd = mdpIdToIsProduced.get(o.productionOrderId) ?? false;
       if (!summary[salesId]) summary[salesId] = { producedVolume: 0, dispatchedVolume: 0, isProduced: false };
-      summary[salesId].producedVolume += vol;
+      // "Wrapped" entries represent deficit (unproduced) — exclude from producedVolume
+      if (o.deliveryStatus !== "Wrapped") summary[salesId].producedVolume += vol;
       if (o.deliveryStatus === "Dispatched") summary[salesId].dispatchedVolume += vol;
       if (isProd) summary[salesId].isProduced = true;
     }
@@ -1317,16 +1318,19 @@ router.get("/produced-orders/summary", requireAuth, async (_req: AuthRequest, re
 
 // Returns produced volume per MDP production order ID (not sales order ID).
 // Used by the Planning tab to show the Wrap button on partially-produced orders.
+// "Wrapped" entries (deficit markers) are excluded from the sum.
 router.get("/produced-orders/summary-by-mdp-order", requireAuth, async (_req: AuthRequest, res) => {
   try {
     const allProduced = await db.select({
       productionOrderId: mdpProducedOrdersTable.productionOrderId,
       volume: mdpProducedOrdersTable.volume,
+      deliveryStatus: mdpProducedOrdersTable.deliveryStatus,
     }).from(mdpProducedOrdersTable);
 
     const summary: Record<number, { producedVolume: number }> = {};
     for (const o of allProduced) {
       if (o.productionOrderId == null) continue;
+      if (o.deliveryStatus === "Wrapped") continue;
       const vol = Number(o.volume) || 0;
       if (!summary[o.productionOrderId]) summary[o.productionOrderId] = { producedVolume: 0 };
       summary[o.productionOrderId].producedVolume += vol;

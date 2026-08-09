@@ -207,6 +207,31 @@ export function ProductionHistoryTab() {
     onError: (error: any) => toast({ title: "Could not return to planning", description: error?.message || "Try again.", variant: "destructive" }),
   });
 
+  const undoWrapMutation = useMutation({
+    mutationFn: async ({ producedOrderId, productionOrderId }: { producedOrderId: number; productionOrderId: number }) => {
+      const delRes = await fetch(`${BASE}api/mdp/produced-orders/${producedOrderId}`, {
+        method: "DELETE", headers: authHeaders(),
+      });
+      if (!delRes.ok) { const err = await delRes.json().catch(() => ({})); throw new Error(err.error || "Failed to remove wrapped record"); }
+      const putRes = await fetch(`${BASE}api/mdp/production-orders/${productionOrderId}`, {
+        method: "PUT",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ isProduced: false, isPlanned: true, orderStatus: "Planned" }),
+      });
+      if (!putRes.ok) { const err = await putRes.json().catch(() => ({})); throw new Error(err.error || "Failed to reset production order"); }
+      return putRes.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/produced-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/floor-assignments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/produced-orders/summary-by-mdp-order"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/produced-orders/summary"] });
+      toast({ title: "Wrap undone", description: "Order returned to Floor Planning." });
+    },
+    onError: (error: any) => toast({ title: "Could not undo wrap", description: error?.message || "Try again.", variant: "destructive" }),
+  });
+
   const producedOrders = React.useMemo(
     () => (producedHistoryQuery.data ?? []).slice().sort((a, b) => new Date(b.producedAt).getTime() - new Date(a.producedAt).getTime()),
     [producedHistoryQuery.data]
@@ -498,17 +523,26 @@ export function ProductionHistoryTab() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredHistory.map((order) => (
-                    <tr key={order.id} className={cn("group border-b last:border-0 transition-colors", isLight ? "border-slate-100 hover:bg-slate-50" : "border-white/5 hover:bg-white/[0.02]")}>
+                  {filteredHistory.map((order) => {
+                    const isWrapped = order.deliveryStatus === "Wrapped";
+                    return (
+                    <tr key={order.id} className={cn("group border-b last:border-0 transition-colors", isWrapped ? (isLight ? "bg-orange-50/60 border-orange-100" : "bg-orange-500/5 border-orange-500/10") : isLight ? "border-slate-100 hover:bg-slate-50" : "border-white/5 hover:bg-white/[0.02]")}>
                       <td className="px-4 py-3">
                         <p className="font-bold text-foreground text-sm leading-tight">{order.accountName}</p>
                         <p className="text-xs text-muted-foreground mt-0.5">{order.productName}</p>
                       </td>
                       <td className="px-3 py-3 text-xs text-muted-foreground">{order.productType ?? "—"}</td>
-                      <td className="px-3 py-3 text-right font-semibold text-sm">{Number(order.volume ?? 0).toLocaleString()}</td>
+                      <td className="px-3 py-3 text-right font-semibold text-sm">
+                        {Number(order.volume ?? 0).toLocaleString()}
+                        {isWrapped && <span className="ml-1 text-[10px] font-medium text-orange-400">deficit</span>}
+                      </td>
                       <td className="px-3 py-3 text-xs text-muted-foreground">{formatDateTime(order.producedAt)}</td>
                       <td className="px-3 py-3">
-                        {(() => {
+                        {isWrapped ? (
+                          <span className="inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold border bg-orange-500/10 text-orange-400 border-orange-500/20">
+                            Wrapped
+                          </span>
+                        ) : (() => {
                           const status = order.productionStatus ?? order.deliveryStatus;
                           const cls =
                             status === "Produced"   ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
@@ -522,46 +556,67 @@ export function ProductionHistoryTab() {
                           );
                         })()}
                       </td>
-                      {/* Dispatched ticker */}
+                      {/* Dispatched ticker — hidden for Wrapped deficit rows */}
                       <td className="px-3 py-3 text-center">
-                        <button
-                          onClick={() => dispatchMutation.mutate({ id: order.id, dispatched: order.deliveryStatus !== "Dispatched" })}
-                          title={order.deliveryStatus === "Dispatched" ? "Mark as not dispatched" : "Mark as dispatched"}
-                          className={cn(
-                            "inline-flex items-center justify-center w-5 h-5 rounded border-2 transition-all",
-                            order.deliveryStatus === "Dispatched"
-                              ? "bg-sky-500 border-sky-500 text-white"
-                              : isLight ? "border-slate-300 hover:border-sky-400 bg-white" : "border-white/20 hover:border-sky-400 bg-transparent",
-                          )}
-                        >
-                          {order.deliveryStatus === "Dispatched" && <Check className="w-3 h-3" />}
-                        </button>
+                        {isWrapped ? (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        ) : (
+                          <button
+                            onClick={() => dispatchMutation.mutate({ id: order.id, dispatched: order.deliveryStatus !== "Dispatched" })}
+                            title={order.deliveryStatus === "Dispatched" ? "Mark as not dispatched" : "Mark as dispatched"}
+                            className={cn(
+                              "inline-flex items-center justify-center w-5 h-5 rounded border-2 transition-all",
+                              order.deliveryStatus === "Dispatched"
+                                ? "bg-sky-500 border-sky-500 text-white"
+                                : isLight ? "border-slate-300 hover:border-sky-400 bg-white" : "border-white/20 hover:border-sky-400 bg-transparent",
+                            )}
+                          >
+                            {order.deliveryStatus === "Dispatched" && <Check className="w-3 h-3" />}
+                          </button>
+                        )}
                       </td>
                       <td className="px-3 py-3 text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <button className={cn("px-3 py-1.5 text-xs font-semibold rounded-xl border transition-colors",
-                              isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5"
-                            )}>Update Status ▾</button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-[180px]">
-                            <DropdownMenuItem onClick={() => updateProductionStatusMutation.mutate({ id: order.id, status: "Pending" })}>Pending</DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => updateProductionStatusMutation.mutate({ id: order.id, status: "In Process" })}>In Process</DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => updateProductionStatusMutation.mutate({ id: order.id, status: "Produced" })}>Produced</DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => updateProductionStatusMutation.mutate({ id: order.id, status: "Warehouse" })}>Warehouse</DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={() => {
-                                if (window.confirm("Return this order to Floor Planning? It will reappear on its original floor and day, and be removed from Production History.")) {
-                                  returnToPlanningMutation.mutate(order.id);
-                                }
-                              }}
-                              className="text-amber-500 focus:text-amber-500"
-                            >
-                              Return to Floor Planning
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        {isWrapped ? (
+                          <button
+                            onClick={() => {
+                              if (!order.productionOrderId) { toast({ title: "Cannot undo wrap", description: "Missing production order reference.", variant: "destructive" }); return; }
+                              if (window.confirm("Undo this wrap? The deficit record will be removed and the order returned to Floor Planning.")) {
+                                undoWrapMutation.mutate({ producedOrderId: order.id, productionOrderId: order.productionOrderId });
+                              }
+                            }}
+                            disabled={undoWrapMutation.isPending}
+                            className={cn("px-3 py-1.5 text-xs font-semibold rounded-xl border transition-colors",
+                              "border-orange-500/30 text-orange-400 hover:bg-orange-500/10 disabled:opacity-50"
+                            )}
+                          >
+                            {undoWrapMutation.isPending ? "Undoing…" : "Undo Wrap"}
+                          </button>
+                        ) : (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button className={cn("px-3 py-1.5 text-xs font-semibold rounded-xl border transition-colors",
+                                isLight ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5"
+                              )}>Update Status ▾</button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-[180px]">
+                              <DropdownMenuItem onClick={() => updateProductionStatusMutation.mutate({ id: order.id, status: "Pending" })}>Pending</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => updateProductionStatusMutation.mutate({ id: order.id, status: "In Process" })}>In Process</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => updateProductionStatusMutation.mutate({ id: order.id, status: "Produced" })}>Produced</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => updateProductionStatusMutation.mutate({ id: order.id, status: "Warehouse" })}>Warehouse</DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  if (window.confirm("Return this order to Floor Planning? It will reappear on its original floor and day, and be removed from Production History.")) {
+                                    returnToPlanningMutation.mutate(order.id);
+                                  }
+                                }}
+                                className="text-amber-500 focus:text-amber-500"
+                              >
+                                Return to Floor Planning
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
                       </td>
                       {isAdmin && (
                         <td className="px-2 py-3 text-right">
@@ -579,7 +634,8 @@ export function ProductionHistoryTab() {
                         </td>
                       )}
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             )}
