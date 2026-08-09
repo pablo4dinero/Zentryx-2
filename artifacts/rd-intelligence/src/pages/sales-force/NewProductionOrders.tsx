@@ -1122,7 +1122,10 @@ export default function NewProductionOrdersPage() {
                   <label className="text-xs font-medium text-muted-foreground mb-2 block">Account</label>
                   <AccountSearchSelect
                     value={form.accountId}
-                    onChange={v => setForm(f => ({ ...f, accountId: v }))}
+                    onChange={v => {
+                      const lastOrder = allOrders.find(o => String(o.accountId) === String(v));
+                      setForm(f => ({ ...f, accountId: v, price: lastOrder?.price ?? f.price }));
+                    }}
                     accounts={accounts}
                     isLoading={accountsLoading}
                     isLight={isLight}
@@ -1136,6 +1139,12 @@ export default function NewProductionOrdersPage() {
                     type="number" step="0.01" min="0"
                     className={inputClass} placeholder="e.g. 58.50"
                   />
+                  {form.accountId && (() => {
+                    const lastOrder = allOrders.find(o => String(o.accountId) === String(form.accountId));
+                    return lastOrder?.price ? (
+                      <p className="text-[10px] text-muted-foreground mt-1">Last used: ₦{Number(lastOrder.price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/kg</p>
+                    ) : null;
+                  })()}
                 </div>
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
