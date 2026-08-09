@@ -258,7 +258,7 @@ export function MonthlyOrdersTab() {
   // Actual produced/dispatched batch volumes per sales order ID.
   // Using this instead of the monthly order's total volume avoids counting the
   // whole order the moment any single batch is produced or dispatched.
-  const { data: producedSummary = {} } = useQuery<Record<number, { producedVolume: number; dispatchedVolume: number }>>({
+  const { data: producedSummary = {} } = useQuery<Record<number, { producedVolume: number; dispatchedVolume: number; isProduced: boolean }>>({
     queryKey: ["/api/mdp/produced-orders/summary"],
     queryFn: async () => {
       const res = await fetch(`${BASE}api/mdp/produced-orders/summary`, { headers: authHeaders() });
@@ -740,6 +740,8 @@ export function MonthlyOrdersTab() {
                 <th className="px-4 py-3 text-left font-semibold text-foreground whitespace-nowrap">Volume (KG)</th>
                 <th className="px-4 py-3 text-left font-semibold text-foreground whitespace-nowrap">Date Ordered</th>
                 <th className="px-4 py-3 text-left font-semibold text-foreground whitespace-nowrap">Expected Delivery</th>
+                <th className="px-4 py-3 text-left font-semibold text-foreground whitespace-nowrap">Produced (Kg)</th>
+                <th className="px-4 py-3 text-left font-semibold text-foreground whitespace-nowrap">Deficit (Kg)</th>
                 <th className="px-4 py-3 text-left font-semibold text-foreground whitespace-nowrap">Delivery Date</th>
                 <th className="px-4 py-3 text-left font-semibold text-foreground whitespace-nowrap">Production Status</th>
                 <th className="px-4 py-3 text-left font-semibold text-foreground whitespace-nowrap">Distribution</th>
@@ -790,6 +792,26 @@ export function MonthlyOrdersTab() {
                           </td>
                           <td className="px-4 py-3 text-xs text-muted-foreground">{formatDMY(order.dateOrdered)}</td>
                           <td className="px-4 py-3 text-xs text-muted-foreground">{formatDMY(order.expectedDeliveryDate)}</td>
+                          {(() => {
+                            const producedKg = producedSummary[order.id]?.producedVolume ?? 0;
+                            const isOrdProduced = producedSummary[order.id]?.isProduced ?? false;
+                            const vol = Number(order.volume) || 0;
+                            const deficitKg = isOrdProduced ? Math.max(0, vol - producedKg) : 0;
+                            return (
+                              <>
+                                <td className="px-4 py-3 text-xs font-medium text-cyan-400 whitespace-nowrap">
+                                  {producedKg > 0 ? producedKg.toLocaleString() : "—"}
+                                </td>
+                                <td className="px-4 py-3 text-xs font-medium whitespace-nowrap">
+                                  {producedKg > 0
+                                    ? <span className={deficitKg > 0 ? "text-orange-400" : "text-emerald-400"}>
+                                        {deficitKg > 0 ? deficitKg.toLocaleString() : "0"}
+                                      </span>
+                                    : "—"}
+                                </td>
+                              </>
+                            );
+                          })()}
                           <td className="px-4 py-3">
                             <input
                               type="date"

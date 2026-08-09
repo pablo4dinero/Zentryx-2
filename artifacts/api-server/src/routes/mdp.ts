@@ -1267,6 +1267,8 @@ router.get("/produced-orders", requireAuth, async (req: AuthRequest, res) => {
 
 // Returns produced + dispatched volume per sales order ID, so MonthlyOrders can
 // show accurate batch-level totals instead of the full order volume.
+// Also includes isProduced flag so callers can distinguish a Wrapped order
+// (isProduced=true, producedVolume < total) from a fully produced one.
 router.get("/produced-orders/summary", requireAuth, async (_req: AuthRequest, res) => {
   try {
     const allProduced = await db.select({
@@ -1279,23 +1281,55 @@ router.get("/produced-orders/summary", requireAuth, async (_req: AuthRequest, re
       allProduced.map(o => o.productionOrderId).filter((id): id is number => id != null)
     )];
     const mdpOrders = mdpOrderIds.length
-      ? await db.select({ id: mdpProductionOrdersTable.id, salesOrderId: mdpProductionOrdersTable.salesOrderId })
-          .from(mdpProductionOrdersTable).where(inArray(mdpProductionOrdersTable.id, mdpOrderIds))
+      ? await db.select({
+          id: mdpProductionOrdersTable.id,
+          salesOrderId: mdpProductionOrdersTable.salesOrderId,
+          isProduced: mdpProductionOrdersTable.isProduced,
+        }).from(mdpProductionOrdersTable).where(inArray(mdpProductionOrdersTable.id, mdpOrderIds))
       : [];
 
     const mdpIdToSalesId = new Map<number, number>(
       mdpOrders.map(o => [o.id, o.salesOrderId as number])
     );
+    const mdpIdToIsProduced = new Map<number, boolean>(
+      mdpOrders.map(o => [o.id, o.isProduced ?? false])
+    );
 
-    const summary: Record<number, { producedVolume: number; dispatchedVolume: number }> = {};
+    const summary: Record<number, { producedVolume: number; dispatchedVolume: number; isProduced: boolean }> = {};
     for (const o of allProduced) {
       if (o.productionOrderId == null) continue;
       const salesId = mdpIdToSalesId.get(o.productionOrderId);
       if (salesId == null) continue;
       const vol = Number(o.volume) || 0;
-      if (!summary[salesId]) summary[salesId] = { producedVolume: 0, dispatchedVolume: 0 };
+      const isProd = mdpIdToIsProduced.get(o.productionOrderId) ?? false;
+      if (!summary[salesId]) summary[salesId] = { producedVolume: 0, dispatchedVolume: 0, isProduced: false };
       summary[salesId].producedVolume += vol;
       if (o.deliveryStatus === "Dispatched") summary[salesId].dispatchedVolume += vol;
+      if (isProd) summary[salesId].isProduced = true;
+    }
+
+    res.json(summary);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+// Returns produced volume per MDP production order ID (not sales order ID).
+// Used by the Planning tab to show the Wrap button on partially-produced orders.
+router.get("/produced-orders/summary-by-mdp-order", requireAuth, async (_req: AuthRequest, res) => {
+  try {
+    const allProduced = await db.select({
+      productionOrderId: mdpProducedOrdersTable.productionOrderId,
+      volume: mdpProducedOrdersTable.volume,
+    }).from(mdpProducedOrdersTable);
+
+    const summary: Record<number, { producedVolume: number }> = {};
+    for (const o of allProduced) {
+      if (o.productionOrderId == null) continue;
+      const vol = Number(o.volume) || 0;
+      if (!summary[o.productionOrderId]) summary[o.productionOrderId] = { producedVolume: 0 };
+      summary[o.productionOrderId].producedVolume += vol;
     }
 
     res.json(summary);

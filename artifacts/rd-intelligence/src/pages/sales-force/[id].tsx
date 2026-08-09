@@ -1324,6 +1324,16 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
     queryFn: async () => { const res = await api(`api/accounts/${accountId}/production-orders`); return res.json(); },
   });
 
+  const { data: producedSummary = {} } = useQuery<Record<number, { producedVolume: number; dispatchedVolume: number; isProduced: boolean }>>({
+    queryKey: ["/api/mdp/produced-orders/summary"],
+    queryFn: async () => {
+      const res = await api("api/mdp/produced-orders/summary");
+      if (!res.ok) return {};
+      return res.json();
+    },
+    staleTime: 1000 * 30,
+  });
+
   const ords = orders as any[];
 
   // Sync local state with server data
@@ -1681,6 +1691,15 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
                       { col: "volume", label: "Volume (kg)" },
                       { col: "dateOrdered", label: "Date Ordered" },
                       { col: "expectedDeliveryDate", label: "Expected Delivery" },
+                    ].map(({ col, label }) => (
+                      <th key={col} onClick={() => toggleSort(col)}
+                        className="px-3 py-2.5 text-left text-muted-foreground font-medium cursor-pointer hover:text-foreground transition-colors select-none">
+                        {label}<SortIcon col={col} />
+                      </th>
+                    ))}
+                    <th className="px-3 py-2.5 text-left text-muted-foreground font-medium select-none whitespace-nowrap">Produced (Kg)</th>
+                    <th className="px-3 py-2.5 text-left text-muted-foreground font-medium select-none whitespace-nowrap">Deficit (Kg)</th>
+                    {[
                       { col: "dateDelivered", label: "Date Delivered" },
                       { col: "income", label: "Income" },
                     ].map(({ col, label }) => (
@@ -1693,7 +1712,12 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {sortedOrds.map((o: any) => (
+                  {sortedOrds.map((o: any) => {
+                    const producedKg = (producedSummary as any)[o.id]?.producedVolume ?? 0;
+                    const isOrdProduced = (producedSummary as any)[o.id]?.isProduced ?? false;
+                    const vol = parseFloat(o.volume || 0);
+                    const deficitKg = isOrdProduced ? Math.max(0, vol - producedKg) : 0;
+                    return (
                   <tr key={o.id} className="hover:bg-white/[0.02]">
                     <td className="px-3 py-2">
                       <input type="number" value={o.price || ""} onChange={e => updateLocalOrder(o.id, { price: e.target.value })}
@@ -1715,6 +1739,16 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
                         onBlur={e => updateRow(o.id, { ...o, expectedDeliveryDate: e.target.value })}
                         className="w-28 bg-transparent text-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-400/30 rounded px-1 h-7 placeholder:text-muted-foreground/40" />
                     </td>
+                    <td className="px-3 py-2 text-cyan-400 font-medium text-xs whitespace-nowrap">
+                      {producedKg > 0 ? producedKg.toLocaleString() : "—"}
+                    </td>
+                    <td className="px-3 py-2 font-medium text-xs whitespace-nowrap">
+                      {producedKg > 0
+                        ? <span className={deficitKg > 0 ? "text-orange-400" : "text-emerald-400"}>
+                            {deficitKg > 0 ? deficitKg.toLocaleString() : "0"}
+                          </span>
+                        : "—"}
+                    </td>
                     <td className="px-3 py-2">
                       <input type="text" placeholder="dd/mm/yyyy" value={o.dateDelivered || ""} onChange={e => updateLocalOrder(o.id, { dateDelivered: e.target.value })}
                         onBlur={e => updateRow(o.id, { ...o, dateDelivered: e.target.value })}
@@ -1727,7 +1761,8 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
                       <button onClick={() => deleteRow(o.id)} className="p-1 hover:bg-red-500/10 rounded text-muted-foreground hover:text-red-400 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
                     </td>
                   </tr>
-                ))}
+                    );
+                  })}
               </tbody>
             </table>
           </div>

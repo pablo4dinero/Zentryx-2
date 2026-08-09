@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient, type UseQueryResult } from "@tan
 import { motion, AnimatePresence } from "framer-motion";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
-import { AlertTriangle, ChevronDown, Edit3, FileText, Loader2, Maximize2, Moon, Search, Trash2, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, Edit3, FileText, Loader2, Maximize2, Moon, Search, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -1121,6 +1121,33 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
   const [openNoteId, setOpenNoteId] = React.useState<number | null>(null);
   const [noteEditText, setNoteEditText] = React.useState("");
   const [plannedOrderSearch, setPlannedOrderSearch] = React.useState("");
+  const [wrappingIds, setWrappingIds] = React.useState<Set<number>>(new Set());
+
+  const { data: producedByMdpOrder = {} } = useQuery<Record<number, { producedVolume: number }>>({
+    queryKey: ["/api/mdp/produced-orders/summary-by-mdp-order"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}api/mdp/produced-orders/summary-by-mdp-order`, { headers: authHeaders() });
+      if (!res.ok) return {};
+      return res.json();
+    },
+    staleTime: 1000 * 30,
+  });
+
+  const handleWrap = async (orderId: number) => {
+    setWrappingIds(prev => new Set(prev).add(orderId));
+    try {
+      await fetch(`${BASE}api/mdp/production-orders/${orderId}`, {
+        method: "PUT",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ isProduced: true, isPlanned: false, orderStatus: "Produced" }),
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/production-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/produced-orders/summary-by-mdp-order"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mdp/produced-orders/summary"] });
+    } finally {
+      setWrappingIds(prev => { const s = new Set(prev); s.delete(orderId); return s; });
+    }
+  };
 
   const handleProduce = async (assignmentId: number, orderId: number, floorId?: number) => {
     const row = (allAssignmentsQuery.data ?? []).find(r => r.assignment.id === assignmentId);
@@ -2508,6 +2535,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                       const productTypeLabel = productType ?? "—";
                       const totalVol = Number(order.volume ?? 0);
                       const isPartial = remainingVolume < totalVol;
+                      const producedKg = producedByMdpOrder[order.id]?.producedVolume ?? 0;
+                      const isPartiallyProduced = producedKg > 0 && producedKg < totalVol;
                       return (
                         <div
                           key={order.id}
@@ -2517,30 +2546,47 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                             setDragged({ type: "planned", productionOrderId: order.id });
                           }}
                           {...makeTD("planned", order.id)}
-                          className={cn("rounded-xl border p-3 transition-colors cursor-grab",
+                          className={cn("rounded-xl border transition-colors cursor-grab overflow-hidden",
                             isLight ? "border-slate-200 bg-white hover:border-primary/30" : "border-white/10 bg-black/10 hover:border-white/20"
                           )}
                         >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-1.5 mb-0.5">
-                                <span className={`h-2 w-2 rounded-full shrink-0 ${getMicrobialColor(order.microbialAnalysis ?? "Normal")}`} />
-                                <span className="font-bold text-foreground text-sm truncate">{company}</span>
+                          <div className="p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5 mb-0.5">
+                                  <span className={`h-2 w-2 rounded-full shrink-0 ${getMicrobialColor(order.microbialAnalysis ?? "Normal")}`} />
+                                  <span className="font-bold text-foreground text-sm truncate">{company}</span>
+                                </div>
+                                {productName && <p className="text-xs text-muted-foreground truncate pl-3.5">{productName}</p>}
+                                <div className="mt-1.5 pl-3.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                  <span className="text-[11px] text-muted-foreground">{productTypeLabel}</span>
+                                  {order.expectedDeliveryDateDate && (
+                                    <span className="text-[11px] text-muted-foreground">· Due: {order.expectedDeliveryDateDate}</span>
+                                  )}
+                                </div>
                               </div>
-                              {productName && <p className="text-xs text-muted-foreground truncate pl-3.5">{productName}</p>}
-                              <div className="mt-1.5 pl-3.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                                <span className="text-[11px] text-muted-foreground">{productTypeLabel}</span>
-                                {order.expectedDeliveryDateDate && (
-                                  <span className="text-[11px] text-muted-foreground">· Due: {order.expectedDeliveryDateDate}</span>
-                                )}
+                              <div className="shrink-0 text-right">
+                                <p className="text-sm font-bold text-foreground">{remainingVolume.toLocaleString()} KG</p>
+                                {isPartial && <p className="text-[10px] text-amber-400 font-medium">{((remainingVolume / totalVol) * 100).toFixed(0)}% remaining</p>}
+                                {!isPartial && <VolumeTag volume={String(totalVol)} />}
                               </div>
-                            </div>
-                            <div className="shrink-0 text-right">
-                              <p className="text-sm font-bold text-foreground">{remainingVolume.toLocaleString()} KG</p>
-                              {isPartial && <p className="text-[10px] text-amber-400 font-medium">{((remainingVolume / totalVol) * 100).toFixed(0)}% remaining</p>}
-                              {!isPartial && <VolumeTag volume={String(totalVol)} />}
                             </div>
                           </div>
+                          {isPartiallyProduced && (
+                            <div className={cn("px-3 py-2 border-t flex items-center justify-between gap-2",
+                              isLight ? "border-slate-100 bg-slate-50" : "border-white/5 bg-white/[0.02]"
+                            )}>
+                              <span className="text-[10px] text-muted-foreground">{producedKg.toLocaleString()} KG produced</span>
+                              <button
+                                onClick={e => { e.stopPropagation(); handleWrap(order.id); }}
+                                disabled={wrappingIds.has(order.id)}
+                                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-orange-500/10 border border-orange-500/30 text-orange-400 hover:bg-orange-500/20 text-[10px] font-semibold transition-colors disabled:opacity-50 shrink-0"
+                              >
+                                <CheckCircle2 className="w-3 h-3" />
+                                {wrappingIds.has(order.id) ? "Wrapping…" : "Wrap"}
+                              </button>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
