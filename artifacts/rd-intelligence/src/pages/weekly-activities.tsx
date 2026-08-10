@@ -5,7 +5,7 @@ import {
   ChevronLeft, ChevronRight, Plus, Trash2, Bell, Check,
   Loader2, ChevronDown, Users, X, Send, FileSpreadsheet,
   FileText, Search, ArrowUpDown, ArrowUp, ArrowDown, Package, ShoppingBag, Download, Pencil,
-  ClipboardList,
+  ClipboardList, RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
@@ -1003,6 +1003,43 @@ export default function WeeklyActivities() {
     onMutate: (id) => setRows(prev => prev.filter(r => r.id !== id)),
   });
 
+  const rolloverActivity = useMutation({
+    mutationFn: async (row: ActivityRow) => {
+      if (!selectedWeek) throw new Error("No week selected");
+      // Calculate next week start date (currentWeek.startDate + 7 days)
+      const currentStart = new Date(selectedWeek.startDate);
+      const nextStart = new Date(currentStart);
+      nextStart.setDate(currentStart.getDate() + 7);
+      const nextMonth = nextStart.getMonth() + 1;
+      const nextYear = nextStart.getFullYear();
+      const nextStartStr = nextStart.toISOString().split("T")[0];
+      // Fetch next month's weeks (auto-creates them if missing)
+      const wRes = await fetch(`${BASE}api/weekly-activities/weeks?month=${nextMonth}&year=${nextYear}`, { headers: authHeaders() });
+      const nextWeeks: any[] = await wRes.json();
+      const nextWeek = nextWeeks.find(w => w.startDate <= nextStartStr && w.endDate >= nextStartStr);
+      if (!nextWeek) throw new Error("Could not find next week");
+      // Create the activity in next week (reset status to not_started)
+      const r = await fetch(`${BASE}api/weekly-activities/weeks/${nextWeek.id}/activities`, {
+        method: "POST", headers: authHeaders(),
+        body: JSON.stringify({
+          assignedUserId: row.assignedUserId ?? null,
+          projectTitle: row.projectTitle ?? "",
+          productType: row.productType ?? null,
+          status: "not_started",
+          priority: row.priority ?? "medium",
+          remarks: row.remarks ?? "",
+        }),
+      });
+      if (!r.ok) throw new Error("Failed to rollover");
+      return { nextWeek, data: await r.json() };
+    },
+    onSuccess: ({ nextWeek }) => {
+      qc.invalidateQueries({ queryKey: ["/api/weekly-activities/activities", nextWeek.id] });
+      alert(`Rolled over to ${nextWeek.label}`);
+    },
+    onError: (e: any) => alert(e.message ?? "Rollover failed"),
+  });
+
   const addActivity = useMutation({
     mutationFn: async () => {
       const r = await fetch(`${BASE}api/weekly-activities/weeks/${selectedWeekId}/activities`, {
@@ -1224,7 +1261,7 @@ export default function WeeklyActivities() {
                     <th className="px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap w-32">Status</th>
                     <th className="px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap w-28">Priority</th>
                     <th className="px-3 py-2.5 text-xs font-semibold text-muted-foreground">Remarks</th>
-                    <th className="px-3 py-2.5 text-xs font-semibold text-muted-foreground w-12 text-center">Del</th>
+                    <th className="px-3 py-2.5 text-xs font-semibold text-muted-foreground w-20 text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1353,13 +1390,27 @@ export default function WeeklyActivities() {
                       </td>
 
                       <td className="px-2 py-2 text-center">
-                        <button
-                          onClick={() => deleteActivity.mutate(row.id)}
-                          className="p-1 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                          title="Delete row"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => {
+                              if (confirm(`Roll over "${row.projectTitle || "this activity"}" to next week?`)) {
+                                rolloverActivity.mutate(row);
+                              }
+                            }}
+                            disabled={rolloverActivity.isPending}
+                            className="p-1 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-40"
+                            title="Roll over to next week"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => deleteActivity.mutate(row.id)}
+                            className="p-1 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                            title="Delete row"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
