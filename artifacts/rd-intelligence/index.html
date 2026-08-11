@@ -15,7 +15,19 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   </head>
   <body>
+    <!-- Classic (non-module) polyfill script — runs before the React bundle on
+         every browser, patching fetch/Headers/Array.from/find for those that
+         need it. Modern browsers hit the guard checks and move on instantly. -->
+    <script src="/polyfills.js"></script>
     <div id="root"></div>
+    <noscript>
+      <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:#0B0B14;color:#e2e8f0;font-family:sans-serif;text-align:center;padding:2rem">
+        <div>
+          <p style="font-size:1.125rem;font-weight:600;margin-bottom:.5rem">JavaScript required</p>
+          <p style="font-size:.875rem;color:#94a3b8">Zentryx requires JavaScript to run. If you are using Opera Mini, please switch to <strong>High</strong> data mode in the browser settings, or open this page in Chrome or Firefox.</p>
+        </div>
+      </div>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

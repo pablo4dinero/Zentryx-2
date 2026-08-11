@@ -2,13 +2,13 @@
 import type { ProductionOrder, ProductionHistoryView, WorkingWeek, BlendSpeed, FloorStatus } from "./types";
 import { DEFAULT_BLEND_SPEEDS } from "./constants";
 
-export function authHeaders() {
-  const headers = new Headers({ "Content-Type": "application/json" });
-  const token = localStorage.getItem("rd_token");
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
-  return headers;
+export function authHeaders(): Record<string, string> {
+  const h: Record<string, string> = { "Content-Type": "application/json" };
+  try {
+    const token = localStorage.getItem("rd_token");
+    if (token) h["Authorization"] = "Bearer " + token;
+  } catch { /* storage blocked in some browsers */ }
+  return h;
 }
 
 export function formatDate(value?: string | null) {

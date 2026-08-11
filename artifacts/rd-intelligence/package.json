@@ -84,5 +84,10 @@
     "xlsx": "^0.18.5",
     "zod": "^3.25.76",
     "zustand": "^5.0.12"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-legacy": "^7.2.1",
+    "terser": "^5.50.0",
+    "whatwg-fetch": "^3.6.20"
   }
 }
