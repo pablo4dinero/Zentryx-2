@@ -865,29 +865,42 @@ function AgentDataPanel({
             : <ChevronDown className={cn("w-3 h-3 shrink-0", meta.color)} />
         )}
       </div>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            key="body"
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.18 }}
-            className="overflow-hidden"
-          >
-            <div className="p-3">
-              {agentId === "formulation" && <InlineFormulation data={d} />}
-              {agentId === "sensory"     && <InlineSensory data={d} />}
-              {agentId === "compliance"  && <InlineCompliance data={d} />}
-              {agentId === "trendScout"  && <InlineTrends data={d} />}
-              {agentId === "risk"        && <InlineRisk data={d} />}
-              {agentId === "optimizer"   && <InlineOptimizer data={d} />}
-              {agentId === "experiment"  && <InlineExperiment data={d} />}
-              {agentId === "insight"     && <InlineInsight data={d} />}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {collapsible ? (
+        <AnimatePresence initial={false}>
+          {open && (
+            <motion.div
+              key="body"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.18 }}
+              className="overflow-hidden"
+            >
+              <div className="p-3">
+                {agentId === "formulation" && <InlineFormulation data={d} />}
+                {agentId === "sensory"     && <InlineSensory data={d} />}
+                {agentId === "compliance"  && <InlineCompliance data={d} />}
+                {agentId === "trendScout"  && <InlineTrends data={d} />}
+                {agentId === "risk"        && <InlineRisk data={d} />}
+                {agentId === "optimizer"   && <InlineOptimizer data={d} />}
+                {agentId === "experiment"  && <InlineExperiment data={d} />}
+                {agentId === "insight"     && <InlineInsight data={d} />}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      ) : (
+        <div className="p-3">
+          {agentId === "formulation" && <InlineFormulation data={d} />}
+          {agentId === "sensory"     && <InlineSensory data={d} />}
+          {agentId === "compliance"  && <InlineCompliance data={d} />}
+          {agentId === "trendScout"  && <InlineTrends data={d} />}
+          {agentId === "risk"        && <InlineRisk data={d} />}
+          {agentId === "optimizer"   && <InlineOptimizer data={d} />}
+          {agentId === "experiment"  && <InlineExperiment data={d} />}
+          {agentId === "insight"     && <InlineInsight data={d} />}
+        </div>
+      )}
     </div>
   );
 }
