@@ -525,7 +525,7 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
 
     const briefText = await callModel(
       SONNET_MODEL,
-      "You are Oracle, the AI intelligence layer for Zentryx, a food science R&D company. Write a concise, professional weekly digest brief in exactly 3–4 sentences. Summarise business performance across sales, call activity, business development, project portfolio, and team activities. Reference specific numbers from the data. Use a confident, executive tone. Do not use bullet points.",
+      "You are Oracle, the AI intelligence layer for Zentryx, a food science R&D company. Write a concise, professional weekly digest brief in exactly 3–4 sentences. Summarise business performance across sales, call activity, business development, project portfolio, and team activities. Reference specific numbers from the data only — never fabricate figures. If a metric is missing from the data, omit it rather than estimating. Use a confident, executive tone. Do not use bullet points.",
       `Week data: ${JSON.stringify(ctx)}`,
       400,
     ).catch(() => "Oracle brief unavailable — regenerate to try again.");
@@ -544,11 +544,11 @@ router.post("/generate", requireAuth, async (_req: AuthRequest, res) => {
     });
 
     const [salesInsight, callInsight, bdInsight, activitiesInsight, projectInsight, complianceInsight, trendScoutInsight] = await Promise.allSettled([
-      callModel(HAIKU_MODEL, "You are Oracle. Write exactly one insight sentence about this sales and production data for a weekly digest. Be specific.", JSON.stringify({ accounts: ctx.accounts, productionOrders: ctx.productionOrders }), 120),
-      callModel(HAIKU_MODEL, "You are Oracle. Write exactly one insight sentence about this call reports data for a weekly digest. Be specific.", JSON.stringify({ totalCalls, successfulCalls, overdueFollowUps: followUpNeeded, nextActionsDue }), 120),
-      callModel(HAIKU_MODEL, "You are Oracle. Write exactly one insight sentence about this business development data for a weekly digest. Be specific.", JSON.stringify(ctx.businessDev), 120),
-      callModel(HAIKU_MODEL, "You are Oracle. Write exactly one insight sentence about this weekly activities data for a weekly digest. Be specific.", JSON.stringify(ctx.weeklyActivities), 120),
-      callModel(HAIKU_MODEL, "You are Oracle. Write exactly one insight sentence about this project portfolio data for a weekly digest. Be specific.", JSON.stringify(ctx.projectPortfolio), 120),
+      callModel(HAIKU_MODEL, "You are Oracle. Write exactly one insight sentence about this sales and production data for a weekly digest. Use only the numbers present in the data — never fabricate figures. If data is insufficient, say so briefly.", JSON.stringify({ accounts: ctx.accounts, productionOrders: ctx.productionOrders }), 120),
+      callModel(HAIKU_MODEL, "You are Oracle. Write exactly one insight sentence about this call reports data for a weekly digest. Use only the numbers present in the data — never fabricate figures. If data is insufficient, say so briefly.", JSON.stringify({ totalCalls, successfulCalls, overdueFollowUps: followUpNeeded, nextActionsDue }), 120),
+      callModel(HAIKU_MODEL, "You are Oracle. Write exactly one insight sentence about this business development data for a weekly digest. Use only the numbers present in the data — never fabricate figures. If data is insufficient, say so briefly.", JSON.stringify(ctx.businessDev), 120),
+      callModel(HAIKU_MODEL, "You are Oracle. Write exactly one insight sentence about this weekly activities data for a weekly digest. Use only the numbers present in the data — never fabricate figures. If data is insufficient, say so briefly.", JSON.stringify(ctx.weeklyActivities), 120),
+      callModel(HAIKU_MODEL, "You are Oracle. Write exactly one insight sentence about this project portfolio data for a weekly digest. Use only the numbers present in the data — never fabricate figures. If data is insufficient, say so briefly.", JSON.stringify(ctx.projectPortfolio), 120),
       callModel(SONNET_MODEL, `You are Oracle's Compliance Agent for Zentryx, a food science R&D company in Nigeria. Your job is to give actionable regulatory intelligence specific to the product types Zentryx is currently working on.
 
 Part 1 — Regulatory Updates (lead with this): For each product category listed in activeProductTypes, cite one specific, current NAFDAC regulation, SON standard, or Nigerian food safety requirement that Zentryx should be aware of — e.g. registration requirements, labeling rules, ingredient restrictions, or any recent regulatory changes for that category (bouillons, seasonings, dairy premixes, etc.).
@@ -642,6 +642,7 @@ router.post("/ask", requireAuth, async (req: AuthRequest, res) => {
       "You are Oracle, the AI intelligence layer for Zentryx, a food science R&D company.",
       "You are answering a question in the context of the company's Weekly Digest — a summary of this week's business performance.",
       digestContext ? `Weekly Digest context:\n${digestContext}` : "",
+      "DATA INTEGRITY RULES — MANDATORY: Never fabricate data, figures, or statistics. Distinguish clearly: ✅ Verified fact (from the digest context above), ⚠️ Informed hypothesis (reasoned estimate — label it as such), ❌ Unknown (acknowledge openly and suggest how to find the real answer). If a number is not in the context, do not invent it.",
       "Be concise, specific, and analytical. Keep your answer under 150 words.",
     ].filter(Boolean).join("\n\n");
 
