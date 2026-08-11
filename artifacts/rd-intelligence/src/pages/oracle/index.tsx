@@ -830,26 +830,64 @@ function InlineInsight({ data }: { data: any }) {
   );
 }
 
-function AgentDataPanel({ agentId, data }: { agentId: AgentId; data: unknown }) {
+function AgentDataPanel({
+  agentId,
+  data,
+  isOpen,
+  onToggle,
+}: {
+  agentId: AgentId;
+  data: unknown;
+  isOpen?: boolean;
+  onToggle?: () => void;
+}) {
   const meta = AGENT_META[agentId];
   const Icon = meta.icon;
   const d = data as any;
+  const collapsible = onToggle !== undefined;
+  const open = collapsible ? !!isOpen : true;
   return (
     <div className="rounded-xl border border-white/8 overflow-hidden">
-      <div className={cn("flex items-center gap-2 px-3 py-2 border-b border-white/5", meta.bg)}>
+      <div
+        className={cn(
+          "flex items-center gap-2 px-3 py-2",
+          meta.bg,
+          collapsible && "cursor-pointer select-none",
+          open && "border-b border-white/5",
+        )}
+        onClick={collapsible ? onToggle : undefined}
+      >
         <Icon className={cn("w-3.5 h-3.5 shrink-0", meta.color)} />
-        <span className={cn("text-xs font-semibold", meta.color)}>{meta.label} Analysis</span>
+        <span className={cn("text-xs font-semibold flex-1", meta.color)}>{meta.label} Analysis</span>
+        {collapsible && (
+          open
+            ? <ChevronUp className={cn("w-3 h-3 shrink-0", meta.color)} />
+            : <ChevronDown className={cn("w-3 h-3 shrink-0", meta.color)} />
+        )}
       </div>
-      <div className="p-3">
-        {agentId === "formulation" && <InlineFormulation data={d} />}
-        {agentId === "sensory"     && <InlineSensory data={d} />}
-        {agentId === "compliance"  && <InlineCompliance data={d} />}
-        {agentId === "trendScout"  && <InlineTrends data={d} />}
-        {agentId === "risk"        && <InlineRisk data={d} />}
-        {agentId === "optimizer"   && <InlineOptimizer data={d} />}
-        {agentId === "experiment"  && <InlineExperiment data={d} />}
-        {agentId === "insight"     && <InlineInsight data={d} />}
-      </div>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            key="body"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.18 }}
+            className="overflow-hidden"
+          >
+            <div className="p-3">
+              {agentId === "formulation" && <InlineFormulation data={d} />}
+              {agentId === "sensory"     && <InlineSensory data={d} />}
+              {agentId === "compliance"  && <InlineCompliance data={d} />}
+              {agentId === "trendScout"  && <InlineTrends data={d} />}
+              {agentId === "risk"        && <InlineRisk data={d} />}
+              {agentId === "optimizer"   && <InlineOptimizer data={d} />}
+              {agentId === "experiment"  && <InlineExperiment data={d} />}
+              {agentId === "insight"     && <InlineInsight data={d} />}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -895,7 +933,14 @@ function stripMarkdownTables(md: string): string {
 }
 
 function OracleBubble({ msg, isLight }: { msg: OracleMessage; isLight: boolean }) {
-  const [expanded, setExpanded] = useState(false);
+  const [openPanels, setOpenPanels] = useState<Set<string>>(new Set());
+
+  const togglePanel = (id: string) =>
+    setOpenPanels(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
   const agentEntries = Object.entries(msg.agentData) as [AgentId, unknown][];
   const hasAgentData = agentEntries.length > 0;
   const isTyping = msg.streaming && msg.text === "";
@@ -904,8 +949,6 @@ function OracleBubble({ msg, isLight }: { msg: OracleMessage; isLight: boolean }
   // text-heavy panels (which keep the expand/collapse behaviour).
   const visualEntries = agentEntries.filter(([id]) => VISUAL_AGENT_IDS.has(id));
   const otherEntries  = agentEntries.filter(([id]) => !VISUAL_AGENT_IDS.has(id));
-  const showExpandButton = otherEntries.length > 1 && !msg.streaming;
-
   // When a sensory radar is present, drop any markdown score-table the model
   // also drew — that duplicate table is exactly what users asked not to see.
   const hasSensory = agentEntries.some(([id]) => id === "sensory");
@@ -978,52 +1021,18 @@ function OracleBubble({ msg, isLight }: { msg: OracleMessage; isLight: boolean }
             )}
           </div>
 
-          {!msg.streaming && otherEntries.length === 1 && (
-            <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
-              <AgentDataPanel agentId={otherEntries[0][0]} data={otherEntries[0][1]} />
-            </motion.div>
-          )}
-
-          {msg.streaming && otherEntries.length > 0 && (
+          {otherEntries.length > 0 && (
             <div className="space-y-2">
               {otherEntries.map(([id, data]) => (
                 <motion.div key={id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
-                  <AgentDataPanel agentId={id} data={data} />
+                  <AgentDataPanel
+                    agentId={id}
+                    data={data}
+                    isOpen={openPanels.has(id)}
+                    onToggle={() => togglePanel(id)}
+                  />
                 </motion.div>
               ))}
-            </div>
-          )}
-
-          {showExpandButton && (
-            <div>
-              <button
-                onClick={() => setExpanded(e => !e)}
-                className={cn(
-                  "flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors",
-                  isLight
-                    ? "border-slate-200 text-slate-500 hover:bg-slate-50"
-                    : "border-white/10 text-muted-foreground hover:bg-white/5",
-                )}
-              >
-                {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                {expanded ? "Collapse" : "Expand full analysis"}
-                <span className="text-[10px] opacity-60">{otherEntries.length} agents</span>
-              </button>
-              <AnimatePresence>
-                {expanded && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="space-y-2 mt-2 overflow-hidden"
-                  >
-                    {otherEntries.map(([id, data]) => (
-                      <AgentDataPanel key={id} agentId={id} data={data} />
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </div>
           )}
         </div>
