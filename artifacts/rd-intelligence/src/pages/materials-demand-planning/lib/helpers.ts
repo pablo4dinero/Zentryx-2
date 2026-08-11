@@ -169,10 +169,6 @@ export function sameDate(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
-const _WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
-const _MO = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
-const _pad = (n: number) => String(n).padStart(2, "0");
-
 export function getWorkingWeeksForMonth(year: number, month: number): WorkingWeek[] {
   const weeks: WorkingWeek[] = [];
   const firstOfMonth = new Date(year, month, 1);
@@ -197,21 +193,24 @@ export function getWorkingWeeksForMonth(year: number, month: number): WorkingWee
     });
     const endDate = new Date(currentStart);
     endDate.setDate(endDate.getDate() + 5);
-
-    // weekLabel — locale-independent ISO key, stored in the DB and used as the ?week= query param.
-    // MUST NOT vary between browsers or locales — old browsers without Intl would produce a
-    // different string via toLocaleDateString, causing cross-browser data mismatch.
-    const sy = currentStart.getFullYear(), sm = currentStart.getMonth(), sd = currentStart.getDate();
-    const ey = endDate.getFullYear(), em = endDate.getMonth(), ed = endDate.getDate();
-    const startIso = `${sy}-${_pad(sm + 1)}-${_pad(sd)}`;
-    const endIso   = `${ey}-${_pad(em + 1)}-${_pad(ed)}`;
-    const weekLabel = `Week ${weekNumber}: ${startIso} – ${endIso}`;
-
-    // displayLabel — human-readable, for the dropdown only, never stored.
-    // Uses hardcoded arrays so it is also fully locale-independent.
-    const displayLabel = `Week ${weekNumber}: ${_WD[currentStart.getDay()]} ${sd} ${_MO[sm]} – ${_WD[endDate.getDay()]} ${ed} ${_MO[em]} ${ey}`;
-
-    weeks.push({ weekLabel, displayLabel, weekNumber, days, startDate: new Date(currentStart), endDate });
+    const formattedStart = currentStart.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "long",
+      day: "numeric",
+    });
+    const formattedEnd = endDate.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+    weeks.push({
+      weekLabel: `Week ${weekNumber}: ${formattedStart} – ${formattedEnd}`,
+      weekNumber,
+      days,
+      startDate: new Date(currentStart),
+      endDate,
+    });
     weekNumber += 1;
     currentStart = new Date(currentStart);
     currentStart.setDate(currentStart.getDate() + 7);

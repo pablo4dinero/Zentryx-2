@@ -98,12 +98,7 @@ export type ProducedOrder = {
 };
 
 export type WorkingWeek = {
-  /** Locale-independent ISO key stored in the DB and sent as the API query param.
-   *  Format: "Week N: YYYY-MM-DD – YYYY-MM-DD"  (never changes between browsers) */
   weekLabel: string;
-  /** Human-readable label shown in the week selector dropdown only.
-   *  Format: "Week N: Mon 3 Aug – Sat 8 Aug 2026"  (never stored in the DB) */
-  displayLabel: string;
   weekNumber: number;
   days: Date[];
   startDate: Date;
