@@ -1849,7 +1849,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
             <div>
               <p className={cn("text-xs font-semibold uppercase tracking-wider", isLight ? "text-slate-600" : "text-muted-foreground")}>Current Week Efficiency</p>
               <p className={cn("text-sm mt-1", isLight ? "text-slate-700" : "text-foreground")}>
-                {selectedWeekLabel || "Select a week to see efficiency score"}
+                {(selectedWeek?.displayLabel ?? selectedWeekLabel) || "Select a week to see efficiency score"}
               </p>
             </div>
             {selectedWeekLabel && (
@@ -1903,7 +1903,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
               >
                 {weeks.map((week) => (
                   <option key={week.weekLabel} value={week.weekLabel} className={isLight ? "bg-white text-slate-700" : "bg-black/90 text-white"}>
-                    {week.weekLabel}
+                    {week.displayLabel}
                   </option>
                 ))}
               </select>
@@ -2085,7 +2085,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
               disabled={unassigning || assignments.length === 0}
               title={assignments.length === 0
                 ? "No assignments in this week"
-                : `Unassign all ${assignments.length} assignment${assignments.length === 1 ? "" : "s"} in ${selectedWeekLabel}`}
+                : `Unassign all ${assignments.length} assignment${assignments.length === 1 ? "" : "s"} in ${selectedWeek?.displayLabel ?? selectedWeekLabel}`}
               className={cn(
                 "inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
                 isLight
@@ -2212,7 +2212,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                           )}
                         >
                           <div className="flex items-center gap-3">
-                            <span className="font-semibold text-sm text-foreground">Week {weekIdx + 1} — {week.weekLabel}</span>
+                            <span className="font-semibold text-sm text-foreground">Week {weekIdx + 1} — {week.displayLabel}</span>
                           </div>
                           <ChevronDown className={cn("w-4 h-4 transition-transform", isExpanded && "rotate-180")} />
                         </button>
@@ -2497,7 +2497,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
           {/* Planning Summary — pinned at top */}
           <div className={cn("rounded-2xl border p-4 shrink-0", isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-black/5")}>
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Planning summary</h3>
-            <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{selectedWeekLabel}</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{selectedWeek?.displayLabel ?? selectedWeekLabel}</p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <div className={cn("rounded-xl border p-4", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-white/5")}>
                 <p className="text-xs uppercase tracking-[0.15em] text-muted-foreground">Planned orders</p>
@@ -2931,7 +2931,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
         <DialogContent className={cn("sm:max-w-5xl max-h-[90vh] overflow-y-auto", isLight ? "bg-white border-slate-200" : "")}>
           <DialogHeader>
             <DialogTitle>Print Week Schedule</DialogTitle>
-            <DialogDescription>Production schedule for {selectedWeekLabel}. Click Print to generate a PDF.</DialogDescription>
+            <DialogDescription>Production schedule for {selectedWeek?.displayLabel ?? selectedWeekLabel}. Click Print to generate a PDF.</DialogDescription>
           </DialogHeader>
 
           <div id="print-schedule" className="bg-white text-slate-900 p-6 rounded-xl">
@@ -2944,7 +2944,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                 </div>
                 <div className="text-right">
                   <p className="text-xs text-slate-400 uppercase tracking-widest font-semibold">Week Schedule</p>
-                  <p className="text-sm font-semibold text-slate-700 mt-1">{selectedWeekLabel}</p>
+                  <p className="text-sm font-semibold text-slate-700 mt-1">{selectedWeek?.displayLabel ?? selectedWeekLabel}</p>
                   <p className="text-xs text-slate-400 mt-0.5">Generated: {new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}</p>
                 </div>
               </div>
@@ -3130,7 +3130,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                   {/* Footer */}
                   <div className="border-t border-slate-200 mt-6 pt-4 flex items-center justify-between text-[10px] text-slate-400">
                     <span>ZENTRYX Production Schedule — Confidential</span>
-                    <span>{selectedWeekLabel}</span>
+                    <span>{selectedWeek?.displayLabel ?? selectedWeekLabel}</span>
                   </div>
                 </>
               );
@@ -3172,7 +3172,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                 <div className={cn("flex items-center justify-between px-6 py-4 border-b shrink-0", isLight ? "bg-white border-slate-200" : "bg-slate-900 border-white/10")}>
                   <div>
                     <h2 className="text-lg font-bold text-foreground">{dayFull}</h2>
-                    <p className="text-xs text-muted-foreground mt-0.5">{selectedWeekLabel} · All production floors · {totalDayKgEx.toLocaleString()} KG scheduled</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{selectedWeek?.displayLabel ?? selectedWeekLabel} · All production floors · {totalDayKgEx.toLocaleString()} KG scheduled</p>
                   </div>
                   <button onClick={() => setExpandedDay(null)}
                     className={cn("p-2 rounded-xl transition-colors", isLight ? "hover:bg-slate-100 text-slate-600" : "hover:bg-white/10 text-muted-foreground")}>

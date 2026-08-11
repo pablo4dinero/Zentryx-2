@@ -692,6 +692,69 @@ async function applyMigrations() {
       ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
     `);
 
+    // ── weekLabel ISO normalization ──────────────────────────────────────────
+    // Old frontend used toLocaleDateString(undefined, ...) which varied by
+    // browser locale, creating keys like "Week 1: Mon, August 3 – Sat, August 8, 2026"
+    // (Chrome en-US) or "8/3/2026 – 8/8/2026" (old browser without Intl).
+    // New frontend generates locale-independent ISO keys: "Week 1: 2026-08-03 – 2026-08-08"
+    // This migration converts all old-format records so cross-browser data is visible.
+    await (async () => {
+      const TABLES = ["mdp_floor_assignments", "mdp_floor_day_statuses", "mdp_produced_orders"] as const;
+      const ISO_RE = /^Week \d+: \d{4}-\d{2}-\d{2} – \d{4}-\d{2}-\d{2}$/;
+      const MONTH_MAP: Record<string, number> = {
+        january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+        july: 6, august: 7, september: 8, october: 9, november: 10, december: 11,
+      };
+      const padz = (n: number) => String(n).padStart(2, "0");
+
+      function toIso(old: string): string | null {
+        if (ISO_RE.test(old)) return old;
+        const nm = old.match(/^Week (\d+):/);
+        if (!nm) return null;
+        const weekNum = parseInt(nm[1], 10);
+        const ym = [...old.matchAll(/\b(\d{4})\b/g)];
+        if (!ym.length) return null;
+        const year = parseInt(ym[ym.length - 1][1], 10);
+        const lower = old.toLowerCase();
+        let month = -1;
+        let bestLen = 0;
+        for (const [name, idx] of Object.entries(MONTH_MAP)) {
+          if (name.length > bestLen && new RegExp(`\\b${name}\\b`).test(lower)) {
+            month = idx; bestLen = name.length;
+          }
+        }
+        if (month === -1) return null;
+        const d = new Date(year, month, 1);
+        while (d.getDay() !== 1) d.setDate(d.getDate() + 1);
+        if (d.getMonth() !== month) return null;
+        const start = new Date(d);
+        start.setDate(d.getDate() + (weekNum - 1) * 7);
+        if (start.getMonth() !== month || start.getFullYear() !== year) return null;
+        const end = new Date(start);
+        end.setDate(start.getDate() + 5);
+        const s = `${start.getFullYear()}-${padz(start.getMonth() + 1)}-${padz(start.getDate())}`;
+        const e = `${end.getFullYear()}-${padz(end.getMonth() + 1)}-${padz(end.getDate())}`;
+        return `Week ${weekNum}: ${s} – ${e}`;
+      }
+
+      for (const table of TABLES) {
+        try {
+          const result = await db.execute(sql.raw(`SELECT DISTINCT week_label FROM ${table} WHERE week_label IS NOT NULL`));
+          const rows = (result as any).rows ?? [];
+          for (const row of rows) {
+            const oldLabel = row.week_label as string;
+            if (!oldLabel || ISO_RE.test(oldLabel)) continue;
+            const newLabel = toIso(oldLabel);
+            if (!newLabel || newLabel === oldLabel) continue;
+            await db.execute(sql`UPDATE ${sql.raw(table)} SET week_label = ${newLabel} WHERE week_label = ${oldLabel}`);
+            logger.info({ table, oldLabel, newLabel }, "Migrated weekLabel to ISO format");
+          }
+        } catch (migrErr) {
+          logger.warn({ err: migrErr, table }, "weekLabel ISO migration skipped for table");
+        }
+      }
+    })();
+
     logger.info("Migrations applied successfully");
   } catch (err) {
     logger.error({ err }, "Failed to apply migrations");
