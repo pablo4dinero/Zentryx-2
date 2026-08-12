@@ -16,7 +16,7 @@ import {
   notificationsTable,
   usersTable,
 } from "@workspace/db";
-import { eq, desc, asc, sql, inArray, gte, lte, and, isNull } from "drizzle-orm";
+import { eq, desc, asc, sql, inArray, gte, lte, and, or, isNull } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "../lib/auth";
 import { logActivity } from "../lib/activity";
 import { callModel, SONNET_MODEL } from "../oracle/claude";
@@ -295,7 +295,10 @@ router.put("/production-floors/:id", requireAuth, async (req: AuthRequest, res) 
 router.get("/floor-day-statuses", requireAuth, async (req: AuthRequest, res) => {
   try {
     const weekLabel = String(req.query.week || "");
-    const rows = weekLabel
+    const weekStart = String(req.query.weekStart || "");
+    const rows = weekStart
+      ? await db.select().from(mdpFloorDayStatusesTable).where(eq(mdpFloorDayStatusesTable.weekStartDate, weekStart))
+      : weekLabel
       ? await db.select().from(mdpFloorDayStatusesTable).where(eq(mdpFloorDayStatusesTable.weekLabel, weekLabel))
       : await db.select().from(mdpFloorDayStatusesTable);
     res.json(rows);
@@ -307,9 +310,10 @@ router.get("/floor-day-statuses", requireAuth, async (req: AuthRequest, res) => 
 
 router.patch("/floor-day-statuses", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const body = req.body as { floorId?: number; weekLabel?: string; assignedDay?: string; status?: string };
+    const body = req.body as { floorId?: number; weekLabel?: string; weekStartDate?: string; assignedDay?: string; status?: string };
     const floorId = Number(body.floorId);
     const weekLabel = String(body.weekLabel ?? "");
+    const weekStartDate = body.weekStartDate ? String(body.weekStartDate) : null;
     const assignedDay = String(body.assignedDay ?? "");
     const incoming = String(body.status ?? "");
 
@@ -329,10 +333,13 @@ router.patch("/floor-day-statuses", requireAuth, async (req: AuthRequest, res) =
       return;
     }
 
+    const weekFilter = weekStartDate
+      ? eq(mdpFloorDayStatusesTable.weekStartDate, weekStartDate)
+      : eq(mdpFloorDayStatusesTable.weekLabel, weekLabel);
     const [existing] = await db.select().from(mdpFloorDayStatusesTable)
       .where(and(
         eq(mdpFloorDayStatusesTable.floorId, floorId),
-        eq(mdpFloorDayStatusesTable.weekLabel, weekLabel),
+        weekFilter,
         eq(mdpFloorDayStatusesTable.assignedDay, assignedDay),
       )).limit(1);
 
@@ -344,7 +351,7 @@ router.patch("/floor-day-statuses", requireAuth, async (req: AuthRequest, res) =
         .returning();
     } else {
       [row] = await db.insert(mdpFloorDayStatusesTable)
-        .values({ floorId, weekLabel, assignedDay, status })
+        .values({ floorId, weekLabel, weekStartDate, assignedDay, status })
         .returning();
     }
 
@@ -400,6 +407,7 @@ router.delete("/production-floors/:id", requireAuth, async (req: AuthRequest, re
 router.get("/floor-assignments", requireAuth, async (req: AuthRequest, res) => {
   try {
     const weekLabel = String(req.query.week || "");
+    const weekStart = String(req.query.weekStart || "");
 
     // Get all assignments for the week
     const baseQuery = db.select({
@@ -417,7 +425,9 @@ router.get("/floor-assignments", requireAuth, async (req: AuthRequest, res) => {
     const limit  = Math.min(parseInt(String(req.query.limit  ?? 2000)), 2000);
     const offset = Math.max(parseInt(String(req.query.offset ?? 0)),    0);
 
-    const query = weekLabel
+    const query = weekStart
+      ? baseQuery.where(eq(mdpFloorAssignmentsTable.weekStartDate, weekStart))
+      : weekLabel
       ? baseQuery.where(eq(mdpFloorAssignmentsTable.weekLabel, weekLabel))
       : baseQuery;
 
@@ -465,6 +475,7 @@ router.post("/assisted-planning", requireAuth, async (req: AuthRequest, res) => 
   // Hoisted so the catch block can release the per-week lock even if an error
   // is thrown before/while the body is destructured.
   const weekLabel: string | undefined = req.body?.weekLabel;
+  const weekStartDate: string | null = req.body?.weekStartDate || null;
   try {
     const {
       workingDays, workingDates: workingDatesRaw,
@@ -517,7 +528,9 @@ router.post("/assisted-planning", requireAuth, async (req: AuthRequest, res) => 
     // Delete all existing assignments for this week before running
     const existing = await db.select({ id: mdpFloorAssignmentsTable.id })
       .from(mdpFloorAssignmentsTable)
-      .where(eq(mdpFloorAssignmentsTable.weekLabel, weekLabel));
+      .where(weekStartDate
+        ? eq(mdpFloorAssignmentsTable.weekStartDate, weekStartDate)
+        : eq(mdpFloorAssignmentsTable.weekLabel, weekLabel!));
     if (existing.length > 0) {
       const ids = existing.map(e => e.id);
       await db.delete(mdpProductSwitchDowntimesTable).where(inArray(mdpProductSwitchDowntimesTable.afterAssignmentId, ids));
@@ -551,7 +564,8 @@ router.post("/assisted-planning", requireAuth, async (req: AuthRequest, res) => 
         result.placements.map(p => ({
           floorId: p.floorId,
           productionOrderId: p.productionOrderId,
-          weekLabel,
+          weekLabel: weekLabel!,
+          weekStartDate,
           assignedDay: p.assignedDay,
           planStatus: "Planned",
           assignedVolume: String(p.assignedVolume),
@@ -601,6 +615,7 @@ router.post("/floor-assignments", requireAuth, async (req: AuthRequest, res) => 
     const body = req.body as any;
     const floorId = Number(body.floorId);
     const weekLabel = String(body.weekLabel ?? "");
+    const weekStartDate = body.weekStartDate ? String(body.weekStartDate) : null;
     const assignedDay = String(body.assignedDay ?? "");
     const productionOrderId = Number(body.productionOrderId);
     const assignedVolume = body.assignedVolume != null ? Number(body.assignedVolume) : null;
@@ -618,12 +633,15 @@ router.post("/floor-assignments", requireAuth, async (req: AuthRequest, res) => 
 
       if (salesOrder?.volume) {
         const motherVolume = Number(salesOrder.volume);
+        const weekFilter = weekStartDate
+          ? eq(mdpFloorAssignmentsTable.weekStartDate, weekStartDate)
+          : eq(mdpFloorAssignmentsTable.weekLabel, weekLabel);
         const alreadyAssigned = await db
           .select({ vol: mdpFloorAssignmentsTable.assignedVolume })
           .from(mdpFloorAssignmentsTable)
           .where(and(
             eq(mdpFloorAssignmentsTable.productionOrderId, productionOrderId),
-            eq(mdpFloorAssignmentsTable.weekLabel, weekLabel),
+            weekFilter,
           ));
         const totalAssigned = alreadyAssigned.reduce((sum, r) => sum + Number(r.vol ?? 0), 0);
         if (totalAssigned + assignedVolume > motherVolume * 1.01) { // 1% tolerance for rounding
@@ -640,6 +658,7 @@ router.post("/floor-assignments", requireAuth, async (req: AuthRequest, res) => 
       floorId,
       productionOrderId,
       weekLabel,
+      weekStartDate,
       assignedDay,
       planStatus: body.planStatus ?? "Planned",
       assignedVolume: assignedVolume != null ? String(assignedVolume) : null,
@@ -665,7 +684,9 @@ router.post("/floor-assignments", requireAuth, async (req: AuthRequest, res) => 
         .innerJoin(accountsTable, eq(accountProductionOrdersTable.accountId, accountsTable.id))
         .where(and(
           eq(mdpFloorAssignmentsTable.floorId, floorId),
-          eq(mdpFloorAssignmentsTable.weekLabel, weekLabel),
+          weekStartDate
+            ? eq(mdpFloorAssignmentsTable.weekStartDate, weekStartDate)
+            : eq(mdpFloorAssignmentsTable.weekLabel, weekLabel),
           eq(mdpFloorAssignmentsTable.assignedDay, assignedDay),
         ));
       const normalise = (s: string | null) =>
@@ -690,6 +711,7 @@ router.post("/floor-assignments", requireAuth, async (req: AuthRequest, res) => 
         productionOrderId,
         floorId,
         weekLabel,
+        weekStartDate,
         changeType: "assigned",
         changedByUserId: req.user?.userId ?? null,
       });
@@ -1044,7 +1066,11 @@ router.post("/floor-assignments/cleanup-orphaned", requireAuth, async (req: Auth
 router.get("/product-switch-downtimes", requireAuth, async (req: AuthRequest, res) => {
   try {
     const weekLabel = String(req.query.week || "");
-    if (!weekLabel) { res.json([]); return; }
+    const weekStart = String(req.query.weekStart || "");
+    if (!weekLabel && !weekStart) { res.json([]); return; }
+    const weekFilter = weekStart
+      ? eq(mdpFloorAssignmentsTable.weekStartDate, weekStart)
+      : eq(mdpFloorAssignmentsTable.weekLabel, weekLabel);
     const rows = await db.select({
       id: mdpProductSwitchDowntimesTable.id,
       afterAssignmentId: mdpProductSwitchDowntimesTable.afterAssignmentId,
@@ -1052,7 +1078,7 @@ router.get("/product-switch-downtimes", requireAuth, async (req: AuthRequest, re
     })
       .from(mdpProductSwitchDowntimesTable)
       .innerJoin(mdpFloorAssignmentsTable, eq(mdpFloorAssignmentsTable.id, mdpProductSwitchDowntimesTable.afterAssignmentId))
-      .where(eq(mdpFloorAssignmentsTable.weekLabel, weekLabel));
+      .where(weekFilter);
     res.json(rows);
   } catch (err) {
     console.error(err);
@@ -1364,6 +1390,7 @@ router.post("/produced-orders", requireAuth, async (req: AuthRequest, res) => {
       productionOrderId: body.productionOrderId ? Number(body.productionOrderId) : null,
       floorAssignmentId: body.floorAssignmentId ? Number(body.floorAssignmentId) : null,
       weekLabel: body.weekLabel ?? null,
+      weekStartDate: body.weekStartDate ? String(body.weekStartDate) : null,
       assignedDay: body.assignedDay ?? null,
       accountName: body.accountName,
       productName: body.productName,

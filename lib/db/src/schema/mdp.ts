@@ -69,6 +69,9 @@ export const mdpFloorAssignmentsTable = pgTable("mdp_floor_assignments", {
   floorId: integer("floor_id").notNull(),
   productionOrderId: integer("production_order_id").notNull(),
   weekLabel: text("week_label").notNull(),
+  // Locale-independent ISO date ("YYYY-MM-DD") of the week's Monday.
+  // Used as the canonical week key for cross-browser queries.
+  weekStartDate: text("week_start_date"),
   assignedDay: text("assigned_day").notNull(),
   planStatus: text("plan_status").default("Planned"),
   assignedVolume: numeric("assigned_volume"),
@@ -102,6 +105,7 @@ export const mdpFloorDayStatusesTable = pgTable("mdp_floor_day_statuses", {
   id: serial("id").primaryKey(),
   floorId: integer("floor_id").notNull(),
   weekLabel: text("week_label").notNull(),
+  weekStartDate: text("week_start_date"),
   assignedDay: text("assigned_day").notNull(),
   status: text("status").notNull().default("Running"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -116,6 +120,7 @@ export const mdpProducedOrdersTable = pgTable("mdp_produced_orders", {
   productionOrderId: integer("production_order_id"),
   floorAssignmentId: integer("floor_assignment_id"),
   weekLabel: text("week_label"),
+  weekStartDate: text("week_start_date"),
   assignedDay: text("assigned_day"),
   accountName: text("account_name").notNull(),
   productName: text("product_name").notNull(),
@@ -166,6 +171,7 @@ export const mdpPlanActivityLogTable = pgTable("mdp_plan_activity_log", {
   productionOrderId: integer("production_order_id"),
   floorId: integer("floor_id"),
   weekLabel: text("week_label"),
+  weekStartDate: text("week_start_date"),
   // 'assigned' | 'unassigned' | 'volume_adjusted'
   changeType: text("change_type").notNull(),
   changedByUserId: integer("changed_by_user_id"),

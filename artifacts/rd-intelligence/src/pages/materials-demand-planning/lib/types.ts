@@ -99,6 +99,8 @@ export type ProducedOrder = {
 
 export type WorkingWeek = {
   weekLabel: string;
+  /** ISO "YYYY-MM-DD" of the week's Monday — locale-independent, used as the API weekStart param */
+  weekStartDate: string;
   weekNumber: number;
   days: Date[];
   startDate: Date;
@@ -122,6 +124,7 @@ export type FloorAssignmentRow = {
     floorId: number;
     productionOrderId: number;
     weekLabel: string;
+    weekStartDate?: string | null;
     assignedDay: string;
     planStatus: string;
     assignedVolume?: string | null;

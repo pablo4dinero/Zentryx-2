@@ -204,8 +204,11 @@ export function getWorkingWeeksForMonth(year: number, month: number): WorkingWee
       day: "numeric",
       year: "numeric",
     });
+    const sy = currentStart.getFullYear(), sm = currentStart.getMonth(), sd = currentStart.getDate();
+    const weekStartDate = `${sy}-${String(sm + 1).padStart(2, "0")}-${String(sd).padStart(2, "0")}`;
     weeks.push({
       weekLabel: `Week ${weekNumber}: ${formattedStart} – ${formattedEnd}`,
+      weekStartDate,
       weekNumber,
       days,
       startDate: new Date(currentStart),

@@ -733,6 +733,59 @@ async function applyMigrations() {
       }
     })();
 
+    // ── week_start_date columns — locale-independent cross-browser week key ──
+    // Adds a nullable ISO "YYYY-MM-DD" column alongside week_label on the four
+    // MDP tables that need it. New writes include both; old rows are backfilled
+    // below. Fully backward-compatible: old API + old frontend → still uses
+    // week_label only; new API + new frontend → prefers week_start_date.
+    await db.execute(sql`ALTER TABLE mdp_floor_assignments ADD COLUMN IF NOT EXISTS week_start_date TEXT;`);
+    await db.execute(sql`ALTER TABLE mdp_floor_day_statuses ADD COLUMN IF NOT EXISTS week_start_date TEXT;`);
+    await db.execute(sql`ALTER TABLE mdp_produced_orders ADD COLUMN IF NOT EXISTS week_start_date TEXT;`);
+    await db.execute(sql`ALTER TABLE mdp_plan_activity_log ADD COLUMN IF NOT EXISTS week_start_date TEXT;`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_floor_assignments_week_start ON mdp_floor_assignments(week_start_date);`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_floor_day_statuses_week_start ON mdp_floor_day_statuses(week_start_date);`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_produced_orders_week_start ON mdp_produced_orders(week_start_date);`);
+
+    // Backfill: parse existing en-US week_label → derive week_start_date for
+    // any row where week_start_date is still NULL. Safe to re-run.
+    await (async () => {
+      const MONTHS: Record<string, number> = {
+        January: 0, February: 1, March: 2, April: 3, May: 4, June: 5,
+        July: 6, August: 7, September: 8, October: 9, November: 10, December: 11,
+      };
+      // "Week N: Weekday, Month Day – Weekday, Month Day, Year"
+      const LABEL_RE = /^Week \d+: \w+, (\w+) (\d+) – \w+, (\w+) \d+, (\d{4})$/;
+
+      function labelToStartDate(label: string): string | null {
+        const m = label.match(LABEL_RE);
+        if (!m) return null;
+        const startMonth = MONTHS[m[1]], startDay = parseInt(m[2], 10);
+        const endMonth = MONTHS[m[3]], endYear = parseInt(m[4], 10);
+        if (startMonth === undefined || endMonth === undefined) return null;
+        // If start month is numerically after end month the week crossed a year boundary
+        const startYear = startMonth > endMonth ? endYear - 1 : endYear;
+        return `${startYear}-${String(startMonth + 1).padStart(2, "0")}-${String(startDay).padStart(2, "0")}`;
+      }
+
+      const TABLES = ["mdp_floor_assignments", "mdp_floor_day_statuses", "mdp_produced_orders", "mdp_plan_activity_log"] as const;
+      for (const table of TABLES) {
+        try {
+          const result = await db.execute(sql.raw(`SELECT DISTINCT week_label FROM ${table} WHERE week_label IS NOT NULL AND week_start_date IS NULL`));
+          const rows = (result as any).rows ?? [];
+          for (const row of rows) {
+            const label = row.week_label as string;
+            if (!label) continue;
+            const startDate = labelToStartDate(label);
+            if (!startDate) continue;
+            await db.execute(sql`UPDATE ${sql.raw(table)} SET week_start_date = ${startDate} WHERE week_label = ${label} AND week_start_date IS NULL`);
+            logger.info({ table, label, startDate }, "Backfilled week_start_date");
+          }
+        } catch (backfillErr) {
+          logger.warn({ err: backfillErr, table }, "week_start_date backfill skipped for table");
+        }
+      }
+    })();
+
     logger.info("Migrations applied successfully");
   } catch (err) {
     logger.error({ err }, "Failed to apply migrations");

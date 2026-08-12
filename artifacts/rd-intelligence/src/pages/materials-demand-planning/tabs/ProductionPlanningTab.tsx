@@ -284,7 +284,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       if (ra && rf) return { type: "reorder" as const, assignmentId: Number(ra), floorId: Number(rf) };
       const fid = node.getAttribute("data-drop-floor-id"); const tday = node.getAttribute("data-drop-day");
       const wl = node.getAttribute("data-drop-week-label") ?? undefined;
-      if (fid && tday) return { type: "floor-day" as const, floorId: Number(fid), day: tday, weekLabel: wl };
+      const ws = node.getAttribute("data-drop-week-start") ?? undefined;
+      if (fid && tday) return { type: "floor-day" as const, floorId: Number(fid), day: tday, weekLabel: wl, weekStart: ws };
       if (fid) return { type: "floor" as const, floorId: Number(fid) };
       node = node.parentElement;
     }
@@ -363,9 +364,9 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
   const assignmentsQuery = useQuery({
     queryKey: ["/api/mdp/floor-assignments", selectedWeekLabel],
     queryFn: async () => {
-      const res = await fetch(`${BASE}api/mdp/floor-assignments?week=${encodeURIComponent(selectedWeekLabel)}`, {
-        headers: authHeaders(),
-      });
+      const ws = selectedWeek?.weekStartDate ?? "";
+      const url = `${BASE}api/mdp/floor-assignments?week=${encodeURIComponent(selectedWeekLabel)}${ws ? `&weekStart=${encodeURIComponent(ws)}` : ""}`;
+      const res = await fetch(url, { headers: authHeaders() });
       if (!res.ok) {
         const error = await res.json().catch(() => ({}));
         throw new Error(error.error || "Failed to load floor assignments");
@@ -583,9 +584,9 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
   const floorDayStatusesQuery = useQuery({
     queryKey: ["/api/mdp/floor-day-statuses", selectedWeekLabel],
     queryFn: async () => {
-      const res = await fetch(`${BASE}api/mdp/floor-day-statuses?week=${encodeURIComponent(selectedWeekLabel)}`, {
-        headers: authHeaders(),
-      });
+      const ws = selectedWeek?.weekStartDate ?? "";
+      const url = `${BASE}api/mdp/floor-day-statuses?week=${encodeURIComponent(selectedWeekLabel)}${ws ? `&weekStart=${encodeURIComponent(ws)}` : ""}`;
+      const res = await fetch(url, { headers: authHeaders() });
       if (!res.ok) { const error = await res.json().catch(() => ({})); throw new Error(error.error || "Failed to load floor day statuses"); }
       return res.json() as Promise<Array<{ id: number; floorId: number; weekLabel: string; assignedDay: string; status: FloorStatus; updatedAt: string }>>;
     },
@@ -608,9 +609,9 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
   const downtimesQuery = useQuery({
     queryKey: ["/api/mdp/product-switch-downtimes", selectedWeekLabel],
     queryFn: async () => {
-      const res = await fetch(`${BASE}api/mdp/product-switch-downtimes?week=${encodeURIComponent(selectedWeekLabel)}`, {
-        headers: authHeaders(),
-      });
+      const ws = selectedWeek?.weekStartDate ?? "";
+      const url = `${BASE}api/mdp/product-switch-downtimes?week=${encodeURIComponent(selectedWeekLabel)}${ws ? `&weekStart=${encodeURIComponent(ws)}` : ""}`;
+      const res = await fetch(url, { headers: authHeaders() });
       if (!res.ok) { const error = await res.json().catch(() => ({})); throw new Error(error.error || "Failed to load product switch downtimes"); }
       return res.json() as Promise<Array<{ id: number; afterAssignmentId: number; minutes: number }>>;
     },
@@ -644,7 +645,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     mutationFn: async ({ floorId, day, status }: { floorId: number; day: string; status: FloorStatus }) => {
       const res = await fetch(`${BASE}api/mdp/floor-day-statuses`, {
         method: "PATCH", headers: authHeaders(),
-        body: JSON.stringify({ floorId, weekLabel: selectedWeekLabel, assignedDay: day, status }),
+        body: JSON.stringify({ floorId, weekLabel: selectedWeekLabel, weekStartDate: selectedWeek?.weekStartDate ?? "", assignedDay: day, status }),
       });
       if (!res.ok) { const error = await res.json().catch(() => ({})); throw new Error(error.error || "Failed to update status"); }
       return res.json();
@@ -893,10 +894,10 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
   });
 
   const produceAssignmentMutation = useMutation({
-    mutationFn: async ({ assignmentId, orderId, accountName, productName, productType, volume, floorId: fId, weekLabel, assignedDay }: {
+    mutationFn: async ({ assignmentId, orderId, accountName, productName, productType, volume, floorId: fId, weekLabel, weekStartDate, assignedDay }: {
       assignmentId: number; orderId: number;
       accountName: string; productName: string; productType: string; volume: number; floorId?: number;
-      weekLabel?: string | null; assignedDay?: string | null;
+      weekLabel?: string | null; weekStartDate?: string | null; assignedDay?: string | null;
     }) => {
       // Mark this floor assignment as produced
       const res = await fetch(`${BASE}api/mdp/floor-assignments/${assignmentId}/produce`, {
@@ -915,6 +916,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
           productionOrderId: orderId,
           floorAssignmentId: assignmentId,
           weekLabel: weekLabel ?? null,
+          weekStartDate: weekStartDate ?? null,
           assignedDay: assignedDay ?? null,
           accountName,
           productName,
@@ -1026,6 +1028,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
         floorId: partialAssignPending.floor.id,
         productionOrderId: partialAssignPending.order.id,
         weekLabel: selectedWeekLabel,
+        weekStartDate: selectedWeek?.weekStartDate ?? "",
         assignedDay: partialAssignPending.day,
         planStatus: "Planned",
         assignedVolume: vol,
@@ -1071,11 +1074,13 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     productLabel: string;
     allowedLabels: string;
     weekLabelOverride?: string;
+    weekStartOverride?: string;
   } | null>(null);
 
-  const proceedWithDrop = async (floor: ProductionFloor, order: ProductionOrder, day: string | undefined, draggedSnap: DragSnapshot, weekLabelOverride?: string) => {
+  const proceedWithDrop = async (floor: ProductionFloor, order: ProductionOrder, day: string | undefined, draggedSnap: DragSnapshot, weekLabelOverride?: string, weekStartOverride?: string) => {
     setConfirmDrop(null);
     const weekLabelToUse = weekLabelOverride ?? selectedWeekLabel;
+    const weekStartToUse = weekStartOverride ?? selectedWeek?.weekStartDate ?? "";
     if (draggedSnap.type === "planned") {
       openPartialAssignModal(floor, order, day);
       return;
@@ -1088,7 +1093,8 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
         const targetDay = day ?? getAvailableDay(floor, assignmentsByFloor.get(floor.id) ?? [], Number(originalVol ?? order.volume ?? 0));
         await createAssignmentMutation.mutateAsync({
           floorId: floor.id, productionOrderId: order.id,
-          weekLabel: weekLabelToUse, assignedDay: targetDay, planStatus: "Planned",
+          weekLabel: weekLabelToUse, weekStartDate: weekStartToUse,
+          assignedDay: targetDay, planStatus: "Planned",
           ...(originalVol != null ? { assignedVolume: Number(originalVol) } : {}),
         });
       }
@@ -1202,6 +1208,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
         volume: assignedVol,
         floorId,
         weekLabel: row?.assignment.weekLabel ?? null,
+        weekStartDate: row?.assignment.weekStartDate ?? null,
         assignedDay: row?.assignment.assignedDay ?? null,
       });
       toast({ title: "Produced", description: "The order has been moved to production history." });
@@ -1259,7 +1266,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
     reorderMutation.mutate(current);
   };
 
-  const handleDropOnFloorDay = async (floor: ProductionFloor, day: string, event: React.DragEvent, weekLabelOverride?: string) => {
+  const handleDropOnFloorDay = async (floor: ProductionFloor, day: string, event: React.DragEvent, weekLabelOverride?: string, weekStartOverride?: string) => {
     event.preventDefault();
     setDragOverFloorId(null);
     if (!dragged) return;
@@ -1274,10 +1281,11 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
         productLabel: mismatch.productLabel,
         allowedLabels: mismatch.allowedLabels,
         weekLabelOverride,
+        weekStartOverride,
       });
       return;
     }
-    await proceedWithDrop(floor, plannedOrder, day, dragged, weekLabelOverride);
+    await proceedWithDrop(floor, plannedOrder, day, dragged, weekLabelOverride, weekStartOverride);
   };
 
   const [aiSummary, setAiSummary] = React.useState<PlanningSummary | null>(null);
@@ -1397,6 +1405,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
         headers: { ...authHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({
           weekLabel: selectedWeekLabel,
+          weekStartDate: selectedWeek?.weekStartDate ?? "",
           workingDays,
           workingDates: workingDates.map(d => d instanceof Date ? d.toISOString() : new Date(d).toISOString()),
           includeNightShift,
@@ -1537,7 +1546,11 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
   const { efficiencyScoreEnabled, downtimeAlertsEnabled } = useFeatureFlagsContext();
 
   // Calculate efficiency score for current week
-  const weekAssignments = (allAssignmentsQuery.data ?? []).filter(row => row.assignment.weekLabel === selectedWeekLabel);
+  const weekAssignments = (allAssignmentsQuery.data ?? []).filter(row =>
+    selectedWeek?.weekStartDate && row.assignment.weekStartDate
+      ? row.assignment.weekStartDate === selectedWeek.weekStartDate
+      : row.assignment.weekLabel === selectedWeekLabel
+  );
   const floorMap = (floorsQuery.data ?? []).reduce((acc: Record<number, any>, floor) => {
     acc[floor.id] = { name: floor.floorName };
     return acc;
@@ -1656,10 +1669,10 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
         : { type: "assigned", productionOrderId, assignmentId: assignmentId!, floorId: srcFloorId! };
       const mismatch = getProductTypeMismatch(floor, order);
       if (mismatch) {
-        setConfirmDrop({ floor, order, day: (target as any).day, draggedSnapshot: snap, productLabel: mismatch.productLabel, allowedLabels: mismatch.allowedLabels, weekLabelOverride: (target as any).weekLabel });
+        setConfirmDrop({ floor, order, day: (target as any).day, draggedSnapshot: snap, productLabel: mismatch.productLabel, allowedLabels: mismatch.allowedLabels, weekLabelOverride: (target as any).weekLabel, weekStartOverride: (target as any).weekStart });
         return;
       }
-      proceedWithDrop(floor, order, (target as any).day, snap, (target as any).weekLabel);
+      proceedWithDrop(floor, order, (target as any).day, snap, (target as any).weekLabel, (target as any).weekStart);
     };
     const onTouchCancel = () => { const d = tdRef.current; if (d.timer) { clearTimeout(d.timer); d.timer = undefined; } tdCleanup(); };
     return { onTouchStart, onTouchEnd, onTouchCancel };
@@ -2228,8 +2241,10 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                   : day;
 
                                 // Get assignments for this week and day
-                                const weekAssignments = (allAssignmentsQuery.data ?? []).filter(
-                                  a => a.assignment.weekLabel === week.weekLabel
+                                const weekAssignments = (allAssignmentsQuery.data ?? []).filter(a =>
+                                  week.weekStartDate && a.assignment.weekStartDate
+                                    ? a.assignment.weekStartDate === week.weekStartDate
+                                    : a.assignment.weekLabel === week.weekLabel
                                 );
 
                                 const floorOrder = (floorId: number) => {
@@ -2278,9 +2293,10 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                                             data-drop-floor-id={floor.id}
                                             data-drop-day={day}
                                             data-drop-week-label={week.weekLabel}
+                                            data-drop-week-start={week.weekStartDate}
                                             onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOverFloorId(floor.id); }}
                                             onDragLeave={() => setDragOverFloorId(c => c === floor.id ? null : c)}
-                                            onDrop={e => { e.stopPropagation(); handleDropOnFloorDay(floor, day, e, week.weekLabel); }}
+                                            onDrop={e => { e.stopPropagation(); handleDropOnFloorDay(floor, day, e, week.weekLabel, week.weekStartDate); }}
                                           >
                                             <div className={cn("px-4 py-3 border-b rounded-t-2xl", isLight ? "bg-slate-100 border-slate-100" : "bg-black/40 border-white/5")}>
                                               <div className="flex items-start justify-between gap-2">
@@ -2916,7 +2932,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                   Cancel
                 </button>
                 <button
-                  onClick={() => proceedWithDrop(confirmDrop.floor, confirmDrop.order, confirmDrop.day, confirmDrop.draggedSnapshot, confirmDrop.weekLabelOverride)}
+                  onClick={() => proceedWithDrop(confirmDrop.floor, confirmDrop.order, confirmDrop.day, confirmDrop.draggedSnapshot, confirmDrop.weekLabelOverride, confirmDrop.weekStartOverride)}
                   className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-sm font-semibold transition-colors"
                 >
                   Continue anyway
