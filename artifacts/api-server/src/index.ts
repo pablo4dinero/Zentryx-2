@@ -786,6 +786,8 @@ async function applyMigrations() {
       }
     })();
 
+    await db.execute(sql`ALTER TABLE business_dev ADD COLUMN IF NOT EXISTS notes TEXT;`);
+
     logger.info("Migrations applied successfully");
   } catch (err) {
     logger.error({ err }, "Failed to apply migrations");

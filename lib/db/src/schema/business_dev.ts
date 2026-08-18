@@ -18,6 +18,7 @@ export const businessDevTable = pgTable("business_dev", {
   customerPhone: text("customer_phone"),
   costTarget: numeric("cost_target", { precision: 15, scale: 2 }),
   productType: text("product_type"),
+  notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

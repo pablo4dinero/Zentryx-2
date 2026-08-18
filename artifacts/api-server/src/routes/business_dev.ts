@@ -39,7 +39,7 @@ router.get("/:id", requireAuth, async (req, res) => {
 
 router.post("/", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const { name, description, stage, status, leadId, assigneeIds, startDate, targetDate, customerName, customerEmail, customerPhone, costTarget, productType } = req.body;
+    const { name, description, stage, status, leadId, assigneeIds, startDate, targetDate, customerName, customerEmail, customerPhone, costTarget, productType, notes } = req.body;
     const [item] = await db.insert(businessDevTable).values({
       name, description,
       stage: stage || "innovation",
@@ -47,7 +47,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res) => {
       leadId, assigneeIds: assigneeIds || [],
       startDate: startDate ? new Date(startDate) : null,
       targetDate: targetDate ? new Date(targetDate) : null,
-      customerName, customerEmail, customerPhone, costTarget, productType,
+      customerName, customerEmail, customerPhone, costTarget, productType, notes,
     }).returning();
     await logActivity(req.user!.userId, "created", "business_dev", item.id, `Created BD: ${name}`);
     res.status(201).json(await enrichBD(item));
@@ -57,7 +57,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res) => {
 router.put("/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
     const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
-    const { name, description, stage, status, leadId, assigneeIds, startDate, targetDate, customerName, customerEmail, customerPhone, costTarget, productType } = req.body;
+    const { name, description, stage, status, leadId, assigneeIds, startDate, targetDate, customerName, customerEmail, customerPhone, costTarget, productType, notes } = req.body;
     const [item] = await db.update(businessDevTable).set({
       ...(name !== undefined && { name }),
       ...(description !== undefined && { description }),
@@ -72,6 +72,7 @@ router.put("/:id", requireAuth, async (req: AuthRequest, res) => {
       ...(customerPhone !== undefined && { customerPhone }),
       ...(costTarget !== undefined && { costTarget }),
       ...(productType !== undefined && { productType }),
+      ...(notes !== undefined && { notes }),
       updatedAt: new Date(),
     }).where(eq(businessDevTable.id, id)).returning();
     if (!item) { res.status(404).json({ error: "NotFound" }); return; }

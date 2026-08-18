@@ -3,7 +3,7 @@ import { useListUsers } from "@/api-client";
 import { PageLoader } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Search, Calendar, Trash2, Briefcase, Edit3, X, Check, Download, LayoutGrid, List, Table2, ArrowUpDown, ArrowUp, ArrowDown, Settings2, Pencil, ChevronDown } from "lucide-react";
+import { Plus, Search, Calendar, Trash2, Briefcase, Edit3, X, Check, Download, LayoutGrid, List, Table2, ArrowUpDown, ArrowUp, ArrowDown, Settings2, Pencil, ChevronDown, NotebookPen } from "lucide-react";
 import { format } from "date-fns";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -487,70 +487,181 @@ function PortfolioView({ items, isLight, fmtNGN, onUpdate, onDelete, onEdit, sta
 }
 
 /* ─────────────────────────────── List View ──────────────────────────────── */
+type ListSortKey = "date_asc" | "date_desc" | "name_asc" | "name_desc";
+
 function ListView({ items, isLight, fmtNGN: _fmtNGN, onUpdate, onDelete, onEdit }: any) {
-  const { ngnRate } = useExchangeRate();
+  const [sortKey, setSortKey] = useState<ListSortKey>("date_desc");
+  const [notebookItem, setNotebookItem] = useState<any | null>(null);
+  const [notesVal, setNotesVal] = useState("");
+  const [notesSaving, setNotesSaving] = useState(false);
+
   if (items.length === 0) return null;
+
+  const sorted = [...items].sort((a: any, b: any) => {
+    switch (sortKey) {
+      case "date_asc":  return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      case "date_desc": return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      case "name_asc":  return (a.name || "").localeCompare(b.name || "");
+      case "name_desc": return (b.name || "").localeCompare(a.name || "");
+    }
+  });
+
+  const openNotebook = (item: any) => {
+    setNotebookItem(item);
+    setNotesVal(item.notes || "");
+  };
+
+  const saveNotes = async () => {
+    if (!notebookItem) return;
+    setNotesSaving(true);
+    try {
+      await onUpdate(notebookItem.id, { notes: notesVal || null });
+      setNotebookItem(null);
+    } finally {
+      setNotesSaving(false);
+    }
+  };
+
+  const sortBtnCls = (k: ListSortKey) => cn(
+    "px-3 py-1.5 rounded-lg text-xs font-medium border transition-all whitespace-nowrap",
+    sortKey === k
+      ? "bg-primary text-white border-primary"
+      : isLight
+        ? "border-slate-200 text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+        : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5"
+  );
+
   return (
-    <div className={cn("rounded-2xl border overflow-hidden", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-card/60")}>
-      {items.map((item: any, idx: number) => {
-        const sc = isLight ? STATUS_COLORS_LIGHT : STATUS_COLORS;
-        return (
-          <div key={item.id} className={cn(
-            "flex items-center gap-4 px-5 py-4 transition-colors",
-            idx !== 0 && (isLight ? "border-t border-slate-100" : "border-t border-white/5"),
-            isLight ? "hover:bg-slate-50" : "hover:bg-white/5"
-          )}>
-            {/* Title + meta */}
-            <div className="flex-1 min-w-0">
-              <p className={cn("font-semibold text-sm truncate", isLight ? "text-gray-900" : "text-foreground")}>{item.name}</p>
-              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                {item.productType && <span className="text-xs text-muted-foreground">{item.productType}</span>}
-                {item.customerName && <span className="text-xs text-muted-foreground">· {item.customerName}</span>}
+    <>
+      <div className={cn("rounded-2xl border overflow-hidden", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-card/60")}>
+        {/* Sort controls header */}
+        <div className={cn("flex items-center justify-between gap-3 px-5 py-3 border-b", isLight ? "border-slate-100 bg-slate-50" : "border-white/5 bg-white/[0.02]")}>
+          <span className={cn("text-xs", isLight ? "text-slate-400" : "text-muted-foreground")}>{items.length} item{items.length !== 1 ? "s" : ""}</span>
+          <div className="flex items-center gap-1.5 flex-wrap justify-end">
+            <span className={cn("text-xs mr-1", isLight ? "text-slate-400" : "text-muted-foreground")}>Sort:</span>
+            <button className={sortBtnCls("date_desc")} onClick={() => setSortKey("date_desc")}>Newest</button>
+            <button className={sortBtnCls("date_asc")}  onClick={() => setSortKey("date_asc")}>Oldest</button>
+            <button className={sortBtnCls("name_asc")}  onClick={() => setSortKey("name_asc")}>A → Z</button>
+            <button className={sortBtnCls("name_desc")} onClick={() => setSortKey("name_desc")}>Z → A</button>
+          </div>
+        </div>
+
+        {sorted.map((item: any, idx: number) => {
+          const sc = isLight ? STATUS_COLORS_LIGHT : STATUS_COLORS;
+          const hasNotes = !!(item.notes && item.notes.trim());
+          return (
+            <div key={item.id} className={cn(
+              "flex items-center gap-4 px-5 py-4 transition-colors",
+              idx !== 0 && (isLight ? "border-t border-slate-100" : "border-t border-white/5"),
+              isLight ? "hover:bg-slate-50" : "hover:bg-white/5"
+            )}>
+              {/* Title + meta */}
+              <div className="flex-1 min-w-0">
+                <p className={cn("font-semibold text-sm truncate", isLight ? "text-gray-900" : "text-foreground")}>{item.name}</p>
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                  {item.productType && <span className="text-xs text-muted-foreground">{item.productType}</span>}
+                  {item.customerName && <span className="text-xs text-muted-foreground">· {item.customerName}</span>}
+                </div>
+              </div>
+
+              {/* Stage badge */}
+              <span className={cn("hidden sm:inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium capitalize", STAGE_COLORS[item.stage] || "text-muted-foreground bg-white/5")}>
+                {item.stage?.replace(/_/g, ' ')}
+              </span>
+
+              {/* Status badge */}
+              <span className={cn("hidden md:inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border capitalize", sc[item.status] || "border-white/10 text-muted-foreground")}>
+                {item.status?.replace(/_/g, ' ')}
+              </span>
+
+              {/* Priority */}
+              <span className={cn("hidden lg:inline text-xs font-medium capitalize", PRIORITY_COLORS[item.priority] || "text-muted-foreground")}>
+                {item.priority}
+              </span>
+
+              {/* Due date */}
+              <span className="hidden xl:inline text-xs text-muted-foreground whitespace-nowrap">
+                {item.targetDate ? format(new Date(item.targetDate), "MMM d, yyyy") : "—"}
+              </span>
+
+              {/* Assignee avatars */}
+              <div className="flex items-center gap-0.5">
+                {(item.assignees || []).slice(0, 3).map((a: any) => (
+                  <div key={a.id} title={a.name} className="w-6 h-6 rounded-full bg-gradient-to-tr from-secondary/50 to-primary/50 border border-white/20 flex items-center justify-center text-white text-[10px] font-bold">
+                    {a.name.charAt(0)}
+                  </div>
+                ))}
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center gap-1">
+                {/* Notebook icon — colored when notes exist */}
+                <button
+                  onClick={() => openNotebook(item)}
+                  title={hasNotes ? "View / edit notes" : "Add notes"}
+                  className={cn("p-1.5 rounded-lg transition-colors", hasNotes
+                    ? "text-primary hover:bg-primary/10"
+                    : isLight
+                      ? "text-slate-300 hover:text-slate-500 hover:bg-slate-100"
+                      : "text-white/20 hover:text-muted-foreground hover:bg-white/10"
+                  )}
+                >
+                  <NotebookPen className="w-3.5 h-3.5" />
+                </button>
+                <button onClick={() => onEdit(item)} className={cn("p-1.5 rounded-lg transition-colors", isLight ? "hover:bg-slate-100 text-slate-400 hover:text-slate-700" : "hover:bg-white/10 text-muted-foreground hover:text-foreground")}>
+                  <Edit3 className="w-3.5 h-3.5" />
+                </button>
+                <button onClick={() => onDelete(item.id, item.name)} className="p-1.5 rounded-lg text-destructive hover:bg-destructive/10 transition-colors">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
               </div>
             </div>
+          );
+        })}
+      </div>
 
-            {/* Stage badge */}
-            <span className={cn("hidden sm:inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium capitalize", STAGE_COLORS[item.stage] || "text-muted-foreground bg-white/5")}>
-              {item.stage?.replace(/_/g, ' ')}
-            </span>
-
-            {/* Status badge */}
-            <span className={cn("hidden md:inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border capitalize", sc[item.status] || "border-white/10 text-muted-foreground")}>
-              {item.status?.replace(/_/g, ' ')}
-            </span>
-
-            {/* Priority */}
-            <span className={cn("hidden lg:inline text-xs font-medium capitalize", PRIORITY_COLORS[item.priority] || "text-muted-foreground")}>
-              {item.priority}
-            </span>
-
-            {/* Due date */}
-            <span className="hidden xl:inline text-xs text-muted-foreground whitespace-nowrap">
-              {item.targetDate ? format(new Date(item.targetDate), "MMM d, yyyy") : "—"}
-            </span>
-
-            {/* Assignee avatars */}
-            <div className="flex items-center gap-0.5">
-              {(item.assignees || []).slice(0, 3).map((a: any) => (
-                <div key={a.id} title={a.name} className="w-6 h-6 rounded-full bg-gradient-to-tr from-secondary/50 to-primary/50 border border-white/20 flex items-center justify-center text-white text-[10px] font-bold">
-                  {a.name.charAt(0)}
-                </div>
-              ))}
+      {/* Notebook dialog */}
+      {notebookItem && (
+        <Dialog open onOpenChange={open => { if (!open) setNotebookItem(null); }}>
+          <DialogContent className={cn("sm:max-w-[480px] p-0", isLight ? "border-slate-200 bg-white" : "glass-panel border-white/10 bg-card/95")}>
+            <DialogHeader className={cn("px-5 py-4 border-b", isLight ? "border-slate-200" : "border-white/10")}>
+              <DialogTitle className={cn("text-base font-semibold flex items-center gap-2", isLight ? "text-slate-900" : "")}>
+                <NotebookPen className="w-4 h-4 text-primary" />
+                Notes — {notebookItem.name}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="p-5 space-y-4">
+              <textarea
+                autoFocus
+                value={notesVal}
+                onChange={e => setNotesVal(e.target.value)}
+                placeholder="Add notes about this BD item…"
+                rows={7}
+                className={cn(
+                  "w-full rounded-xl border px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground",
+                  isLight ? "border-slate-200 bg-white text-slate-900" : "border-white/10 bg-black/20 text-foreground"
+                )}
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setNotebookItem(null)}
+                  className={cn("px-4 py-2 rounded-xl text-sm font-medium transition-colors", isLight ? "bg-slate-100 text-slate-700 hover:bg-slate-200" : "bg-white/10 text-foreground hover:bg-white/15")}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveNotes}
+                  disabled={notesSaving}
+                  className="px-4 py-2 rounded-xl text-sm font-medium bg-primary text-white hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                >
+                  {notesSaving ? "Saving…" : "Save Notes"}
+                </button>
+              </div>
             </div>
-
-            {/* Actions */}
-            <div className="flex items-center gap-1">
-              <button onClick={() => onEdit(item)} className={cn("p-1.5 rounded-lg transition-colors", isLight ? "hover:bg-slate-100 text-slate-400 hover:text-slate-700" : "hover:bg-white/10 text-muted-foreground hover:text-foreground")}>
-                <Edit3 className="w-3.5 h-3.5" />
-              </button>
-              <button onClick={() => onDelete(item.id, item.name)} className="p-1.5 rounded-lg text-destructive hover:bg-destructive/10 transition-colors">
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        );
-      })}
-    </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
   );
 }
 
