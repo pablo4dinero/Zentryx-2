@@ -17,50 +17,57 @@ jobs:
 
       - name: Install PostgreSQL client
         run: |
-          sudo apt-get update
-          # Add PostgreSQL official repository
-          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
-          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
-          sudo apt-get update
-          # Install PostgreSQL 18 client tools to match server version
-          sudo apt-get install -y postgresql-client-18
+          sudo apt-get update -qq
+          # Add PostgreSQL official repository (modern gpg approach, not deprecated apt-key)
+          sudo install -d /usr/share/keyrings
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo gpg --dearmor -o /usr/share/keyrings/postgresql.gpg
+          echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq
+          # PostgreSQL 16 is the current LTS — matches most Render managed DB instances
+          sudo apt-get install -y postgresql-client-16
+
+      - name: Install AWS CLI
+        run: pip install --quiet awscli
 
       - name: Create backup
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          # Parse DATABASE_URL: postgresql://user:password@host:port/database
-          # Remove the postgresql:// prefix
-          URL=${DATABASE_URL#postgresql://}
+          # Normalize: support both postgres:// and postgresql:// schemes
+          URL="${DATABASE_URL#postgres://}"
+          URL="${URL#postgresql://}"
 
           # Extract user:password
-          USERPASS=${URL%%@*}
-          PGUSER=${USERPASS%%:*}
-          PGPASSWORD=${USERPASS#*:}
+          USERPASS="${URL%%@*}"
+          PGUSER="${USERPASS%%:*}"
+          PGPASSWORD="${USERPASS#*:}"
 
           # Extract host:port/database
-          HOSTPART=${URL#*@}
-          PGHOST=${HOSTPART%%/*}
-          PGHOST=${PGHOST%:*}
+          HOSTPART="${URL#*@}"
+          PGHOST="${HOSTPART%%/*}"
 
-          # Extract port
-          if [[ $HOSTPART =~ :([0-9]+) ]]; then
-            PGPORT=${BASH_REMATCH[1]}
+          # Extract port (if present)
+          if [[ "$PGHOST" =~ :([0-9]+)$ ]]; then
+            PGPORT="${BASH_REMATCH[1]}"
+            PGHOST="${PGHOST%:*}"
           else
             PGPORT=5432
           fi
 
-          # Extract database name
-          PGDATABASE=${HOSTPART#*/}
+          # Extract database name (strip any ?sslmode=... query string)
+          PGDATABASE="${HOSTPART#*/}"
+          PGDATABASE="${PGDATABASE%%\?*}"
 
           echo "Backing up database: $PGDATABASE on $PGHOST:$PGPORT"
 
-          # Create the backup
-          export PGPASSWORD=$PGPASSWORD
+          export PGPASSWORD="$PGPASSWORD"
           BACKUP_DATE=$(date +%Y-%m-%d)
           BACKUP_FILE="zentryx-backup-${BACKUP_DATE}.sql"
 
-          pg_dump -h $PGHOST -p $PGPORT -U $PGUSER -d $PGDATABASE -v > $BACKUP_FILE
+          pg_dump -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" \
+            --no-owner --no-acl --verbose > "$BACKUP_FILE"
 
           # Verify backup was created and has content
           if [ ! -f "$BACKUP_FILE" ] || [ ! -s "$BACKUP_FILE" ]; then
@@ -68,16 +75,15 @@ jobs:
             exit 1
           fi
 
-          BACKUP_SIZE=$(du -h $BACKUP_FILE | cut -f1)
-          echo "Backup created successfully: $BACKUP_FILE ($BACKUP_SIZE)"
+          BACKUP_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
+          echo "Backup created: $BACKUP_FILE ($BACKUP_SIZE)"
 
           # Compress
-          gzip $BACKUP_FILE
+          gzip "$BACKUP_FILE"
           COMPRESSED_FILE="${BACKUP_FILE}.gz"
 
-          # Store filename for next step
-          echo "BACKUP_FILE=$COMPRESSED_FILE" >> $GITHUB_ENV
-          echo "BACKUP_SIZE=$(du -h $COMPRESSED_FILE | cut -f1)" >> $GITHUB_ENV
+          echo "BACKUP_FILE=$COMPRESSED_FILE" >> "$GITHUB_ENV"
+          echo "BACKUP_SIZE=$(du -h "$COMPRESSED_FILE" | cut -f1)" >> "$GITHUB_ENV"
 
       - name: Upload to S3
         env:
@@ -85,14 +91,11 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: us-east-1
         run: |
-          # Install AWS CLI
-          pip install awscli
-
           # Create bucket if it doesn't exist
           aws s3api head-bucket --bucket zentryx-backup 2>/dev/null || \
             aws s3api create-bucket --bucket zentryx-backup --region us-east-1
 
-          # Enable versioning on bucket
+          # Enable versioning
           aws s3api put-bucket-versioning \
             --bucket zentryx-backup \
             --versioning-configuration Status=Enabled
@@ -108,37 +111,26 @@ jobs:
               }]
             }' 2>/dev/null || true
 
-          # Upload backup
-          aws s3 cp ${{ env.BACKUP_FILE }} s3://zentryx-backup/ \
-            --storage-class STANDARD_IA \
-            --metadata "date=$(date -u +%Y-%m-%dT%H:%M:%SZ),size=${{ env.BACKUP_SIZE }}"
-
-          echo "✅ Backup uploaded: s3://zentryx-backup/${{ env.BACKUP_FILE }}"
-
-          # Export backup timestamp for Render env var update
-          echo "BACKUP_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
-
-      - name: Set S3 lifecycle policy (30-day retention)
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: us-east-1
-        run: |
-          pip install awscli
+          # Set 30-day lifecycle policy (Filter is required by the API)
           aws s3api put-bucket-lifecycle-configuration \
             --bucket zentryx-backup \
             --lifecycle-configuration '{
               "Rules": [{
-                "Id": "DeleteOldBackups",
+                "ID": "DeleteOldBackups",
                 "Status": "Enabled",
-                "Expiration": {
-                  "Days": 30
-                },
-                "NoncurrentVersionExpiration": {
-                  "NoncurrentDays": 30
-                }
+                "Filter": { "Prefix": "" },
+                "Expiration": { "Days": 30 },
+                "NoncurrentVersionExpiration": { "NoncurrentDays": 30 }
               }]
             }' 2>/dev/null || true
+
+          # Upload backup
+          aws s3 cp "${{ env.BACKUP_FILE }}" s3://zentryx-backup/ \
+            --storage-class STANDARD_IA \
+            --metadata "date=$(date -u +%Y-%m-%dT%H:%M:%SZ),size=${{ env.BACKUP_SIZE }}"
+
+          echo "Backup uploaded: s3://zentryx-backup/${{ env.BACKUP_FILE }}"
+          echo "BACKUP_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
 
       - name: Clean up local backup
         if: always()
@@ -147,13 +139,10 @@ jobs:
       - name: Create backup success summary
         if: success()
         run: |
-          echo "## ✅ Database Backup Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Date:** $(date -u +%Y-%m-%d)" >> $GITHUB_STEP_SUMMARY
-          echo "**Time:** $(date -u +%H:%M:%SZ)" >> $GITHUB_STEP_SUMMARY
-          echo "**File:** ${{ env.BACKUP_FILE }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Size:** ${{ env.BACKUP_SIZE }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Location:** s3://zentryx-backup/${{ env.BACKUP_FILE }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "To check backup health: \`curl https://your-api.render.com/api/health/backups\`" >> $GITHUB_STEP_SUMMARY
-
+          echo "## Database Backup Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Date:** $(date -u +%Y-%m-%d)" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Time:** $(date -u +%H:%M:%SZ)" >> "$GITHUB_STEP_SUMMARY"
+          echo "**File:** ${{ env.BACKUP_FILE }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Size:** ${{ env.BACKUP_SIZE }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Location:** s3://zentryx-backup/${{ env.BACKUP_FILE }}" >> "$GITHUB_STEP_SUMMARY"
