@@ -349,10 +349,10 @@ export default function Analytics() {
                 <div className="flex-1 min-h-0">
                   {byStatus.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={byStatus} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 120 }}>
+                      <BarChart data={byStatus} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke={ct.gridStroke} horizontal={false} />
                         <XAxis type="number" stroke={ct.axisStroke} tick={{ fill: ct.axisColor, fontSize: 11 }} tickLine={false} />
-                        <YAxis type="category" dataKey="status" stroke={ct.axisStroke} tick={{ fill: ct.axisColor, fontSize: 11 }} width={120} />
+                        <YAxis type="category" dataKey="status" stroke={ct.axisStroke} tick={{ fill: ct.axisColor, fontSize: 11 }} width={110} />
                         <RechartsTooltip {...ct.tooltipStyle} />
                         <Bar dataKey="count" name="Count" radius={[0, 4, 4, 0]}>
                           {byStatus.map((_, i) => <Cell key={i} fill={ct.colors[i % ct.colors.length]} />)}
