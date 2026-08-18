@@ -25,8 +25,8 @@ jobs:
           echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
             | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update -qq
-          # PostgreSQL 16 is the current LTS — matches most Render managed DB instances
-          sudo apt-get install -y postgresql-client-16
+          # PostgreSQL 18 — matches the Render managed DB server version
+          sudo apt-get install -y postgresql-client-18
 
       - name: Install AWS CLI
         run: pip install --quiet awscli
