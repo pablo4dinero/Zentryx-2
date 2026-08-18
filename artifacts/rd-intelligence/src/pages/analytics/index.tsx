@@ -83,13 +83,22 @@ function ChartCard({ title, children, controls }: { title: string; children: (fu
 
 type StageChartType = "donut" | "pie" | "bar";
 type RadarChartType = "radar" | "bar";
+type StatusMode = "all" | "month" | "quarter" | "half" | "custom";
+
+const STATUS_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"] as const;
 
 export default function Analytics() {
   const { data: projects, isLoading } = useListProjects({});
   const ct = useChartTheme();
   const [stageType, setStageType] = useState<StageChartType>("donut");
   const [radarType, setRadarType] = useState<RadarChartType>("radar");
-  const [statusRange, setStatusRange] = useState<string>("all");
+  const [statusMode, setStatusMode] = useState<StatusMode>("all");
+  const [statusYear, setStatusYear] = useState(() => new Date().getFullYear());
+  const [statusMonth, setStatusMonth] = useState(() => new Date().getMonth() + 1);
+  const [statusQuarter, setStatusQuarter] = useState<1|2|3|4>(() => Math.ceil((new Date().getMonth() + 1) / 3) as 1|2|3|4);
+  const [statusHalf, setStatusHalf] = useState<"h1"|"h2">(() => new Date().getMonth() < 6 ? "h1" : "h2");
+  const [statusCustomFrom, setStatusCustomFrom] = useState(() => ({ year: new Date().getFullYear(), month: 1 }));
+  const [statusCustomTo, setStatusCustomTo] = useState(() => { const n = new Date(); return { year: n.getFullYear(), month: n.getMonth() + 1 }; });
 
   if (isLoading) return <PageLoader />;
   const projectsList = projects || [];
@@ -113,24 +122,38 @@ export default function Analytics() {
     }, {})
   ).map(([stage, count]) => ({ stage: stage.replace(/_/g, ' '), count }));
 
-  // Derive years present in the data for the year-picker
-  const statusYears = Array.from(new Set(
-    typedProjects
+  // All years present in the data + current year, descending
+  const statusAvailableYears = (() => {
+    const dataYears = typedProjects
       .map((p: any) => p.createdAt ? new Date(p.createdAt).getFullYear() : null)
-      .filter((y): y is number => y !== null)
-  )).sort((a, b) => b - a);
+      .filter((y): y is number => y !== null);
+    return Array.from(new Set([...dataYears, new Date().getFullYear()])).sort((a, b) => b - a);
+  })();
 
-  // Filter projects for the Status Breakdown chart based on selected range
   const statusFilteredProjects = (() => {
-    if (statusRange === "all") return typedProjects;
-    const year = parseInt(statusRange, 10);
-    if (!isNaN(year)) {
-      return typedProjects.filter((p: any) => p.createdAt && new Date(p.createdAt).getFullYear() === year);
-    }
-    const months = statusRange === "1m" ? 1 : statusRange === "3m" ? 3 : 6;
-    const now = new Date();
-    const cutoff = new Date(now.getFullYear(), now.getMonth() - months, now.getDate());
-    return typedProjects.filter((p: any) => p.createdAt && new Date(p.createdAt) >= cutoff);
+    if (statusMode === "all") return typedProjects;
+    return (typedProjects as any[]).filter((p: any) => {
+      if (!p.createdAt) return false;
+      const d = new Date(p.createdAt);
+      const y = d.getFullYear();
+      const m = d.getMonth() + 1; // 1-12
+      switch (statusMode) {
+        case "month":
+          return y === statusYear && m === statusMonth;
+        case "quarter": {
+          const s = (statusQuarter - 1) * 3 + 1; // Q1→1, Q2→4, Q3→7, Q4→10
+          return y === statusYear && m >= s && m <= s + 2;
+        }
+        case "half":
+          return y === statusYear && (statusHalf === "h1" ? m <= 6 : m >= 7);
+        case "custom": {
+          const from = new Date(statusCustomFrom.year, statusCustomFrom.month - 1, 1);
+          const to   = new Date(statusCustomTo.year,   statusCustomTo.month,       0); // last day of month
+          return d >= from && d <= to;
+        }
+        default: return true;
+      }
+    });
   })();
 
   const byStatus = Object.entries(
@@ -242,47 +265,107 @@ export default function Analytics() {
         </ChartCard>
 
         {/* Status Breakdown */}
-        <ChartCard
-          title="Status Breakdown"
-          controls={
-            <div className="flex items-center gap-1">
-              {(["all", "1m", "3m", "6m"] as const).map(r =>
-                typeToggleBtn(r === "all" ? "All" : r.toUpperCase(), statusRange === r, () => setStatusRange(r))
-              )}
-              {statusYears.length > 0 && (
-                <select
-                  value={statusYears.includes(Number(statusRange)) ? statusRange : ""}
-                  onChange={e => { if (e.target.value) setStatusRange(e.target.value); }}
-                  className={cn(
-                    "text-xs rounded-lg px-2 py-1 border transition-colors cursor-pointer outline-none",
-                    ct.isLight
-                      ? "bg-white border-slate-200 text-gray-600"
-                      : "bg-white/5 border-white/10 text-muted-foreground",
-                    statusYears.includes(Number(statusRange))
-                      ? ct.isLight ? "bg-primary/10 border-primary/30 text-primary" : "bg-primary text-white border-transparent"
-                      : ""
+        <ChartCard title="Status Breakdown">
+          {() => {
+            const selCls = cn(
+              "text-xs rounded-lg px-2 py-1 border outline-none cursor-pointer transition-colors",
+              ct.isLight ? "bg-white border-slate-200 text-gray-700" : "bg-white/5 border-white/10 text-muted-foreground"
+            );
+            const modeBtnCls = (active: boolean) => cn(
+              "text-xs px-2.5 py-1 rounded-lg font-medium transition-all whitespace-nowrap",
+              active ? "bg-primary text-white" : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+            );
+            const subBtnCls = (active: boolean) => cn(
+              "text-xs px-2 py-1 rounded-lg font-medium transition-all whitespace-nowrap",
+              active ? "bg-primary/80 text-white" : "text-muted-foreground hover:bg-white/5"
+            );
+            return (
+              <div className="flex flex-col h-full gap-2">
+                {/* Mode tabs */}
+                <div className="flex items-center gap-1 flex-wrap">
+                  {(["all","month","quarter","half","custom"] as StatusMode[]).map(mode => (
+                    <button key={mode} onClick={() => setStatusMode(mode)} className={modeBtnCls(statusMode === mode)}>
+                      {mode === "all" ? "All" : mode === "month" ? "Month" : mode === "quarter" ? "Quarter" : mode === "half" ? "Half-Year" : "Custom"}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Sub-selectors */}
+                {statusMode === "month" && (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <select value={statusMonth} onChange={e => setStatusMonth(Number(e.target.value))} className={selCls}>
+                      {STATUS_MONTHS.map((name, i) => <option key={i} value={i + 1}>{name}</option>)}
+                    </select>
+                    <select value={statusYear} onChange={e => setStatusYear(Number(e.target.value))} className={selCls}>
+                      {statusAvailableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </div>
+                )}
+
+                {statusMode === "quarter" && (
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {([1,2,3,4] as const).map(q => (
+                      <button key={q} onClick={() => setStatusQuarter(q)} className={subBtnCls(statusQuarter === q)}>Q{q}</button>
+                    ))}
+                    <select value={statusYear} onChange={e => setStatusYear(Number(e.target.value))} className={selCls}>
+                      {statusAvailableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </div>
+                )}
+
+                {statusMode === "half" && (
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {(["h1","h2"] as const).map(h => (
+                      <button key={h} onClick={() => setStatusHalf(h)} className={subBtnCls(statusHalf === h)}>
+                        {h === "h1" ? "Jan – Jun" : "Jul – Dec"}
+                      </button>
+                    ))}
+                    <select value={statusYear} onChange={e => setStatusYear(Number(e.target.value))} className={selCls}>
+                      {statusAvailableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </div>
+                )}
+
+                {statusMode === "custom" && (
+                  <div className="flex items-center gap-1.5 flex-wrap text-xs text-muted-foreground">
+                    <span>From</span>
+                    <select value={statusCustomFrom.month} onChange={e => setStatusCustomFrom(f => ({ ...f, month: Number(e.target.value) }))} className={selCls}>
+                      {STATUS_MONTHS.map((name, i) => <option key={i} value={i + 1}>{name}</option>)}
+                    </select>
+                    <select value={statusCustomFrom.year} onChange={e => setStatusCustomFrom(f => ({ ...f, year: Number(e.target.value) }))} className={selCls}>
+                      {statusAvailableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                    <span>to</span>
+                    <select value={statusCustomTo.month} onChange={e => setStatusCustomTo(f => ({ ...f, month: Number(e.target.value) }))} className={selCls}>
+                      {STATUS_MONTHS.map((name, i) => <option key={i} value={i + 1}>{name}</option>)}
+                    </select>
+                    <select value={statusCustomTo.year} onChange={e => setStatusCustomTo(f => ({ ...f, year: Number(e.target.value) }))} className={selCls}>
+                      {statusAvailableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </div>
+                )}
+
+                {/* Chart */}
+                <div className="flex-1 min-h-0">
+                  {byStatus.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={byStatus} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 120 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={ct.gridStroke} horizontal={false} />
+                        <XAxis type="number" stroke={ct.axisStroke} tick={{ fill: ct.axisColor, fontSize: 11 }} tickLine={false} />
+                        <YAxis type="category" dataKey="status" stroke={ct.axisStroke} tick={{ fill: ct.axisColor, fontSize: 11 }} width={120} />
+                        <RechartsTooltip {...ct.tooltipStyle} />
+                        <Bar dataKey="count" name="Count" radius={[0, 4, 4, 0]}>
+                          {byStatus.map((_, i) => <Cell key={i} fill={ct.colors[i % ct.colors.length]} />)}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <EmptyState label="No data for selected period" />
                   )}
-                >
-                  <option value="">Year</option>
-                  {statusYears.map(y => <option key={y} value={String(y)}>{y}</option>)}
-                </select>
-              )}
-            </div>
-          }
-        >
-          {() => byStatus.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={byStatus} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 100 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={ct.gridStroke} horizontal={false} />
-                <XAxis type="number" stroke={ct.axisStroke} tick={{ fill: ct.axisColor, fontSize: 11 }} tickLine={false} />
-                <YAxis type="category" dataKey="status" stroke={ct.axisStroke} tick={{ fill: ct.axisColor, fontSize: 11 }} width={100} />
-                <RechartsTooltip {...ct.tooltipStyle} />
-                <Bar dataKey="count" name="Count" radius={[0, 4, 4, 0]}>
-                  {byStatus.map((_, i) => <Cell key={i} fill={ct.colors[i % ct.colors.length]} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          ) : <EmptyState label="No status data" />}
+                </div>
+              </div>
+            );
+          }}
         </ChartCard>
 
         {/* Category Performance Radar with Bar toggle */}
