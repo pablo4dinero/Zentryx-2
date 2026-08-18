@@ -89,6 +89,7 @@ export default function Analytics() {
   const ct = useChartTheme();
   const [stageType, setStageType] = useState<StageChartType>("donut");
   const [radarType, setRadarType] = useState<RadarChartType>("radar");
+  const [statusRange, setStatusRange] = useState<string>("all");
 
   if (isLoading) return <PageLoader />;
   const projectsList = projects || [];
@@ -112,8 +113,28 @@ export default function Analytics() {
     }, {})
   ).map(([stage, count]) => ({ stage: stage.replace(/_/g, ' '), count }));
 
+  // Derive years present in the data for the year-picker
+  const statusYears = Array.from(new Set(
+    typedProjects
+      .map((p: any) => p.createdAt ? new Date(p.createdAt).getFullYear() : null)
+      .filter((y): y is number => y !== null)
+  )).sort((a, b) => b - a);
+
+  // Filter projects for the Status Breakdown chart based on selected range
+  const statusFilteredProjects = (() => {
+    if (statusRange === "all") return typedProjects;
+    const year = parseInt(statusRange, 10);
+    if (!isNaN(year)) {
+      return typedProjects.filter((p: any) => p.createdAt && new Date(p.createdAt).getFullYear() === year);
+    }
+    const months = statusRange === "1m" ? 1 : statusRange === "3m" ? 3 : 6;
+    const now = new Date();
+    const cutoff = new Date(now.getFullYear(), now.getMonth() - months, now.getDate());
+    return typedProjects.filter((p: any) => p.createdAt && new Date(p.createdAt) >= cutoff);
+  })();
+
   const byStatus = Object.entries(
-    typedProjects.reduce((acc: Record<string, number>, p: any) => {
+    statusFilteredProjects.reduce((acc: Record<string, number>, p: any) => {
       acc[p.status] = (acc[p.status] || 0) + 1;
       return acc;
     }, {})
@@ -221,7 +242,34 @@ export default function Analytics() {
         </ChartCard>
 
         {/* Status Breakdown */}
-        <ChartCard title="Status Breakdown">
+        <ChartCard
+          title="Status Breakdown"
+          controls={
+            <div className="flex items-center gap-1">
+              {(["all", "1m", "3m", "6m"] as const).map(r =>
+                typeToggleBtn(r === "all" ? "All" : r.toUpperCase(), statusRange === r, () => setStatusRange(r))
+              )}
+              {statusYears.length > 0 && (
+                <select
+                  value={statusYears.includes(Number(statusRange)) ? statusRange : ""}
+                  onChange={e => { if (e.target.value) setStatusRange(e.target.value); }}
+                  className={cn(
+                    "text-xs rounded-lg px-2 py-1 border transition-colors cursor-pointer outline-none",
+                    ct.isLight
+                      ? "bg-white border-slate-200 text-gray-600"
+                      : "bg-white/5 border-white/10 text-muted-foreground",
+                    statusYears.includes(Number(statusRange))
+                      ? ct.isLight ? "bg-primary/10 border-primary/30 text-primary" : "bg-primary text-white border-transparent"
+                      : ""
+                  )}
+                >
+                  <option value="">Year</option>
+                  {statusYears.map(y => <option key={y} value={String(y)}>{y}</option>)}
+                </select>
+              )}
+            </div>
+          }
+        >
           {() => byStatus.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={byStatus} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 100 }}>
