@@ -427,9 +427,19 @@ export default function ProjectDetail() {
     setDraggingTaskId(null);
   };
 
+  const applyOptimistic = (patch: Record<string, any>) => {
+    queryClient.setQueryData([`/api/projects/${projectId}`], (old: any) =>
+      old ? { ...old, ...patch } : old
+    );
+    queryClient.setQueryData(["/api/projects"], (old: any) =>
+      Array.isArray(old) ? old.map((p: any) => p.id === projectId ? { ...p, ...patch } : p) : old
+    );
+  };
+
   const saveField = (field: string, value: any) => {
     if (field === "sellingPrice") setLiveSellingPrice(value ? parseFloat(value) : null);
     if (field === "volumeKgPerMonth") setLiveVolume(value ? parseFloat(value) : null);
+    applyOptimistic({ [field]: value || null });
     updateProjectMut.mutate({ id: projectId, data: { [field]: value || null } as any }, {
       onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/projects"] }); toast({ title: "Saved" }); },
     });
@@ -437,14 +447,18 @@ export default function ProjectDetail() {
 
   const saveTitle = () => {
     if (!titleValue.trim()) return;
+    setEditingTitle(false);
+    applyOptimistic({ name: titleValue });
     updateProjectMut.mutate({ id: projectId, data: { name: titleValue } as any }, {
-      onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/projects"] }); setEditingTitle(false); }
+      onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/projects"] }),
     });
   };
 
   const saveDesc = () => {
+    setEditingDesc(false);
+    applyOptimistic({ description: descValue });
     updateProjectMut.mutate({ id: projectId, data: { description: descValue } as any }, {
-      onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/projects"] }); setEditingDesc(false); }
+      onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/projects"] }),
     });
   };
 
