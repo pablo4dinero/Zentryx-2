@@ -93,6 +93,13 @@ export default function Analytics() {
   const [stageType, setStageType] = useState<StageChartType>("donut");
   const [radarType, setRadarType] = useState<RadarChartType>("radar");
   const [revProductFilter, setRevProductFilter] = useState<string>("all");
+  const [revMode, setRevMode] = useState<StatusMode>("all");
+  const [revYear, setRevYear] = useState(() => new Date().getFullYear());
+  const [revMonth, setRevMonth] = useState(() => new Date().getMonth() + 1);
+  const [revQuarter, setRevQuarter] = useState<1|2|3|4>(() => Math.ceil((new Date().getMonth() + 1) / 3) as 1|2|3|4);
+  const [revHalf, setRevHalf] = useState<"h1"|"h2">(() => new Date().getMonth() < 6 ? "h1" : "h2");
+  const [revCustomFrom, setRevCustomFrom] = useState(() => ({ year: new Date().getFullYear(), month: 1 }));
+  const [revCustomTo, setRevCustomTo] = useState(() => { const n = new Date(); return { year: n.getFullYear(), month: n.getMonth() + 1 }; });
   const [statusMode, setStatusMode] = useState<StatusMode>("all");
   const [statusYear, setStatusYear] = useState(() => new Date().getFullYear());
   const [statusMonth, setStatusMonth] = useState(() => new Date().getMonth() + 1);
@@ -185,9 +192,31 @@ export default function Analytics() {
     return parseFloat(p.revenueImpact || "0");
   };
 
+  // Date-filtered projects shared by both revenue charts
+  const revFilteredProjects = (() => {
+    if (revMode === "all") return typedProjects;
+    return typedProjects.filter((p: any) => {
+      if (!p.createdAt) return false;
+      const d = new Date(p.createdAt);
+      const y = d.getFullYear();
+      const m = d.getMonth() + 1;
+      switch (revMode) {
+        case "month": return y === revYear && m === revMonth;
+        case "quarter": { const s = (revQuarter - 1) * 3 + 1; return y === revYear && m >= s && m <= s + 2; }
+        case "half": return y === revYear && (revHalf === "h1" ? m <= 6 : m >= 7);
+        case "custom": {
+          const from = new Date(revCustomFrom.year, revCustomFrom.month - 1, 1);
+          const to = new Date(revCustomTo.year, revCustomTo.month, 0);
+          return d >= from && d <= to;
+        }
+        default: return true;
+      }
+    });
+  })();
+
   // Revenue by Status — total estimated revenue grouped by project status
   const revenueByStatus = Object.entries(
-    typedProjects.reduce((acc: Record<string, number>, p: any) => {
+    revFilteredProjects.reduce((acc: Record<string, number>, p: any) => {
       const rv = estRevenue(p);
       if (!rv) return acc;
       acc[p.status] = (acc[p.status] || 0) + rv;
@@ -198,15 +227,15 @@ export default function Analytics() {
     revenue: revenue as number,
   })).sort((a, b) => b.revenue - a.revenue);
 
-  // Statuses that have at least one project with revenue data (for the product-type filter pills)
+  // Statuses that have revenue data in the current date window (for product-type filter pills)
   const revenueStatuses = Array.from(new Set(
-    typedProjects.filter((p: any) => estRevenue(p) > 0).map((p: any) => p.status).filter(Boolean)
+    revFilteredProjects.filter((p: any) => estRevenue(p) > 0).map((p: any) => p.status).filter(Boolean)
   ));
 
-  // Revenue by Product Type — filtered by the selected status
+  // Revenue by Product Type — filtered by date window + optional status
   const revProductProjects = revProductFilter === "all"
-    ? typedProjects
-    : typedProjects.filter((p: any) => p.status === revProductFilter);
+    ? revFilteredProjects
+    : revFilteredProjects.filter((p: any) => p.status === revProductFilter);
 
   const revenueByProductType = Object.entries(
     revProductProjects.reduce((acc: Record<string, number>, p: any) => {
@@ -476,27 +505,89 @@ export default function Analytics() {
             </div>
           }
         >
-          {() => revenueByStatus.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={revenueByStatus} layout="vertical" margin={{ top: 5, right: 80, bottom: 5, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={ct.gridStroke} horizontal={false} />
-                <XAxis type="number" stroke={ct.axisStroke} tick={{ fill: ct.axisColor, fontSize: 11 }} tickLine={false} tickFormatter={fmtRevenue} />
-                <YAxis type="category" dataKey="status" stroke={ct.axisStroke} tick={{ fill: ct.axisColor, fontSize: 11 }} width={130} />
-                <RechartsTooltip
-                  {...ct.tooltipStyle}
-                  formatter={(v: any) => [fmtRevenue(Number(v)), "Est. Revenue"]}
-                />
-                <Bar dataKey="revenue" name="Est. Revenue" radius={[0, 4, 4, 0]} label={{ position: "right", formatter: (v: number) => fmtRevenue(v), fill: ct.axisColor, fontSize: 10 }}>
-                  {revenueByStatus.map((_, i) => <Cell key={i} fill={ct.colors[i % ct.colors.length]} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          ) : <EmptyState label="No revenue data yet. Set Selling Price and Volume (kg/month) on projects to see this chart." />}
+          {() => {
+            const selCls = cn("text-xs rounded-lg px-2 py-1 border outline-none cursor-pointer transition-colors", ct.isLight ? "bg-white border-slate-200 text-gray-700" : "bg-white/5 border-white/10 text-muted-foreground");
+            const modeBtnCls = (active: boolean) => cn("text-xs px-2.5 py-1 rounded-lg font-medium transition-all whitespace-nowrap", active ? "bg-primary text-white" : "text-muted-foreground hover:text-foreground hover:bg-white/5");
+            const subBtnCls = (active: boolean) => cn("text-xs px-2 py-1 rounded-lg font-medium transition-all whitespace-nowrap", active ? "bg-primary/80 text-white" : "text-muted-foreground hover:bg-white/5");
+            return (
+              <div className="flex flex-col h-full gap-2">
+                <div className="flex items-center gap-1 flex-wrap">
+                  {(["all","month","quarter","half","custom"] as StatusMode[]).map(mode => (
+                    <button key={mode} onClick={() => setRevMode(mode)} className={modeBtnCls(revMode === mode)}>
+                      {mode === "all" ? "All" : mode === "month" ? "Month" : mode === "quarter" ? "Quarter" : mode === "half" ? "Half-Year" : "Custom"}
+                    </button>
+                  ))}
+                </div>
+                {revMode === "month" && (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <select value={revMonth} onChange={e => setRevMonth(Number(e.target.value))} className={selCls}>
+                      {STATUS_MONTHS.map((name, i) => <option key={i} value={i + 1}>{name}</option>)}
+                    </select>
+                    <select value={revYear} onChange={e => setRevYear(Number(e.target.value))} className={selCls}>
+                      {statusAvailableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </div>
+                )}
+                {revMode === "quarter" && (
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {([1,2,3,4] as const).map(q => <button key={q} onClick={() => setRevQuarter(q)} className={subBtnCls(revQuarter === q)}>Q{q}</button>)}
+                    <select value={revYear} onChange={e => setRevYear(Number(e.target.value))} className={selCls}>
+                      {statusAvailableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </div>
+                )}
+                {revMode === "half" && (
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {(["h1","h2"] as const).map(h => <button key={h} onClick={() => setRevHalf(h)} className={subBtnCls(revHalf === h)}>{h === "h1" ? "Jan – Jun" : "Jul – Dec"}</button>)}
+                    <select value={revYear} onChange={e => setRevYear(Number(e.target.value))} className={selCls}>
+                      {statusAvailableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </div>
+                )}
+                {revMode === "custom" && (
+                  <div className="flex items-center gap-1.5 flex-wrap text-xs text-muted-foreground">
+                    <span>From</span>
+                    <select value={revCustomFrom.month} onChange={e => setRevCustomFrom(f => ({ ...f, month: Number(e.target.value) }))} className={selCls}>
+                      {STATUS_MONTHS.map((name, i) => <option key={i} value={i + 1}>{name}</option>)}
+                    </select>
+                    <select value={revCustomFrom.year} onChange={e => setRevCustomFrom(f => ({ ...f, year: Number(e.target.value) }))} className={selCls}>
+                      {statusAvailableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                    <span>to</span>
+                    <select value={revCustomTo.month} onChange={e => setRevCustomTo(f => ({ ...f, month: Number(e.target.value) }))} className={selCls}>
+                      {STATUS_MONTHS.map((name, i) => <option key={i} value={i + 1}>{name}</option>)}
+                    </select>
+                    <select value={revCustomTo.year} onChange={e => setRevCustomTo(f => ({ ...f, year: Number(e.target.value) }))} className={selCls}>
+                      {statusAvailableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </div>
+                )}
+                <div className="flex-1 min-h-0">
+                  {revenueByStatus.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={revenueByStatus} layout="vertical" margin={{ top: 5, right: 80, bottom: 5, left: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={ct.gridStroke} horizontal={false} />
+                        <XAxis type="number" stroke={ct.axisStroke} tick={{ fill: ct.axisColor, fontSize: 11 }} tickLine={false} tickFormatter={fmtRevenue} />
+                        <YAxis type="category" dataKey="status" stroke={ct.axisStroke} tick={{ fill: ct.axisColor, fontSize: 11 }} width={130} />
+                        <RechartsTooltip {...ct.tooltipStyle} formatter={(v: any) => [fmtRevenue(Number(v)), "Est. Revenue"]} />
+                        <Bar dataKey="revenue" name="Est. Revenue" radius={[0, 4, 4, 0]} label={{ position: "right", formatter: (v: number) => fmtRevenue(v), fill: ct.axisColor, fontSize: 10 }}>
+                          {revenueByStatus.map((_, i) => <Cell key={i} fill={ct.colors[i % ct.colors.length]} />)}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : <EmptyState label="No revenue data yet. Set Selling Price and Volume (kg/month) on projects to see this chart." />}
+                </div>
+              </div>
+            );
+          }}
         </ChartCard>
 
         {/* Estimated Revenue by Product Type (status-filterable) */}
         <ChartCard title="Estimated Revenue by Product Type">
           {() => {
+            const selCls = cn("text-xs rounded-lg px-2 py-1 border outline-none cursor-pointer transition-colors", ct.isLight ? "bg-white border-slate-200 text-gray-700" : "bg-white/5 border-white/10 text-muted-foreground");
+            const modeBtnCls = (active: boolean) => cn("text-xs px-2.5 py-1 rounded-lg font-medium transition-all whitespace-nowrap", active ? "bg-primary text-white" : "text-muted-foreground hover:text-foreground hover:bg-white/5");
+            const subBtnCls = (active: boolean) => cn("text-xs px-2 py-1 rounded-lg font-medium transition-all whitespace-nowrap", active ? "bg-primary/80 text-white" : "text-muted-foreground hover:bg-white/5");
             const pillCls = (active: boolean) => cn(
               "text-xs px-2.5 py-1 rounded-lg font-medium transition-all whitespace-nowrap border",
               active
@@ -505,6 +596,59 @@ export default function Analytics() {
             );
             return (
               <div className="flex flex-col h-full gap-2">
+                {/* Timeline filter — shared state with Revenue by Status */}
+                <div className="flex items-center gap-1 flex-wrap">
+                  {(["all","month","quarter","half","custom"] as StatusMode[]).map(mode => (
+                    <button key={mode} onClick={() => setRevMode(mode)} className={modeBtnCls(revMode === mode)}>
+                      {mode === "all" ? "All" : mode === "month" ? "Month" : mode === "quarter" ? "Quarter" : mode === "half" ? "Half-Year" : "Custom"}
+                    </button>
+                  ))}
+                </div>
+                {revMode === "month" && (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <select value={revMonth} onChange={e => setRevMonth(Number(e.target.value))} className={selCls}>
+                      {STATUS_MONTHS.map((name, i) => <option key={i} value={i + 1}>{name}</option>)}
+                    </select>
+                    <select value={revYear} onChange={e => setRevYear(Number(e.target.value))} className={selCls}>
+                      {statusAvailableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </div>
+                )}
+                {revMode === "quarter" && (
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {([1,2,3,4] as const).map(q => <button key={q} onClick={() => setRevQuarter(q)} className={subBtnCls(revQuarter === q)}>Q{q}</button>)}
+                    <select value={revYear} onChange={e => setRevYear(Number(e.target.value))} className={selCls}>
+                      {statusAvailableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </div>
+                )}
+                {revMode === "half" && (
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {(["h1","h2"] as const).map(h => <button key={h} onClick={() => setRevHalf(h)} className={subBtnCls(revHalf === h)}>{h === "h1" ? "Jan – Jun" : "Jul – Dec"}</button>)}
+                    <select value={revYear} onChange={e => setRevYear(Number(e.target.value))} className={selCls}>
+                      {statusAvailableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </div>
+                )}
+                {revMode === "custom" && (
+                  <div className="flex items-center gap-1.5 flex-wrap text-xs text-muted-foreground">
+                    <span>From</span>
+                    <select value={revCustomFrom.month} onChange={e => setRevCustomFrom(f => ({ ...f, month: Number(e.target.value) }))} className={selCls}>
+                      {STATUS_MONTHS.map((name, i) => <option key={i} value={i + 1}>{name}</option>)}
+                    </select>
+                    <select value={revCustomFrom.year} onChange={e => setRevCustomFrom(f => ({ ...f, year: Number(e.target.value) }))} className={selCls}>
+                      {statusAvailableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                    <span>to</span>
+                    <select value={revCustomTo.month} onChange={e => setRevCustomTo(f => ({ ...f, month: Number(e.target.value) }))} className={selCls}>
+                      {STATUS_MONTHS.map((name, i) => <option key={i} value={i + 1}>{name}</option>)}
+                    </select>
+                    <select value={revCustomTo.year} onChange={e => setRevCustomTo(f => ({ ...f, year: Number(e.target.value) }))} className={selCls}>
+                      {statusAvailableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </div>
+                )}
+                {/* Status filter pills */}
                 <div className="flex items-center gap-1 flex-wrap">
                   <button onClick={() => setRevProductFilter("all")} className={pillCls(revProductFilter === "all")}>All</button>
                   {revenueStatuses.map(s => (
@@ -542,9 +686,9 @@ export default function Analytics() {
 }
 
 function fmtRevenue(v: number) {
-  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(2)}M`;
-  if (v >= 1_000) return `$${(v / 1_000).toFixed(1)}K`;
-  return `$${v.toFixed(0)}`;
+  if (v >= 1_000_000) return `₦${(v / 1_000_000).toFixed(2)}M`;
+  if (v >= 1_000) return `₦${(v / 1_000).toFixed(1)}K`;
+  return `₦${v.toFixed(0)}`;
 }
 
 function EmptyState({ label }: { label: string }) {
