@@ -372,14 +372,14 @@ export default function ProjectsList() {
                   onClick={() => setStatusFilter(statusFilter === "pending" ? "all" : "pending")}
                   className={cn("shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border whitespace-nowrap",
                     statusFilter === "pending"
-                      ? "bg-amber-500 text-white border-amber-500"
-                      : isLight ? "border-amber-300 text-amber-700 hover:bg-amber-50" : "border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                      ? isLight ? "bg-amber-600 text-white border-amber-700" : "bg-amber-500 text-white border-amber-500"
+                      : isLight ? "border-amber-500 text-amber-800 bg-amber-50 hover:bg-amber-100" : "border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
                   )}
                 >
-                  <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", statusFilter === "pending" ? "bg-white" : "bg-amber-400")} />
+                  <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", statusFilter === "pending" ? "bg-white" : "bg-amber-500")} />
                   Pending Approvals
                   {(projects || []).filter((p: any) => (p.status as string) === "pending").length > 0 && (
-                    <span className={cn("ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold", statusFilter === "pending" ? "bg-white/20 text-white" : isLight ? "bg-amber-100 text-amber-700" : "bg-amber-500/20 text-amber-300")}>
+                    <span className={cn("ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold", statusFilter === "pending" ? isLight ? "bg-white text-amber-700" : "bg-white/20 text-white" : isLight ? "bg-amber-200 text-amber-800" : "bg-amber-500/20 text-amber-300")}>
                       {(projects || []).filter((p: any) => (p.status as string) === "pending").length}
                     </span>
                   )}
