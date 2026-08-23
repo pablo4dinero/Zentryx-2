@@ -787,6 +787,10 @@ async function applyMigrations() {
     })();
 
     await db.execute(sql`ALTER TABLE business_dev ADD COLUMN IF NOT EXISTS notes TEXT;`);
+    await db.execute(sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS commercial_approved_by INTEGER;`);
+    await db.execute(sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS commercial_approved_at TIMESTAMPTZ;`);
+    await db.execute(sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS technical_approved_by INTEGER;`);
+    await db.execute(sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS technical_approved_at TIMESTAMPTZ;`);
 
     logger.info("Migrations applied successfully");
   } catch (err) {

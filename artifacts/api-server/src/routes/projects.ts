@@ -7,18 +7,36 @@ import { logActivity } from "../lib/activity";
 
 const router = Router();
 
+const USER_COLS = { id: usersTable.id, name: usersTable.name, email: usersTable.email, role: usersTable.role, department: usersTable.department };
+
+function canCommercialApprove(role: string, dept: string) {
+  return role === "admin" || role === "executive" ||
+    (role === "manager" && dept.toLowerCase().includes("sales"));
+}
+function canTechnicalApprove(role: string, dept: string) {
+  return role === "admin" || role === "executive" ||
+    (role === "manager" && (dept.toLowerCase().includes("npd") || dept.toLowerCase().includes("r&d") || dept.toLowerCase().includes("rd")));
+}
+
 async function enrichProject(project: typeof projectsTable.$inferSelect) {
   const lead = project.leadId
     ? (await db.select({ id: usersTable.id, name: usersTable.name, email: usersTable.email, role: usersTable.role, department: usersTable.department, avatar: usersTable.avatar, isActive: usersTable.isActive, createdAt: usersTable.createdAt }).from(usersTable).where(eq(usersTable.id, project.leadId)).limit(1))[0] || null
     : null;
 
   const assignees = project.assigneeIds.length > 0
-    ? await db.select({ id: usersTable.id, name: usersTable.name, email: usersTable.email, role: usersTable.role, department: usersTable.department }).from(usersTable).where(inArray(usersTable.id, project.assigneeIds))
+    ? await db.select(USER_COLS).from(usersTable).where(inArray(usersTable.id, project.assigneeIds))
     : [];
 
   const tasks = await db.select({ status: tasksTable.status }).from(tasksTable).where(eq(tasksTable.projectId, project.id));
   const taskCount = tasks.length;
   const completedTaskCount = tasks.filter(t => t.status === "done").length;
+
+  const commercialApprover = project.commercialApprovedBy
+    ? (await db.select(USER_COLS).from(usersTable).where(eq(usersTable.id, project.commercialApprovedBy)).limit(1))[0] || null
+    : null;
+  const technicalApprover = project.technicalApprovedBy
+    ? (await db.select(USER_COLS).from(usersTable).where(eq(usersTable.id, project.technicalApprovedBy)).limit(1))[0] || null
+    : null;
 
   return {
     ...project,
@@ -31,6 +49,10 @@ async function enrichProject(project: typeof projectsTable.$inferSelect) {
     assignees,
     taskCount,
     completedTaskCount,
+    commercialApprover,
+    technicalApprover,
+    commercialApprovedAt: project.commercialApprovedAt ?? null,
+    technicalApprovedAt: project.technicalApprovedAt ?? null,
   };
 }
 
@@ -109,7 +131,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res) => {
     const [project] = await db.insert(projectsTable).values({
       name, description,
       stage: stage || "innovation",
-      status: status || "in_progress",
+      status: "pending",
       priority: priority || "medium",
       leadId,
       assigneeIds: assigneeIds || [],
@@ -136,6 +158,15 @@ router.put("/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
     const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
     const { name, description, stage, status, priority, leadId, assigneeIds, startDate, targetDate, successRate, revenueImpact, productCategory, productType, customerName, customerEmail, customerPhone, costTarget, sellingPrice, volumeKgPerMonth, tags } = req.body;
+
+    // Guard: block manual status changes on pending projects until both approvals are done
+    if (status !== undefined && status !== "pending") {
+      const [cur] = await db.select({ status: projectsTable.status, commercialApprovedBy: projectsTable.commercialApprovedBy, technicalApprovedBy: projectsTable.technicalApprovedBy }).from(projectsTable).where(eq(projectsTable.id, id)).limit(1);
+      if (cur?.status === "pending" && (!cur.commercialApprovedBy || !cur.technicalApprovedBy)) {
+        res.status(403).json({ error: "Project requires both Commercial and Technical approval before status can be changed." });
+        return;
+      }
+    }
     const [project] = await db.update(projectsTable).set({
       ...(name !== undefined && { name }),
       ...(description !== undefined && { description }),
@@ -162,6 +193,55 @@ router.put("/:id", requireAuth, async (req: AuthRequest, res) => {
     if (!project) { res.status(404).json({ error: "NotFound" }); return; }
     await logActivity(req.user!.userId, "updated", "project", project.id, `Updated project: ${project.name}`);
     res.json(await enrichProject(project));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+});
+
+router.post("/:id/approve", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id as string);
+    const { chain } = req.body;
+    if (!chain || !["commercial", "technical"].includes(chain)) {
+      res.status(400).json({ error: "chain must be 'commercial' or 'technical'" });
+      return;
+    }
+    const userId = req.user!.userId;
+    const role = req.user!.role;
+    const [approver] = await db.select({ department: usersTable.department }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    const dept = approver?.department || "";
+
+    if (chain === "commercial" && !canCommercialApprove(role, dept)) {
+      res.status(403).json({ error: "Only Sales Manager, Admin, or Executive can give Commercial Approval." });
+      return;
+    }
+    if (chain === "technical" && !canTechnicalApprove(role, dept)) {
+      res.status(403).json({ error: "Only NPD Manager, Admin, or Executive can give Technical Approval." });
+      return;
+    }
+
+    const [current] = await db.select().from(projectsTable).where(eq(projectsTable.id, id)).limit(1);
+    if (!current) { res.status(404).json({ error: "NotFound" }); return; }
+    if (current.status !== "pending") {
+      res.status(400).json({ error: "Project is not in Pending status." });
+      return;
+    }
+
+    const now = new Date();
+    const patch: any = chain === "commercial"
+      ? { commercialApprovedBy: userId, commercialApprovedAt: now }
+      : { technicalApprovedBy: userId, technicalApprovedAt: now };
+
+    const bothApproved = chain === "commercial" ? !!current.technicalApprovedBy : !!current.commercialApprovedBy;
+    if (bothApproved) patch.status = "new_inventory";
+    patch.updatedAt = now;
+
+    const [updated] = await db.update(projectsTable).set(patch).where(eq(projectsTable.id, id)).returning();
+    await logActivity(userId, "updated", "project", id,
+      `${chain === "commercial" ? "Commercial" : "Technical"} approval granted for: ${current.name}${bothApproved ? " — promoted to New Inventory" : ""}`
+    );
+    res.json(await enrichProject(updated));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "InternalServerError" });

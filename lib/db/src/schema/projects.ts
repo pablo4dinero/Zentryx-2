@@ -45,6 +45,10 @@ export const projectsTable = pgTable("projects", {
   revenueImpact: numeric("revenue_impact", { precision: 15, scale: 2 }),
   productCategory: text("product_category"),
   tags: text("tags").array().notNull().default([]),
+  commercialApprovedBy: integer("commercial_approved_by").references(() => usersTable.id),
+  commercialApprovedAt: timestamp("commercial_approved_at"),
+  technicalApprovedBy: integer("technical_approved_by").references(() => usersTable.id),
+  technicalApprovedAt: timestamp("technical_approved_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

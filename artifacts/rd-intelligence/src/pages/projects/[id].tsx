@@ -1,7 +1,7 @@
 import { useRoute } from "wouter";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
-import { useGetProject, useListTasks, useCreateTask, useUpdateTask, useDeleteTask, useUpdateProject, useListUsers, getListTasksQueryKey } from "@/api-client";
+import { useGetProject, useListTasks, useCreateTask, useUpdateTask, useDeleteTask, useUpdateProject, useListUsers, getListTasksQueryKey, useGetCurrentUser } from "@/api-client";
 import { PageLoader } from "@/components/ui/spinner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,100 @@ const COLUMN_HEADER_COLORS: Record<string, string> = {
   done: "text-green-400",
   blocked: "text-red-400",
 };
+
+function ApprovalChainCard({
+  label, roleNote, approver, approvedAt, canApprove, alreadyApproved, onApprove, isLight,
+}: {
+  label: string; roleNote: string;
+  approver: any | null; approvedAt: string | null;
+  canApprove: boolean; alreadyApproved: boolean;
+  onApprove: () => void; isLight: boolean;
+}) {
+  const [loading, setLoading] = useState(false);
+  const handle = async () => {
+    setLoading(true);
+    try { await onApprove(); } finally { setLoading(false); }
+  };
+  return (
+    <div className={cn("rounded-xl border p-4 flex flex-col gap-3", alreadyApproved
+      ? isLight ? "border-green-200 bg-green-50" : "border-green-500/20 bg-green-500/5"
+      : isLight ? "border-amber-200 bg-amber-50/60" : "border-amber-500/20 bg-amber-500/5"
+    )}>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className={cn("text-sm font-semibold", isLight ? "text-gray-900" : "text-foreground")}>{label}</p>
+          <p className={cn("text-xs mt-0.5", isLight ? "text-gray-500" : "text-muted-foreground")}>{roleNote}</p>
+        </div>
+        {alreadyApproved
+          ? <span className={cn("flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border", isLight ? "border-green-300 bg-green-100 text-green-700" : "border-green-500/30 bg-green-500/10 text-green-400")}>
+              <Check className="w-3 h-3" /> Approved
+            </span>
+          : <span className={cn("px-2 py-0.5 rounded-full text-xs font-medium border", isLight ? "border-amber-300 bg-amber-100 text-amber-700" : "border-amber-500/30 bg-amber-500/10 text-amber-400")}>Pending</span>
+        }
+      </div>
+      {alreadyApproved && approver && (
+        <p className={cn("text-xs", isLight ? "text-gray-600" : "text-muted-foreground")}>
+          By <span className="font-medium">{approver.name}</span>
+          {approvedAt && <> · {format(new Date(approvedAt), "MMM d, yyyy 'at' h:mm a")}</>}
+        </p>
+      )}
+      {!alreadyApproved && canApprove && (
+        <button onClick={handle} disabled={loading}
+          className="mt-auto flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary text-white hover:bg-primary/90 disabled:opacity-50 transition-colors">
+          <Check className="w-3.5 h-3.5" />
+          {loading ? "Approving…" : `Give ${label}`}
+        </button>
+      )}
+      {!alreadyApproved && !canApprove && (
+        <p className={cn("text-xs italic", isLight ? "text-gray-400" : "text-muted-foreground/60")}>
+          You don't have permission for this approval.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ApprovalPanel({ project, currentUser, onApprove, isLight }: {
+  project: any; currentUser: any; onApprove: (chain: "commercial" | "technical") => Promise<void>; isLight: boolean;
+}) {
+  const role = currentUser?.role || "";
+  const dept = (currentUser?.department || "").toLowerCase();
+  const isAdmin = role === "admin" || role === "executive";
+  const canCommercial = isAdmin || (role === "manager" && dept.includes("sales"));
+  const canTechnical = isAdmin || (role === "manager" && (dept.includes("npd") || dept.includes("r&d") || dept.includes("rd")));
+
+  return (
+    <div className={cn("rounded-2xl border p-5 space-y-4", isLight ? "border-amber-200 bg-amber-50/40" : "border-amber-500/20 bg-amber-500/5")}>
+      <div className="flex items-center gap-2">
+        <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+        <p className={cn("text-sm font-semibold", isLight ? "text-amber-800" : "text-amber-300")}>Pending Dual Approval</p>
+        <p className={cn("text-xs ml-1", isLight ? "text-amber-700/70" : "text-amber-400/70")}>— This project is locked until both chains are approved.</p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <ApprovalChainCard
+          label="Commercial Approval"
+          roleNote="Sales Manager · Admin · Executive"
+          approver={project.commercialApprover}
+          approvedAt={project.commercialApprovedAt}
+          alreadyApproved={!!project.commercialApprovedBy}
+          canApprove={canCommercial && !project.commercialApprovedBy}
+          onApprove={() => onApprove("commercial")}
+          isLight={isLight}
+        />
+        <ApprovalChainCard
+          label="Technical Approval"
+          roleNote="NPD Manager · Admin · Executive"
+          approver={project.technicalApprover}
+          approvedAt={project.technicalApprovedAt}
+          alreadyApproved={!!project.technicalApprovedBy}
+          canApprove={canTechnical && !project.technicalApprovedBy}
+          onApprove={() => onApprove("technical")}
+          isLight={isLight}
+        />
+      </div>
+    </div>
+  );
+}
 
 function InlineEdit({ value, onSave, type = "text", options, placeholder, icon, label }: {
   value: string; onSave: (v: string) => void; type?: string; options?: string[];
@@ -372,6 +466,7 @@ export default function ProjectDetail() {
   const { data: project, isLoading: loadingProj } = useGetProject(projectId);
   const { data: tasks, isLoading: loadingTasks } = useListTasks({ projectId });
   const { data: users } = useListUsers();
+  const { data: currentUser } = useGetCurrentUser();
   const updateTaskMut = useUpdateTask();
   const deleteTaskMut = useDeleteTask();
   const createTaskMut = useCreateTask();
@@ -520,6 +615,30 @@ export default function ProjectDetail() {
     }
   };
 
+  const approveProject = async (chain: "commercial" | "technical") => {
+    const token = localStorage.getItem("rd_token");
+    const res = await fetch(`${BASE}api/projects/${projectId}/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ chain }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      toast({ title: "Approval failed", description: err.error || "Unexpected error", variant: "destructive" });
+      return;
+    }
+    const updated = await res.json();
+    queryClient.setQueryData([`/api/projects/${projectId}`], updated);
+    queryClient.setQueryData(["/api/projects"], (old: any) =>
+      Array.isArray(old) ? old.map((p: any) => p.id === projectId ? updated : p) : old
+    );
+    if (updated.status === "new_inventory") {
+      toast({ title: "Both approvals complete!", description: "Project moved to New Inventory." });
+    } else {
+      toast({ title: `${chain === "commercial" ? "Commercial" : "Technical"} approval granted` });
+    }
+  };
+
   const { theme } = useTheme();
   const isLight = theme === "light";
   const selectCls = isLight
@@ -554,9 +673,16 @@ export default function ProjectDetail() {
               <select value={project.stage} onChange={e => saveField("stage", e.target.value)} className={selectCls}>
                 {stageOpts.options.map(s => <option key={s} value={s} className="bg-white text-black capitalize">{s.replace(/_/g, ' ')}</option>)}
               </select>
-              <select value={project.status} onChange={e => saveField("status", e.target.value)} className={selectCls}>
-                {statusOpts.options.map(s => <option key={s} value={s} className="bg-white text-black capitalize">{s.replace(/_/g, ' ')}</option>)}
-              </select>
+              {(project.status as string) === "pending" ? (
+                <span title="Awaiting Commercial & Technical approval" className={cn("flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border cursor-default", isLight ? "border-amber-300 bg-amber-50 text-amber-700" : "border-amber-500/30 bg-amber-500/10 text-amber-400")}>
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                  Pending Approval
+                </span>
+              ) : (
+                <select value={project.status} onChange={e => saveField("status", e.target.value)} className={selectCls}>
+                  {statusOpts.options.map(s => <option key={s} value={s} className="bg-white text-black capitalize">{s.replace(/_/g, ' ')}</option>)}
+                </select>
+              )}
               <select value={project.priority || "medium"} onChange={e => saveField("priority", e.target.value)} className={selectCls}>
                 {priorityOpts.options.map(p => <option key={p} value={p} className="bg-white text-black capitalize">{p} Priority</option>)}
               </select>
@@ -604,6 +730,10 @@ export default function ProjectDetail() {
           </div>
         </div>
       </div>
+
+      {(project.status as string) === "pending" && (
+        <ApprovalPanel project={project} currentUser={currentUser} onApprove={approveProject} isLight={isLight} />
+      )}
 
       <div className="flex gap-2 p-1 bg-white/5 rounded-xl w-fit flex-wrap border border-white/10">
         {[

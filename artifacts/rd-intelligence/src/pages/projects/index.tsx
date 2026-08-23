@@ -706,7 +706,7 @@ function CreateProjectModal({
     createMutation.mutate({
       data: {
         name: form.name, description: form.description,
-        stage: form.stage, status: form.status, priority: form.priority,
+        stage: form.stage, status: "pending", priority: form.priority,
         productType: form.productType || undefined,
         customerName: form.customerName || undefined, customerEmail: form.customerEmail || undefined,
         customerPhone: form.customerPhone || undefined,
@@ -764,17 +764,14 @@ function CreateProjectModal({
               />
             </div>
 
-            {/* Status */}
+            {/* Status — locked to Pending on creation */}
             <div className="space-y-1.5">
               <label className={labelCls}>Status</label>
-              <CustomOptionsSelect
-                value={form.status}
-                onChange={v => setF("status", v)}
-                handle={statusOpts}
-                displayFn={displayLabel}
-                placeholder="Select status..."
-                isLight={isCpmLight}
-              />
+              <div className={cn("flex items-center gap-2 h-10 rounded-xl border px-3 text-sm", isCpmLight ? "border-amber-200 bg-amber-50 text-amber-700" : "border-amber-500/20 bg-amber-500/10 text-amber-400")}>
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                Pending Approval
+              </div>
+              <p className={cn("text-[11px]", isCpmLight ? "text-gray-400" : "text-muted-foreground")}>Requires Commercial &amp; Technical approval after creation</p>
             </div>
 
             {/* Priority */}
