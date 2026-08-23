@@ -627,6 +627,20 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
   // on failure. Used by the inline editors (name / type / stage / status /
   // due date) in the table cells.
   const updateField = (projectId: number, field: string, value: any) => {
+    // Guard: block status changes on pending projects and show a specific message
+    if (field === "status") {
+      const proj = (projects as any[]).find(p => p.id === projectId);
+      if (proj && (proj.status as string) === "pending") {
+        const hasCommercial = !!proj.commercialApprovedBy;
+        const hasTechnical = !!proj.technicalApprovedBy;
+        let reason = "Pending ";
+        if (!hasCommercial && !hasTechnical) reason += "Commercial and Technical Approval";
+        else if (!hasCommercial) reason += "Commercial Approval";
+        else reason += "Technical Approval";
+        toast({ title: reason, description: "Open the project to approve it.", variant: "destructive" });
+        return;
+      }
+    }
     // setQueriesData uses prefix matching, so it hits ["/api/projects", {}] and
     // any other param variants — setQueryData(["/api/projects"]) would miss them.
     queryClient.setQueriesData({ queryKey: ["/api/projects"] }, (old: any) => {

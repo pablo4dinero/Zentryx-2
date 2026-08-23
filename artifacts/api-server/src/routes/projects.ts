@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { projectsTable, usersTable, tasksTable } from "@workspace/db";
-import { eq, sql, and, inArray } from "drizzle-orm";
+import { projectsTable, usersTable, tasksTable, notificationsTable } from "@workspace/db";
+import { eq, sql, and, inArray, or, ilike } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../lib/auth";
 import { logActivity } from "../lib/activity";
 
@@ -147,6 +147,33 @@ router.post("/", requireAuth, async (req: AuthRequest, res) => {
       tags: tags || [],
     }).returning();
     await logActivity(req.user!.userId, "created", "project", project.id, `Created project: ${name}`);
+
+    // Notify admins, executives, and sales/npd managers
+    const recipients = await db.select({ id: usersTable.id }).from(usersTable).where(
+      or(
+        eq(usersTable.role, "admin"),
+        eq(usersTable.role, "executive"),
+        and(eq(usersTable.role, "manager"), or(
+          ilike(usersTable.department, "%sales%"),
+          ilike(usersTable.department, "%npd%"),
+          ilike(usersTable.department, "%r&d%"),
+        ))
+      )
+    );
+    if (recipients.length > 0) {
+      await db.insert(notificationsTable).values(
+        recipients.map(u => ({
+          userId: u.id,
+          type: "system" as const,
+          title: "New Project Pending Approval",
+          message: `A new project "${name}" has been created and requires your approval.`,
+          isRead: false,
+          projectId: project.id,
+          link: `/projects/${project.id}`,
+        }))
+      );
+    }
+
     res.status(201).json(await enrichProject(project));
   } catch (err) {
     console.error(err);

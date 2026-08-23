@@ -339,16 +339,17 @@ export default function ProjectsList() {
                   <div className={cn("absolute top-[calc(100%+4px)] left-0 right-0 z-50 rounded-xl border shadow-xl overflow-hidden max-h-72 overflow-y-auto custom-scrollbar",
                     isLight ? "bg-white border-gray-200" : "bg-[#1a1a2e] border-white/10"
                   )}>
-                    {["all", ...statusOpts.options].map(s => {
+                    {["all", "pending", ...statusOpts.options].map(s => {
                       const selected = statusFilter === s;
+                      const isPending = s === "pending";
                       return (
                         <button key={s}
                           onClick={() => { setStatusFilter(s); setStatusPickerOpen(false); }}
                           className={cn("w-full flex items-center gap-2 px-3 py-2 text-xs text-left capitalize transition-colors",
-                            selected ? "bg-primary/10 text-primary font-semibold" : isLight ? "text-gray-700 hover:bg-gray-50" : "text-foreground hover:bg-white/5"
+                            selected ? (isPending ? "bg-amber-500/10 text-amber-600 font-semibold" : "bg-primary/10 text-primary font-semibold") : isLight ? "text-gray-700 hover:bg-gray-50" : "text-foreground hover:bg-white/5"
                           )}>
-                          {selected ? <Check className="w-3.5 h-3.5 text-primary shrink-0" /> : <span className="w-3.5 h-3.5 shrink-0" />}
-                          <span className="truncate">{s === "all" ? "All" : displayLabel(s)}</span>
+                          {selected ? <Check className={cn("w-3.5 h-3.5 shrink-0", isPending ? "text-amber-500" : "text-primary")} /> : <span className="w-3.5 h-3.5 shrink-0" />}
+                          <span className="truncate">{s === "all" ? "All" : s === "pending" ? "Pending Approvals" : displayLabel(s)}</span>
                         </button>
                       );
                     })}
@@ -366,6 +367,23 @@ export default function ProjectsList() {
                       : isLight ? "border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50" : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5"
                   )}
                 >All</button>
+                {/* Pending Approvals — system status pill (always present) */}
+                <button
+                  onClick={() => setStatusFilter(statusFilter === "pending" ? "all" : "pending")}
+                  className={cn("shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border whitespace-nowrap",
+                    statusFilter === "pending"
+                      ? "bg-amber-500 text-white border-amber-500"
+                      : isLight ? "border-amber-300 text-amber-700 hover:bg-amber-50" : "border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                  )}
+                >
+                  <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", statusFilter === "pending" ? "bg-white" : "bg-amber-400")} />
+                  Pending Approvals
+                  {(projects || []).filter((p: any) => (p.status as string) === "pending").length > 0 && (
+                    <span className={cn("ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold", statusFilter === "pending" ? "bg-white/20 text-white" : isLight ? "bg-amber-100 text-amber-700" : "bg-amber-500/20 text-amber-300")}>
+                      {(projects || []).filter((p: any) => (p.status as string) === "pending").length}
+                    </span>
+                  )}
+                </button>
                 {statusOpts.options.map(s => (
                   <button
                     key={s}
