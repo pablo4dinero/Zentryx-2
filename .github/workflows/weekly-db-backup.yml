@@ -31,28 +31,45 @@ jobs:
       - name: Install AWS CLI
         run: pip install --quiet awscli
 
-      - name: Verify pg_dump version
-        run: /usr/lib/postgresql/18/bin/pg_dump --version
-
       - name: Create backup
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          PGSSLMODE: require
         run: |
-          if [ -z "$DATABASE_URL" ]; then
-            echo "ERROR: DATABASE_URL secret is not set"
-            exit 1
+          # Normalize: support both postgres:// and postgresql:// schemes
+          URL="${DATABASE_URL#postgres://}"
+          URL="${URL#postgresql://}"
+
+          # Extract user:password
+          USERPASS="${URL%%@*}"
+          PGUSER="${USERPASS%%:*}"
+          PGPASSWORD="${USERPASS#*:}"
+
+          # Extract host:port/database
+          HOSTPART="${URL#*@}"
+          PGHOST="${HOSTPART%%/*}"
+
+          # Extract port (if present)
+          if [[ "$PGHOST" =~ :([0-9]+)$ ]]; then
+            PGPORT="${BASH_REMATCH[1]}"
+            PGHOST="${PGHOST%:*}"
+          else
+            PGPORT=5432
           fi
 
-          # pg_dump accepts connection URIs directly — no manual URL parsing needed.
-          # Use the versioned binary to guarantee we use PG 18 (not the system wrapper).
-          PG_DUMP=/usr/lib/postgresql/18/bin/pg_dump
+          # Extract database name (strip any ?sslmode=... query string)
+          PGDATABASE="${HOSTPART#*/}"
+          PGDATABASE="${PGDATABASE%%\?*}"
 
+          echo "Backing up database: $PGDATABASE on $PGHOST:$PGPORT"
+
+          export PGPASSWORD="$PGPASSWORD"
           BACKUP_DATE=$(date +%Y-%m-%d)
           BACKUP_FILE="zentryx-backup-${BACKUP_DATE}.sql"
 
-          "$PG_DUMP" "$DATABASE_URL" --no-owner --no-acl --verbose > "$BACKUP_FILE"
+          pg_dump -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" \
+            --no-owner --no-acl --verbose > "$BACKUP_FILE"
 
+          # Verify backup was created and has content
           if [ ! -f "$BACKUP_FILE" ] || [ ! -s "$BACKUP_FILE" ]; then
             echo "ERROR: Backup file is empty or missing"
             exit 1
@@ -61,6 +78,7 @@ jobs:
           BACKUP_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
           echo "Backup created: $BACKUP_FILE ($BACKUP_SIZE)"
 
+          # Compress
           gzip "$BACKUP_FILE"
           COMPRESSED_FILE="${BACKUP_FILE}.gz"
 
