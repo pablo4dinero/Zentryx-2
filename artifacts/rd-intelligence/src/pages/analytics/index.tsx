@@ -177,11 +177,18 @@ export default function Analytics() {
     pending: "Pending Approval", active: "Active",
   };
 
+  // Estimated revenue per project: sellingPrice × volumeKgPerMonth, fallback to revenueImpact
+  const estRevenue = (p: any): number => {
+    const sp = parseFloat(p.sellingPrice || "0");
+    const vol = parseFloat(p.volumeKgPerMonth || "0");
+    if (sp > 0 && vol > 0) return sp * vol;
+    return parseFloat(p.revenueImpact || "0");
+  };
+
   // Revenue by Status — total estimated revenue grouped by project status
   const revenueByStatus = Object.entries(
     typedProjects.reduce((acc: Record<string, number>, p: any) => {
-      if (!p.revenueImpact) return acc;
-      const rv = parseFloat(p.revenueImpact);
+      const rv = estRevenue(p);
       if (!rv) return acc;
       acc[p.status] = (acc[p.status] || 0) + rv;
       return acc;
@@ -193,7 +200,7 @@ export default function Analytics() {
 
   // Statuses that have at least one project with revenue data (for the product-type filter pills)
   const revenueStatuses = Array.from(new Set(
-    typedProjects.filter((p: any) => p.revenueImpact && parseFloat(p.revenueImpact) > 0).map((p: any) => p.status).filter(Boolean)
+    typedProjects.filter((p: any) => estRevenue(p) > 0).map((p: any) => p.status).filter(Boolean)
   ));
 
   // Revenue by Product Type — filtered by the selected status
@@ -203,8 +210,8 @@ export default function Analytics() {
 
   const revenueByProductType = Object.entries(
     revProductProjects.reduce((acc: Record<string, number>, p: any) => {
-      if (!p.revenueImpact || !p.productType) return acc;
-      const rv = parseFloat(p.revenueImpact);
+      if (!p.productType) return acc;
+      const rv = estRevenue(p);
       if (!rv) return acc;
       acc[p.productType] = (acc[p.productType] || 0) + rv;
       return acc;
@@ -484,7 +491,7 @@ export default function Analytics() {
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
-          ) : <EmptyState label="No revenue data yet. Set Revenue Impact on projects to see this chart." />}
+          ) : <EmptyState label="No revenue data yet. Set Selling Price and Volume (kg/month) on projects to see this chart." />}
         </ChartCard>
 
         {/* Estimated Revenue by Product Type (status-filterable) */}
@@ -522,7 +529,7 @@ export default function Analytics() {
                         </Bar>
                       </BarChart>
                     </ResponsiveContainer>
-                  ) : <EmptyState label="No revenue data for this filter. Set Revenue Impact on projects." />}
+                  ) : <EmptyState label="No revenue data for this filter. Set Selling Price and Volume (kg/month) on projects." />}
                 </div>
               </div>
             );
