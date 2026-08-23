@@ -54,19 +54,19 @@ function ApprovalChainCard({
   };
   return (
     <div className={cn("rounded-xl border p-4 flex flex-col gap-3", alreadyApproved
-      ? isLight ? "border-green-200 bg-green-50" : "border-green-500/20 bg-green-500/5"
-      : isLight ? "border-amber-200 bg-amber-50/60" : "border-amber-500/20 bg-amber-500/5"
+      ? isLight ? "border-green-300 bg-green-50" : "border-green-500/20 bg-green-500/5"
+      : isLight ? "border-amber-300 bg-white" : "border-amber-500/20 bg-amber-500/5"
     )}>
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className={cn("text-sm font-semibold", isLight ? "text-gray-900" : "text-foreground")}>{label}</p>
-          <p className={cn("text-xs mt-0.5", isLight ? "text-gray-500" : "text-muted-foreground")}>{roleNote}</p>
+          <p className={cn("text-xs mt-0.5", isLight ? "text-gray-600" : "text-muted-foreground")}>{roleNote}</p>
         </div>
         {alreadyApproved
-          ? <span className={cn("flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border", isLight ? "border-green-300 bg-green-100 text-green-700" : "border-green-500/30 bg-green-500/10 text-green-400")}>
+          ? <span className={cn("flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border", isLight ? "border-green-400 bg-green-100 text-green-800" : "border-green-500/30 bg-green-500/10 text-green-400")}>
               <Check className="w-3 h-3" /> Approved
             </span>
-          : <span className={cn("px-2 py-0.5 rounded-full text-xs font-medium border", isLight ? "border-amber-300 bg-amber-100 text-amber-700" : "border-amber-500/30 bg-amber-500/10 text-amber-400")}>Pending</span>
+          : <span className={cn("px-2 py-0.5 rounded-full text-xs font-medium border", isLight ? "border-amber-500 bg-amber-100 text-amber-800" : "border-amber-500/30 bg-amber-500/10 text-amber-400")}>Pending</span>
         }
       </div>
       {alreadyApproved && approver && (
@@ -101,11 +101,11 @@ function ApprovalPanel({ project, currentUser, onApprove, isLight }: {
   const canTechnical = isAdmin || (role === "manager" && (dept.includes("npd") || dept.includes("r&d") || dept.includes("rd")));
 
   return (
-    <div className={cn("rounded-2xl border p-5 space-y-4", isLight ? "border-amber-200 bg-amber-50/40" : "border-amber-500/20 bg-amber-500/5")}>
+    <div className={cn("rounded-2xl border p-5 space-y-4", isLight ? "border-amber-400 bg-amber-50" : "border-amber-500/20 bg-amber-500/5")}>
       <div className="flex items-center gap-2">
-        <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
-        <p className={cn("text-sm font-semibold", isLight ? "text-amber-800" : "text-amber-300")}>Pending Dual Approval</p>
-        <p className={cn("text-xs ml-1", isLight ? "text-amber-700/70" : "text-amber-400/70")}>— This project is locked until both chains are approved.</p>
+        <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
+        <p className={cn("text-sm font-semibold", isLight ? "text-amber-900" : "text-amber-300")}>Pending Dual Approval</p>
+        <p className={cn("text-xs ml-1", isLight ? "text-gray-600" : "text-amber-400/70")}>— This project is locked until both chains are approved.</p>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <ApprovalChainCard
