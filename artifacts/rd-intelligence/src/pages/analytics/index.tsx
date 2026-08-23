@@ -6,7 +6,7 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell, Legend, RadarChart, PolarGrid,
   PolarAngleAxis, PolarRadiusAxis, Radar,
 } from "recharts";
-import { TrendingUp, Maximize2, Minimize2, BarChart2, PieChart as PieIcon, Activity, LineChart } from "lucide-react";
+import { TrendingUp, Maximize2, Minimize2, BarChart2, Activity, LineChart, DollarSign } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -92,6 +92,7 @@ export default function Analytics() {
   const ct = useChartTheme();
   const [stageType, setStageType] = useState<StageChartType>("donut");
   const [radarType, setRadarType] = useState<RadarChartType>("radar");
+  const [revProductFilter, setRevProductFilter] = useState<string>("all");
   const [statusMode, setStatusMode] = useState<StatusMode>("all");
   const [statusYear, setStatusYear] = useState(() => new Date().getFullYear());
   const [statusMonth, setStatusMonth] = useState(() => new Date().getMonth() + 1);
@@ -168,6 +169,48 @@ export default function Analytics() {
     Approved: d.approved,
     InProgress: d.inProgress,
   }));
+
+  const STATUS_LABELS: Record<string, string> = {
+    approved: "Approved", in_progress: "In Progress", awaiting_feedback: "Awaiting Feedback",
+    on_hold: "On Hold", cancelled: "Cancelled", completed: "Completed",
+    pushed_to_live: "Pushed to Live", new_inventory: "New Inventory",
+    pending: "Pending Approval", active: "Active",
+  };
+
+  // Revenue by Status — total estimated revenue grouped by project status
+  const revenueByStatus = Object.entries(
+    typedProjects.reduce((acc: Record<string, number>, p: any) => {
+      if (!p.revenueImpact) return acc;
+      const rv = parseFloat(p.revenueImpact);
+      if (!rv) return acc;
+      acc[p.status] = (acc[p.status] || 0) + rv;
+      return acc;
+    }, {})
+  ).map(([status, revenue]) => ({
+    status: STATUS_LABELS[status] ?? status.replace(/_/g, ' '),
+    revenue: revenue as number,
+  })).sort((a, b) => b.revenue - a.revenue);
+
+  // Statuses that have at least one project with revenue data (for the product-type filter pills)
+  const revenueStatuses = Array.from(new Set(
+    typedProjects.filter((p: any) => p.revenueImpact && parseFloat(p.revenueImpact) > 0).map((p: any) => p.status).filter(Boolean)
+  ));
+
+  // Revenue by Product Type — filtered by the selected status
+  const revProductProjects = revProductFilter === "all"
+    ? typedProjects
+    : typedProjects.filter((p: any) => p.status === revProductFilter);
+
+  const revenueByProductType = Object.entries(
+    revProductProjects.reduce((acc: Record<string, number>, p: any) => {
+      if (!p.revenueImpact || !p.productType) return acc;
+      const rv = parseFloat(p.revenueImpact);
+      if (!rv) return acc;
+      acc[p.productType] = (acc[p.productType] || 0) + rv;
+      return acc;
+    }, {})
+  ).map(([type, revenue]) => ({ type, revenue: revenue as number }))
+    .sort((a, b) => b.revenue - a.revenue);
 
   const typeToggleBtn = (label: string, active: boolean, onClick: () => void) => (
     <button key={label} onClick={onClick}
@@ -416,9 +459,85 @@ export default function Analytics() {
             </AnimatePresence>
           ) : <EmptyState label="Assign product types to projects to see this chart" />}
         </ChartCard>
+
+        {/* Estimated Revenue by Status */}
+        <ChartCard
+          title="Estimated Revenue by Status"
+          controls={
+            <div className={cn("flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg", ct.isLight ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20")}>
+              <DollarSign className="w-3 h-3" /> If all completed
+            </div>
+          }
+        >
+          {() => revenueByStatus.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={revenueByStatus} layout="vertical" margin={{ top: 5, right: 80, bottom: 5, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={ct.gridStroke} horizontal={false} />
+                <XAxis type="number" stroke={ct.axisStroke} tick={{ fill: ct.axisColor, fontSize: 11 }} tickLine={false} tickFormatter={fmtRevenue} />
+                <YAxis type="category" dataKey="status" stroke={ct.axisStroke} tick={{ fill: ct.axisColor, fontSize: 11 }} width={130} />
+                <RechartsTooltip
+                  {...ct.tooltipStyle}
+                  formatter={(v: any) => [fmtRevenue(Number(v)), "Est. Revenue"]}
+                />
+                <Bar dataKey="revenue" name="Est. Revenue" radius={[0, 4, 4, 0]} label={{ position: "right", formatter: (v: number) => fmtRevenue(v), fill: ct.axisColor, fontSize: 10 }}>
+                  {revenueByStatus.map((_, i) => <Cell key={i} fill={ct.colors[i % ct.colors.length]} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : <EmptyState label="No revenue data yet. Set Revenue Impact on projects to see this chart." />}
+        </ChartCard>
+
+        {/* Estimated Revenue by Product Type (status-filterable) */}
+        <ChartCard title="Estimated Revenue by Product Type">
+          {() => {
+            const pillCls = (active: boolean) => cn(
+              "text-xs px-2.5 py-1 rounded-lg font-medium transition-all whitespace-nowrap border",
+              active
+                ? "bg-primary text-white border-primary"
+                : ct.isLight ? "border-slate-200 text-gray-600 hover:bg-gray-50" : "border-white/10 text-muted-foreground hover:bg-white/5"
+            );
+            return (
+              <div className="flex flex-col h-full gap-2">
+                <div className="flex items-center gap-1 flex-wrap">
+                  <button onClick={() => setRevProductFilter("all")} className={pillCls(revProductFilter === "all")}>All</button>
+                  {revenueStatuses.map(s => (
+                    <button key={s} onClick={() => setRevProductFilter(s)} className={pillCls(revProductFilter === s)}>
+                      {STATUS_LABELS[s] ?? (s as string).replace(/_/g, ' ')}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex-1 min-h-0">
+                  {revenueByProductType.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={revenueByProductType} margin={{ top: 5, right: 5, bottom: 80, left: 10 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={ct.gridStroke} vertical={false} />
+                        <XAxis dataKey="type" stroke={ct.axisStroke} tick={{ fill: ct.axisColor, fontSize: 10 }} angle={-35} textAnchor="end" interval={0} />
+                        <YAxis stroke={ct.axisStroke} tick={{ fill: ct.axisColor, fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={fmtRevenue} />
+                        <RechartsTooltip
+                          {...ct.tooltipStyle}
+                          formatter={(v: any) => [fmtRevenue(Number(v)), "Est. Revenue"]}
+                        />
+                        <Bar dataKey="revenue" name="Est. Revenue" radius={[4, 4, 0, 0]}>
+                          {revenueByProductType.map((_, i) => <Cell key={i} fill={ct.colors[i % ct.colors.length]} />)}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : <EmptyState label="No revenue data for this filter. Set Revenue Impact on projects." />}
+                </div>
+              </div>
+            );
+          }}
+        </ChartCard>
+
       </div>
     </div>
   );
+}
+
+function fmtRevenue(v: number) {
+  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(2)}M`;
+  if (v >= 1_000) return `$${(v / 1_000).toFixed(1)}K`;
+  return `$${v.toFixed(0)}`;
 }
 
 function EmptyState({ label }: { label: string }) {
