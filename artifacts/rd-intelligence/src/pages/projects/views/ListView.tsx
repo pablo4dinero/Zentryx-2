@@ -92,26 +92,47 @@ function getProjUserId(): string {
 
 type SuccessProb = { label: "Very High" | "High" | "Medium" | "Normal"; pct: number; tier: number };
 
+// Returns true only when `phrase` appears in `text` as a standalone word/phrase —
+// not as a prefix or suffix of a longer word. E.g. "twin" does NOT match
+// "twinshare", but "twinshare" DOES match "twinshare project".
+function phraseInText(text: string, phrase: string): boolean {
+  if (!phrase || phrase.length < 4) return false;
+  const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // Must not be immediately preceded or followed by an alphanumeric character.
+  return new RegExp(`(?:^|[^a-z0-9])${escaped}(?=[^a-z0-9]|$)`, "i").test(text);
+}
+
 function computeSuccessProb(project: any, accounts: any[]): SuccessProb {
   if (!accounts || accounts.length === 0) return { label: "Normal", pct: 50, tier: 0 };
 
-  const haystack = `${project.name ?? ""} ${project.description ?? ""}`.toLowerCase();
-  const customerLower = (project.customerName ?? "").toLowerCase();
+  const titleDesc = `${project.name ?? ""} ${project.description ?? ""}`;
+  const custName  = (project.customerName ?? "").trim();
 
   let bestVol = -1;
   let bestInTitle = false;
   let anyMatch = false;
 
   for (const acc of accounts) {
-    const company = (acc.company ?? "").trim().toLowerCase();
-    if (!company) continue;
-    const inTitle = haystack.includes(company);
-    const inCustomer = customerLower.includes(company) || (company.length > 2 && company.includes(customerLower) && customerLower.length > 2);
+    const company = (acc.company ?? "").trim();
+    // Skip blank or very short names that would produce false positives.
+    if (company.length < 4) continue;
+
+    // Title/description: company name must be a complete word/phrase in the text.
+    const inTitle = phraseInText(titleDesc, company);
+
+    // Customer name: exact case-insensitive equality, or company clearly contains
+    // the customer string or vice-versa as a complete phrase.
+    const exactCustomer = custName.length >= 4 &&
+      custName.toLowerCase() === company.toLowerCase();
+    const phraseCustomer = custName.length >= 4 &&
+      (phraseInText(custName, company) || phraseInText(company, custName));
+    const inCustomer = exactCustomer || phraseCustomer;
+
     if (!inTitle && !inCustomer) continue;
 
     anyMatch = true;
     const vol = parseFloat(acc.volume ?? "0") || 0;
-    // Prefer title-match; then higher volume
+    // Prefer title-match over customer-match; then pick higher volume.
     if (!bestInTitle && inTitle) { bestVol = vol; bestInTitle = true; }
     else if (bestInTitle === inTitle && vol > bestVol) { bestVol = vol; }
   }
