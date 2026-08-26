@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useListProjects, useCreateProject, useDeleteProject, useListUsers, useUpdateProject, useGetCurrentUser } from "@/api-client";
 import { getAllowedSections } from "@/lib/roles";
 import { PageLoader } from "@/components/ui/spinner";
@@ -24,9 +24,20 @@ import {
 } from "@/lib/project-options";
 import { CustomOptionsSelect } from "@/components/ui/CustomOptionsSelect";
 
+// ── Persisted list state (survives navigation to/from a detail page) ─────────
+const LIST_STATE_KEY = "projects_list_state";
+const LIST_SCROLL_KEY = "projects_list_scroll";
+const LIST_FROM_DETAIL = "projects_from_detail";
+
+function readListState() {
+  try { return JSON.parse(sessionStorage.getItem(LIST_STATE_KEY) ?? "{}") as Record<string, any>; }
+  catch { return {} as Record<string, any>; }
+}
+
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function ProjectsList() {
-  const [searchTerm, setSearchQuery] = useState("");
+  const saved = readListState();
+  const [searchTerm, setSearchQuery] = useState<string>(saved.searchTerm ?? "");
   const { data: currentUser } = useGetCurrentUser();
   const allowedProjectSections = getAllowedSections("/projects", currentUser?.role);
   const canSeeExport = !allowedProjectSections || allowedProjectSections.includes("export");
@@ -36,10 +47,10 @@ export default function ProjectsList() {
     if (activeTab === "export" && !canSeeExport) setActiveTab("projects");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allowedProjectSections]);
-  const [view, setView] = useState<ViewType>("list");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [productTypeFilter, setProductTypeFilter] = useState<string>("all");
-  const [groupByType, setGroupByType] = useState(false);
+  const [view, setView] = useState<ViewType>(saved.view ?? "list");
+  const [statusFilter, setStatusFilter] = useState<string>(saved.statusFilter ?? "all");
+  const [productTypeFilter, setProductTypeFilter] = useState<string>(saved.productTypeFilter ?? "all");
+  const [groupByType, setGroupByType] = useState<boolean>(saved.groupByType ?? false);
   const [statusManageOpen, setStatusManageOpen] = useState(false);
   const [statusEditingOption, setStatusEditingOption] = useState<string | null>(null);
   const [dragOverStatus, setDragOverStatus] = useState<string | null>(null);
@@ -62,7 +73,6 @@ export default function ProjectsList() {
   const statusOpts      = useServerOptionList("status");
   const priorityOpts    = useServerOptionList("priority");
 
-  const { data: projects, isLoading } = useListProjects({});
   const { data: users } = useListUsers();
   const queryClient = useQueryClient();
   const deleteMutation = useDeleteProject();
@@ -82,6 +92,29 @@ export default function ProjectsList() {
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
   }, [statusManageOpen]);
+
+  // Persist navigable state so it survives a round-trip to a detail page.
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(LIST_STATE_KEY, JSON.stringify({ statusFilter, view, searchTerm, productTypeFilter, groupByType }));
+    } catch {}
+  }, [statusFilter, view, searchTerm, productTypeFilter, groupByType]);
+
+  // Save scroll position on unmount; restore it when navigating back from a detail page.
+  const scrollRestored = useRef(false);
+  const { data: projects, isLoading } = useListProjects({});
+  useEffect(() => {
+    if (isLoading || scrollRestored.current) return;
+    scrollRestored.current = true;
+    if (sessionStorage.getItem(LIST_FROM_DETAIL) === "1") {
+      sessionStorage.removeItem(LIST_FROM_DETAIL);
+      const top = parseInt(sessionStorage.getItem(LIST_SCROLL_KEY) ?? "0", 10);
+      if (top > 0) requestAnimationFrame(() => window.scrollTo({ top, behavior: "instant" as ScrollBehavior }));
+    }
+  }, [isLoading]);
+  useEffect(() => {
+    return () => { try { sessionStorage.setItem(LIST_SCROLL_KEY, String(window.scrollY)); } catch {} };
+  }, []);
 
   const handleDateChange = (id: number, date: string) => {
     queryClient.setQueriesData({ queryKey: ["/api/projects"] }, (old: any) => {

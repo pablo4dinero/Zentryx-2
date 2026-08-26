@@ -648,9 +648,15 @@ export default function ProjectDetail() {
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/projects" className="text-sm text-primary hover:underline flex items-center gap-1 mb-3">
+        <button
+          onClick={() => {
+            try { sessionStorage.setItem("projects_from_detail", "1"); } catch {}
+            window.history.back();
+          }}
+          className="text-sm text-primary hover:underline flex items-center gap-1 mb-3"
+        >
           <ArrowLeft className="w-4 h-4" /> Back to Portfolio
-        </Link>
+        </button>
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex-1 min-w-0">
             {editingTitle ? (
