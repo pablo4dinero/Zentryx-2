@@ -83,16 +83,18 @@ router.get("/download", requireAuth, async (req: AuthRequest, res) => {
     return;
   }
 
-  // TOTP re-verification — must pass current authenticator code
-  const totpCode = req.headers["x-totp-code"] as string | undefined;
-  if (!totpCode) {
-    res.status(400).json({ error: "TOTP code required", code: "TOTP_REQUIRED" });
-    return;
-  }
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.user!.userId)).limit(1);
-  if (!user?.mfaSecret || !verifyTotp(user.mfaSecret, totpCode)) {
-    res.status(403).json({ error: "Invalid authenticator code. Please try again.", code: "TOTP_INVALID" });
-    return;
+  // Superadmin bypasses TOTP re-verification (token carries noExpiry flag).
+  if (!req.user!.noExpiry) {
+    const totpCode = req.headers["x-totp-code"] as string | undefined;
+    if (!totpCode) {
+      res.status(400).json({ error: "TOTP code required", code: "TOTP_REQUIRED" });
+      return;
+    }
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.user!.userId)).limit(1);
+    if (!user?.mfaSecret || !verifyTotp(user.mfaSecret, totpCode)) {
+      res.status(403).json({ error: "Invalid authenticator code. Please try again.", code: "TOTP_INVALID" });
+      return;
+    }
   }
 
   const client = await pool.connect();
@@ -134,16 +136,18 @@ router.post("/restore", requireAuth, async (req: AuthRequest, res) => {
     return;
   }
 
-  // TOTP re-verification — must pass current authenticator code
-  const totpCode = req.headers["x-totp-code"] as string | undefined;
-  if (!totpCode) {
-    res.status(400).json({ error: "TOTP code required", code: "TOTP_REQUIRED" });
-    return;
-  }
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.user!.userId)).limit(1);
-  if (!user?.mfaSecret || !verifyTotp(user.mfaSecret, totpCode)) {
-    res.status(403).json({ error: "Invalid authenticator code. Please try again.", code: "TOTP_INVALID" });
-    return;
+  // Superadmin bypasses TOTP re-verification (token carries noExpiry flag).
+  if (!req.user!.noExpiry) {
+    const totpCode = req.headers["x-totp-code"] as string | undefined;
+    if (!totpCode) {
+      res.status(400).json({ error: "TOTP code required", code: "TOTP_REQUIRED" });
+      return;
+    }
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.user!.userId)).limit(1);
+    if (!user?.mfaSecret || !verifyTotp(user.mfaSecret, totpCode)) {
+      res.status(403).json({ error: "Invalid authenticator code. Please try again.", code: "TOTP_INVALID" });
+      return;
+    }
   }
 
   const { schemaVersion, appName, tables } = req.body ?? {};

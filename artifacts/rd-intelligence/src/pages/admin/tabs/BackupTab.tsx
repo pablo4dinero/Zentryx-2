@@ -9,6 +9,16 @@ function getToken() {
   return localStorage.getItem("rd_token") ?? "";
 }
 
+function isSuperadmin() {
+  try {
+    const token = getToken();
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    return !!payload.noExpiry;
+  } catch {
+    return false;
+  }
+}
+
 type TotpIntent = "backup" | "restore";
 
 interface TotpModal {
@@ -117,9 +127,9 @@ export function BackupTab() {
         return;
       }
 
-      // Prompt for a fresh TOTP code at the moment of actual restore
-      const code = await promptTotpForRestore();
-      if (!code) {
+      // Superadmin bypasses TOTP; regular admins must enter authenticator code.
+      const code = isSuperadmin() ? "" : await promptTotpForRestore();
+      if (code === null) {
         setRestoreResult({ ok: false, message: "Restore cancelled — authenticator code not provided." });
         return;
       }
@@ -219,7 +229,7 @@ export function BackupTab() {
             </p>
           </div>
           <button
-            onClick={() => openTotp("backup")}
+            onClick={() => isSuperadmin() ? runDownload("") : openTotp("backup")}
             disabled={downloading}
             className={cn(
               "shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all",
