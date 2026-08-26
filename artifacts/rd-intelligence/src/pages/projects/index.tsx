@@ -346,9 +346,9 @@ export default function ProjectsList() {
                         <button key={s}
                           onClick={() => { setStatusFilter(s); setStatusPickerOpen(false); }}
                           className={cn("w-full flex items-center gap-2 px-3 py-2 text-xs text-left capitalize transition-colors",
-                            selected ? (isPending ? "bg-amber-500/10 text-amber-600 font-semibold" : "bg-primary/10 text-primary font-semibold") : isLight ? "text-gray-700 hover:bg-gray-50" : "text-foreground hover:bg-white/5"
+                            selected ? (isPending ? "bg-teal-500/10 text-teal-700 font-semibold" : "bg-primary/10 text-primary font-semibold") : isLight ? "text-gray-700 hover:bg-gray-50" : "text-foreground hover:bg-white/5"
                           )}>
-                          {selected ? <Check className={cn("w-3.5 h-3.5 shrink-0", isPending ? "text-amber-500" : "text-primary")} /> : <span className="w-3.5 h-3.5 shrink-0" />}
+                          {selected ? <Check className={cn("w-3.5 h-3.5 shrink-0", isPending ? "text-teal-600" : "text-primary")} /> : <span className="w-3.5 h-3.5 shrink-0" />}
                           <span className="truncate">{s === "all" ? "All" : s === "pending" ? "Pending Approvals" : displayLabel(s)}</span>
                         </button>
                       );
@@ -372,14 +372,14 @@ export default function ProjectsList() {
                   onClick={() => setStatusFilter(statusFilter === "pending" ? "all" : "pending")}
                   className={cn("shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border whitespace-nowrap",
                     statusFilter === "pending"
-                      ? isLight ? "bg-amber-600 text-white border-amber-700" : "bg-amber-500 text-white border-amber-500"
-                      : isLight ? "border-amber-500 text-amber-800 bg-amber-50 hover:bg-amber-100" : "border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                      ? "bg-teal-600 text-white border-teal-700"
+                      : isLight ? "border-teal-600 text-teal-800 bg-teal-50 hover:bg-teal-100" : "border-teal-500/40 text-teal-400 hover:bg-teal-500/10"
                   )}
                 >
-                  <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", statusFilter === "pending" ? "bg-white" : "bg-amber-500")} />
+                  <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", statusFilter === "pending" ? "bg-white" : "bg-teal-500")} />
                   Pending Approvals
                   {(projects || []).filter((p: any) => (p.status as string) === "pending").length > 0 && (
-                    <span className={cn("ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold", statusFilter === "pending" ? isLight ? "bg-white text-amber-700" : "bg-white/20 text-white" : isLight ? "bg-amber-200 text-amber-800" : "bg-amber-500/20 text-amber-300")}>
+                    <span className={cn("ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold", statusFilter === "pending" ? "bg-white text-teal-700" : isLight ? "bg-teal-100 text-teal-800" : "bg-teal-500/20 text-teal-300")}>
                       {(projects || []).filter((p: any) => (p.status as string) === "pending").length}
                     </span>
                   )}
