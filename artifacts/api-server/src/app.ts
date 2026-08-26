@@ -106,6 +106,10 @@ app.use(cors({
   credentials: true,
 }));
 
+// Backup restore receives the full DB as JSON — needs a larger limit.
+// Must be registered BEFORE the global 1mb rule so body-parser skips re-parsing.
+app.use("/api/backup/restore", express.json({ limit: "50mb" }));
+
 // 1MB for all API routes — prevents memory exhaustion from large JSON payloads.
 // The document upload endpoint (/api/mdp/parse-plan-document) overrides this
 // with its own 15MB limit applied directly on that route.

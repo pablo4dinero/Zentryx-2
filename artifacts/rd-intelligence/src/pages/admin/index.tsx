@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { ShieldCheck, Users as UsersIcon, Lock, FileCheck2, ScrollText, KeyRound, Crown, Megaphone, SlidersHorizontal, Zap, X, LogIn } from "lucide-react";
+import { ShieldCheck, Users as UsersIcon, Lock, FileCheck2, ScrollText, KeyRound, Crown, Megaphone, SlidersHorizontal, Zap, X, LogIn, DatabaseBackup } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useGetCurrentUser } from "@/api-client";
 import { useTheme } from "@/lib/theme";
@@ -13,6 +13,7 @@ import { MfaResetsTab } from "./tabs/MfaResetsTab";
 import { SecurityTab } from "./tabs/SecurityTab";
 import { ApprovalsTab } from "./tabs/ApprovalsTab";
 import { AuditTab } from "./tabs/AuditTab";
+import { BackupTab } from "./tabs/BackupTab";
 import { apiGet } from "./lib/api";
 import { format } from "date-fns";
 
@@ -26,6 +27,7 @@ const TABS = [
   { id: "security", label: "Security & Logins", icon: Lock },
   { id: "approvals", label: "Approvals", icon: FileCheck2 },
   { id: "audit", label: "Audit Log", icon: ScrollText },
+  { id: "backup", label: "Backup & Restore", icon: DatabaseBackup },
 ] as const;
 type TabId = typeof TABS[number]["id"];
 
@@ -194,6 +196,7 @@ export default function AdminDashboard() {
         {tab === "security" && <SecurityTab isLight={isLight} />}
         {tab === "approvals" && <ApprovalsTab isLight={isLight} />}
         {tab === "audit" && <AuditTab isLight={isLight} />}
+        {tab === "backup" && <BackupTab />}
       </div>
 
       {/* Login notification toasts — bottom-right */}
