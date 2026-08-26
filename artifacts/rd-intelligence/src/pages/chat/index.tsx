@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageLoader } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { format } from "date-fns";
+import { format, isSameDay, differenceInCalendarDays } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -26,6 +26,15 @@ import { MessageContextMenu } from "./components/MessageContextMenu";
 import { MsgContent } from "./components/MsgContent";
 import { CreateGroupModal } from "./components/CreateGroupModal";
 import { EditGroupModal } from "./components/EditGroupModal";
+
+function getDateLabel(date: Date): string {
+  const now = new Date();
+  const diff = differenceInCalendarDays(now, date);
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Yesterday";
+  if (diff <= 5) return format(date, "EEEE"); // Monday, Tuesday…
+  return format(date, "MMMM d, yyyy");        // July 15, 2026
+}
 
 export default function ChatRoom() {
   const api = useApi();
@@ -1283,8 +1292,20 @@ export default function ChatRoom() {
                 const isUnread = !msg.seenBy?.includes(currentUserId) && !isOwn;
                 const isFirstUnread = isUnread && (i === 0 || visibleMessages[i - 1].seenBy?.includes(currentUserId) || visibleMessages[i - 1].senderId === currentUserId);
                 const isSelected = selectedIds.has(msg.id);
+                const msgDate = new Date(msg.createdAt);
+                const prevDate = i > 0 ? new Date(visibleMessages[i - 1].createdAt) : null;
+                const showDateSep = !prevDate || !isSameDay(msgDate, prevDate);
                 return (
                   <>
+                    {showDateSep && (
+                      <div className="flex items-center gap-3 py-2 my-3">
+                        <div className="flex-1 h-px bg-white/8" />
+                        <span className="text-[11px] font-medium text-muted-foreground/70 px-3 py-1 rounded-full border border-white/8 bg-white/4 select-none">
+                          {getDateLabel(msgDate)}
+                        </span>
+                        <div className="flex-1 h-px bg-white/8" />
+                      </div>
+                    )}
                     {isFirstUnread && (
                       <div className="flex items-center gap-3 py-2 my-2">
                         <div className="flex-1 h-px bg-gradient-to-r from-transparent via-blue-500/30 to-transparent" />
