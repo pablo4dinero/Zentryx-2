@@ -3,16 +3,16 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
 import { format } from "date-fns";
-import { ArrowUpDown, ArrowUp, ArrowDown, Trash2, FileText, X, Send, Pencil, Calendar as CalendarIcon, MessageSquare, AtSign, SlidersHorizontal, Check, UserPlus, Search } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, Trash2, FileText, X, Send, Pencil, Calendar as CalendarIcon, MessageSquare, AtSign, SlidersHorizontal, Check, UserPlus, Search, TrendingUp } from "lucide-react";
 import { useUpdateProject, useDeleteProject, useListUsers } from "@/api-client";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { CustomOptionsSelect } from "@/components/ui/CustomOptionsSelect";
 import type { CustomOptionsHandle } from "@/lib/project-options";
 
-type SortKey = "name" | "stage" | "status" | "productType" | "customerName" | "targetDate" | "progress" | "createdAt" | "assignees";
+type SortKey = "name" | "stage" | "status" | "productType" | "customerName" | "targetDate" | "progress" | "createdAt" | "assignees" | "successProbability";
 type SortDir = "asc" | "desc";
 
 const BASE = import.meta.env.BASE_URL;
@@ -49,20 +49,24 @@ const STATUS_COLORS_LIGHT: Record<string, string> = {
 
 // ─── Column customization ────────────────────────────────────────────────────
 
-type ColKey = "productType" | "customerName" | "stage" | "progress" | "status" | "targetDate" | "createdAt" | "assignees";
+type ColKey = "productType" | "customerName" | "stage" | "progress" | "status" | "targetDate" | "createdAt" | "assignees" | "successProbability";
 
 const ALL_COL_DEFS: { key: ColKey; label: string; sortKey: SortKey }[] = [
-  { key: "productType",  label: "Type",        sortKey: "productType"  },
-  { key: "customerName", label: "Customer",    sortKey: "customerName" },
-  { key: "stage",        label: "Stage",       sortKey: "stage"        },
-  { key: "progress",     label: "Progress",    sortKey: "progress"     },
-  { key: "status",       label: "Status",      sortKey: "status"       },
-  { key: "assignees",    label: "Assigned To", sortKey: "assignees"    },
-  { key: "targetDate",   label: "Due Date",    sortKey: "targetDate"   },
-  { key: "createdAt",    label: "Date Added",  sortKey: "createdAt"    },
+  { key: "productType",        label: "Type",                sortKey: "productType"        },
+  { key: "customerName",       label: "Customer",            sortKey: "customerName"       },
+  { key: "stage",              label: "Stage",               sortKey: "stage"              },
+  { key: "progress",           label: "Progress",            sortKey: "progress"           },
+  { key: "status",             label: "Status",              sortKey: "status"             },
+  { key: "assignees",          label: "Assigned To",         sortKey: "assignees"          },
+  { key: "targetDate",         label: "Due Date",            sortKey: "targetDate"         },
+  { key: "createdAt",          label: "Date Added",          sortKey: "createdAt"          },
+  { key: "successProbability", label: "Success Probability", sortKey: "successProbability" },
 ];
 const DEFAULT_COL_ORDER = ALL_COL_DEFS.map(c => c.key) as ColKey[];
-const DEFAULT_COL_VIS   = Object.fromEntries(ALL_COL_DEFS.map(c => [c.key, true])) as Record<ColKey, boolean>;
+const DEFAULT_COL_VIS = {
+  ...Object.fromEntries(ALL_COL_DEFS.map(c => [c.key, true])),
+  successProbability: false, // opt-in — user must enable in Columns toggle
+} as Record<ColKey, boolean>;
 
 function getProjUserId(): string {
   try {
@@ -71,6 +75,52 @@ function getProjUserId(): string {
     const payload = JSON.parse(atob(token.split(".")[1]));
     return String(payload.userId ?? payload.sub ?? "anon");
   } catch { return "anon"; }
+}
+
+// ─── Success Probability ─────────────────────────────────────────────────────
+// Volume tiers mirror those in Sales Force VolumeTag:
+//   ≥ 1000  →  "High"      (incl. ≥10000 "Very High")
+//   ≥  500  →  "Medium"
+//    < 500  →  "Low"
+//
+// Matching rules (first match wins, highest volume wins for ties):
+//   Company in title/desc + vol ≥ 1000  →  Very High  90%
+//   Company in title/desc + vol ≥  500  →  High       75%
+//   Company in title/desc + vol <  500  →  Medium     60%
+//   Company found anywhere in accounts  →  Medium     60%
+//   No account match                    →  Normal     50%
+
+type SuccessProb = { label: "Very High" | "High" | "Medium" | "Normal"; pct: number; tier: number };
+
+function computeSuccessProb(project: any, accounts: any[]): SuccessProb {
+  if (!accounts || accounts.length === 0) return { label: "Normal", pct: 50, tier: 0 };
+
+  const haystack = `${project.name ?? ""} ${project.description ?? ""}`.toLowerCase();
+  const customerLower = (project.customerName ?? "").toLowerCase();
+
+  let bestVol = -1;
+  let bestInTitle = false;
+  let anyMatch = false;
+
+  for (const acc of accounts) {
+    const company = (acc.company ?? "").trim().toLowerCase();
+    if (!company) continue;
+    const inTitle = haystack.includes(company);
+    const inCustomer = customerLower.includes(company) || (company.length > 2 && company.includes(customerLower) && customerLower.length > 2);
+    if (!inTitle && !inCustomer) continue;
+
+    anyMatch = true;
+    const vol = parseFloat(acc.volume ?? "0") || 0;
+    // Prefer title-match; then higher volume
+    if (!bestInTitle && inTitle) { bestVol = vol; bestInTitle = true; }
+    else if (bestInTitle === inTitle && vol > bestVol) { bestVol = vol; }
+  }
+
+  if (!anyMatch) return { label: "Normal", pct: 50, tier: 0 };
+  if (!bestInTitle) return { label: "Medium", pct: 60, tier: 1 };
+  if (bestVol >= 1000) return { label: "Very High", pct: 90, tier: 3 };
+  if (bestVol >= 500)  return { label: "High",      pct: 75, tier: 2 };
+  return                      { label: "Medium",    pct: 60, tier: 1 };
 }
 
 // ─── AssigneePickerCell ──────────────────────────────────────────────────────
@@ -472,7 +522,8 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
   const COL_WIDTH_KEY = "zentryx_project_list_col_widths";
   const DEFAULT_COL_WIDTHS: Record<string, number> = {
     name: 260, productType: 140, customerName: 200, stage: 140,
-    progress: 140, status: 150, assignees: 180, targetDate: 130, createdAt: 130, actions: 110,
+    progress: 140, status: 150, assignees: 180, targetDate: 130, createdAt: 130,
+    successProbability: 170, actions: 110,
   };
   const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
     try {
@@ -575,6 +626,18 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
   const isLight = theme === "light";
   const { data: users = [] } = useListUsers();
 
+  // Accounts are fetched here for Success Probability. React Query caches
+  // the result so there is no extra network request when Sales Force is open.
+  const { data: accounts = [] } = useQuery<any[]>({
+    queryKey: ["/api/accounts"],
+    queryFn: async () => {
+      const token = localStorage.getItem("rd_token");
+      const res = await fetch(`${BASE}api/accounts`, { headers: { Authorization: `Bearer ${token}` } });
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+
   // Close context menu on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -603,6 +666,9 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
       } else if (sortKey === "targetDate" || sortKey === "createdAt") {
         av = a[sortKey] ? new Date(a[sortKey]).getTime() : 0;
         bv = b[sortKey] ? new Date(b[sortKey]).getTime() : 0;
+      } else if (sortKey === "successProbability") {
+        av = computeSuccessProb(a, accounts).tier;
+        bv = computeSuccessProb(b, accounts).tier;
       } else {
         av = (a[sortKey] || "").toLowerCase();
         bv = (b[sortKey] || "").toLowerCase();
@@ -611,7 +677,7 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
       if (av > bv) return sortDir === "asc" ? 1 : -1;
       return 0;
     });
-  }, [projects, sortKey, sortDir]);
+  }, [projects, sortKey, sortDir, accounts]);
 
   const handleRightClick = (e: React.MouseEvent, project: any) => {
     e.preventDefault();
@@ -818,6 +884,31 @@ export function ListView({ projects, productTypeOpts, stageOpts, statusOpts }: P
         );
       case "createdAt":
         return <span className={cn("text-xs", isLight ? "text-gray-600" : "text-muted-foreground")}>{p.createdAt ? format(new Date(p.createdAt), "MMM d, yyyy") : "—"}</span>;
+      case "successProbability": {
+        const sp = computeSuccessProb(p, accounts);
+        const cfg = {
+          "Very High": { pill: isLight ? "bg-emerald-100 text-emerald-700 border-emerald-200" : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20", bar: "bg-emerald-500" },
+          "High":      { pill: isLight ? "bg-blue-100 text-blue-700 border-blue-200"         : "bg-blue-500/10 text-blue-400 border-blue-500/20",           bar: "bg-blue-500"    },
+          "Medium":    { pill: isLight ? "bg-yellow-100 text-yellow-700 border-yellow-200"   : "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",     bar: "bg-yellow-500"  },
+          "Normal":    { pill: isLight ? "bg-gray-100 text-gray-600 border-gray-200"         : "bg-white/5 text-muted-foreground border-white/10",           bar: "bg-gray-400"    },
+        }[sp.label];
+        return (
+          <div className="flex items-center gap-2">
+            <div className="flex flex-col gap-1 min-w-0">
+              <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-semibold w-fit", cfg.pill)}>
+                <TrendingUp className="w-2.5 h-2.5 shrink-0" />
+                {sp.label}
+              </span>
+              <div className="flex items-center gap-1.5">
+                <div className={cn("h-1 rounded-full overflow-hidden", isLight ? "bg-gray-200 w-20" : "bg-white/10 w-20")}>
+                  <div className={cn("h-full rounded-full", cfg.bar)} style={{ width: `${sp.pct}%` }} />
+                </div>
+                <span className={cn("text-[10px] tabular-nums", isLight ? "text-gray-500" : "text-muted-foreground")}>{sp.pct}%</span>
+              </div>
+            </div>
+          </div>
+        );
+      }
       default:
         return null;
     }
