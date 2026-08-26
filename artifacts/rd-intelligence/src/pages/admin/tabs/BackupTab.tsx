@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { Download, Upload, ShieldAlert, CheckCircle2, XCircle, Loader2, DatabaseBackup, RefreshCw } from "lucide-react";
+import { Download, Upload, ShieldAlert, CheckCircle2, XCircle, Loader2, DatabaseBackup, RefreshCw, KeyRound } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
@@ -7,6 +7,16 @@ const BASE = import.meta.env.BASE_URL;
 
 function getToken() {
   return localStorage.getItem("rd_token") ?? "";
+}
+
+type TotpIntent = "backup" | "restore";
+
+interface TotpModal {
+  open: boolean;
+  intent: TotpIntent | null;
+  code: string;
+  error: string;
+  loading: boolean;
 }
 
 export function BackupTab() {
@@ -22,15 +32,49 @@ export function BackupTab() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // ── Download ────────────────────────────────────────────────────────────
-  const handleDownload = async () => {
+  const [totp, setTotp] = useState<TotpModal>({ open: false, intent: null, code: "", error: "", loading: false });
+
+  // ── TOTP modal helpers ──────────────────────────────────────────────────────
+  const openTotp = (intent: TotpIntent) =>
+    setTotp({ open: true, intent, code: "", error: "", loading: false });
+
+  const closeTotp = () =>
+    setTotp({ open: false, intent: null, code: "", error: "", loading: false });
+
+  const handleTotpSubmit = async () => {
+    if (totp.code.length !== 6) {
+      setTotp(p => ({ ...p, error: "Enter the 6-digit code from your authenticator app." }));
+      return;
+    }
+    if (totp.intent === "backup") {
+      closeTotp();
+      await runDownload(totp.code);
+    } else if (totp.intent === "restore") {
+      closeTotp();
+      setConfirmOpen(true);
+    }
+  };
+
+  // ── Download ────────────────────────────────────────────────────────────────
+  const runDownload = async (totpCode: string) => {
     setDownloading(true);
     setDownloadDone(false);
     try {
       const res = await fetch(`${BASE}api/backup/download`, {
-        headers: { Authorization: `Bearer ${getToken()}` },
+        headers: {
+          Authorization: `Bearer ${getToken()}`,
+          "x-totp-code": totpCode,
+        },
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (data.code === "TOTP_INVALID") {
+          alert("Invalid authenticator code. Please try again.");
+        } else {
+          alert(`Backup failed: ${data.error ?? "Unknown error"}`);
+        }
+        return;
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -49,7 +93,7 @@ export function BackupTab() {
     }
   };
 
-  // ── Restore ─────────────────────────────────────────────────────────────
+  // ── Restore ─────────────────────────────────────────────────────────────────
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
     setSelectedFile(file);
@@ -61,6 +105,8 @@ export function BackupTab() {
     setConfirmOpen(false);
     setRestoring(true);
     setRestoreResult(null);
+    // The TOTP code was captured in the modal; we re-open modal to get a fresh
+    // code right before the confirmed restore fires.
     try {
       const text = await selectedFile.text();
       let backup: any;
@@ -70,17 +116,30 @@ export function BackupTab() {
         setRestoreResult({ ok: false, message: "The selected file is not valid JSON." });
         return;
       }
+
+      // Prompt for a fresh TOTP code at the moment of actual restore
+      const code = await promptTotpForRestore();
+      if (!code) {
+        setRestoreResult({ ok: false, message: "Restore cancelled — authenticator code not provided." });
+        return;
+      }
+
       const res = await fetch(`${BASE}api/backup/restore`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${getToken()}`,
+          "x-totp-code": code,
         },
         body: JSON.stringify(backup),
       });
       const data = await res.json();
       if (!res.ok) {
-        setRestoreResult({ ok: false, message: data.error ?? "Restore failed." });
+        if (data.code === "TOTP_INVALID") {
+          setRestoreResult({ ok: false, message: "Invalid authenticator code. Restore was not performed." });
+        } else {
+          setRestoreResult({ ok: false, message: data.error ?? "Restore failed." });
+        }
       } else {
         setRestoreResult({ ok: true, message: data.message ?? "Restore complete." });
         setSelectedFile(null);
@@ -93,12 +152,46 @@ export function BackupTab() {
     }
   };
 
+  // Small helper: shows the TOTP modal and resolves when the user submits or
+  // cancels, returning the code string or null.
+  const [restoreTotpResolve, setRestoreTotpResolve] = useState<((v: string | null) => void) | null>(null);
+  const [restoreTotpModal, setRestoreTotpModal] = useState({ open: false, code: "", error: "" });
+
+  const promptTotpForRestore = (): Promise<string | null> => {
+    return new Promise(resolve => {
+      setRestoreTotpModal({ open: true, code: "", error: "" });
+      setRestoreTotpResolve(() => resolve);
+    });
+  };
+
+  const submitRestoreTotp = () => {
+    if (restoreTotpModal.code.length !== 6) {
+      setRestoreTotpModal(p => ({ ...p, error: "Enter the 6-digit code from your authenticator app." }));
+      return;
+    }
+    const code = restoreTotpModal.code;
+    setRestoreTotpModal({ open: false, code: "", error: "" });
+    restoreTotpResolve?.(code);
+    setRestoreTotpResolve(null);
+  };
+
+  const cancelRestoreTotp = () => {
+    setRestoreTotpModal({ open: false, code: "", error: "" });
+    restoreTotpResolve?.(null);
+    setRestoreTotpResolve(null);
+  };
+
   const card = cn(
     "rounded-2xl border p-6",
     isLight ? "bg-white border-slate-200" : "bg-white/5 border-white/10"
   );
   const label = cn("text-sm font-medium", isLight ? "text-gray-700" : "text-foreground");
   const muted = cn("text-xs", isLight ? "text-gray-500" : "text-muted-foreground");
+
+  const modalBase = cn(
+    "w-full max-w-sm rounded-2xl border p-6 space-y-4 shadow-2xl",
+    isLight ? "bg-white border-slate-200" : "bg-[#1a1d2e] border-white/10"
+  );
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -126,7 +219,7 @@ export function BackupTab() {
             </p>
           </div>
           <button
-            onClick={handleDownload}
+            onClick={() => openTotp("backup")}
             disabled={downloading}
             className={cn(
               "shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all",
@@ -271,6 +364,134 @@ export function BackupTab() {
                 className="flex-1 px-4 py-2 rounded-xl text-sm font-semibold bg-red-600 text-white hover:bg-red-700 transition-all"
               >
                 Yes, Restore Now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── TOTP modal for Backup ──────────────────────────────────────────── */}
+      {totp.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+          <div className={modalBase}>
+            <div className="flex items-center gap-3">
+              <div className={cn("w-10 h-10 rounded-full flex items-center justify-center shrink-0", isLight ? "bg-primary/10" : "bg-primary/20")}>
+                <KeyRound className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <p className={cn("font-semibold", isLight ? "text-gray-900" : "text-foreground")}>
+                  Verify Identity
+                </p>
+                <p className={cn("text-xs mt-0.5", isLight ? "text-gray-500" : "text-muted-foreground")}>
+                  {totp.intent === "backup" ? "Required before downloading the backup." : "Required before restoring the database."}
+                </p>
+              </div>
+            </div>
+
+            <p className={cn("text-sm", isLight ? "text-gray-600" : "text-muted-foreground")}>
+              Enter the 6-digit code from your authenticator app to continue.
+            </p>
+
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="000000"
+              value={totp.code}
+              onChange={e => setTotp(p => ({ ...p, code: e.target.value.replace(/\D/g, "").slice(0, 6), error: "" }))}
+              onKeyDown={e => { if (e.key === "Enter") handleTotpSubmit(); }}
+              autoFocus
+              className={cn(
+                "w-full px-4 py-3 rounded-xl border text-center text-2xl font-mono tracking-[0.5em] outline-none transition-colors",
+                isLight
+                  ? "border-slate-200 bg-slate-50 text-gray-900 focus:border-primary"
+                  : "border-white/10 bg-white/5 text-foreground focus:border-primary"
+              )}
+            />
+
+            {totp.error && (
+              <p className={cn("text-xs", isLight ? "text-red-600" : "text-red-400")}>{totp.error}</p>
+            )}
+
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={closeTotp}
+                className={cn(
+                  "flex-1 px-4 py-2 rounded-xl text-sm font-medium border transition-all",
+                  isLight ? "border-slate-200 text-gray-700 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5"
+                )}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleTotpSubmit}
+                disabled={totp.code.length !== 6}
+                className="flex-1 px-4 py-2 rounded-xl text-sm font-semibold bg-primary text-white hover:bg-primary/90 disabled:opacity-50 transition-all"
+              >
+                Verify & Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── TOTP modal for Restore (shown after confirmation) ─────────────── */}
+      {restoreTotpModal.open && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+          <div className={modalBase}>
+            <div className="flex items-center gap-3">
+              <div className={cn("w-10 h-10 rounded-full flex items-center justify-center shrink-0", isLight ? "bg-red-100" : "bg-red-500/20")}>
+                <KeyRound className={cn("w-5 h-5", isLight ? "text-red-600" : "text-red-400")} />
+              </div>
+              <div>
+                <p className={cn("font-semibold", isLight ? "text-gray-900" : "text-foreground")}>Final Verification</p>
+                <p className={cn("text-xs mt-0.5", isLight ? "text-gray-500" : "text-muted-foreground")}>
+                  One last step before the database is restored.
+                </p>
+              </div>
+            </div>
+
+            <p className={cn("text-sm", isLight ? "text-gray-600" : "text-muted-foreground")}>
+              Enter your current authenticator app code to confirm the restore.
+            </p>
+
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="000000"
+              value={restoreTotpModal.code}
+              onChange={e => setRestoreTotpModal(p => ({ ...p, code: e.target.value.replace(/\D/g, "").slice(0, 6), error: "" }))}
+              onKeyDown={e => { if (e.key === "Enter") submitRestoreTotp(); }}
+              autoFocus
+              className={cn(
+                "w-full px-4 py-3 rounded-xl border text-center text-2xl font-mono tracking-[0.5em] outline-none transition-colors",
+                isLight
+                  ? "border-slate-200 bg-slate-50 text-gray-900 focus:border-red-500"
+                  : "border-white/10 bg-white/5 text-foreground focus:border-red-500"
+              )}
+            />
+
+            {restoreTotpModal.error && (
+              <p className={cn("text-xs", isLight ? "text-red-600" : "text-red-400")}>{restoreTotpModal.error}</p>
+            )}
+
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={cancelRestoreTotp}
+                className={cn(
+                  "flex-1 px-4 py-2 rounded-xl text-sm font-medium border transition-all",
+                  isLight ? "border-slate-200 text-gray-700 hover:bg-slate-50" : "border-white/10 text-muted-foreground hover:bg-white/5"
+                )}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitRestoreTotp}
+                disabled={restoreTotpModal.code.length !== 6}
+                className="flex-1 px-4 py-2 rounded-xl text-sm font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition-all"
+              >
+                Confirm Restore
               </button>
             </div>
           </div>

@@ -1,6 +1,9 @@
 import { Router } from "express";
-import { pool } from "@workspace/db";
+import { pool, db } from "@workspace/db";
+import { usersTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../lib/auth";
+import { verifyTotp } from "../lib/totp";
 
 const router = Router();
 
@@ -79,6 +82,19 @@ router.get("/download", requireAuth, async (req: AuthRequest, res) => {
     res.status(403).json({ error: "Admin only" });
     return;
   }
+
+  // TOTP re-verification — must pass current authenticator code
+  const totpCode = req.headers["x-totp-code"] as string | undefined;
+  if (!totpCode) {
+    res.status(400).json({ error: "TOTP code required", code: "TOTP_REQUIRED" });
+    return;
+  }
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.user!.userId)).limit(1);
+  if (!user?.mfaSecret || !verifyTotp(user.mfaSecret, totpCode)) {
+    res.status(403).json({ error: "Invalid authenticator code. Please try again.", code: "TOTP_INVALID" });
+    return;
+  }
+
   const client = await pool.connect();
   try {
     const tables: Record<string, any[]> = {};
@@ -115,6 +131,18 @@ router.get("/download", requireAuth, async (req: AuthRequest, res) => {
 router.post("/restore", requireAuth, async (req: AuthRequest, res) => {
   if (req.user!.role !== "admin") {
     res.status(403).json({ error: "Admin only" });
+    return;
+  }
+
+  // TOTP re-verification — must pass current authenticator code
+  const totpCode = req.headers["x-totp-code"] as string | undefined;
+  if (!totpCode) {
+    res.status(400).json({ error: "TOTP code required", code: "TOTP_REQUIRED" });
+    return;
+  }
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.user!.userId)).limit(1);
+  if (!user?.mfaSecret || !verifyTotp(user.mfaSecret, totpCode)) {
+    res.status(403).json({ error: "Invalid authenticator code. Please try again.", code: "TOTP_INVALID" });
     return;
   }
 
