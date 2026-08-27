@@ -1195,6 +1195,26 @@ router.put("/floor-assignments/:id/produce", requireAuth, async (req: AuthReques
       }
     }
 
+    // Promote the mother order to "Produced" terminal state only when every
+    // sibling assignment is produced. Decision is made server-side with fresh
+    // DB data so it is never based on a stale React Query cache.
+    if (existing.productionOrderId) {
+      const allSiblings = await db.select()
+        .from(mdpFloorAssignmentsTable)
+        .where(eq(mdpFloorAssignmentsTable.productionOrderId, existing.productionOrderId));
+
+      // The assignment we just updated is already "Produced" in the DB.
+      const allProduced = allSiblings.every(a => a.planStatus === "Produced");
+
+      if (allProduced && allSiblings.length > 0) {
+        await db.update(mdpProductionOrdersTable)
+          .set({ isProduced: true, isPlanned: false, orderStatus: "Produced", updatedAt: new Date() })
+          .where(eq(mdpProductionOrdersTable.id, existing.productionOrderId));
+      }
+    }
+
+    broadcastDataChange("floor-assignments", {}, req.user?.userId);
+    broadcastDataChange("production-orders", {}, req.user?.userId);
     res.json(updated);
   } catch (err) {
     console.error(err);
@@ -1462,6 +1482,8 @@ router.post("/produced-orders/:id/return-to-planning", requireAuth, async (req: 
     }
 
     await db.delete(mdpProducedOrdersTable).where(eq(mdpProducedOrdersTable.id, id));
+    broadcastDataChange("floor-assignments", {}, req.user?.userId);
+    broadcastDataChange("production-orders", {}, req.user?.userId);
     res.json({ success: true });
   } catch (err) {
     console.error(err);

@@ -438,7 +438,7 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
       const orderVol = Number(row.order?.volume ?? 0);
       const av = row.assignment.assignedVolume != null
         ? Number(row.assignment.assignedVolume)
-        : orderVol; // legacy: treat as fully assigned
+        : 0; // legacy: unknown volume — treat as unassigned to avoid false "fully assigned" reads
       map[orderId] = (map[orderId] ?? 0) + av;
     });
     return map;
@@ -926,30 +926,6 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
           producedAt: new Date().toISOString(),
         }),
       });
-      // Only roll the mother order to a "Produced" terminal state when the
-      // entire order is done — every assignment is produced AND no volume is
-      // left unassigned. Otherwise it would disappear from the planning list
-      // while partial volume is still pending.
-      //
-      // Guards against stale-closure false-positives:
-      //  - currentInData: if the current assignment isn't in the cache, the
-      //    data is stale/not-loaded; skip to avoid promoting the order too early.
-      //  - ?? Infinity: if the order isn't in remainingVolumeByOrderId (not yet
-      //    computed), don't treat remaining=0 as "all done".
-      const allAssignments = allAssignmentsQuery.data ?? [];
-      const siblings = allAssignments.filter(r => r.assignment.productionOrderId === orderId);
-      const currentInData = siblings.some(r => r.assignment.id === assignmentId);
-      const unproducedRemaining = siblings.filter(r =>
-        r.assignment.id !== assignmentId && r.assignment.planStatus !== "Produced"
-      ).length;
-      const remainingVol = remainingVolumeByOrderId[orderId] ?? Infinity;
-      if (currentInData && unproducedRemaining === 0 && remainingVol <= 0) {
-        await fetch(`${BASE}api/mdp/production-orders/${orderId}`, {
-          method: "PUT",
-          headers: authHeaders(),
-          body: JSON.stringify({ isProduced: true, isPlanned: false, orderStatus: "Produced" }),
-        });
-      }
       return res.json();
     },
     onSuccess: () => {

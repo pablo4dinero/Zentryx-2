@@ -158,8 +158,9 @@ export function ProductionOrdersTab() {
     });
     mergedOrders.forEach((order) => {
       if (order.isPlanned) addPlannedOrder(order.id);
+      else removePlannedOrder(order.id);
     });
-  }, [mergedOrders, addPlannedOrder]);
+  }, [mergedOrders, addPlannedOrder, removePlannedOrder]);
 
   const productionUpdate = useMutation({
     mutationFn: async ({ orderId, changes }: { orderId: number; changes: Record<string, unknown> }) => {
