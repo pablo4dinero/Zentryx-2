@@ -811,10 +811,15 @@ export function MonthlyOrdersTab() {
                           <td className="px-4 py-3 text-xs text-muted-foreground">{formatDMY(order.dateOrdered)}</td>
                           <td className="px-4 py-3 text-xs text-muted-foreground">{formatDMY(order.expectedDeliveryDate)}</td>
                           {(() => {
-                            const producedKg = producedSummary[order.id]?.producedVolume ?? 0;
+                            const rawProducedKg = producedSummary[order.id]?.producedVolume ?? 0;
                             const isOrdProduced = producedSummary[order.id]?.isProduced ?? false;
                             const vol = Number(order.volume) || 0;
-                            const deficitKg = isOrdProduced ? Math.max(0, vol - producedKg) : 0;
+                            // Cap displayed produced volume at the ordered volume;
+                            // any over-production is shown in the Excess column instead.
+                            const producedKg = rawProducedKg > 0 ? Math.min(rawProducedKg, vol) : 0;
+                            const deficitKg = isOrdProduced ? Math.max(0, vol - rawProducedKg) : 0;
+                            // excessKg is computed server-side (floor_vol - ordered_vol) and
+                            // returned by the summary endpoint — no migration column needed.
                             const storedExcess = producedSummary[order.id]?.excessKg ?? 0;
                             return (
                               <>
