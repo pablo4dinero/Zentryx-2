@@ -258,7 +258,7 @@ export function MonthlyOrdersTab() {
   // Actual produced/dispatched batch volumes per sales order ID.
   // Using this instead of the monthly order's total volume avoids counting the
   // whole order the moment any single batch is produced or dispatched.
-  const { data: producedSummary = {} } = useQuery<Record<number, { producedVolume: number; dispatchedVolume: number; isProduced: boolean }>>({
+  const { data: producedSummary = {} } = useQuery<Record<number, { producedVolume: number; dispatchedVolume: number; isProduced: boolean; excessKg: number }>>({
     queryKey: ["/api/mdp/produced-orders/summary"],
     queryFn: async () => {
       const res = await fetch(`${BASE}api/mdp/produced-orders/summary`, { headers: authHeaders() });
@@ -349,6 +349,19 @@ export function MonthlyOrdersTab() {
       toast({ title: "Update failed", description: "Could not save delivery date", variant: "destructive" });
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/production-orders/all"] }),
+  });
+
+  const updateExcess = useMutation({
+    mutationFn: async ({ orderId, accountId, excessKg }: { orderId: number; accountId: number; excessKg: number }) => {
+      const res = await fetch(`${BASE}api/accounts/${accountId}/production-orders/${orderId}`, {
+        method: "PUT",
+        headers: authHeaders(),
+        body: JSON.stringify({ excessKg }),
+      });
+      if (!res.ok) throw new Error("Failed to update excess");
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/mdp/produced-orders/summary"] }),
   });
 
   // ── Selector options ─────────────────────────────────────────────────────
@@ -742,6 +755,7 @@ export function MonthlyOrdersTab() {
                 <th className="px-4 py-3 text-left font-semibold text-foreground whitespace-nowrap">Expected Delivery</th>
                 <th className="px-4 py-3 text-left font-semibold text-foreground whitespace-nowrap">Produced (Kg)</th>
                 <th className="px-4 py-3 text-left font-semibold text-foreground whitespace-nowrap">Deficit (Kg)</th>
+                <th className="px-4 py-3 text-left font-semibold text-foreground whitespace-nowrap">Excess (Kg)</th>
                 <th className="px-4 py-3 text-left font-semibold text-foreground whitespace-nowrap">Delivery Date</th>
                 <th className="px-4 py-3 text-left font-semibold text-foreground whitespace-nowrap">Production Status</th>
                 <th className="px-4 py-3 text-left font-semibold text-foreground whitespace-nowrap">Distribution</th>
@@ -752,7 +766,7 @@ export function MonthlyOrdersTab() {
             <tbody>
               {pagedGroups.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-10 text-center text-muted-foreground text-sm">
+                  <td colSpan={13} className="px-4 py-10 text-center text-muted-foreground text-sm">
                     {search.trim()
                       ? `No orders match "${search}" for this period.`
                       : "No production orders found for this period."}
@@ -797,6 +811,7 @@ export function MonthlyOrdersTab() {
                             const isOrdProduced = producedSummary[order.id]?.isProduced ?? false;
                             const vol = Number(order.volume) || 0;
                             const deficitKg = isOrdProduced ? Math.max(0, vol - producedKg) : 0;
+                            const storedExcess = producedSummary[order.id]?.excessKg ?? 0;
                             return (
                               <>
                                 <td className="px-4 py-3 text-xs font-medium text-cyan-400 whitespace-nowrap">
@@ -808,6 +823,26 @@ export function MonthlyOrdersTab() {
                                         {deficitKg > 0 ? deficitKg.toLocaleString() : "0"}
                                       </span>
                                     : "—"}
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    defaultValue={storedExcess || ""}
+                                    placeholder="0"
+                                    key={`excess-${order.id}-${storedExcess}`}
+                                    onBlur={e => {
+                                      const val = parseFloat(e.target.value) || 0;
+                                      if (val !== storedExcess) {
+                                        updateExcess.mutate({ orderId: order.id, accountId: order.accountId, excessKg: val });
+                                      }
+                                    }}
+                                    className={cn(
+                                      "w-24 h-7 rounded-lg border px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary/40 text-violet-400 font-medium",
+                                      isLight ? "border-slate-200 bg-white" : "border-white/10 bg-black/20"
+                                    )}
+                                  />
                                 </td>
                               </>
                             );

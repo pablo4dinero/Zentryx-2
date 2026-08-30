@@ -1211,6 +1211,31 @@ router.put("/floor-assignments/:id/produce", requireAuth, async (req: AuthReques
           .set({ isProduced: true, isPlanned: false, orderStatus: "Produced", updatedAt: new Date() })
           .where(eq(mdpProductionOrdersTable.id, existing.productionOrderId));
       }
+
+      // Auto-compute excess: if total assigned volume across all siblings exceeds
+      // the original ordered volume, store the surplus on account_production_orders.
+      const [mdpOrdForExcess] = await db.select({ salesOrderId: mdpProductionOrdersTable.salesOrderId })
+        .from(mdpProductionOrdersTable)
+        .where(eq(mdpProductionOrdersTable.id, existing.productionOrderId))
+        .limit(1);
+
+      if (mdpOrdForExcess?.salesOrderId) {
+        const [salesOrd] = await db.select({ volume: accountProductionOrdersTable.volume })
+          .from(accountProductionOrdersTable)
+          .where(eq(accountProductionOrdersTable.id, mdpOrdForExcess.salesOrderId))
+          .limit(1);
+
+        if (salesOrd) {
+          const orderedVol = Number(salesOrd.volume ?? 0);
+          const totalAssigned = allSiblings.reduce((s, a) => s + Number(a.assignedVolume ?? 0), 0);
+          const excess = Math.max(0, totalAssigned - orderedVol);
+          if (excess > 0) {
+            await db.update(accountProductionOrdersTable)
+              .set({ excessKg: String(excess), updatedAt: new Date() })
+              .where(eq(accountProductionOrdersTable.id, mdpOrdForExcess.salesOrderId));
+          }
+        }
+      }
     }
 
     broadcastDataChange("floor-assignments", {}, req.user?.userId);
@@ -1297,11 +1322,21 @@ router.get("/produced-orders", requireAuth, async (req: AuthRequest, res) => {
     const mdpIdToSalesId = new Map<number, number>(mdpOrderRows.map(o => [o.id, o.salesOrderId as number]));
     const salesIdToStatus = new Map<number, string>(monthlyRows.filter(o => o.productionOrderId != null).map(o => [o.productionOrderId as number, o.productionStatus ?? "Pending"]));
 
+    // Also fetch excessKg from account_production_orders for each sales order
+    const salesOrderRows = salesIds.length
+      ? await db.select({ id: accountProductionOrdersTable.id, excessKg: accountProductionOrdersTable.excessKg })
+          .from(accountProductionOrdersTable).where(inArray(accountProductionOrdersTable.id, salesIds))
+      : [];
+    const salesIdToExcess = new Map<number, number>(salesOrderRows.map(o => [o.id, Number(o.excessKg ?? 0)]));
+
     const enriched = producedOrders.map(o => ({
       ...o,
       productionStatus: o.productionOrderId != null
         ? (salesIdToStatus.get(mdpIdToSalesId.get(o.productionOrderId) ?? -1) ?? null)
         : null,
+      excessKg: o.productionOrderId != null
+        ? (salesIdToExcess.get(mdpIdToSalesId.get(o.productionOrderId) ?? -1) ?? 0)
+        : 0,
     }));
 
     res.json(enriched);
@@ -1341,18 +1376,30 @@ router.get("/produced-orders/summary", requireAuth, async (_req: AuthRequest, re
       mdpOrders.map(o => [o.id, o.isProduced ?? false])
     );
 
-    const summary: Record<number, { producedVolume: number; dispatchedVolume: number; isProduced: boolean }> = {};
+    const summary: Record<number, { producedVolume: number; dispatchedVolume: number; isProduced: boolean; excessKg: number }> = {};
     for (const o of allProduced) {
       if (o.productionOrderId == null) continue;
       const salesId = mdpIdToSalesId.get(o.productionOrderId);
       if (salesId == null) continue;
       const vol = Number(o.volume) || 0;
       const isProd = mdpIdToIsProduced.get(o.productionOrderId) ?? false;
-      if (!summary[salesId]) summary[salesId] = { producedVolume: 0, dispatchedVolume: 0, isProduced: false };
+      if (!summary[salesId]) summary[salesId] = { producedVolume: 0, dispatchedVolume: 0, isProduced: false, excessKg: 0 };
       // "Wrapped" entries represent deficit (unproduced) — exclude from producedVolume
       if (o.deliveryStatus !== "Wrapped") summary[salesId].producedVolume += vol;
       if (o.deliveryStatus === "Dispatched") summary[salesId].dispatchedVolume += vol;
       if (isProd) summary[salesId].isProduced = true;
+    }
+
+    // Attach stored excessKg from account_production_orders for each sales order
+    const salesIds = Object.keys(summary).map(Number);
+    if (salesIds.length) {
+      const salesOrders = await db.select({
+        id: accountProductionOrdersTable.id,
+        excessKg: accountProductionOrdersTable.excessKg,
+      }).from(accountProductionOrdersTable).where(inArray(accountProductionOrdersTable.id, salesIds));
+      for (const s of salesOrders) {
+        if (summary[s.id]) summary[s.id].excessKg = Number(s.excessKg ?? 0);
+      }
     }
 
     res.json(summary);
@@ -1787,6 +1834,12 @@ router.put("/monthly-orders/by-production-order/:productionOrderId", requireAuth
         createdAt: new Date(),
         updatedAt: new Date(),
       }).returning();
+    }
+    // If excessKg is provided, write it directly to account_production_orders (the source of truth)
+    if (body.excessKg !== undefined) {
+      await db.update(accountProductionOrdersTable)
+        .set({ excessKg: String(body.excessKg), updatedAt: new Date() })
+        .where(eq(accountProductionOrdersTable.id, productionOrderId));
     }
     res.json(result);
   } catch (err) {
