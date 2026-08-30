@@ -95,6 +95,7 @@ export type ProducedOrder = {
   deliveryStatus: string;
   deliveredAt?: string | null;
   productionStatus?: string | null; // from mdpMonthlyOrders via the production order chain
+  salesOrderVolume?: number; // original ordered volume from account_production_orders
   excessKg?: number; // over-produced volume vs ordered, from account_production_orders
 };
 

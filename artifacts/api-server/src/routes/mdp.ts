@@ -1326,28 +1326,46 @@ router.get("/produced-orders", requireAuth, async (req: AuthRequest, res) => {
     const mdpIdToSalesId = new Map<number, number>(mdpOrderRows.map(o => [o.id, o.salesOrderId as number]));
     const salesIdToStatus = new Map<number, string>(monthlyRows.filter(o => o.productionOrderId != null).map(o => [o.productionOrderId as number, o.productionStatus ?? "Pending"]));
 
-    // Fetch excessKg from account_production_orders — safe try/catch for pre-migration environments
-    const salesIdToExcess = new Map<number, number>();
+    // Fetch ordered volume per sales order — lets us cap "produced" at the ordered amount
+    // and compute excess (floor_volume - ordered_volume) without the migration column.
+    const salesIdToOrderedVol = new Map<number, number>();
+    if (salesIds.length) {
+      const volRows = await db.select({ id: accountProductionOrdersTable.id, volume: accountProductionOrdersTable.volume })
+        .from(accountProductionOrdersTable)
+        .where(inArray(accountProductionOrdersTable.id, salesIds));
+      for (const r of volRows) salesIdToOrderedVol.set(r.id, Number(r.volume ?? 0));
+    }
+
+    // Fetch stored excess from account_production_orders if the column exists (post-migration).
+    // Falls back to computed value when the column is absent.
+    const salesIdToStoredExcess = new Map<number, number>();
     if (salesIds.length) {
       try {
         const excessRows = await db.execute(
-          sql`SELECT id, COALESCE(excess_kg, 0)::float AS excess_kg FROM account_production_orders WHERE id = ANY(${salesIds}::int[])`
+          sql`SELECT id, excess_kg FROM account_production_orders WHERE id = ANY(${salesIds}::int[])`
         );
-        for (const r of excessRows.rows as any[]) salesIdToExcess.set(Number(r.id), Number(r.excess_kg ?? 0));
+        for (const r of excessRows.rows as any[]) {
+          if (r.excess_kg != null) salesIdToStoredExcess.set(Number(r.id), Number(r.excess_kg));
+        }
       } catch {
-        // excess_kg column not yet migrated — return 0 for all orders
+        // excess_kg column not yet migrated — computed excess will be used
       }
     }
 
-    const enriched = producedOrders.map(o => ({
-      ...o,
-      productionStatus: o.productionOrderId != null
-        ? (salesIdToStatus.get(mdpIdToSalesId.get(o.productionOrderId) ?? -1) ?? null)
-        : null,
-      excessKg: o.productionOrderId != null
-        ? (salesIdToExcess.get(mdpIdToSalesId.get(o.productionOrderId) ?? -1) ?? 0)
-        : 0,
-    }));
+    const enriched = producedOrders.map(o => {
+      const salesId = o.productionOrderId != null ? mdpIdToSalesId.get(o.productionOrderId) : undefined;
+      const orderedVol = salesId != null ? (salesIdToOrderedVol.get(salesId) ?? 0) : 0;
+      // floor volume is what was actually produced; ordered volume is the original order size
+      const floorVol = Number(o.volume ?? 0);
+      const computedExcess = orderedVol > 0 ? Math.max(0, floorVol - orderedVol) : 0;
+      const storedExcess = salesId != null ? (salesIdToStoredExcess.get(salesId) ?? 0) : 0;
+      return {
+        ...o,
+        salesOrderVolume: orderedVol > 0 ? orderedVol : undefined,
+        productionStatus: salesId != null ? (salesIdToStatus.get(salesId) ?? null) : null,
+        excessKg: Math.max(computedExcess, storedExcess),
+      };
+    });
 
     res.json(enriched);
   } catch (err) {
@@ -1400,20 +1418,33 @@ router.get("/produced-orders/summary", requireAuth, async (_req: AuthRequest, re
       if (isProd) summary[salesId].isProduced = true;
     }
 
-    // Attach stored excessKg from account_production_orders for each sales order.
-    // Wrapped in try/catch so the endpoint keeps working before the DB migration adds the column.
+    // Compute excess from ordered vs produced volumes — works without the migration column.
+    // Also picks up stored excess if the column exists (post-migration user edits).
     const salesIds = Object.keys(summary).map(Number);
     if (salesIds.length) {
+      const volRows = await db.select({ id: accountProductionOrdersTable.id, volume: accountProductionOrdersTable.volume })
+        .from(accountProductionOrdersTable)
+        .where(inArray(accountProductionOrdersTable.id, salesIds));
+      for (const r of volRows) {
+        const sid = r.id;
+        if (summary[sid]) {
+          const orderedVol = Number(r.volume ?? 0);
+          summary[sid].excessKg = orderedVol > 0 ? Math.max(0, summary[sid].producedVolume - orderedVol) : 0;
+        }
+      }
+      // If the excess_kg column exists, use stored value when it is larger (user manual edit).
       try {
         const rows = await db.execute(
-          sql`SELECT id, COALESCE(excess_kg, 0)::float AS excess_kg FROM account_production_orders WHERE id = ANY(${salesIds}::int[])`
+          sql`SELECT id, excess_kg FROM account_production_orders WHERE id = ANY(${salesIds}::int[])`
         );
         for (const row of rows.rows as any[]) {
           const sid = Number(row.id);
-          if (summary[sid]) summary[sid].excessKg = Number(row.excess_kg ?? 0);
+          if (summary[sid] && row.excess_kg != null) {
+            summary[sid].excessKg = Math.max(summary[sid].excessKg, Number(row.excess_kg));
+          }
         }
       } catch {
-        // excess_kg column not yet migrated — return 0 for all orders
+        // excess_kg column not yet migrated — computed excess remains
       }
     }
 

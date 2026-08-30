@@ -534,7 +534,7 @@ export function ProductionHistoryTab() {
                       </td>
                       <td className="px-3 py-3 text-xs text-muted-foreground">{order.productType ?? "—"}</td>
                       <td className="px-3 py-3 text-right font-semibold text-sm">
-                        {Number(order.volume ?? 0).toLocaleString()}
+                        {(order.salesOrderVolume != null ? order.salesOrderVolume : Number(order.volume ?? 0)).toLocaleString()}
                         {isWrapped && <span className="ml-1 text-[10px] font-medium text-orange-400">deficit</span>}
                       </td>
                       <td className="px-3 py-3 text-right text-xs font-medium">
