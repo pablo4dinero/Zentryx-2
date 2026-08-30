@@ -803,4 +803,13 @@
 }
 .chat-wave { transform-origin: center; }
 .chat-wave-a { animation: chat-wave-drift-a 16s ease-in-out infinite; }
+
+/* ── Floor usage bar — overflow animation ──────────────────────────────────── */
+@keyframes floor-bar-blink {
+  0%, 100% { background-color: #10b981; } /* emerald-500 */
+  50%       { background-color: #d97706; } /* amber-600 (gold) */
+}
+.floor-bar-overflow {
+  animation: floor-bar-blink 0.9s ease-in-out infinite;
+}
 .chat-wave-b { animation: chat-wave-drift-b 22s ease-in-out infinite; }

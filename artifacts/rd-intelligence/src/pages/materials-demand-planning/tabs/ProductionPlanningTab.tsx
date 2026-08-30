@@ -116,6 +116,21 @@ body{margin:0;padding:0;font-family:ui-sans-serif,system-ui,-apple-system,sans-s
 `;
 
 
+/**
+ * Returns the Tailwind class (or special CSS class) for a floor usage bar.
+ * rawPct is the unclipped percentage (can exceed 100 when over capacity).
+ *   < 40%  → red
+ *  40–65%  → yellow
+ *  66–100% → green
+ *   > 100% → blinking green/gold (floor-bar-overflow from index.css)
+ */
+function floorUsageBarClass(rawPct: number): string {
+  if (rawPct > 100) return "floor-bar-overflow";
+  if (rawPct >= 66)  return "bg-emerald-500";
+  if (rawPct >= 40)  return "bg-yellow-400";
+  return "bg-red-500";
+}
+
 export function ProductionPlanningTab() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -2131,8 +2146,9 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                     const assignedRows = floorOrder(floor.id);
                     const totalKg = assignedRows.reduce((s, r) => s + (r.assignment.assignedVolume != null ? Number(r.assignment.assignedVolume) : Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0)), 0);
                     const weekTotalCapacity = floor.maxCapacityKg * weekDays.length;
-                    const progress = Math.min(100, Math.round((totalKg / (weekTotalCapacity || 1)) * 100));
-                    const barClass = progress > 90 ? "bg-red-500" : progress > 70 ? "bg-amber-500" : "bg-emerald-500";
+                    const rawProgress = Math.round((totalKg / (weekTotalCapacity || 1)) * 100);
+                    const progress = Math.min(100, rawProgress);
+                    const barClass = floorUsageBarClass(rawProgress);
                     return (
                       <div key={floor.id}
                         className={cn("rounded-2xl border p-4 transition-colors",
@@ -3183,8 +3199,9 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                           {floors.map(floor => {
                             const dayRows = floorOrder(floor.id).filter(r => r.assignment.assignedDay === expandedDay);
                             const dayKg = dayRows.reduce((s, r) => s + (r.assignment.assignedVolume != null ? Number(r.assignment.assignedVolume) : Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0)), 0);
-                            const dayUtil = Math.min(100, Math.round((dayKg / (floor.maxCapacityKg || 1)) * 100));
-                            const dayBar = dayUtil > 90 ? "bg-red-500" : dayUtil > 70 ? "bg-amber-500" : "bg-emerald-500";
+                            const rawDayUtil = Math.round((dayKg / (floor.maxCapacityKg || 1)) * 100);
+                            const dayUtil = Math.min(100, rawDayUtil);
+                            const dayBar = floorUsageBarClass(rawDayUtil);
                             return (
                               <div key={floor.id} className={cn("relative rounded-2xl border flex flex-col", isLight ? "border-slate-200 bg-white" : "border-white/10 bg-slate-900")}>
                                 {floorDayCautionOverlay(floor, expandedDay!)}
@@ -3228,8 +3245,9 @@ html,body{height:auto!important;overflow:visible!important;background:#fff}
                               const nightDay = `${expandedDay}-NS`;
                               const nightRows = floorOrder(floor.id).filter(r => r.assignment.assignedDay === nightDay);
                               const nightKg = nightRows.reduce((s, r) => s + (r.assignment.assignedVolume != null ? Number(r.assignment.assignedVolume) : Number(mdpOrderByMdpId.get(r.order.id)?.volume ?? r.order.volume ?? 0)), 0);
-                              const nightUtil = Math.min(100, Math.round((nightKg / (floor.maxCapacityKg || 1)) * 100));
-                              const nightBar = nightUtil > 90 ? "bg-red-500" : nightUtil > 70 ? "bg-amber-500" : "bg-indigo-500";
+                              const rawNightUtil = Math.round((nightKg / (floor.maxCapacityKg || 1)) * 100);
+                              const nightUtil = Math.min(100, rawNightUtil);
+                              const nightBar = floorUsageBarClass(rawNightUtil);
                               return (
                                 <div key={`${floor.id}-NS`} className={cn("relative rounded-2xl border flex flex-col", isLight ? "border-indigo-100 bg-indigo-50/40" : "border-indigo-500/20 bg-indigo-500/5")}>
                                   {floorDayCautionOverlay(floor, nightDay)}
