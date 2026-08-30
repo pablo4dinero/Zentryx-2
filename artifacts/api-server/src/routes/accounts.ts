@@ -329,7 +329,7 @@ router.put("/:id/production-orders/:orderId", requireAuth, async (req, res) => {
   try {
     const accountId = parseInt(String(req.params.id));
     const orderId = parseInt(String(req.params.orderId));
-    const { price, volume, dateOrdered, expectedDeliveryDate, dateDelivered } = req.body;
+    const { price, volume, dateOrdered, expectedDeliveryDate, dateDelivered, excessKg } = req.body;
     const [account] = await db.select().from(accountsTable).where(eq(accountsTable.id, accountId)).limit(1);
     if (!account) {
       res.status(404).json({ error: "AccountNotFound" });
@@ -337,6 +337,8 @@ router.put("/:id/production-orders/:orderId", requireAuth, async (req, res) => {
     }
     const [order] = await db.update(accountProductionOrdersTable).set({
       price, volume, dateOrdered, expectedDeliveryDate, dateDelivered,
+      ...(excessKg !== undefined ? { excessKg: String(excessKg) } : {}),
+      updatedAt: new Date(),
     }).where(eq(accountProductionOrdersTable.id, orderId)).returning();
     if (!order) { res.status(404).json({ error: "NotFound" }); return; }
 

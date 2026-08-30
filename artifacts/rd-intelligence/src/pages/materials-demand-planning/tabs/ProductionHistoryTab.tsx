@@ -515,6 +515,7 @@ export function ProductionHistoryTab() {
                     <th className="px-4 py-2.5 text-left font-medium">Account</th>
                     <th className="px-3 py-2.5 text-left font-medium">Product Type</th>
                     <th className="px-3 py-2.5 text-right font-medium">Volume (KG)</th>
+                    <th className="px-3 py-2.5 text-right font-medium">Excess (KG)</th>
                     <th className="px-3 py-2.5 text-left font-medium">Produced At</th>
                     <th className="px-3 py-2.5 text-left font-medium">Status</th>
                     <th className="px-3 py-2.5 text-center font-medium">Dispatched</th>
@@ -535,6 +536,11 @@ export function ProductionHistoryTab() {
                       <td className="px-3 py-3 text-right font-semibold text-sm">
                         {Number(order.volume ?? 0).toLocaleString()}
                         {isWrapped && <span className="ml-1 text-[10px] font-medium text-orange-400">deficit</span>}
+                      </td>
+                      <td className="px-3 py-3 text-right text-xs font-medium">
+                        {(order.excessKg ?? 0) > 0
+                          ? <span className="text-violet-400">{(order.excessKg ?? 0).toLocaleString()}</span>
+                          : <span className="text-muted-foreground">—</span>}
                       </td>
                       <td className="px-3 py-3 text-xs text-muted-foreground">{formatDateTime(order.producedAt)}</td>
                       <td className="px-3 py-3">

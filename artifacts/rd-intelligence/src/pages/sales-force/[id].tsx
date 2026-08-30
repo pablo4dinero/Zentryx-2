@@ -1324,7 +1324,7 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
     queryFn: async () => { const res = await api(`api/accounts/${accountId}/production-orders`); return res.json(); },
   });
 
-  const { data: producedSummary = {} } = useQuery<Record<number, { producedVolume: number; dispatchedVolume: number; isProduced: boolean }>>({
+  const { data: producedSummary = {} } = useQuery<Record<number, { producedVolume: number; dispatchedVolume: number; isProduced: boolean; excessKg: number }>>({
     queryKey: ["/api/mdp/produced-orders/summary"],
     queryFn: async () => {
       const res = await api("api/mdp/produced-orders/summary");
@@ -1699,6 +1699,7 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
                     ))}
                     <th className="px-3 py-2.5 text-left text-muted-foreground font-medium select-none whitespace-nowrap">Produced (Kg)</th>
                     <th className="px-3 py-2.5 text-left text-muted-foreground font-medium select-none whitespace-nowrap">Deficit (Kg)</th>
+                    <th className="px-3 py-2.5 text-left text-muted-foreground font-medium select-none whitespace-nowrap">Excess (Kg)</th>
                     {[
                       { col: "dateDelivered", label: "Date Delivered" },
                       { col: "income", label: "Income" },
@@ -1717,6 +1718,7 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
                     const isOrdProduced = (producedSummary as any)[o.id]?.isProduced ?? false;
                     const vol = parseFloat(o.volume || 0);
                     const deficitKg = isOrdProduced ? Math.max(0, vol - producedKg) : 0;
+                    const storedExcess = (producedSummary as any)[o.id]?.excessKg ?? Number(o.excessKg ?? 0);
                     return (
                   <tr key={o.id} className="hover:bg-white/[0.02]">
                     <td className="px-3 py-2">
@@ -1748,6 +1750,21 @@ function ProductionOrdersTab({ accountId }: { accountId: number }) {
                             {deficitKg > 0 ? deficitKg.toLocaleString() : "0"}
                           </span>
                         : "—"}
+                    </td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        defaultValue={storedExcess || ""}
+                        placeholder="0"
+                        key={`excess-${o.id}-${storedExcess}`}
+                        onBlur={e => {
+                          const val = parseFloat(e.target.value) || 0;
+                          if (val !== storedExcess) updateRow(o.id, { ...o, excessKg: val });
+                        }}
+                        className="w-20 bg-transparent text-violet-400 font-medium focus:outline-none focus:ring-1 focus:ring-violet-400/30 rounded px-1 h-7"
+                      />
                     </td>
                     <td className="px-3 py-2">
                       <input type="text" placeholder="dd/mm/yyyy" value={o.dateDelivered || ""} onChange={e => updateLocalOrder(o.id, { dateDelivered: e.target.value })}
