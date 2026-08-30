@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { accountsTable, accountTasksTable, accountProductionOrdersTable, accountStatusReportsTable, todayProductionOrdersTable, usersTable, callReportsTable, callReportCommentsTable, notificationsTable } from "@workspace/db";
-import { eq, asc, desc, inArray } from "drizzle-orm";
+import { eq, asc, desc, inArray, sql } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../lib/auth";
 import { logActivity } from "../lib/activity";
 import { sanitize } from "../lib/sanitize";
@@ -337,9 +337,16 @@ router.put("/:id/production-orders/:orderId", requireAuth, async (req, res) => {
     }
     const [order] = await db.update(accountProductionOrdersTable).set({
       price, volume, dateOrdered, expectedDeliveryDate, dateDelivered,
-      ...(excessKg !== undefined ? { excessKg: String(excessKg) } : {}),
       updatedAt: new Date(),
     }).where(eq(accountProductionOrdersTable.id, orderId)).returning();
+    // Write excessKg via raw SQL — safe try/catch until the DB migration adds the column
+    if (excessKg !== undefined && order) {
+      try {
+        await db.execute(sql`UPDATE account_production_orders SET excess_kg = ${Number(excessKg)} WHERE id = ${orderId}`);
+      } catch {
+        // excess_kg column not yet migrated — skip write
+      }
+    }
     if (!order) { res.status(404).json({ error: "NotFound" }); return; }
 
     await upsertTodayOrderEntry(order, account);

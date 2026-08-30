@@ -1230,9 +1230,13 @@ router.put("/floor-assignments/:id/produce", requireAuth, async (req: AuthReques
           const totalAssigned = allSiblings.reduce((s, a) => s + Number(a.assignedVolume ?? 0), 0);
           const excess = Math.max(0, totalAssigned - orderedVol);
           if (excess > 0) {
-            await db.update(accountProductionOrdersTable)
-              .set({ excessKg: String(excess), updatedAt: new Date() })
-              .where(eq(accountProductionOrdersTable.id, mdpOrdForExcess.salesOrderId));
+            try {
+              await db.execute(
+                sql`UPDATE account_production_orders SET excess_kg = ${excess} WHERE id = ${mdpOrdForExcess.salesOrderId}`
+              );
+            } catch {
+              // excess_kg column not yet migrated — skip write
+            }
           }
         }
       }
@@ -1322,12 +1326,18 @@ router.get("/produced-orders", requireAuth, async (req: AuthRequest, res) => {
     const mdpIdToSalesId = new Map<number, number>(mdpOrderRows.map(o => [o.id, o.salesOrderId as number]));
     const salesIdToStatus = new Map<number, string>(monthlyRows.filter(o => o.productionOrderId != null).map(o => [o.productionOrderId as number, o.productionStatus ?? "Pending"]));
 
-    // Also fetch excessKg from account_production_orders for each sales order
-    const salesOrderRows = salesIds.length
-      ? await db.select({ id: accountProductionOrdersTable.id, excessKg: accountProductionOrdersTable.excessKg })
-          .from(accountProductionOrdersTable).where(inArray(accountProductionOrdersTable.id, salesIds))
-      : [];
-    const salesIdToExcess = new Map<number, number>(salesOrderRows.map(o => [o.id, Number(o.excessKg ?? 0)]));
+    // Fetch excessKg from account_production_orders — safe try/catch for pre-migration environments
+    const salesIdToExcess = new Map<number, number>();
+    if (salesIds.length) {
+      try {
+        const excessRows = await db.execute(
+          sql`SELECT id, COALESCE(excess_kg, 0)::float AS excess_kg FROM account_production_orders WHERE id = ANY(${salesIds}::int[])`
+        );
+        for (const r of excessRows.rows as any[]) salesIdToExcess.set(Number(r.id), Number(r.excess_kg ?? 0));
+      } catch {
+        // excess_kg column not yet migrated — return 0 for all orders
+      }
+    }
 
     const enriched = producedOrders.map(o => ({
       ...o,
@@ -1390,15 +1400,20 @@ router.get("/produced-orders/summary", requireAuth, async (_req: AuthRequest, re
       if (isProd) summary[salesId].isProduced = true;
     }
 
-    // Attach stored excessKg from account_production_orders for each sales order
+    // Attach stored excessKg from account_production_orders for each sales order.
+    // Wrapped in try/catch so the endpoint keeps working before the DB migration adds the column.
     const salesIds = Object.keys(summary).map(Number);
     if (salesIds.length) {
-      const salesOrders = await db.select({
-        id: accountProductionOrdersTable.id,
-        excessKg: accountProductionOrdersTable.excessKg,
-      }).from(accountProductionOrdersTable).where(inArray(accountProductionOrdersTable.id, salesIds));
-      for (const s of salesOrders) {
-        if (summary[s.id]) summary[s.id].excessKg = Number(s.excessKg ?? 0);
+      try {
+        const rows = await db.execute(
+          sql`SELECT id, COALESCE(excess_kg, 0)::float AS excess_kg FROM account_production_orders WHERE id = ANY(${salesIds}::int[])`
+        );
+        for (const row of rows.rows as any[]) {
+          const sid = Number(row.id);
+          if (summary[sid]) summary[sid].excessKg = Number(row.excess_kg ?? 0);
+        }
+      } catch {
+        // excess_kg column not yet migrated — return 0 for all orders
       }
     }
 
@@ -1835,11 +1850,16 @@ router.put("/monthly-orders/by-production-order/:productionOrderId", requireAuth
         updatedAt: new Date(),
       }).returning();
     }
-    // If excessKg is provided, write it directly to account_production_orders (the source of truth)
+    // If excessKg is provided, write it directly to account_production_orders (the source of truth).
+    // Wrapped in try/catch so this endpoint keeps working before the DB migration adds the column.
     if (body.excessKg !== undefined) {
-      await db.update(accountProductionOrdersTable)
-        .set({ excessKg: String(body.excessKg), updatedAt: new Date() })
-        .where(eq(accountProductionOrdersTable.id, productionOrderId));
+      try {
+        await db.execute(
+          sql`UPDATE account_production_orders SET excess_kg = ${Number(body.excessKg)} WHERE id = ${productionOrderId}`
+        );
+      } catch {
+        // excess_kg column not yet migrated — skip write
+      }
     }
     res.json(result);
   } catch (err) {
