@@ -499,8 +499,9 @@ export function MonthlyOrdersTab() {
     // volume, so partial batches are counted correctly.
     const totalVolumeProduced = allOrders.reduce((sum, o) => sum + (producedSummary[o.id]?.producedVolume ?? 0), 0);
     const totalVolumeDispatched = allOrders.reduce((sum, o) => sum + (producedSummary[o.id]?.dispatchedVolume ?? 0), 0);
+    const totalExcessVolume = allOrders.reduce((sum, o) => sum + (producedSummary[o.id]?.excessKg ?? 0), 0);
     const uniqueCustomers = new Set(customerGroups.map(g => g.customerName)).size;
-    return { customers: uniqueCustomers, products: uniqueProducts, totalVolume, totalVolumeProduced, totalVolumeDispatched };
+    return { customers: uniqueCustomers, products: uniqueProducts, totalVolume, totalVolumeProduced, totalVolumeDispatched, totalExcessVolume };
   }, [customerGroups, producedSummary]);
 
   // ── Pagination ───────────────────────────────────────────────────────────
@@ -593,34 +594,37 @@ export function MonthlyOrdersTab() {
     <div className="space-y-5">
 
       {/* ── Summary boxes ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         {[
-          { label: "Total Customers",         value: summaryStats.customers.toLocaleString() },
-          { label: "Total Products",          value: summaryStats.products.toLocaleString() },
-          { label: "Total Volume Ordered",    value: `${summaryStats.totalVolume.toLocaleString()} KG` },
-          { label: "Total Volume Produced",   value: `${summaryStats.totalVolumeProduced.toLocaleString()} KG`, highlight: true },
-          { label: "Total Volume Dispatched", value: `${summaryStats.totalVolumeDispatched.toLocaleString()} KG`, highlightSky: true },
+          { label: "Total Customers",               value: summaryStats.customers.toLocaleString() },
+          { label: "Total Products",                value: summaryStats.products.toLocaleString() },
+          { label: "Total Volume Ordered",          value: `${summaryStats.totalVolume.toLocaleString()} KG` },
+          { label: "Total Volume Produced",         value: `${summaryStats.totalVolumeProduced.toLocaleString()} KG`, highlight: true },
+          { label: "Total Volume Dispatched",       value: `${summaryStats.totalVolumeDispatched.toLocaleString()} KG`, highlightSky: true },
+          { label: "Total Excess Volume Produced",  value: `${summaryStats.totalExcessVolume.toLocaleString()} KG`, highlightViolet: true },
         ].map(box => (
           <div
             key={box.label}
             className={cn(
               "rounded-2xl border p-5",
-              (box as any).highlightSky
-                ? isLight ? "bg-sky-50 border-sky-200" : "bg-sky-500/10 border-sky-500/20"
-                : box.highlight
-                  ? isLight ? "bg-emerald-50 border-emerald-200" : "bg-emerald-500/10 border-emerald-500/20"
-                  : isLight ? "bg-white border-slate-200" : "bg-black/20 border-white/10"
+              (box as any).highlightViolet
+                ? isLight ? "bg-violet-50 border-violet-200" : "bg-violet-500/10 border-violet-500/20"
+                : (box as any).highlightSky
+                  ? isLight ? "bg-sky-50 border-sky-200" : "bg-sky-500/10 border-sky-500/20"
+                  : box.highlight
+                    ? isLight ? "bg-emerald-50 border-emerald-200" : "bg-emerald-500/10 border-emerald-500/20"
+                    : isLight ? "bg-white border-slate-200" : "bg-black/20 border-white/10"
             )}
           >
             <div className={cn(
               "text-[10px] font-semibold uppercase tracking-widest mb-2",
-              (box as any).highlightSky ? "text-sky-600" : box.highlight ? "text-emerald-600" : "text-muted-foreground"
+              (box as any).highlightViolet ? "text-violet-600" : (box as any).highlightSky ? "text-sky-600" : box.highlight ? "text-emerald-600" : "text-muted-foreground"
             )}>
               {box.label}
             </div>
             <div className={cn(
               "text-2xl font-bold",
-              (box as any).highlightSky ? "text-sky-600" : box.highlight ? "text-emerald-600" : "text-foreground"
+              (box as any).highlightViolet ? "text-violet-600" : (box as any).highlightSky ? "text-sky-600" : box.highlight ? "text-emerald-600" : "text-foreground"
             )}>
               {box.value}
             </div>
